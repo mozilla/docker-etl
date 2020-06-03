@@ -1,0 +1,9 @@
+#!/bin/bash
+
+set -e
+
+if [ "$1" = test ]; then
+    exec pytest "${@:2}"
+else
+    exec "$@"
+fi
