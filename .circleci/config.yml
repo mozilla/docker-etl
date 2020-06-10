@@ -1,5 +1,16 @@
 version: 2.1
 
+commands:
+  restore-docker:
+    description: Restore Docker image cache
+    steps:
+      - setup_remote_docker
+      - restore_cache:
+          key: v1-{{.Branch}}
+      - run:
+          name: Restore Docker image cache
+          command: docker load -i /cache/docker.tar
+
 jobs:
   build:
     docker:
@@ -19,18 +30,21 @@ jobs:
             - /cache/docker.tar
 
   test:
-    docker:
+    docker: &docker
       - image: docker:18.06.0-ce
     steps:
-      - setup_remote_docker
-      - restore_cache:
-          key: v1-{{.Branch}}
-      - run:
-          name: Restore Docker image cache
-          command: docker load -i /cache/docker.tar
+      - restore-docker
       - run:
           name: Test Code
-          command: docker run app:build test
+          command: docker run app:build make test
+
+  lint:
+    docker: *docker
+    steps:
+      - restore-docker
+      - run:
+          name: Lint Code
+          command: docker run app:build make lint
 
 workflows:
   main:
@@ -38,5 +52,9 @@ workflows:
       - build
 
       - test:
+          requires:
+            - build
+
+      - lint:
           requires:
             - build

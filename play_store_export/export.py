@@ -103,7 +103,7 @@ def wait_for_transfer(transfer_name: str, timeout: int = 1200, polling_period: i
 
 
 def start_export(project: str, transfer_config_name: str, transfer_location: str,
-                 base_date: datetime.date, backfill_day_count: int = 35):
+                 base_date: datetime.date, backfill_day_count: int):
     """
     Start and wait for the completion of a backfill of `backfill_day_count` days, counting
     backwards from `base_date.  The base date is included in the backfill and counts as a
