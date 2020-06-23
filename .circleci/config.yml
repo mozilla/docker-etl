@@ -1,5 +1,8 @@
 version: 2.1
 
+orbs:
+  gcp-gcr: circleci/gcp-gcr@0.7.1
+
 commands:
   restore-docker:
     description: Restore Docker image cache
@@ -58,3 +61,14 @@ workflows:
       - lint:
           requires:
             - build
+
+      - gcp-gcr/build-and-push-image:
+          # See https://bugzilla.mozilla.org/show_bug.cgi?id=1608958 for details
+          context: data-eng-airflow-gcr
+          image: play-store-export
+          requires:
+            - test
+            - lint
+          filters:
+            branches:
+              only: master
