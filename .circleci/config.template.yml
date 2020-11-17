@@ -26,7 +26,7 @@ commands:
             fi
 
 jobs:
-  build-data-etl:
+  build-docker-etl:
     docker:
       - image: docker:stable-git
     steps:
@@ -49,9 +49,9 @@ jobs:
 {{ jobs | indent(2, True) }}
 
 workflows:
-  data-etl:
+  docker-etl:
     jobs:
-      - build-data-etl
+      - build-docker-etl
 
 {{ workflows | indent(2, True) }}
 
