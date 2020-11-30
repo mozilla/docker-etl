@@ -10,25 +10,32 @@ so they can be scheduled via the Airflow GKE pod operator.
 
 ## Project Structure
 
-- Each job is located in its own directory in the `jobs/` directory
-    - e.g. the contents of a job named `my-job` would go into `jobs/my-job`
-    - All job directories should have a `Dockerfile`, a `ci_job.yaml`, 
-      a `ci_workflow.yaml`, and a `README.md` in the root directory          
-        -  `ci_job.yaml` and `ci_workflow.yaml` contain the yaml structure that will
-            be placed in the `- jobs:` and `- workflows:` sections of the 
-            CircleCI `config.yml` respectively
+### Jobs
 
-- Templates for job creation and the CI config file are located in `templates/`
-    - The CI config template is in `.circleci/config.template.yml`
-        - This is the file that should be modified instead of the `circleci/config.yml`
-    - Each job template is located in a directory in `templates/` that is the name of the template.
-        - e.g. a `python` template is in `templates/python/`
-    - Within the directory of a template is a directory named `job/` that contains
-      all the contents that will be copied when the template is used.
-    - Other files in the directory of a particular template are used for
-      job creation, e.g. `ci_job.template.yaml`.
+Each job is located in its own directory in the `jobs/` directory, 
+e.g. the contents of a job named `my-job` would go into `jobs/my-job`
 
-#### Example Directory Structure:
+All job directories should have a `Dockerfile`, a `ci_job.yaml`, 
+a `ci_workflow.yaml`, and a `README.md` in the root directory.          
+`ci_job.yaml` and `ci_workflow.yaml` contain the yaml structure that will be placed
+in the `- jobs:` and `- workflows:` sections of the CircleCI `config.yml` respectively
+
+### Templates
+
+Templates for job creation and the CI config file are located in `templates/`.
+
+The CI config template is in `.circleci/config.template.yml`.
+This is the file that should be modified instead of the `circleci/config.yml`.
+
+Each job template is located in a directory in `templates/` that is the name of the template, 
+e.g. a `python` template is in `templates/python/`.
+Within the directory of a template is a directory named `job/` that contains
+all the contents that will be copied when the template is used.
+Other files in the directory of a particular template are used for
+job creation, e.g. `ci_job.template.yaml`.
+
+### Example Directory Structure:
+
 ```
 +--docker-etl/
 |  +--jobs/
