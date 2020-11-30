@@ -11,5 +11,5 @@ setup(
     packages=find_packages(include=["docker_etl"]),
     long_description=readme,
     include_package_data=True,
-    license="Mozilla",
+    license="MPL 2.0",
 )

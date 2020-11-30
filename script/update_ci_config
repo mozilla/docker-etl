@@ -2,4 +2,4 @@
 
 cd "$(dirname "$0")/.."
 
-exec python3 -m docker_etl.ci_config "$@"
+python3 -m docker_etl.ci_config "$@"

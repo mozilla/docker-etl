@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+from typing import Union
 
 import click
 import jinja2
@@ -19,7 +21,7 @@ CI_CONFIG_HEADER = """###
 ###"""
 
 
-def read_file(file_path: str) -> str:
+def read_file(file_path: Union[str, Path]) -> str:
     """Read file contents and return as a string."""
     with open(file_path) as f:
         return f.read()
@@ -43,7 +45,7 @@ def update_config(dry_run: bool = False) -> str:
     if dry_run:
         print(config_text)
     else:
-        with open(os.path.join(ROOT_DIR, ".circleci", "config.yml"), "w") as f:
+        with open(ROOT_DIR / ".circleci" / "config.yml", "w") as f:
             f.write(config_text)
 
     return config_text

@@ -1,5 +1,6 @@
 import os
 import shutil
+from pathlib import Path
 from typing import Dict
 
 import click
@@ -16,25 +17,19 @@ from docker_etl.file_utils import (
 )
 
 
-def get_templates() -> Dict[str, str]:
+def get_templates() -> Dict[str, Path]:
     """Get mappings of template name to template path."""
-    return {
-        name: os.path.join(TEMPLATES_DIR, name)
-        for name in os.listdir(TEMPLATES_DIR)
-        if os.path.isdir(os.path.join(TEMPLATES_DIR, name))
-    }
+    return {path.name: path for path in TEMPLATES_DIR.glob("*") if path.is_dir()}
 
 
-def add_ci_config(job_name: str, template_dir: str):
+def add_ci_config(job_name: str, template_dir: Path):
     """Create job CI configs in job directory."""
     template_loader = jinja2.FileSystemLoader(template_dir)
     template_env = jinja2.Environment(loader=template_loader)
 
     try:
-        ci_job_template = template_env.get_template(os.path.join(CI_JOB_TEMPLATE_NAME))
-        ci_workflow_template = template_env.get_template(
-            os.path.join(CI_WORKFLOW_TEMPLATE_NAME)
-        )
+        ci_job_template = template_env.get_template(CI_JOB_TEMPLATE_NAME)
+        ci_workflow_template = template_env.get_template(CI_WORKFLOW_TEMPLATE_NAME)
     except jinja2.exceptions.TemplateNotFound:
         raise FileNotFoundError(
             f"Both {CI_JOB_TEMPLATE_NAME} and "
@@ -44,24 +39,24 @@ def add_ci_config(job_name: str, template_dir: str):
     ci_job_text = ci_job_template.render(job_name=job_name)
     ci_workflow_text = ci_workflow_template.render(job_name=job_name)
 
-    with open(os.path.join(JOBS_DIR, job_name, CI_JOB_NAME), "w") as f:
+    with open(JOBS_DIR / job_name / CI_JOB_NAME, "w") as f:
         f.write(ci_job_text)
-    with open(os.path.join(JOBS_DIR, job_name, CI_WORKFLOW_NAME), "w") as f:
+    with open(JOBS_DIR / job_name / CI_WORKFLOW_NAME, "w") as f:
         f.write(ci_workflow_text)
 
 
-def copy_job_template(job_name: str, template_dir: str):
+def copy_job_template(job_name: str, template_dir: Path):
     """Copy job template files to jobs directory."""
     try:
         new_dir = shutil.copytree(
-            src=os.path.join(template_dir, "job"),
-            dst=os.path.join(JOBS_DIR, job_name),
+            src=template_dir / "job",
+            dst=JOBS_DIR / job_name,
         )
     except FileExistsError:
         raise ValueError(f"Job with name {job_name} already exists.")
 
     # rename module and change setup.py
-    if template_dir.endswith("/python"):
+    if template_dir.name == "python":
         shutil.move(
             src=os.path.join(new_dir, "python_template_job"),
             dst=os.path.join(new_dir, job_name.replace("-", "_")),
