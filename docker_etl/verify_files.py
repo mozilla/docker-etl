@@ -15,7 +15,7 @@ def check_missing_files() -> List[Tuple[str, Set[str]]]:
 
         if len(missing_files) > 0:
             failed_jobs.append((job_dir.name, missing_files))
-            print(f"{job_dir.parent.name} missing files: {', '.join(missing_files)}")
+            print(f"{job_dir.name} missing files: {', '.join(missing_files)}")
 
     return failed_jobs
 
