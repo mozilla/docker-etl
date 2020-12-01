@@ -1,6 +1,11 @@
-import unittest
+import pytest
 
 
-class TestMain(unittest.TestCase):
-    def test_something(self):
-        self.assertEqual(1, 1)
+@pytest.fixture
+def example_dependency():
+    return "test"
+
+
+class TestMain:
+    def test_something(self, example_dependency):
+        assert example_dependency == "test"

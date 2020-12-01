@@ -1,9 +1,12 @@
 import os
+import sys
 from pathlib import Path
 from typing import Union
 
 import click
 import jinja2
+import yaml
+from yaml.scanner import ScannerError
 
 from docker_etl.file_utils import (
     CI_JOB_NAME,
@@ -27,6 +30,15 @@ def read_file(file_path: Union[str, Path]) -> str:
         return f.read()
 
 
+def validate_yaml(yaml_path: Path) -> bool:
+    with open(yaml_path) as f:
+        try:
+            yaml.safe_load(f)
+        except ScannerError:
+            return False
+    return True
+
+
 def update_config(dry_run: bool = False) -> str:
     """Collect job and workflow configs per job and create new config."""
     template_loader = jinja2.FileSystemLoader(CI_DIR)
@@ -35,6 +47,20 @@ def update_config(dry_run: bool = False) -> str:
 
     job_configs = sorted(find_file_in_jobs(CI_JOB_NAME))
     workflow_configs = sorted(find_file_in_jobs(CI_WORKFLOW_NAME))
+
+    invalid_configs = [
+        str(conf.relative_to(ROOT_DIR))
+        for conf in job_configs
+        if not validate_yaml(conf)
+    ] + [
+        str(conf.relative_to(ROOT_DIR))
+        for conf in workflow_configs
+        if not validate_yaml(conf)
+    ]
+    if len(invalid_configs) > 0:
+        print("Error: Invalid CI configs", file=sys.stderr)
+        print("\n".join(invalid_configs), file=sys.stderr)
+        sys.exit(1)
 
     config_text = config_template.render(
         config_header=CI_CONFIG_HEADER,

@@ -67,6 +67,13 @@ To install dependencies:
 pip install -r requirements.txt
 ```
 
+This project uses `pip-tools` to pin dependencies.  New dependencies go in
+`requirements.in` and `pip-compile` is used to generate `requirements.txt`:
+```sh
+pip install pip-tools
+pip-compile --generate-hashes requirements.in
+```
+
 To run tests:
 ```sh
 pytest --flake8 --black tests/
