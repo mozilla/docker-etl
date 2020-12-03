@@ -38,7 +38,7 @@ jobs:
           command: docker build -t docker-etl:build .
       - run:
           name: Test Code
-          command: docker run docker-etl:build pytest --black --flake8
+          command: docker run docker-etl:build pytest --black --flake8 docker_etl/ tests/
       - run:
           name: Verify jobs have required files
           command: docker run docker-etl:build script/verify_files

@@ -63,18 +63,21 @@ job creation, e.g. `ci_job.template.yaml`.
 The tools in this repository are intended for python 3.8+.
 
 To install dependencies:
+
 ```sh
 pip install -r requirements.txt
 ```
 
 This project uses `pip-tools` to pin dependencies.  New dependencies go in
 `requirements.in` and `pip-compile` is used to generate `requirements.txt`:
+
 ```sh
 pip install pip-tools
 pip-compile --generate-hashes requirements.in
 ```
 
 To run tests:
+
 ```sh
 pytest --flake8 --black tests/
 ```
@@ -82,6 +85,7 @@ pytest --flake8 --black tests/
 ### Adding a new job
 
 To add a new job:
+
 ```sh
 ./script/create_job --job-name example-job --template python
 ```
@@ -107,6 +111,7 @@ generated using templates.
 This means the `config.yml` in `.circleci/` should not be modified directly.
 
 Generate `.circleci/config.yml`:
+
 ```sh
 ./script/update_ci_config
 ```

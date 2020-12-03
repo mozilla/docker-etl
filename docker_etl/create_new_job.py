@@ -1,7 +1,6 @@
 import os
 import shutil
 from pathlib import Path
-from typing import Dict
 
 import click
 import jinja2
@@ -13,13 +12,8 @@ from docker_etl.file_utils import (
     CI_WORKFLOW_NAME,
     CI_WORKFLOW_TEMPLATE_NAME,
     JOBS_DIR,
-    TEMPLATES_DIR,
+    get_templates,
 )
-
-
-def get_templates() -> Dict[str, Path]:
-    """Get mappings of template name to template path."""
-    return {path.name: path for path in TEMPLATES_DIR.glob("*") if path.is_dir()}
 
 
 def add_ci_config(job_name: str, template_dir: Path):
@@ -65,11 +59,8 @@ def copy_job_template(job_name: str, template_dir: Path):
 
 @click.command()
 @click.option("--job-name", required=True)
-@click.option("--template")
+@click.option("--template", default="default")
 def create_job(job_name: str, template: str):
-    if template is None:
-        template = "default"
-
     valid_templates = get_templates()
 
     if template not in valid_templates:

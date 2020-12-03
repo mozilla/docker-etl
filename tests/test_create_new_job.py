@@ -42,17 +42,6 @@ class TestCreateNewJob(TestCase):
                         job_name, self.default_job_directory()
                     )
 
-    def test_get_templates(self):
-        with patch(
-            "docker_etl.create_new_job.TEMPLATES_DIR", self.template_directory()
-        ):
-            self.assertDictEqual(
-                create_new_job.get_templates(),
-                {
-                    "default": self.default_job_directory(),
-                },
-            )
-
     def test_add_ci_config(self):
         job_name = "_test_job_1"
 
