@@ -36,6 +36,7 @@ pytest
 ```sh
 pytest --black --flake8
 ```
+
 or
 
 ```sh
