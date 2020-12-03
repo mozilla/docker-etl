@@ -1,0 +1,12 @@
+job-desktop_mobile_mau_2020:
+  jobs:
+    - build-job-desktop_mobile_mau_2020
+    - gcp-gcr/build-and-push-image:
+        context: data-eng-airflow-gcr
+        path: jobs/desktop_mobile_mau_2020/
+        image: desktop_mobile_mau_2020_docker_etl
+        requires:
+          - build-job-desktop_mobile_mau_2020
+        filters:
+          branches:
+            only: main
