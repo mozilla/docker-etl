@@ -25,56 +25,72 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 IMG_DIR = os.path.join(STATIC_DIR, "img")
 
 DESKTOP_QUERY = """
-SELECT date, country, MAU, DAU
+WITH mau_dau AS (
+  SELECT
+    submission_date AS date,
+    country,
+    SUM(mau) AS MAU,
+    SUM(dau) AS DAU,
+  FROM
+    `moz-fx-data-shared-prod.telemetry.firefox_desktop_exact_mau28_by_dimensions`
+  WHERE
+    country IN ("US", "CA", "DE", "FR", "GB", "CN", "IN", "BR", "ID", "RU", "PL")
+    AND submission_date >= "2016-12-01"
+  GROUP BY
+    date,
+    country
+  UNION ALL
+  SELECT
+    submission_date AS date,
+    "Global" AS country,
+    SUM(mau) AS MAU,
+    SUM(dau) AS DAU
+  FROM
+    `moz-fx-data-shared-prod.telemetry.firefox_desktop_exact_mau28_by_dimensions`
+  WHERE
+    submission_date >= "2016-12-01"
+  GROUP BY
+    date,
+    country
+  UNION ALL
+  SELECT
+    submission_date AS date,
+    CASE
+      WHEN country IN ("US", "CA", "DE", "FR", "GB") THEN "Tier1"
+    ELSE
+    "RoW"
+  END
+    AS country,
+    SUM(mau) AS MAU,
+    SUM(dau) AS DAU
+  FROM
+    `moz-fx-data-shared-prod.telemetry.firefox_desktop_exact_mau28_by_dimensions`
+  WHERE
+    submission_date >= "2016-12-01"
+  GROUP BY
+    date,
+    country
+)
+
+SELECT
+  *
 FROM
-(SELECT
-   submission_date as date,
-   country, 
-   SUM(mau) as MAU, 
-   SUM(dau) as DAU
- FROM
-   `moz-fx-data-shared-prod.telemetry.firefox_desktop_exact_mau28_by_dimensions`
- WHERE country in ("US", "CA", "DE", "FR", "GB", "CN", "IN", "BR", "ID", "RU", "PL") and submission_date >= "2016-12-01"
- GROUP BY 1,2
-)
-UNION ALL
-(SELECT
-   submission_date as date,
-   "Global" as country, 
-   SUM(mau) as MAU, 
-   SUM(dau) as DAU
- FROM
-   `moz-fx-data-shared-prod.telemetry.firefox_desktop_exact_mau28_by_dimensions`
- WHERE submission_date >= "2016-12-01"
- GROUP BY 1,2
-)
-UNION ALL
-(SELECT
-   submission_date as date,
-   CASE WHEN country in ("US", "CA", "DE", "FR", "GB") THEN "Tier1"
-        ELSE "RoW" end as country,
-   SUM(mau) as MAU, 
-   SUM(dau) as DAU
- FROM
-   `moz-fx-data-shared-prod.telemetry.firefox_desktop_exact_mau28_by_dimensions`
- WHERE submission_date >= "2016-12-01"
- GROUP BY 1,2
-)
-ORDER BY 1,2
+  mau_dau
+ORDER BY
+  date,
+  country
 """
 
 DESKTOP_USER_STATE_QUERY = """
-SELECT *
-FROM `moz-fx-data-derived-datasets.analysis.xluo_kpi_plot_country_new_or_rescurrected_dau` 
+SELECT 
+    *
+FROM 
+    `moz-fx-data-derived-datasets.analysis.xluo_kpi_plot_country_new_or_rescurrected_dau` 
 """
 
 
 def plot_year_over_year(full_dat, country):
-    """
-
-    Save a plot for MAU and DAU (7d MA) at country level
-
-    """
+    """Save a plot for MAU and DAU (7d MA) at country level."""
     dat = full_dat.loc[full_dat.country == country]
 
     plt.style.use("seaborn-white")
@@ -522,7 +538,7 @@ def plot_dau_mau_ratio(desktop_data):
 
 @click.command()
 @click.option("--project", help="GCP project id", required=True)
-@click.option("--bucket-name", help="GCP bucket name", required=True)
+@click.option("--bucket-name", help="GCP bucket name")
 def main(project, bucket_name):
     bq_client = bigquery.Client(project=project)
     bq_storage_client = bigquery_storage_v1beta1.BigQueryStorageClient()
@@ -682,13 +698,16 @@ def main(project, bucket_name):
     # desktop_mau_dau_ratio_2.jpeg
     plot_dau_mau_ratio(desktop_data)
 
-    storage_client = storage.Client(project=project)
+    if bucket_name is not None:
+        storage_client = storage.Client(project=project)
 
-    bucket = storage_client.bucket(bucket_name=bucket_name)
-    for pathname in glob.glob(os.path.join(STATIC_DIR, "**"), recursive=True):
-        if os.path.isfile(pathname):
-            blob = bucket.blob(os.path.join(GCS_PREFIX, pathname.replace(STATIC_DIR + "/", "")))
-            blob.upload_from_filename(pathname)
+        bucket = storage_client.bucket(bucket_name=bucket_name)
+        for pathname in glob.glob(os.path.join(STATIC_DIR, "**"), recursive=True):
+            if os.path.isfile(pathname):
+                blob = bucket.blob(
+                    os.path.join(GCS_PREFIX, pathname.replace(STATIC_DIR + "/", ""))
+                )
+                blob.upload_from_filename(pathname)
 
 
 if __name__ == "__main__":

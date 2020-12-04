@@ -1,5 +1,4 @@
-import datetime
-import os
+from pathlib import Path
 
 import click
 import jinja2
@@ -12,108 +11,16 @@ from .plot_config import *
 
 GCS_PREFIX = "mobile-mau-2020"
 
-query_nofire = """
-WITH forecast_base AS (
-  SELECT
-    replace(datasource, " Global MAU", "") as datasource, 
-    date, type, value as mau, low90, high90, 
-    p10 as low80, 
-    p90 as high80, 
-    p20, p30, p40, p50, p60, p70, p80
-  FROM
-    `moz-fx-data-derived-datasets.telemetry.simpleprophet_forecasts`
-  WHERE
-    asofdate = (select max(asofdate) from `moz-fx-data-derived-datasets.telemetry.simpleprophet_forecasts`)
-    and datasource in (
-    "Fenix Global MAU", 
-    "Fennec Android Global MAU", 
-    "Fennec iOS Global MAU", 
-    "Firefox Lite Global MAU", 
-    "FirefoxConnect Global MAU", 
-    "Focus Android Global MAU", 
-    "Focus iOS Global MAU", 
-    "Lockwise Android Global MAU")
-),
-mobile_base AS (
-  SELECT
-    *
-  FROM
-    `moz-fx-data-derived-datasets.telemetry.firefox_nondesktop_exact_mau28_by_dimensions_v1`
-  WHERE
-    product in ("Fenix", "Fennec Android", "Fennec iOS", "Firefox Lite", "FirefoxConnect", "Focus Android", "Focus iOS", "Lockwise Android")
-  ),
-  per_bucket AS (
-  SELECT
-    product AS datasource,
-    'actual' AS type,
-    submission_date,
-    id_bucket,
-    SUM(mau) AS mau
-  FROM
-    mobile_base
-  GROUP BY
-    product, 
-    id_bucket,
-    submission_date
-), 
-with_ci AS (
-  SELECT
-    datasource,
-    type,
-    submission_date,
-    `moz-fx-data-derived-datasets.udf_js.jackknife_sum_ci`(20, array_agg(mau)) as mau
-  FROM
-    per_bucket
-  GROUP BY
-    datasource,
-    type,
-    submission_date
-), 
-with_forecast AS (
-  SELECT
-    datasource,
-    type,
-    submission_date AS `date`,
-    mau.total AS mau,
-    mau.low AS mau_low,
-    mau.high AS mau_high
-  FROM with_ci
-  UNION ALL
-  SELECT
-    datasource,
-    type,
-    `date`,
-    mau, 
-    low90 AS mau_low,
-    high90 AS mau_high
-  FROM
-    forecast_base
-  WHERE
-    type != 'original' 
-  and date > (select max(submission_date) from with_ci)
-)    
-
-SELECT
-  case when datasource = "Fennec iOS" then "Fx-iOS"
-       else datasource end as datasource, 
-  type, 
-  `date`, 
-  mau, mau_low, mau_high
-FROM
-  with_forecast
-ORDER BY
-  datasource,
-  type,
-  `date`
-"""
+forecast_and_actuals_query = (
+    Path(__file__).parent / "forecast_and_actual.sql"
+).read_text()
 
 
 def extract_mobile_product_mau(project):
     """
     Read query results from BigQuery and return as a pandas dataframe.
     """
-    query = query_nofire
-    df = pd.read_gbq(query, project_id=project, dialect="standard")
+    df = pd.read_gbq(forecast_and_actuals_query, project_id=project, dialect="standard")
     df["date"] = pd.to_datetime(df["date"])
     df.columns = ["datasource", "type", "date", "value", "low", "high"]
     return df
@@ -134,31 +41,14 @@ def create_table(template, platform, actual, forecast):
 
     data_end_date = actual["date"].max().date()
 
-    # add current YoY growth
-    current_yoy = (
-        100
-        * (
-            actual.query("date=='{}'".format(data_end_date)).value.iloc[0]
-            - actual.query(
-                "date=='{}'".format(data_end_date - datetime.timedelta(days=365))
-            ).value.iloc[0]
-        )
-        / float(
-            actual.query(
-                "date=='{}'".format(data_end_date - datetime.timedelta(days=365))
-            ).value.iloc[0]
-        )
-    )
-
     return template.render(
         platform=platform,
-        metric=metric_names[platform],
+        metric="MAU",
         current=commafy(actual.query("date==@data_end_date").value.iloc[0]),
         current_pm=commafy(
             actual.query("date==@data_end_date").value.iloc[0]
             - actual.query("date==@data_end_date").low.iloc[0]
         ),
-        # current_yoy=current_yoy,
         actual_2019=commafy(
             actual.query("date=='{}'".format(goal_date_2019[platform])).value.iloc[0]
         ),
@@ -277,10 +167,9 @@ def create_plot(platform, y_min, y_max, actuals, forecast, slice_name):
         # autosize=force_width is None,
         # width=force_width,
         # height=force_height,
-        title='<b>{} {} {}</b> <span style="font-size: medium;">at end of day {}</span>'.format(
+        title='<b>{} {} MAU</b> <span style="font-size: medium;">at end of day {}</span>'.format(
             slice_name,
             platform,
-            metric_names[platform],
             data_end_date,
         ),
         titlefont={
@@ -296,7 +185,7 @@ def create_plot(platform, y_min, y_max, actuals, forecast, slice_name):
             tickfont=dict(color="grey"),
         ),
         yaxis=dict(
-            title="<b>{}</b>".format(metric_names[platform]),
+            title="<b>MAU</b>",
             titlefont=dict(family="Courier New, monospace", size=18, color="#7f7f7f"),
             hoverformat=",.0f",
             range=([y_min, y_max] if y_min is not None else None),
@@ -328,6 +217,7 @@ def create_table_and_plot(
     table_template,
     plot_forecast=True,
 ):
+    print(f"Generating table and plot for {product}")
     actual = mobile_product_mau_data[
         (mobile_product_mau_data.datasource == product)
         & (mobile_product_mau_data.type == "actual")
@@ -357,12 +247,12 @@ def create_table_and_plot(
 
 @click.command()
 @click.option("--project", help="GCP project id", required=True)
-@click.option("--bucket-name", help="GCP bucket name", required=True)
+@click.option("--bucket-name", help="GCP bucket name")
 def main(project, bucket_name):
-    work_dir = os.path.dirname(__file__)
-    static_dir = os.path.join(work_dir, "static")
+    work_dir = Path(__file__).parent
+    static_dir = work_dir / "static"
 
-    template_loader = jinja2.FileSystemLoader(os.path.join(work_dir, "templates"))
+    template_loader = jinja2.FileSystemLoader(work_dir / "templates")
     template_env = jinja2.Environment(loader=template_loader)
 
     main_template = template_env.get_template("main.template.html")
@@ -370,94 +260,45 @@ def main(project, bucket_name):
 
     mobile_product_mau_data = extract_mobile_product_mau(project)
 
-    fenix_table, fenix_plot = create_table_and_plot(
-        "Fenix",
-        mobile_product_mau_data,
-        y_min=0,
-        y_max=40000000,
-        plot_forecast=False,
-        table_template=table_template,
-    )
-    fennec_table, fennec_plot = create_table_and_plot(
-        "Fennec Android",
-        mobile_product_mau_data,
-        y_min=18000000,
-        y_max=38000000,
-        plot_forecast=False,
-        table_template=table_template,
-    )
-    fx_ios_table, fx_ios_plot = create_table_and_plot(
-        "Fx-iOS",
-        mobile_product_mau_data,
-        y_min=4000000,
-        y_max=9000000,
-        table_template=table_template,
-    )
-    firefox_lite_table, firefox_lite_plot = create_table_and_plot(
-        "Firefox Lite",
-        mobile_product_mau_data,
-        y_min=0,
-        y_max=2000000,
-        table_template=table_template,
-    )
-    firefox_connect_table, firefox_connect_plot = create_table_and_plot(
-        "FirefoxConnect",
-        mobile_product_mau_data,
-        y_min=0,
-        y_max=900000,
-        table_template=table_template,
-    )
-    focus_android_table, focus_android_plot = create_table_and_plot(
-        "Focus Android",
-        mobile_product_mau_data,
-        y_min=1100000,
-        y_max=3000000,
-        table_template=table_template,
-    )
-    focus_ios_table, focus_ios_plot = create_table_and_plot(
-        "Focus iOS",
-        mobile_product_mau_data,
-        y_min=250000,
-        y_max=900000,
-        table_template=table_template,
-    )
-    lockwise_android_table, lockwise_android_plot = create_table_and_plot(
-        "Lockwise Android",
-        mobile_product_mau_data,
-        y_min=0,
-        y_max=300000,
-        table_template=table_template,
-    )
+    # tuples of (product_name, y_min, y_max, plot_forecast)
+    products = [
+        ("Fenix", 0, 40000000, False),
+        ("Fennec", 18000000, 38000000, False),
+        ("Firefox iOS", 4000000, 9000000, True),
+        ("Firefox Lite", 0, 2000000, True),
+        ("Firefox Echo", 0, 900000, True),
+        ("Focus Android", 1100000, 3000000, True),
+        ("Focus iOS", 250000, 900000, True),
+        ("Lockwise Android", 0, 300000, True),
+    ]
 
-    output_html = main_template.render(
-        fenix_table=fenix_table,
-        fenix_plot=fenix_plot,
-        fennec_table=fennec_table,
-        fennec_plot=fennec_plot,
-        fx_ios_table=fx_ios_table,
-        fx_ios_plot=fx_ios_plot,
-        firefox_lite_table=firefox_lite_table,
-        firefox_lite_plot=firefox_lite_plot,
-        firefox_connect_table=firefox_connect_table,
-        firefox_connect_plot=firefox_connect_plot,
-        focus_android_table=focus_android_table,
-        focus_android_plot=focus_android_plot,
-        focus_ios_table=focus_ios_table,
-        focus_ios_plot=focus_ios_plot,
-        lockwise_android_table=lockwise_android_table,
-        lockwise_android_plot=lockwise_android_plot,
-    )
+    tables_and_plots = {}
 
-    with open(os.path.join(static_dir, "index.html"), "w") as f:
-        f.write(output_html)
+    for product_name, y_min, y_max, plot_forecast in products:
+        product_table, product_plot = create_table_and_plot(
+            product_name,
+            mobile_product_mau_data,
+            y_min,
+            y_max,
+            table_template=table_template,
+            plot_forecast=plot_forecast,
+        )
+        formatted_product_name = product_name.replace(" ", "_").lower()
+        tables_and_plots[f"{formatted_product_name}_table"] = product_table
+        tables_and_plots[f"{formatted_product_name}_plot"] = product_plot
 
-    storage_client = storage.Client(project=project)
+    output_html = main_template.render(**tables_and_plots)
 
-    bucket = storage_client.bucket(bucket_name=bucket_name)
-    for filename in os.listdir(static_dir):
-        if os.path.isfile(os.path.join(static_dir, filename)):
-            blob = bucket.blob(os.path.join(GCS_PREFIX, filename))
-            blob.upload_from_filename(os.path.join(static_dir, filename))
+    (static_dir / "index.html").write_text(output_html)
+
+    if bucket_name is not None:
+        storage_client = storage.Client(project=project)
+
+        bucket = storage_client.bucket(bucket_name=bucket_name)
+        for filename in static_dir.glob("*"):
+            if (static_dir / filename).is_file():
+                blob = bucket.blob(str(Path(GCS_PREFIX) / filename))
+                blob.upload_from_filename(str(static_dir / filename))
 
 
 if __name__ == "__main__":

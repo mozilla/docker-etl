@@ -18,19 +18,27 @@
     </div>
 
     <div class="section">
+        <h1>
+            This is a proof of concept dashboard for generating protosaur dashboards with a docker-etl workload
+            (<a href="https://github.com/mozilla/docker-etl">https://github.com/mozilla/docker-etl</a>)
+        </h1>
+        <h2>The data in this table is not validated and may not be accurate</h2>
+    </div>
+
+    <div class="section">
         <h2>Background</h2>
-        <p>This dashboard (updates daily at 9:00 PST) rovides current **Global** MAU for each individual mobile product and the forecast toward 12/15/2020.</p>
+        <p>This dashboard (updates daily at 9:00 PST) provides current **Global** MAU for each individual mobile product and the forecast toward 12/15/2020.</p>
         <p>You'll also find links that provide a window into the underlying data and forecast methodology, as well as contact information in case you have questions.</p>
     </div>
 
     <div class="row justify-content-center table-row">
         {{ fennec_table }}
-        {{ fx_ios_table }}
+        {{ firefox_ios_table }}
         {{ focus_android_table }}
         {{ firefox_lite_table }}
         {{ fenix_table }}
         {{ focus_ios_table }}
-        {{ firefox_connect_table }}
+        {{ firefox_echo_table }}
         {{ lockwise_android_table }}
     </div>
 
@@ -59,7 +67,7 @@
     </div>
 
     <div class="section">
-        {{ fx_ios_plot }}
+        {{ firefox_ios_plot }}
     </div>
 
     <div class="section">
@@ -67,7 +75,7 @@
     </div>
 
     <div class="section">
-        {{ firefox_connect_plot }}
+        {{ firefox_echo_plot }}
     </div>
 
     <div class="section">
@@ -80,10 +88,6 @@
 
     <div class="section">
         {{ lockwise_android_plot }}
-    </div>
-
-    <div class="section">
-        Please contact Xuan Luo (xluo@mozilla.com) with any questions, comments, or feedback.
     </div>
 
 </div>
