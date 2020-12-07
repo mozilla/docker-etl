@@ -1,6 +1,5 @@
-import glob
-import os
 from datetime import timedelta
+from pathlib import Path
 
 import click
 import matplotlib
@@ -21,65 +20,11 @@ rcParams.update(
 
 GCS_PREFIX = "desktop-mau-dau-tier1-2020"
 
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-IMG_DIR = os.path.join(STATIC_DIR, "img")
+ROOT_DIR = Path(__file__).parent
+STATIC_DIR = ROOT_DIR / "static"
+IMG_DIR = STATIC_DIR / "img"
 
-DESKTOP_QUERY = """
-WITH mau_dau AS (
-  SELECT
-    submission_date AS date,
-    country,
-    SUM(mau) AS MAU,
-    SUM(dau) AS DAU,
-  FROM
-    `moz-fx-data-shared-prod.telemetry.firefox_desktop_exact_mau28_by_dimensions`
-  WHERE
-    country IN ("US", "CA", "DE", "FR", "GB", "CN", "IN", "BR", "ID", "RU", "PL")
-    AND submission_date >= "2016-12-01"
-  GROUP BY
-    date,
-    country
-  UNION ALL
-  SELECT
-    submission_date AS date,
-    "Global" AS country,
-    SUM(mau) AS MAU,
-    SUM(dau) AS DAU
-  FROM
-    `moz-fx-data-shared-prod.telemetry.firefox_desktop_exact_mau28_by_dimensions`
-  WHERE
-    submission_date >= "2016-12-01"
-  GROUP BY
-    date,
-    country
-  UNION ALL
-  SELECT
-    submission_date AS date,
-    CASE
-      WHEN country IN ("US", "CA", "DE", "FR", "GB") THEN "Tier1"
-    ELSE
-    "RoW"
-  END
-    AS country,
-    SUM(mau) AS MAU,
-    SUM(dau) AS DAU
-  FROM
-    `moz-fx-data-shared-prod.telemetry.firefox_desktop_exact_mau28_by_dimensions`
-  WHERE
-    submission_date >= "2016-12-01"
-  GROUP BY
-    date,
-    country
-)
-
-SELECT
-  *
-FROM
-  mau_dau
-ORDER BY
-  date,
-  country
-"""
+DESKTOP_QUERY = (ROOT_DIR / "mau_dau.sql").read_text()
 
 DESKTOP_USER_STATE_QUERY = """
 SELECT 
@@ -133,8 +78,9 @@ def plot_year_over_year(full_dat, country):
     axs[0].set_title(
         "Year over Year MAU & DAU(7d MA) in {}".format(country), loc="left", fontsize=18
     )
+
     filename = f"desktop_{country}_mau_dau.jpeg"
-    plt.savefig(os.path.join(IMG_DIR, filename))
+    plt.savefig(IMG_DIR / filename)
     plt.close(fig)
     return filename
 
@@ -215,7 +161,7 @@ def plot_dau_mau_contribution_individual_country(full_dat, country):
     ax.grid(which="major", linestyle="-", linewidth="0.5", color="lightgray")
 
     filename = f"desktop_{country}_mau_dau_ratio.jpeg"
-    plt.savefig(os.path.join(IMG_DIR, filename))
+    plt.savefig(IMG_DIR / filename)
     plt.close(fig)
     return filename
 
@@ -296,7 +242,7 @@ def plot_group_contribution(full_data, country_list, cat, metric):
     )
 
     filename = f"desktop_{metric}_{cat}_contribution.jpeg"
-    plt.savefig(os.path.join(IMG_DIR, filename))
+    plt.savefig(IMG_DIR / filename)
     plt.close(fig)
     return filename
 
@@ -411,7 +357,7 @@ def plot_dau_user_state_individual_country(full_dat, country):
     )
 
     filename = f"desktop_{country}_user_state_dau_contribution.jpeg"
-    plt.savefig(os.path.join(IMG_DIR, filename))
+    plt.savefig(IMG_DIR / filename)
     plt.close(fig)
     return filename
 
@@ -463,7 +409,7 @@ def plot_dau_mau_ratio(desktop_data):
         fontdict={"fontsize": 18, "color": "black"},
     )
     filename_1 = "desktop_mau_dau_ratio.jpeg"
-    plt.savefig(os.path.join(IMG_DIR, filename_1))
+    plt.savefig(IMG_DIR / filename_1)
     plt.close(fig)
 
     ind_dat = pd.merge(
@@ -530,23 +476,17 @@ def plot_dau_mau_ratio(desktop_data):
     )
     axs[1].grid(which="major", linestyle="-", linewidth="0.5", color="lightgray")
     filename_2 = "desktop_mau_dau_ratio_2.jpeg"
-    plt.savefig(os.path.join(IMG_DIR, filename_2))
+    plt.savefig(IMG_DIR / filename_2)
     plt.close(fig)
 
     return filename_1, filename_2
 
 
-@click.command()
-@click.option("--project", help="GCP project id", required=True)
-@click.option("--bucket-name", help="GCP bucket name")
-def main(project, bucket_name):
+def fetch_data(project):
     bq_client = bigquery.Client(project=project)
     bq_storage_client = bigquery_storage_v1beta1.BigQueryStorageClient()
 
-    try:
-        os.mkdir(IMG_DIR)
-    except FileExistsError:
-        pass
+    IMG_DIR.mkdir(exist_ok=True)
 
     desktop_data = (
         bq_client.query(DESKTOP_QUERY)
@@ -581,118 +521,43 @@ def main(project, bucket_name):
     )
     desktop_data["mau_pcnt_Jan01"] = desktop_data["MAU"] / desktop_data["MAU_base"]
 
-    # desktop_US_mau_dau.jpeg
-    plot_year_over_year(desktop_data, "US")
-    # desktop_CA_mau_dau.jpeg
-    plot_year_over_year(desktop_data, "CA")
-    # desktop_DE_mau_dau.jpeg
-    plot_year_over_year(desktop_data, "DE")
-    # desktop_FR_mau_dau.jpeg
-    plot_year_over_year(desktop_data, "FR")
-    # desktop_GB_mau_dau.jpeg
-    plot_year_over_year(desktop_data, "GB")
-    # desktop_Global_mau_dau.jpeg
-    plot_year_over_year(desktop_data, "Global")
-    # desktop_Tier1_mau_dau.jpeg
-    plot_year_over_year(desktop_data, "Tier1")
-    # desktop_RoW_mau_dau.jpeg
-    plot_year_over_year(desktop_data, "RoW")
-    # desktop_CN_mau_dau.jpeg
-    plot_year_over_year(desktop_data, "CN")
-    # desktop_IN_mau_dau.jpeg
-    plot_year_over_year(desktop_data, "IN")
-    # desktop_BR_mau_dau.jpeg
-    plot_year_over_year(desktop_data, "BR")
-    # desktop_ID_mau_dau.jpeg
-    plot_year_over_year(desktop_data, "ID")
-    # desktop_RU_mau_dau.jpeg
-    plot_year_over_year(desktop_data, "RU")
-    # desktop_PL_mau_dau.jpeg
-    plot_year_over_year(desktop_data, "PL")
+    return desktop_data
 
-    # desktop_Tier1_mau_dau_ratio.jpeg
-    plot_dau_mau_contribution_individual_country(desktop_data, "Tier1")
-    # desktop_US_mau_dau_ratio.jpeg
-    plot_dau_mau_contribution_individual_country(desktop_data, "US")
-    # desktop_CA_mau_dau_ratio.jpeg
-    plot_dau_mau_contribution_individual_country(desktop_data, "CA")
-    # desktop_DE_mau_dau_ratio.jpeg
-    plot_dau_mau_contribution_individual_country(desktop_data, "DE")
-    # desktop_FR_mau_dau_ratio.jpeg
-    plot_dau_mau_contribution_individual_country(desktop_data, "FR")
-    # desktop_GB_mau_dau_ratio.jpeg
-    plot_dau_mau_contribution_individual_country(desktop_data, "GB")
-    # desktop_RoW_mau_dau_ratio.jpeg
-    plot_dau_mau_contribution_individual_country(desktop_data, "RoW")
-    # desktop_CN_mau_dau_ratio.jpeg
-    plot_dau_mau_contribution_individual_country(desktop_data, "CN")
-    # desktop_IN_mau_dau_ratio.jpeg
-    plot_dau_mau_contribution_individual_country(desktop_data, "IN")
-    # desktop_BR_mau_dau_ratio.jpeg
-    plot_dau_mau_contribution_individual_country(desktop_data, "BR")
-    # desktop_ID_mau_dau_ratio.jpeg
-    plot_dau_mau_contribution_individual_country(desktop_data, "ID")
-    # desktop_RU_mau_dau_ratio.jpeg
-    plot_dau_mau_contribution_individual_country(desktop_data, "RU")
-    # desktop_CN_mau_dau_ratio.jpeg
-    plot_dau_mau_contribution_individual_country(desktop_data, "PL")
+
+@click.command()
+@click.option("--project", help="GCP project id", required=True)
+@click.option("--bucket-name", help="GCP bucket name")
+def main(project, bucket_name):
+    desktop_data = fetch_data(project)
 
     tier1 = ["US", "CA", "DE", "FR", "GB"]
+    top11 = ["US", "CA", "DE", "FR", "GB", "CN", "IN", "ID", "BR", "RU", "PL"]
+    country_groups = ["Global", "Tier1", "RoW"]
+
+    for country in top11 + country_groups:
+        # desktop_{country}_mau_dau.jpeg
+        filename = plot_year_over_year(desktop_data, country)
+        print(f"Created {filename}")
+
+        # desktop_{country}_mau_dau_ratio.jpeg
+        filename = plot_dau_mau_contribution_individual_country(desktop_data, country)
+        print(f"Created {filename}")
+
     # desktop_MAU_tier1_contribution.jpeg
     plot_group_contribution(desktop_data, tier1, "Tier1", "MAU")
     # desktop_DAU_tier1_contribution.jpeg
     plot_group_contribution(desktop_data, tier1, "Tier1", "DAU")
 
-    top11 = ["US", "CA", "DE", "FR", "GB", "CN", "IN", "ID", "BR", "RU", "PL"]
     # desktop_MAU_top11_contribution.jpeg
     plot_group_contribution(desktop_data, top11, "Top11", "MAU")
     # desktop_DAU_top11_contribution.jpeg
     plot_group_contribution(desktop_data, top11, "Top11", "DAU")
 
-    # desktop_US_user_state_dau_contribution.jpeg
-    plot_dau_user_state_individual_country(
-        desktop_data[desktop_data["country"] == "US"], "US"
-    )
-    # desktop_CA_user_state_dau_contribution.jpeg
-    plot_dau_user_state_individual_country(
-        desktop_data[desktop_data["country"] == "CA"], "CA"
-    )
-    # desktop_DE_user_state_dau_contribution.jpeg
-    plot_dau_user_state_individual_country(
-        desktop_data[desktop_data["country"] == "DE"], "DE"
-    )
-    # desktop_FR_user_state_dau_contribution.jpeg
-    plot_dau_user_state_individual_country(
-        desktop_data[desktop_data["country"] == "FR"], "FR"
-    )
-    # desktop_GB_user_state_dau_contribution.jpeg
-    plot_dau_user_state_individual_country(
-        desktop_data[desktop_data["country"] == "GB"], "GB"
-    )
-    # desktop_CN_user_state_dau_contribution.jpeg
-    plot_dau_user_state_individual_country(
-        desktop_data[desktop_data["country"] == "CN"], "CN"
-    )
-    # desktop_IN_user_state_dau_contribution.jpeg
-    plot_dau_user_state_individual_country(
-        desktop_data[desktop_data["country"] == "IN"], "IN"
-    )
-    # desktop_ID_user_state_dau_contribution.jpeg
-    plot_dau_user_state_individual_country(
-        desktop_data[desktop_data["country"] == "ID"], "ID"
-    )
-    # desktop_PL_user_state_dau_contribution.jpeg
-    plot_dau_user_state_individual_country(
-        desktop_data[desktop_data["country"] == "PL"], "PL"
-    )
-    # desktop_BR_user_state_dau_contribution.jpeg
-    plot_dau_user_state_individual_country(
-        desktop_data[desktop_data["country"] == "BR"], "BR"
-    )
-    # desktop_RU_user_state_dau_contribution.jpeg
-    plot_dau_user_state_individual_country(
-        desktop_data[desktop_data["country"] == "RU"], "RU"
-    )
+    for country in top11:
+        # desktop_{country}_user_state_dau_contribution.jpeg
+        plot_dau_user_state_individual_country(
+            desktop_data[desktop_data["country"] == country], country
+        )
 
     # desktop_mau_dau_ratio.jpeg
     # desktop_mau_dau_ratio_2.jpeg
@@ -702,10 +567,10 @@ def main(project, bucket_name):
         storage_client = storage.Client(project=project)
 
         bucket = storage_client.bucket(bucket_name=bucket_name)
-        for pathname in glob.glob(os.path.join(STATIC_DIR, "**"), recursive=True):
-            if os.path.isfile(pathname):
+        for pathname in STATIC_DIR.rglob("*"):
+            if pathname.is_file():
                 blob = bucket.blob(
-                    os.path.join(GCS_PREFIX, pathname.replace(STATIC_DIR + "/", ""))
+                    str(Path(GCS_PREFIX) / pathname.relative_to(STATIC_DIR))
                 )
                 blob.upload_from_filename(pathname)
 
