@@ -21,3 +21,7 @@
     margin: 24px;
     text-align: center;
 }
+
+.warning-header {
+    border: 3px solid #f00;
+}
