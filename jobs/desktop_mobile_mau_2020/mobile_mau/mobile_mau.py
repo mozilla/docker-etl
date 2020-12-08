@@ -7,13 +7,27 @@ import plotly.graph_objects as go
 from google.cloud import storage
 from plotly.offline import plot
 
-from .plot_config import *
-
 GCS_PREFIX = "mobile-mau-2020"
 
 forecast_and_actuals_query = (
     Path(__file__).parent / "forecast_and_actual.sql"
 ).read_text()
+
+PRODUCTS = [
+    # product_name          y_min       y_max       plot_forecast   plot_end_date
+    ("Fenix",               0,          40000000,   False,          "2020-01-01"),
+    ("Fennec",              18000000,   38000000,   False,          "2020-01-01"),
+    ("Firefox iOS",         4000000,    9000000,    True,           "2019-07-01"),
+    ("Firefox Lite",        0,          2000000,    True,           "2019-07-01"),
+    ("Firefox Echo",        0,          900000,     True,           "2019-07-01"),
+    ("Focus Android",       1100000,    3000000,    True,           "2019-07-01"),
+    ("Focus iOS",           250000,     900000,     True,           "2019-07-01"),
+    ("Lockwise Android",    0,          300000,     True,           "2019-07-01"),
+]
+
+GOAL_DATE_2019 = "2019-12-15"
+GOAL_DATE_2020 = "2020-12-15"
+PLOT_END_DATE = "2020-12-31"
 
 
 def extract_mobile_product_mau(project):
@@ -34,8 +48,8 @@ def commafy(x):
 def create_table(template, platform, actual, forecast):
     # end of year 12/15 YoY (last year vs current year)
     eoy_yoy = 100 * (
-        forecast.query("date=='{}'".format(goal_date_2020[platform])).value.iloc[0]
-        / actual.query("date=='{}'".format(goal_date_2019[platform])).value.iloc[0]
+        forecast.query("date=='{}'".format(GOAL_DATE_2020)).value.iloc[0]
+        / actual.query("date=='{}'".format(GOAL_DATE_2019)).value.iloc[0]
         - 1
     )
 
@@ -50,21 +64,21 @@ def create_table(template, platform, actual, forecast):
             - actual.query("date==@data_end_date").low.iloc[0]
         ),
         actual_2019=commafy(
-            actual.query("date=='{}'".format(goal_date_2019[platform])).value.iloc[0]
+            actual.query("date=='{}'".format(GOAL_DATE_2019)).value.iloc[0]
         ),
         forecast=commafy(
-            forecast.query("date=='{}'".format(goal_date_2020[platform])).value.iloc[0]
+            forecast.query("date=='{}'".format(GOAL_DATE_2020)).value.iloc[0]
         ),
         forecast_pm=commafy(
-            forecast.query("date=='{}'".format(goal_date_2020[platform])).value.iloc[0]
-            - forecast.query("date=='{}'".format(goal_date_2020[platform])).low.iloc[0]
+            forecast.query("date=='{}'".format(GOAL_DATE_2020)).value.iloc[0]
+            - forecast.query("date=='{}'".format(GOAL_DATE_2020)).low.iloc[0]
         ),
         forecast_color=("green-text" if (eoy_yoy >= 0) else "red-text"),
         eoy_yoy=f"{eoy_yoy:.2f}",
     )
 
 
-def create_plot(platform, y_min, y_max, actuals, forecast, slice_name):
+def create_plot(platform, y_min, y_max, actuals, forecast, plot_start_date, slice_name):
     """
     Display a plot given a platform (each mobile product), data for actuals and forecast, and slice (Global or Tier 1).
     """
@@ -178,9 +192,9 @@ def create_plot(platform, y_min, y_max, actuals, forecast, slice_name):
         xaxis=dict(
             title="<b>Date</b>",
             titlefont=dict(family="Courier New, monospace", size=18, color="#7f7f7f"),
-            range=[plot_start_date[platform], plot_end_date[platform]],
+            range=[plot_start_date, PLOT_END_DATE],
             tickmode="linear",
-            tick0=[tick_start[platform]],
+            tick0=[plot_start_date],
             dtick="M1",
             tickfont=dict(color="grey"),
         ),
@@ -214,6 +228,7 @@ def create_table_and_plot(
     mobile_product_mau_data,
     y_min,
     y_max,
+    plot_start_date,
     table_template,
     plot_forecast=True,
 ):
@@ -239,6 +254,7 @@ def create_table_and_plot(
         y_max,
         actual,
         forecast if plot_forecast else None,
+        plot_start_date,
         slice_name="Global",
     )
 
@@ -260,28 +276,17 @@ def main(project, bucket_name):
 
     mobile_product_mau_data = extract_mobile_product_mau(project)
 
-    # tuples of (product_name, y_min, y_max, plot_forecast)
-    products = [
-        ("Fenix", 0, 40000000, False),
-        ("Fennec", 18000000, 38000000, False),
-        ("Firefox iOS", 4000000, 9000000, True),
-        ("Firefox Lite", 0, 2000000, True),
-        ("Firefox Echo", 0, 900000, True),
-        ("Focus Android", 1100000, 3000000, True),
-        ("Focus iOS", 250000, 900000, True),
-        ("Lockwise Android", 0, 300000, True),
-    ]
-
     tables_and_plots = {}
 
-    for product_name, y_min, y_max, plot_forecast in products:
+    for product_name, y_min, y_max, plot_forecast, plot_start_date in PRODUCTS:
         product_table, product_plot = create_table_and_plot(
             product_name,
             mobile_product_mau_data,
             y_min,
             y_max,
-            table_template=table_template,
-            plot_forecast=plot_forecast,
+            plot_start_date,
+            table_template,
+            plot_forecast,
         )
         formatted_product_name = product_name.replace(" ", "_").lower()
         tables_and_plots[f"{formatted_product_name}_table"] = product_table
@@ -297,7 +302,9 @@ def main(project, bucket_name):
         bucket = storage_client.bucket(bucket_name=bucket_name)
         for filename in static_dir.glob("*"):
             if (static_dir / filename).is_file():
-                blob = bucket.blob(str(Path(GCS_PREFIX) / filename))
+                blob = bucket.blob(
+                    str(Path(GCS_PREFIX) / filename.relative_to(static_dir))
+                )
                 blob.upload_from_filename(str(static_dir / filename))
 
 
