@@ -8,6 +8,6 @@ job-desktop-mobile-mau-2020:
         image: desktop-mobile-mau-2020_docker_etl
         requires:
           - build-job-desktop-mobile-mau-2020
-        #filters:
-        #  branches:
-        #    only: main
+        filters:
+          branches:
+            only: main
