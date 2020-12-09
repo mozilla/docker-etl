@@ -10,7 +10,7 @@ This script is intended to be run in a docker container.
 Build the docker image with:
 
 ```sh
-docker build -t python-template-job .
+docker build -t desktop-mobile-mau-2020 .
 ```
 
 To run locally, install dependencies with:
@@ -19,10 +19,12 @@ To run locally, install dependencies with:
 pip install -r requirements.txt
 ```
 
-Run the script with 
+Run the desktop/mobile scripts with: 
 
 ```sh   
-python3 -m python_template_job.main
+python3 -m mobile_mau.mobile_mau --project=test-project --bucket-name=test-bucket
+
+python3 -m desktop_mau.desktop_mau_dau --project=test-project --bucket-name=test-bucket
 ```
 
 ## Development
