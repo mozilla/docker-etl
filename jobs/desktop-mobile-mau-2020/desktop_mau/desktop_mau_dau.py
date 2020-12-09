@@ -524,10 +524,7 @@ def fetch_data(project):
     return desktop_data
 
 
-@click.command()
-@click.option("--project", help="GCP project id", required=True)
-@click.option("--bucket-name", help="GCP bucket name")
-def main(project, bucket_name):
+def generate_plots(project):
     desktop_data = fetch_data(project)
 
     tier1 = ["US", "CA", "DE", "FR", "GB"]
@@ -563,16 +560,25 @@ def main(project, bucket_name):
     # desktop_mau_dau_ratio_2.jpeg
     plot_dau_mau_ratio(desktop_data)
 
-    if bucket_name is not None:
-        storage_client = storage.Client(project=project)
 
-        bucket = storage_client.bucket(bucket_name=bucket_name)
-        for pathname in STATIC_DIR.rglob("*"):
-            if pathname.is_file():
-                blob = bucket.blob(
-                    str(Path(GCS_PREFIX) / pathname.relative_to(STATIC_DIR))
-                )
-                blob.upload_from_filename(pathname)
+def upload_files(project, bucket_name):
+    storage_client = storage.Client(project=project)
+
+    bucket = storage_client.bucket(bucket_name=bucket_name)
+    for pathname in STATIC_DIR.rglob("*"):
+        if pathname.is_file():
+            blob = bucket.blob(str(Path(GCS_PREFIX) / pathname.relative_to(STATIC_DIR)))
+            blob.upload_from_filename(pathname)
+
+
+@click.command()
+@click.option("--project", help="GCP project id", required=True)
+@click.option("--bucket-name", help="GCP bucket name")
+def main(project, bucket_name):
+    generate_plots(project)
+
+    if bucket_name is not None:
+        upload_files(project, bucket_name)
 
 
 if __name__ == "__main__":

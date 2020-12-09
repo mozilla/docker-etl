@@ -7,6 +7,10 @@ import plotly.graph_objects as go
 from google.cloud import storage
 from plotly.offline import plot
 
+WORK_DIR = Path(__file__).parent
+STATIC_DIR = WORK_DIR / "static"
+TEMPLATE_DIR = WORK_DIR / "templates"
+
 GCS_PREFIX = "mobile-mau-2020"
 
 forecast_and_actuals_query = (
@@ -15,14 +19,14 @@ forecast_and_actuals_query = (
 
 PRODUCTS = [
     # product_name          y_min       y_max       plot_forecast   plot_end_date
-    ("Fenix",               0,          40000000,   False,          "2020-01-01"),
-    ("Fennec",              18000000,   38000000,   False,          "2020-01-01"),
-    ("Firefox iOS",         4000000,    9000000,    True,           "2019-07-01"),
-    ("Firefox Lite",        0,          2000000,    True,           "2019-07-01"),
-    ("Firefox Echo",        0,          900000,     True,           "2019-07-01"),
-    ("Focus Android",       1100000,    3000000,    True,           "2019-07-01"),
-    ("Focus iOS",           250000,     900000,     True,           "2019-07-01"),
-    ("Lockwise Android",    0,          300000,     True,           "2019-07-01"),
+    ("Fenix", 0, 40000000, False, "2020-01-01"),
+    ("Fennec", 18000000, 38000000, False, "2020-01-01"),
+    ("Firefox iOS", 4000000, 9000000, True, "2019-07-01"),
+    ("Firefox Lite", 0, 2000000, True, "2019-07-01"),
+    ("Firefox Echo", 0, 900000, True, "2019-07-01"),
+    ("Focus Android", 1100000, 3000000, True, "2019-07-01"),
+    ("Focus iOS", 250000, 900000, True, "2019-07-01"),
+    ("Lockwise Android", 0, 300000, True, "2019-07-01"),
 ]
 
 GOAL_DATE_2019 = "2019-12-15"
@@ -261,14 +265,8 @@ def create_table_and_plot(
     return table, plot
 
 
-@click.command()
-@click.option("--project", help="GCP project id", required=True)
-@click.option("--bucket-name", help="GCP bucket name")
-def main(project, bucket_name):
-    work_dir = Path(__file__).parent
-    static_dir = work_dir / "static"
-
-    template_loader = jinja2.FileSystemLoader(work_dir / "templates")
+def generate_html(project):
+    template_loader = jinja2.FileSystemLoader(TEMPLATE_DIR)
     template_env = jinja2.Environment(loader=template_loader)
 
     main_template = template_env.get_template("main.template.html")
@@ -293,19 +291,27 @@ def main(project, bucket_name):
         tables_and_plots[f"{formatted_product_name}_plot"] = product_plot
 
     output_html = main_template.render(**tables_and_plots)
+    (STATIC_DIR / "index.html").write_text(output_html)
 
-    (static_dir / "index.html").write_text(output_html)
+
+def upload_files(project, bucket_name):
+    storage_client = storage.Client(project=project)
+
+    bucket = storage_client.bucket(bucket_name=bucket_name)
+    for filename in STATIC_DIR.glob("*"):
+        if (STATIC_DIR / filename).is_file():
+            blob = bucket.blob(str(Path(GCS_PREFIX) / filename.relative_to(STATIC_DIR)))
+            blob.upload_from_filename(str(STATIC_DIR / filename))
+
+
+@click.command()
+@click.option("--project", help="GCP project id", required=True)
+@click.option("--bucket-name", help="GCP bucket name")
+def main(project, bucket_name):
+    generate_html(project)
 
     if bucket_name is not None:
-        storage_client = storage.Client(project=project)
-
-        bucket = storage_client.bucket(bucket_name=bucket_name)
-        for filename in static_dir.glob("*"):
-            if (static_dir / filename).is_file():
-                blob = bucket.blob(
-                    str(Path(GCS_PREFIX) / filename.relative_to(static_dir))
-                )
-                blob.upload_from_filename(str(static_dir / filename))
+        upload_files(project, bucket_name)
 
 
 if __name__ == "__main__":
