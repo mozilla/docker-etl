@@ -29,10 +29,13 @@ WITH mau_dau AS (
   SELECT
     submission_date AS date,
     CASE
-      WHEN country IN ("US", "CA", "DE", "FR", "GB") THEN "Tier1"
+    WHEN
+      country IN ("US", "CA", "DE", "FR", "GB")
+    THEN
+      "Tier1"
     ELSE
-    "RoW"
-  END
+      "RoW"
+    END
     AS country,
     SUM(mau) AS MAU,
     SUM(dau) AS DAU
@@ -44,7 +47,6 @@ WITH mau_dau AS (
     date,
     country
 )
-
 SELECT
   *
 FROM

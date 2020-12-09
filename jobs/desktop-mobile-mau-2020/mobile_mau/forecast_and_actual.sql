@@ -50,7 +50,7 @@ mobile_base AS (
       "Focus Android",
       "Focus iOS",
       "Lockwise Android"
-  )
+    )
 ),
 per_bucket AS (
   SELECT
@@ -71,15 +71,15 @@ with_ci AS (
     datasource,
     type,
     submission_date,
-    `moz-fx-data-shared-prod.udf_js.jackknife_sum_ci`(20,
-      ARRAY_AGG(mau)) AS mau
+    `moz-fx-data-shared-prod.udf_js.jackknife_sum_ci`(20, ARRAY_AGG(mau)) AS mau
   FROM
     per_bucket
   GROUP BY
     datasource,
     type,
-    submission_date ),
-  with_forecast AS (
+    submission_date
+),
+with_forecast AS (
   SELECT
     datasource,
     type,
@@ -101,11 +101,8 @@ with_ci AS (
     forecast_base
   WHERE
     type != 'original'
-    AND date > (
-    SELECT
-      MAX(submission_date)
-    FROM
-      with_ci) )
+    AND date > (SELECT MAX(submission_date) FROM with_ci)
+)
 SELECT
   datasource,
   type,
