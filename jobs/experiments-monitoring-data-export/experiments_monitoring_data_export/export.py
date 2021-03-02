@@ -69,7 +69,7 @@ def get_active_experiments(client, date, dataset):
 
 
 def view_to_tmp_table(view, tmp_dataset, source_project):
-    """Write the VIEW data into a temporary table and return the destination table name."""
+    """Write the view data into a temporary table and return the destination table."""
     client = bigquery.Client(source_project)
     tmp = "".join(random.choices(string.ascii_lowercase, k=8))
     tmp_table_name = view.split(".")[-1] + "_" + tmp
@@ -111,9 +111,9 @@ def export_data_for_experiment(
                 `{dataset}`
                 WHERE experiment = '{experiment_slug}' AND
                 time >= (
-                    SELECT TIMESTAMP(MIN(start_date))
-                    FROM `moz-fx-data-experiments.monitoring.experimenter_experiments_v1`
-                    WHERE normandy_slug = '{experiment_slug}'
+                  SELECT TIMESTAMP(MIN(start_date))
+                  FROM `moz-fx-data-experiments.monitoring.experimenter_experiments_v1`
+                  WHERE normandy_slug = '{experiment_slug}'
                 )
             )
             SELECT * EXCEPT(rn) FROM (
@@ -122,8 +122,8 @@ def export_data_for_experiment(
                     SELECT
                         * EXCEPT(time),
                         TIMESTAMP_SECONDS(
-                            UNIX_SECONDS(time) - MOD(UNIX_SECONDS(time), 30 * 60) + 30 * 60
-                            ) AS time,
+                          UNIX_SECONDS(time) - MOD(UNIX_SECONDS(time), 30*60) + 30*60
+                        ) AS time,
                     FROM data
                     ORDER BY time DESC
                 )
