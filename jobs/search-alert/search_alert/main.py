@@ -1,3 +1,5 @@
+"""Identifies and records abnormalities in daily search metrics at country level"""
+
 import click
 import datetime as dt
 import holidays
