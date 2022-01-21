@@ -31,10 +31,10 @@ def get_days_since_1970(adate):
 
 
 @click.command()
+@click.option("--project_id", required=True)
 @click.option("--submission_date", required=True)
 @click.option('--dry_run', is_flag=True, default=False)
-def main(submission_date, dry_run):
-    project_id = 'mozdata'
+def main(project_id, submission_date, dry_run):
 
     query_statement = """
         WITH
