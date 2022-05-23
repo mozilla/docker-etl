@@ -105,7 +105,7 @@ def main(project_id, submission_date, dry_run):
             SELECT
             submission_date,
             country,
-	    engine,
+	        engine,
             'ad_click' AS metric,
             ad_click AS value
             FROM
