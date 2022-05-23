@@ -62,7 +62,7 @@ def main(project_id, submission_date, dry_run):
         SELECT
             submission_date,
             country,
-	    engine,
+	        engine,
             metric,
             value
         FROM (
