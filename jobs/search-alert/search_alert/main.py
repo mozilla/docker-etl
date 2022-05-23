@@ -57,7 +57,7 @@ def main(project_id, submission_date, dry_run):
         GROUP BY
             1,
             2,
-	    3),
+	        3 ),
         long_data AS (
         SELECT
             submission_date,
