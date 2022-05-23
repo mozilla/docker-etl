@@ -164,7 +164,7 @@ def main(project_id, submission_date, dry_run):
             TRUE AS new_data_index,
             metric,
             engine, 
-	    value
+	        value
             FROM
             full_data)
         ORDER BY
