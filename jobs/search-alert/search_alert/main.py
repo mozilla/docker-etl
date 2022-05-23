@@ -96,7 +96,7 @@ def main(project_id, submission_date, dry_run):
             SELECT
             submission_date,
             country,
-	    engine,
+	        engine,
             'search_with_ads' AS metric,
             search_with_ads AS value
             FROM
