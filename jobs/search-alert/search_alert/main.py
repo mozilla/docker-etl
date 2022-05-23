@@ -142,7 +142,7 @@ def main(project_id, submission_date, dry_run):
             country,
             new_data_index,
             metric,
-	    engine,
+	        engine,
             value
         FROM (
             SELECT
