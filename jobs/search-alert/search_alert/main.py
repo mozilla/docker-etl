@@ -78,7 +78,7 @@ def main(project_id, submission_date, dry_run):
             SELECT
             submission_date,
             country,
-	    engine,
+	        engine,
             'tagged_sap' AS metric,
             tagged_sap AS value
             FROM
