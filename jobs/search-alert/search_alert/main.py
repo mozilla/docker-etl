@@ -150,7 +150,7 @@ def main(project_id, submission_date, dry_run):
             country,
             FALSE AS new_data_index,
             metric,
-	    engine,
+	        engine,
             value
             FROM
             `mozdata.analysis.desktop_search_alert_historical_data`
