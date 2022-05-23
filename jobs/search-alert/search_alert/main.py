@@ -250,6 +250,7 @@ def main(project_id, submission_date, dry_run):
 
     # Note, the checking quit after the first satisfying condition is met, so should aim to add criterion only if they won't meet by with previous conditions
     conditions = [    
+    ### Overall engines
     # Rule1: drop we want to capture on day1 
     (search_data.engine == 'ALL') & (search_data.value_prev1d > 10000) & (search_data['pcnt_value_prevd'] > 0.001) & (search_data['dod'] < 0.1), # decrease (-2)
     (search_data.engine == 'ALL') & (search_data.value_prev1d > 10000) & (search_data['pcnt_value_prevd'] > 0.005) & (search_data['dod'] < 0.3), # decrease (-2)
@@ -270,29 +271,9 @@ def main(project_id, submission_date, dry_run):
     # if (1) wow dropped to <60% two days in a roll
     (search_data.engine == 'ALL') & (search_data.pcnt_value_prevd_prev1w >= 0.05) & (search_data['wow'] < 0.75) & (search_data['wow_prevd'] < 0.75),
     # increase
-    (search_data.engine == 'ALL') & (search_data.value > 10000) & (search_data['pcnt_value'] > 0.003) & (search_data['wow'] > 1.5*1.0/0.6) & (search_data['do2d'] > 1.5*1.0/0.4) 
-
-    ]
-
-    choices = [-2, -2, -2, -1,  -1, -1, 1, 1, -1, -1, 1]
-    search_data['abnormal'] = np.select(conditions, choices, default=0)
-    abnormality_data = search_data.loc[(search_data.abnormal != 0)]
-    abnormality_data['is_holiday'] = [is_it_holiday(abnormality_data.iloc[i]['submission_date'], abnormality_data.iloc[i]['country']) for i in range(abnormality_data.shape[0])]
-    abnormality_data['latest_abnormality_in_days'] =   (abnormality_data['submission_date']-pd.to_datetime('1970-01-01')).dt.days
-
-    # if there is newly added abnormality data, then add it to the alert records
-    if(abnormality_data.shape[0] > 0):
-        if dry_run:
-            print("Dry-run mode, will not write to 'mozdata.analysis.desktop_search_alert_records'")
-        else:
-            print("Updating 'mozdata.analysis.desktop_search_alert_records'")
-            job_config = bigquery.LoadJobConfig(write_disposition = 'WRITE_APPEND')
-            job = client.load_table_from_dataframe(abnormality_data, 'mozdata.analysis.desktop_search_alert_records', job_config = job_config)
-            job.result()
-
-    # add for individual engine
-    conditions2 = [    
-    # Rule1: drop we want to capture on day1 
+    (search_data.engine == 'ALL') & (search_data.value > 10000) & (search_data['pcnt_value'] > 0.003) & (search_data['wow'] > 1.5*1.0/0.6) & (search_data['do2d'] > 1.5*1.0/0.4), 
+	    
+    ### For individual engine
     (search_data.engine != 'ALL') & (search_data.value_prev1d > 10000) & (search_data['pcnt_value_prevd'] > 0.01) & (search_data['dod'] < 0.1), # decrease (-2)
     (search_data.engine != 'ALL') & (search_data.value_prev1d > 10000) & (search_data['pcnt_value_prevd'] > 0.03) & (search_data['dod'] < 0.4) & (search_data['dayofweek'] < 5), # not on F/S/S decrease (-2)
     (search_data.engine != 'ALL') & (search_data.value_prev1d > 10000) & (search_data['pcnt_value_prevd'] > 0.05) & (search_data['dod'] < 0.6) & (search_data['dayofweek'] < 5), # decrease (-2)  
@@ -315,9 +296,9 @@ def main(project_id, submission_date, dry_run):
     #(search_data.engine != 'ALL') & (search_data.value> 10000) & (search_data['pcnt_value'] > 0.05) & (search_data['wow'] > 1.5*1.0/0.6) & (search_data['do2d'] > 1.5*1.0/0.4) 
 
     ]
-	
-    choices2 = [-2, -2, -2, -1, -1, -1, 1, 1, -1, -1]
-    search_data['abnormal'] = np.select(conditions2, choices2, default=0)
+
+    choices = [-2, -2, -2, -1,  -1, -1, 1, 1, -1, -1, 1, -2, -2, -2, -1, -1, -1, 1, 1, -1, -1]
+    search_data['abnormal'] = np.select(conditions, choices, default=0)
     abnormality_data = search_data.loc[(search_data.abnormal != 0)]
     abnormality_data['is_holiday'] = [is_it_holiday(abnormality_data.iloc[i]['submission_date'], abnormality_data.iloc[i]['country']) for i in range(abnormality_data.shape[0])]
     abnormality_data['latest_abnormality_in_days'] =   (abnormality_data['submission_date']-pd.to_datetime('1970-01-01')).dt.days
@@ -331,7 +312,6 @@ def main(project_id, submission_date, dry_run):
             job_config = bigquery.LoadJobConfig(write_disposition = 'WRITE_APPEND')
             job = client.load_table_from_dataframe(abnormality_data, 'mozdata.analysis.desktop_search_alert_records', job_config = job_config)
             job.result()
-
 		
 		
     # Append to 'mozdata.analysis.desktop_search_alert_latest_daily' daily the latest abnormality date so we can properly trigger the Looker alert
