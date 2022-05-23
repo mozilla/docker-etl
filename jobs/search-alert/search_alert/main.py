@@ -44,7 +44,7 @@ def main(project_id, submission_date, dry_run):
         SELECT
             submission_date,
             country,
-	    normalized_engine as engine, 
+	        normalized_engine as engine, 
             SUM(sap) AS sap,
             SUM(tagged_sap) AS tagged_sap,
             SUM(tagged_follow_on) AS tagged_follow_on,
