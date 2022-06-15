@@ -3,6 +3,7 @@ import pytest
 
 from quicksuggest2bq.main import KintoSuggestion, download_suggestions
 from pytest_mock.plugin import MockerFixture
+from typing import List, Dict
 
 SAMPLE_SUGGESTION = {
     "id": 2802,
@@ -28,7 +29,13 @@ def mocked_kinto_client(mocker: MockerFixture):
     mock_server_info = {"capabilities": {"attachments": {"base_url": "discarded"}}}
 
     mock_records = [
-        {"type": "data", "id": 2802, "attachment": {"location": "discarded/again"}}
+        {"type": "data", "id": 2802, "attachment": {"location": "discarded/again"}},
+        {
+            "type": "offline-expansion-data",
+            "id": 0,
+            "attachment": {"location": "discarded/again"},
+        },
+        {"type": "icon", "id": 1, "attachment": {"location": "discarded/again"}},
     ]
 
     mock_attachment = [SAMPLE_SUGGESTION]
@@ -36,7 +43,7 @@ def mocked_kinto_client(mocker: MockerFixture):
     class MockResponse:
         status_code = 200
 
-        def json(self) -> dict:
+        def json(self) -> List[Dict]:
             return mock_attachment
 
     client = kinto_http.Client(session=session, bucket="mybucket")
@@ -57,7 +64,7 @@ class TestMain:
         KintoSuggestion(**SAMPLE_SUGGESTION)
 
     def test_suggestion_download(self, mocked_kinto_client):
-        suggestions = download_suggestions(mocked_kinto_client)
-        assert len(suggestions) == 1
-        assert SAMPLE_SUGGESTION["id"] in suggestions
-        assert suggestions[SAMPLE_SUGGESTION["id"]].title == SAMPLE_SUGGESTION["title"]
+        suggestions = list(download_suggestions(mocked_kinto_client))
+        assert len(suggestions) == 2
+        assert suggestions[0] == KintoSuggestion(**SAMPLE_SUGGESTION)
+        assert suggestions[1] == KintoSuggestion(**SAMPLE_SUGGESTION)
