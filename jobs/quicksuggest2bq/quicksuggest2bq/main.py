@@ -29,6 +29,9 @@ class KintoSuggestion:
     keywords: List[str]
     title: str
     url: str
+    # `click_url` and `impression_url` are both optional, they're currently only
+    # used by suggestions from adMarketplace. Mozilla's in-house Wikipedia suggestions
+    # do not provide those fields.
     click_url: Optional[str] = None
     impression_url: Optional[str] = None
 
