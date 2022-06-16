@@ -21,6 +21,20 @@ SAMPLE_SUGGESTION = {
     ],
 }
 
+SAMPLE_WIKIPEDIA_SUGGESTION = {
+    "id": 0,
+    "url": "https://www.wikipedia.org",
+    "iab_category": "5 - Education",
+    "icon": "4072021",
+    "advertiser": "Wikipedia",
+    "title": "Main_Page",
+    "keywords": [
+        "wiki",
+        "wikip",
+        "wikipe",
+    ],
+}
+
 
 @pytest.fixture()
 def mocked_kinto_client(mocker: MockerFixture):
@@ -35,22 +49,46 @@ def mocked_kinto_client(mocker: MockerFixture):
             "id": 0,
             "attachment": {"location": "discarded/again"},
         },
-        {"type": "icon", "id": 1, "attachment": {"location": "discarded/again"}},
     ]
-
-    mock_attachment = [SAMPLE_SUGGESTION]
 
     class MockResponse:
         status_code = 200
 
+        def __init__(self, attachment):
+            self.attachment = attachment
+
         def json(self) -> List[Dict]:
-            return mock_attachment
+            return self.attachment
 
     client = kinto_http.Client(session=session, bucket="mybucket")
 
     mocker.patch.object(client, "server_info", return_value=mock_server_info)
     mocker.patch.object(client, "get_records", return_value=mock_records)
-    mocker.patch("requests.Session.get", return_value=MockResponse())
+    mocker.patch(
+        "requests.Session.get",
+        side_effect=[
+            MockResponse([SAMPLE_SUGGESTION]),
+            MockResponse([SAMPLE_WIKIPEDIA_SUGGESTION]),
+        ],
+    )
+
+    yield client
+
+
+@pytest.fixture()
+def mocked_kinto_client_icon_only(mocker: MockerFixture):
+    session = mocker.MagicMock()
+
+    mock_server_info = {"capabilities": {"attachments": {"base_url": "discarded"}}}
+
+    mock_records = [
+        {"type": "icon", "id": 1, "attachment": {"location": "discarded/again"}},
+    ]
+
+    client = kinto_http.Client(session=session, bucket="mybucket")
+
+    mocker.patch.object(client, "server_info", return_value=mock_server_info)
+    mocker.patch.object(client, "get_records", return_value=mock_records)
 
     yield client
 
@@ -67,4 +105,8 @@ class TestMain:
         suggestions = list(download_suggestions(mocked_kinto_client))
         assert len(suggestions) == 2
         assert suggestions[0] == KintoSuggestion(**SAMPLE_SUGGESTION)
-        assert suggestions[1] == KintoSuggestion(**SAMPLE_SUGGESTION)
+        assert suggestions[1] == KintoSuggestion(**SAMPLE_WIKIPEDIA_SUGGESTION)
+
+    def test_icon_records_not_downloaded(self, mocked_kinto_client_icon_only):
+        suggestions = list(download_suggestions(mocked_kinto_client_icon_only))
+        assert len(suggestions) == 0

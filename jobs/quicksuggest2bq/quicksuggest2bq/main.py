@@ -11,7 +11,7 @@ import requests
 from dataclasses import asdict, dataclass
 from google.api_core.exceptions import BadRequest
 from google.cloud import bigquery
-from typing import Iterator, List
+from typing import Iterator, List, Optional
 
 
 @dataclass
@@ -23,14 +23,14 @@ class KintoSuggestion:
     # if there's new unexpected fields, ensuring we take the
     # appropriate actions to update the table schemas.
     advertiser: str
-    click_url: str
     iab_category: str
     icon: str
-    impression_url: str
     id: int
     keywords: List[str]
     title: str
     url: str
+    click_url: Optional[str] = None
+    impression_url: Optional[str] = None
 
 
 def download_suggestions(client: kinto_http.Client) -> Iterator[KintoSuggestion]:
