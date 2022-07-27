@@ -1,0 +1,9 @@
+click==8.0.4
+pytest==6.0.2
+pytest-black==0.3.11
+pytest-flake8==1.0.6
+
+elasticsearch==8.1.1
+google-cloud-storage==2.4.0
+requests==2.27.1
+dockerflow==2022.1.0

@@ -1,0 +1,13 @@
+job-wikipedia-indexer:
+  jobs:
+    - build-job-wikipedia-indexer
+    - gcp-gcr/build-and-push-image:
+        context: data-eng-airflow-gcr
+        docker-context: jobs/wikipedia-indexer/
+        path: jobs/wikipedia-indexer/
+        image: wikipedia-indexer_docker_etl
+        requires:
+          - build-job-wikipedia-indexer
+        filters:
+          branches:
+            only: main
