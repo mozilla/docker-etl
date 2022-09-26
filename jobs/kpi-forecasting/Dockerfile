@@ -23,6 +23,8 @@ RUN python3 -m pip install prophet --no-cache-dir
 COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
+RUN pip install git+https://github.com/Nixtla/statsforecast.git
+
 COPY . .
 
 # Drop root and change ownership of the application folder to the user

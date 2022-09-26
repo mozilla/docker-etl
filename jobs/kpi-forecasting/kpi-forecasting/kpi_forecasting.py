@@ -11,6 +11,7 @@ import yaml
 
 from Utils.ForecastDatasets import fetch_data
 from Utils.FitForecast import run_forecast
+from Utils.AutoArimaFit import run_forecast_arima
 from Utils.DBWriter import (
     write_predictions_to_bigquery,
     write_confidence_intervals_to_bigquery,
@@ -23,6 +24,12 @@ def get_args() -> argparse.Namespace:
     parser.add_argument(
         "-c", "--config", type=str, help="Path to configuration yaml file"
     )
+    parser.add_argument(
+        "-p",
+        "--prophet",
+        action="store_true",
+        help="Set this flag to use prophet instead of AutoArima",
+    )
     return parser.parse_args()
 
 
@@ -33,7 +40,10 @@ def main() -> None:
 
     dataset = fetch_data(config)
 
-    predictions, uncertainty_samples = run_forecast(dataset, config)
+    if args.prophet:
+        predictions, uncertainty_samples = run_forecast(dataset, config)
+    else:
+        predictions, uncertainty_samples = run_forecast_arima(dataset, config)
 
     confidences = get_confidence_intervals(
         observed_data=dataset,
