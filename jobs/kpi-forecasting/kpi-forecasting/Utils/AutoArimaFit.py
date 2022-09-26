@@ -5,6 +5,8 @@ import typing
 import pandas as pd
 
 from statsforecast.adapters.prophet import AutoARIMAProphet
+from statsforecast.core import StatsForecast
+from statsforecast.models import AutoARIMA
 
 import holidays
 
@@ -18,35 +20,87 @@ def run_forecast_arima(
     ].copy()  # you must force a copy here or it assigns a reference to
     # the dictionary
 
-    if config["holidays"]:
-        holiday_df = pd.DataFrame.from_dict(
-            holidays.US(years=[2017, 2018, 2019, 2020, 2021]).items()
-        )  # type: pd.DataFrame
-        holiday_df.rename({0: "ds", 1: "holiday"}, inplace=True, axis=1)
-        fit_parameters["holidays"] = holiday_df
-    fit_parameters["growth"] = "flat"
+    dataset["unique_id"] = 0
 
-    model = AutoARIMAProphet(**fit_parameters, mcmc_samples=0)
-
-    fit_model = model.fit(dataset)
+    models = [AutoARIMA(season_length=365, approximation=True)]
 
     periods = len(
         pd.date_range(start=date.today(), end=config["stop_date"], freq="d").to_list()
     )
 
-    future = fit_model.make_future_dataframe(periods=periods)
+    fcst = StatsForecast(df=dataset, models=models, freq="D", n_jobs=-1)
 
-    future_values = fit_model.predict(future)
+    # this method reflects the percentiles around the mean, so do half the range only
+    percentiles = [60, 70, 80, 90, 95]
+    forecast = fcst.forecast(periods, level=percentiles)
 
-    future_values = future_values[future_values["ds"] > datetime.today()]
+    percentile_columns = [
+        "AutoARIMA-lo-95",
+        "AutoARIMA-lo-90",
+        "AutoARIMA-lo-80",
+        "AutoARIMA-lo-70",
+        "AutoARIMA-lo-60",
+        "AutoARIMA-hi-60",
+        "AutoARIMA-hi-70",
+        "AutoARIMA-hi-80",
+        "AutoARIMA-hi-90",
+        "AutoARIMA-hi-95",
+    ]
 
-    uncertainty_samples_raw = fit_model.predictive_samples(future)
+    print(forecast.columns)
 
-    uncertainty_samples = pd.DataFrame.from_records(uncertainty_samples_raw["yhat"])
+    column_name_correction_dict = {}
+    for column in percentile_columns:
+        if "-" in column:
+            bits = column.split("-")
 
-    uncertainty_samples["ds"] = future["ds"]
+            if bits[1] == "lo":
+                percentile = 100 - int(bits[2])
+            else:
+                percentile = bits[2]
 
-    return future_values, uncertainty_samples
+            column_name_correction_dict[column] = f"yhat_p{percentile}"
+
+    column_name_correction_dict["ds"] = "date"
+
+    percentile_columns.append("ds")
+
+    confidences = forecast[percentile_columns]  # pd.DataFrame
+
+    confidences["asofdate"] = forecast["ds"].max()
+    confidences["forecast_date"] = date.today()
+    confidences["yhat_p50"] = forecast["AutoARIMA"]
+    confidences["target"] = config["target"]
+    confidences["unit"] = "day"
+    confidences["value"] = forecast["AutoARIMA"]
+
+    confidences = confidences.rename(columns=column_name_correction_dict)
+
+    confidences = confidences[
+        [
+            "asofdate",
+            "date",
+            "target",
+            "unit",
+            "value",
+            "yhat_p5",
+            "yhat_p10",
+            "yhat_p20",
+            "yhat_p30",
+            "yhat_p40",
+            "yhat_p50",
+            "yhat_p60",
+            "yhat_p70",
+            "yhat_p80",
+            "yhat_p90",
+            "yhat_p95",
+        ]
+    ]
+
+    predictions = forecast[["ds", "AutoARIMA"]]
+    predictions = predictions.rename(columns={"AutoArima": "y_hat"})
+
+    return predictions, confidences
 
 
 def remaining_days(max_day, end_date) -> int:
@@ -59,27 +113,3 @@ def remaining_days(max_day, end_date) -> int:
         end_date = datetime(year=parts[0], month=parts[1], day=parts[2]).date()
 
     return (end_date - max_day).days
-
-
-if __name__ == "__main__":
-    import yaml
-
-    with open("../yaml/desktop_non_cumulative_arima.yaml", "r") as config_stream:
-        config = yaml.safe_load(config_stream)
-    test_data_dict = [
-        {"ds": "2022-09-24", "y": 0},
-        {"ds": "2022-09-25", "y": 1},
-        {"ds": "2022-09-26", "y": 2},
-        {"ds": "2022-09-24", "y": 3},
-        {"ds": "2022-09-25", "y": 4},
-        {"ds": "2022-09-26", "y": 5},
-        {"ds": "2022-09-24", "y": 6},
-        {"ds": "2022-09-25", "y": 7},
-        {"ds": "2022-09-26", "y": 8},
-        {"ds": "2022-09-24", "y": 9},
-        {"ds": "2022-09-25", "y": 10},
-        {"ds": "2022-09-26", "y": 11},
-    ]
-    test_dataset = pd.DataFrame.from_records(test_data_dict)
-    print(test_dataset.head())
-    run_forecast_arima(test_dataset, config=config)

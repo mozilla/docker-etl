@@ -42,17 +42,17 @@ def main() -> None:
 
     if args.prophet:
         predictions, uncertainty_samples = run_forecast(dataset, config)
-    else:
-        predictions, uncertainty_samples = run_forecast_arima(dataset, config)
 
-    confidences = get_confidence_intervals(
-        observed_data=dataset,
-        uncertainty_samples=uncertainty_samples,
-        aggregation_unit_of_time=config["confidences"],
-        asofdate=predictions["ds"].max(),
-        final_observed_sample_date=dataset["ds"].max(),
-        target="desktop",
-    )
+        confidences = get_confidence_intervals(
+            observed_data=dataset,
+            uncertainty_samples=uncertainty_samples,
+            aggregation_unit_of_time=config["confidences"],
+            asofdate=predictions["ds"].max(),
+            final_observed_sample_date=dataset["ds"].max(),
+            target="desktop",
+        )
+    else:
+        predictions, confidences = run_forecast_arima(dataset, config)
 
     write_predictions_to_bigquery(predictions, config)
 
