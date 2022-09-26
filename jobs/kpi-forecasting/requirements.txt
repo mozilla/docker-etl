@@ -47,7 +47,6 @@ more-itertools==8.6.0
 mypy-extensions==0.4.3
 numpy==1.21.4
 oauthlib==3.2.0
-packaging==20.7
 packaging==21.3
 pandas-gbq==0.13.2
 pandas==1.3.5
