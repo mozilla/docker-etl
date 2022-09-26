@@ -81,7 +81,6 @@ rsa==4.8
 scikitlearn==1.1.2
 setuptools-git==1.2
 six==1.16.0
-sklearn==0.0
 soupsieve==2.3.1
 statsforecast==0.7.1
 statsmodels==0.13.2
