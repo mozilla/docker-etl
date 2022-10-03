@@ -1,6 +1,0 @@
-README.md
-setup.py
-search_term_data_validation.egg-info/PKG-INFO
-search_term_data_validation.egg-info/SOURCES.txt
-search_term_data_validation.egg-info/dependency_links.txt
-search_term_data_validation.egg-info/top_level.txt
