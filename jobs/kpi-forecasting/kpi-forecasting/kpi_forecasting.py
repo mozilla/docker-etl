@@ -16,6 +16,7 @@ from Utils.DBWriter import (
     write_predictions_to_bigquery,
     write_confidence_intervals_to_bigquery,
 )
+from Utils.AutoArimaDBWriter import write_arima_results_to_bigquery
 from Utils.PosteriorSampling import get_confidence_intervals
 
 
@@ -25,8 +26,8 @@ def get_args() -> argparse.Namespace:
         "-c", "--config", type=str, help="Path to configuration yaml file"
     )
     parser.add_argument(
-        "-p",
-        "--prophet",
+        "-r",
+        "--autoarima",
         action="store_true",
         help="Set this flag to use prophet instead of AutoArima",
     )
@@ -40,7 +41,7 @@ def main() -> None:
 
     dataset = fetch_data(config)
 
-    if args.prophet:
+    if not args.autoarima:
         predictions, uncertainty_samples = run_forecast(dataset, config)
 
         confidences = get_confidence_intervals(
@@ -51,13 +52,15 @@ def main() -> None:
             final_observed_sample_date=dataset["ds"].max(),
             target="desktop",
         )
+
+        write_predictions_to_bigquery(predictions, config)
+
+        if confidences is not None:
+            write_confidence_intervals_to_bigquery(confidences, config)
     else:
-        predictions, confidences = run_forecast_arima(dataset, config)
+        predictions = run_forecast_arima(dataset, config)
 
-    write_predictions_to_bigquery(predictions, config)
-
-    if confidences is not None:
-        write_confidence_intervals_to_bigquery(confidences, config)
+        write_arima_results_to_bigquery(predictions, config)
 
 
 if __name__ == "__main__":

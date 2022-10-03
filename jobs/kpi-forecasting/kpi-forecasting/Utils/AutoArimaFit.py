@@ -4,16 +4,11 @@ import typing
 
 import pandas as pd
 
-from statsforecast.adapters.prophet import AutoARIMAProphet
 from statsforecast.core import StatsForecast
 from statsforecast.models import AutoARIMA
 
-import holidays
 
-
-def run_forecast_arima(
-    dataset: pd.DataFrame, config: dict
-) -> typing.Tuple[pd.DataFrame, pd.DataFrame]:
+def run_forecast_arima(dataset: pd.DataFrame, config: dict) -> pd.DataFrame:
 
     fit_parameters = config[
         "forecast_parameters"
@@ -47,8 +42,6 @@ def run_forecast_arima(
         "AutoARIMA-hi-95",
     ]
 
-    print(forecast.columns)
-
     column_name_correction_dict = {}
     for column in percentile_columns:
         if "-" in column:
@@ -72,7 +65,7 @@ def run_forecast_arima(
     confidences["yhat_p50"] = forecast["AutoARIMA"]
     confidences["target"] = config["target"]
     confidences["unit"] = "day"
-    confidences["value"] = forecast["AutoARIMA"]
+    confidences["forecast"] = forecast["AutoARIMA"]
 
     confidences = confidences.rename(columns=column_name_correction_dict)
 
@@ -82,7 +75,7 @@ def run_forecast_arima(
             "date",
             "target",
             "unit",
-            "value",
+            "forecast",
             "yhat_p5",
             "yhat_p10",
             "yhat_p20",
@@ -97,10 +90,9 @@ def run_forecast_arima(
         ]
     ]
 
-    predictions = forecast[["ds", "AutoARIMA"]]
-    predictions = predictions.rename(columns={"AutoArima": "y_hat"})
+    confidences.reset_index(inplace=True, drop=True)
 
-    return predictions, confidences
+    return confidences
 
 
 def remaining_days(max_day, end_date) -> int:

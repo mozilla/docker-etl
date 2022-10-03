@@ -10,9 +10,10 @@ forecast_parameters:
 columns:
 - submission_date
 - QDAU
-write_project: "moz-fx-data-shared-prod"
-output_table: "telemetry_derived.kpi_automated_forecast_v1"
-confidences_table: "telemetry_derived.kpi_automated_forecast_confidences_v1"
+# write_project: "moz-fx-data-shared-prod"
+# output_table: "telemetry_derived.kpi_automated_forecast_v1"
+# confidences_table: "telemetry_derived.kpi_automated_forecast_confidences_v1"
+write_project: "moz-fx-data-bq-data-science"
+output_table: "pmcmanis.arima_results"
 stop_date: "2023-12-31"
-holidays: True
 confidences: "ds_month"
