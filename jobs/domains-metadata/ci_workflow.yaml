@@ -1,0 +1,13 @@
+job-domains-metadata:
+  jobs:
+    - build-job-domains-metadata
+    - gcp-gcr/build-and-push-image:
+        context: data-eng-airflow-gcr
+        docker-context: jobs/domains-metadata/
+        path: jobs/domains-metadata/
+        image: domains-metadata_docker_etl
+        requires:
+          - build-job-domains-metadata
+        filters:
+          branches:
+            only: main

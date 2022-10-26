@@ -1,0 +1,20 @@
+{
+  "domains": [
+    {
+      "rank": 1,
+      "domain": "google.com",
+      "url": "https://www.google.com",
+      "icon": "<ICON URL>",
+      "categories": ["Search"],
+      "similars": ["giigle", "hoogle"]
+    },
+    {
+      "rank": 2,
+      "domain": "youtube.com",
+      "url": "https://www.youtube.com",
+      "icon": "<ICON URL>",
+      "categories": ["Entertainment"],
+      "similars": [...]
+    }
+  ]
+}
