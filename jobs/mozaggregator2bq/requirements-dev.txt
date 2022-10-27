@@ -31,27 +31,29 @@ ipykernel==5.4.3
     #   jupyter-console
     #   notebook
     #   qtconsole
+ipython==7.19.0
+    # via
+    #   ipykernel
+    #   ipywidgets
+    #   jupyter-console
 ipython-genutils==0.2.0
     # via
     #   nbformat
     #   notebook
     #   qtconsole
     #   traitlets
-ipython==7.19.0
-    # via
-    #   ipykernel
-    #   ipywidgets
-    #   jupyter-console
 ipywidgets==7.6.3
     # via jupyter
 jedi==0.18.0
     # via ipython
-jinja2==2.11.2
+jinja2==2.11.3
     # via
     #   nbconvert
     #   notebook
 jsonschema==3.2.0
     # via nbformat
+jupyter==1.0.0
+    # via -r requirements-dev.in
 jupyter-client==6.1.11
     # via
     #   ipykernel
@@ -68,8 +70,6 @@ jupyter-core==4.7.0
     #   nbformat
     #   notebook
     #   qtconsole
-jupyter==1.0.0
-    # via -r requirements-dev.in
 jupyterlab-pygments==0.1.2
     # via nbconvert
 jupyterlab-widgets==1.0.0
