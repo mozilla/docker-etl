@@ -73,13 +73,18 @@ def load_cf_domain_categories(
         {**domain_categories, "submission_date": today_as_iso}
         for domain_categories in categorized_domains
     ]
+    print(categorized_domains)
+
+    if len(categorized_domains) == 0:
+        logger.info("No domains to load. Bailing.")
+        return
 
     client = bigquery.Client(project=destination_project)
 
     job_config = bigquery.LoadJobConfig(
         create_disposition="CREATE_IF_NEEDED",
         schema=[
-            bigquery.SchemaField("submisison_date", "DATE"),
+            bigquery.SchemaField("submission_date", "DATE"),
             bigquery.SchemaField("domain", "STRING", mode="REQUIRED"),
             bigquery.SchemaField(
                 "categories",
@@ -93,7 +98,7 @@ def load_cf_domain_categories(
             ),
         ],
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-        write_disposition="WRITE_TRUNCATE",
+        write_disposition="WRITE_APPEND",
     )
 
     load_job = client.load_table_from_json(
@@ -130,10 +135,17 @@ def _get_domain_categories(destination_project: str) -> list[dict]:
         destination = client.get_table(query_job.destination)
 
         logger.info("waiting on results")
-        while rows := client.list_rows(destination, max_results=100):
-            domains = [d['domain'] for d in rows]
-            print(domains)
-            dc = domains_categories(domains)
-            domain_accumulator.extend(dc)
+        results = client.list_rows(destination, page_size=50)
+        i = 0
+        for page in results.pages:
+            i = i + 1
+            print(f"page: {i} num items: {page.num_items}")
+            domains = [row['domain'] for row in page]
+            if domains:
+                try:
+                    domain_accumulator.extend(domains_categories(domains))
+                except Exception as e:
+                    logger.error("error fetching domain categories", exc_info=e)
+                    break
 
     return domain_accumulator

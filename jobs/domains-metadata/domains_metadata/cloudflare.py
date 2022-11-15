@@ -31,10 +31,10 @@ def domains_categories(domains: list[str]) -> list[dict]:
             "domain": intel["domain"],
             "categories": [
                 {"id": c["id"], "parent_id": c["super_category_id"], "name": c["name"]}
-                for c in intel["content_categories"]
+                for c in intel.get("content_categories", [])
             ],
         }
-        for intel in results if 'content_categories' in intel
+        for intel in results
     ]
 
 
