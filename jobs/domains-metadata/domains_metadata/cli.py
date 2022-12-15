@@ -1,5 +1,5 @@
 import click
-from dotenv import find_dotenv, load_dotenv
+from dotenv import load_dotenv
 
 from domains_metadata.categories import load_cf_categories, load_cf_domain_categories
 from domains_metadata.params import destination_table, destination_project

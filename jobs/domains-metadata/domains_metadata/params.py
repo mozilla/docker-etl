@@ -13,5 +13,4 @@ destination_table = click.option(
     required=True,
     type=str,
     help="the table id to append data to, e.g. `projectid.dataset.table`",
-
 )
