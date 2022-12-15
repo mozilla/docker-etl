@@ -140,7 +140,7 @@ def _get_domain_categories(destination_project: str) -> list[dict]:
         for page in results.pages:
             i = i + 1
             print(f"page: {i} num items: {page.num_items}")
-            domains = [row['domain'] for row in page]
+            domains = [row["domain"] for row in page]
             if domains:
                 try:
                     domain_accumulator.extend(domains_categories(domains))
