@@ -81,7 +81,6 @@ jobs:
           name: Test Code
           command: docker run app:build pytest --flake8 --black
 
-
   build-job-example_job:
     docker:
       - image: docker:stable-git
@@ -126,6 +125,22 @@ jobs:
             name: Test Code
             command: docker run app:build pytest --black
 
+
+  build-job-macroeconomic-indices:
+    docker:
+      - image: docker:stable-git
+    steps:
+      - checkout
+      - compare-branch:
+          pattern: ^jobs/macroeconomic-indices/
+      - setup_remote_docker:
+          version: 19.03.13
+      - run:
+          name: Build Docker image
+          command: docker build -t app:build jobs/macroeconomic-indices/
+      - run:
+          name: Test Code
+          command: docker run app:build pytest --flake8 --black
 
   build-job-pioneer-debug:
     docker:
@@ -235,7 +250,6 @@ workflows:
     jobs:
       - build-job-desktop-mobile-mau-2020
 
-
   job-example_job:
     jobs:
       - build-job-example_job
@@ -278,6 +292,20 @@ workflows:
             branches:
               only: main
 
+
+  job-macroeconomic-indices:
+    jobs:
+      - build-job-macroeconomic-indices
+      - gcp-gcr/build-and-push-image:
+          context: data-eng-airflow-gcr
+          docker-context: jobs/macroeconomic-indices/
+          path: jobs/macroeconomic-indices/
+          image: macroeconomic-indices_docker_etl
+          requires:
+            - build-job-macroeconomic-indices
+          filters:
+            branches:
+              only: main
 
   job-pioneer-debug:
     jobs:

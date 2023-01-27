@@ -1,0 +1,13 @@
+job-macroeconomic-indices:
+  jobs:
+    - build-job-macroeconomic-indices
+    - gcp-gcr/build-and-push-image:
+        context: data-eng-airflow-gcr
+        docker-context: jobs/macroeconomic-indices/
+        path: jobs/macroeconomic-indices/
+        image: macroeconomic-indices_docker_etl
+        requires:
+          - build-job-macroeconomic-indices
+        filters:
+          branches:
+            only: main
