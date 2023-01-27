@@ -1,0 +1,15 @@
+build-job-macroeconomic-indices:
+  docker:
+    - image: docker:stable-git
+  steps:
+    - checkout
+    - compare-branch:
+        pattern: ^jobs/macroeconomic-indices/
+    - setup_remote_docker:
+        version: 19.03.13
+    - run:
+        name: Build Docker image
+        command: docker build -t app:build jobs/macroeconomic-indices/
+    - run:
+        name: Test Code
+        command: docker run app:build pytest --flake8 --black
