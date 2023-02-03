@@ -5,7 +5,7 @@ from google.cloud import bigquery
 
 
 DATASET = "revenue_derived"
-TABLE = "macroeconomic_indices"
+TABLE = "macroeconomic_indices_v1"
 TICKER_LIST = [
     "^DJI",  # Dow Jones Industrial Average
     "^GSPC",  # SNP - SNP Real Time Price. Currency in USD
