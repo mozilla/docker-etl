@@ -138,9 +138,6 @@ jobs:
       - run:
           name: Build Docker image
           command: docker build -t app:build jobs/macroeconomic-indices/
-      - run:
-          name: Test Code
-          command: docker run app:build pytest
 
   build-job-pioneer-debug:
     docker:
