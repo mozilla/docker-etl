@@ -1,4 +1,4 @@
-FROM python:3.10
+FROM python:3.8
 
 # https://github.com/mozilla-services/Dockerflow/blob/master/docs/building-container.md
 ARG USER_ID="10001"
