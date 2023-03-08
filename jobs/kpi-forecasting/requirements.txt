@@ -55,7 +55,7 @@ pathspec==0.8.1
 Pillow==9.0.1
 plotly==4.9.0
 pluggy==0.13.1
-protobuf==3.19.4
+protobuf==3.19.5
 py==1.10.0
 pyarrow==7.0.0
 pyasn1-modules==0.2.8
