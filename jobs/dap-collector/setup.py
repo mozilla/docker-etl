@@ -7,7 +7,7 @@ readme = open("README.md").read()
 setup(
     name="dap-collector-job",
     version="0.1.0",
-    author="Mozilla Corporation",
+    author="sfriedberger@mozilla.com",
     packages=find_packages(include=["dap_collector"]),
     long_description=readme,
     include_package_data=True,
