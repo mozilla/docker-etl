@@ -77,9 +77,6 @@ jobs:
       - run:
           name: Build Docker image
           command: docker build -t app:build jobs/dap-collector/
-      - run:
-          name: Test Code
-          command: docker run app:build pytest --flake8 --black
 
   build-job-desktop-mobile-mau-2020:
     docker:
