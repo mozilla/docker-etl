@@ -3,6 +3,8 @@
 This job collects data from a DAP collector and puts them into BQ. For more
 information on DAP see https://github.com/ietf-wg-ppm/draft-ietf-ppm-dap
 
+For more information on Privacy Preserving Measurement in Firefox see https://bugzilla.mozilla.org/show_bug.cgi?id=1775035
+
 ## Usage
 
 This script is intended to be run in a docker container.
