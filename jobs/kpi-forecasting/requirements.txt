@@ -4,6 +4,7 @@ antlr4-python3-runtime==4.11.1
 appdirs==1.4.4
 asttokens==2.2.1
 backcall==0.2.0
+black==23.3.0
 blinker==1.6.2
 cachetools==5.3.0
 certifi==2023.5.7
@@ -22,6 +23,7 @@ db-dtypes==1.1.1
 debugpy==1.6.7
 decorator==5.1.1
 ephem==4.1.4
+exceptiongroup==1.1.1
 executing==1.2.0
 Flask==2.3.2
 fonttools==4.39.3
@@ -40,6 +42,7 @@ grpcio-status==1.54.0
 hijri-converter==2.3.1
 holidays==0.24
 idna==3.4
+iniconfig==2.0.0
 ipykernel==6.23.0
 ipython==8.13.2
 itsdangerous==2.1.2
@@ -55,6 +58,7 @@ LunarCalendar==0.0.9
 MarkupSafe==2.1.2
 matplotlib==3.7.1
 matplotlib-inline==0.1.6
+mypy-extensions==1.0.0
 nest-asyncio==1.5.6
 numba==0.57.0
 numpy==1.24.3
@@ -62,6 +66,7 @@ orjson==3.8.12
 packaging==23.1
 pandas==1.5.3
 parso==0.8.3
+pathspec==0.11.1
 patsy==0.5.3
 pexpect==4.8.0
 pickleshare==0.7.5
@@ -69,6 +74,7 @@ Pillow==9.5.0
 platformdirs==3.5.0
 plotly==5.14.1
 plotly-resampler==0.8.3.2
+pluggy==1.0.0
 prompt-toolkit==3.0.38
 prophet==1.1.2
 proto-plus==1.22.2
@@ -82,6 +88,8 @@ pyasn1-modules==0.3.0
 Pygments==2.15.1
 PyMeeus==0.5.12
 pyparsing==3.0.9
+pytest==7.3.1
+pytest-black==0.3.12
 python-dateutil==2.8.2
 pytz==2023.3
 PyYAML==6.0
@@ -97,6 +105,8 @@ stack-data==0.6.2
 statsforecast==1.5.0
 statsmodels==0.14.0
 tenacity==8.2.2
+toml==0.10.2
+tomli==2.0.1
 tornado==6.3.1
 tqdm==4.65.0
 trace-updater==0.0.9.1
