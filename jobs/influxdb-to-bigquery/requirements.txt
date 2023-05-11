@@ -5,4 +5,4 @@ pytest-flake8==1.0.6
 influxdb==5.3.1
 google-cloud-bigquery==3.5.0
 pandas==1.5.1
-pyarrow==8.0.0flak
+pyarrow==8.0.0

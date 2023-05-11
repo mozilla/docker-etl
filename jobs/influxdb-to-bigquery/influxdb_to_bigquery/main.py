@@ -26,7 +26,7 @@ def collect_influxdb_data(
         ssl=True,
         verify_ssl=True,
     )
-    query_template = "SELECT  * FROM {influxdb_measurement} WHERE time >= '{0}T00:00:00Z' AND time < '{0}T23:59:59Z' AND \"environment\"='prod' " # noqa: E501,E261
+    query_template = "SELECT  * FROM {influxdb_measurement} WHERE time >= '{0}T00:00:00Z' AND time < '{0}T23:59:59Z' AND \"environment\"='prod' "  # noqa: E501,E261
     query = query_template.format(date, influxdb_measurement=influxdb_measurement)
     results = client.query(query)
 

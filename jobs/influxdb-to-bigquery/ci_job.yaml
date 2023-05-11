@@ -1,4 +1,4 @@
-build-job-dap-collector:
+build-job-influxdb-to-bigquery:
   docker:
     - image: docker:stable-git
   steps:
