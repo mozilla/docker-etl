@@ -6,6 +6,8 @@
 #
 argon2-cffi==20.1.0
     # via notebook
+asttokens==2.2.1
+    # via stack-data
 async-generator==1.10
     # via nbclient
 attrs==20.3.0
@@ -24,6 +26,8 @@ defusedxml==0.6.0
     # via nbconvert
 entrypoints==0.3
     # via nbconvert
+executing==1.2.0
+    # via stack-data
 ipykernel==5.4.3
     # via
     #   ipywidgets
@@ -31,17 +35,17 @@ ipykernel==5.4.3
     #   jupyter-console
     #   notebook
     #   qtconsole
+ipython==8.10.0
+    # via
+    #   ipykernel
+    #   ipywidgets
+    #   jupyter-console
 ipython-genutils==0.2.0
     # via
     #   nbformat
     #   notebook
     #   qtconsole
     #   traitlets
-ipython==7.19.0
-    # via
-    #   ipykernel
-    #   ipywidgets
-    #   jupyter-console
 ipywidgets==7.6.3
     # via jupyter
 jedi==0.18.0
@@ -52,6 +56,8 @@ jinja2==2.11.2
     #   notebook
 jsonschema==3.2.0
     # via nbformat
+jupyter==1.0.0
+    # via -r requirements-dev.in
 jupyter-client==6.1.11
     # via
     #   ipykernel
@@ -68,14 +74,14 @@ jupyter-core==4.7.0
     #   nbformat
     #   notebook
     #   qtconsole
-jupyter==1.0.0
-    # via -r requirements-dev.in
 jupyterlab-pygments==0.1.2
     # via nbconvert
 jupyterlab-widgets==1.0.0
     # via ipywidgets
 markupsafe==1.1.1
     # via jinja2
+matplotlib-inline==0.1.6
+    # via ipython
 mistune==0.8.4
     # via nbconvert
 nbclient==0.5.1
@@ -108,7 +114,7 @@ pickleshare==0.7.5
     # via ipython
 prometheus-client==0.9.0
     # via notebook
-prompt-toolkit==3.0.14
+prompt-toolkit==3.0.38
     # via
     #   ipython
     #   jupyter-console
@@ -116,6 +122,8 @@ ptyprocess==0.7.0
     # via
     #   pexpect
     #   terminado
+pure-eval==0.2.2
+    # via stack-data
 py4j==0.10.9
     # via
     #   -r requirements.txt
@@ -154,6 +162,8 @@ six==1.15.0
     #   bleach
     #   jsonschema
     #   python-dateutil
+stack-data==0.6.2
+    # via ipython
 terminado==0.9.2
     # via notebook
 testpath==0.4.4
@@ -171,6 +181,7 @@ traitlets==5.0.5
     #   ipywidgets
     #   jupyter-client
     #   jupyter-core
+    #   matplotlib-inline
     #   nbclient
     #   nbconvert
     #   nbformat
