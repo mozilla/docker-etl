@@ -12,3 +12,10 @@ services:
     environment:
       - CLOUDSDK_CONFIG=/tmp/.config/gcloud
       - CLOUDSDK_CORE_PROJECT
+      - POSTGRES_HOST
+      - POSTGRES_DB
+      - POSTGRES_USER
+      - POSTGRES_PASS
+      # variables required for backfill.sh
+      - START_DS
+      - END_DS
