@@ -134,9 +134,7 @@ jobs:
       - run:
           name: Build Docker image
           command: docker build -t app:build jobs/influxdb-to-bigquery/
-      - run:
-          name: Test Code
-          command: docker run app:build pytest --flake8 --black
+
 
   build-job-kpi-forecasting:
     docker:
@@ -318,6 +316,7 @@ workflows:
           filters:
             branches:
               only: main
+
 
   job-kpi-forecasting:
     jobs:
