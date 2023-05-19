@@ -333,6 +333,20 @@ workflows:
             branches:
               only: main
 
+  job-mozaggregator2bq-glam-backfill:
+    jobs:
+      - build-job-mozaggregator2bq
+      - gcp-gcr/build-and-push-image:
+          context: data-eng-airflow-gcr
+          docker-context: jobs/mozaggregator2bq/
+          path: jobs/mozaggregator2bq/
+          image: mozaggregator2bq_docker_etl
+          requires:
+            - build-job-mozaggregator2bq
+          filters:
+            branches:
+              only: glam-backfill
+
 
   job-pioneer-debug:
     jobs:
