@@ -2,7 +2,8 @@
 
 set -e
 
-export PROJECT="mozaggregator2bq"
+#export PROJECT="mozaggregator2bq"
+export PROJECT="moz-fx-data-shared-prod"
 export DATA_DIR="data"
 START_DS=${START_DS?"must be set"}
 END_DS=${END_DS?"must be set"}
@@ -22,8 +23,8 @@ function run_day {
     
     local input="$DATA_DIR/$aggregate_type/$ds_nodash"
     local intermediate="$DATA_DIR/parquet/$aggregate_type/$ds_nodash"
-    local output=gs://$PROJECT/$DATA_DIR/$aggregate_type/$ds_nodash
-    
+    #local output=gs://$PROJECT/$DATA_DIR/$aggregate_type/$ds_nodash
+    local output=gs://moz-fx-data-prod-external-data/mozaggregator-backfill/$aggregate_type/$ds_nodash
     # check if this has already been done
     if ! gsutil stat "$output/_SUCCESS"; then
         # dump the table
