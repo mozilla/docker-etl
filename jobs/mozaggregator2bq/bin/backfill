@@ -73,8 +73,8 @@ python3 -c "import pyspark; print(pyspark.__path__[0])"
 : "${POSTGRES_USER?'POSTGRES_USER not set'}"
 
 mkdir -p "$DATA_DIR"
-START_DS=2023-05-01
-END_DS=2023-05-22
+START_DS=2022-11-01
+END_DS=2022-12-31
 echo "START_DS is $START_DS and END_DS is $END_DS"
 for ds_nodash in $(ds_nodash_range "$START_DS" "$END_DS"); do
     echo "copying $ds_nodash"
