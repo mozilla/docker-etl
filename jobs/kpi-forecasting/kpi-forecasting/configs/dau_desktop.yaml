@@ -1,0 +1,26 @@
+---
+training_metric:
+  metric_hub_app_name: "firefox_desktop"
+  metric_hub_slug: "daily_active_users"
+  alias: "DAU"
+  start_date: "2023-05-13"
+  end_date: NULL
+
+forecast:
+  model_type: "prophet"
+  start_date: NULL
+  end_date: NULL
+  holidays: True
+  params:
+    changepoint_prior_scale: 0.05
+    changepoint_range: 0.8
+    seasonality_prior_scale: 0.01
+
+output:
+  aggregates:
+    - "ds_month"
+  project: "moz-fx-data-shared-prod"
+  dataset: "telemetry_derived"
+  models_table: "kpi_forecast_models"
+  feature_sets_table: "kpi_forecast_feature_sets"
+  predictions_table: "kpi_forecast_predictions"
