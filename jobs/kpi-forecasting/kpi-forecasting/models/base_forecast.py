@@ -3,9 +3,10 @@ import pandas as pd
 import pandas_extras as pdx
 import uuid
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from metric_hub import MetricHub
+from pandas.api import types as pd_types
 from typing import Dict, List, Tuple
 
 
@@ -51,10 +52,14 @@ class BaseForecast:
         # use default start/end dates if the user doesn't specify them
         self.start_date = self.start_date or self._default_start_date
         self.end_date = self.end_date or self._default_end_date
+        self.dates_to_predict = pd.DataFrame(
+            {"submission_date": pd.date_range(self.start_date, self.end_date).date}
+        )
 
         # model-specific attributes
         self.model = None
         self.forecast_df = None
+        self.number_of_simulations = 1000
 
         # metadata
         self.model_id = str(uuid.uuid4())
@@ -95,6 +100,32 @@ class BaseForecast:
         """Set random seed to ensure that fits and predictions are reproducible."""
         np.random.seed(42)
 
+    def _validate_forecast_df(self) -> None:
+        df = self.forecast_df
+        columns = df.columns
+        expected_shape = (len(self.dates_to_predict), 1 + self.number_of_simulations)
+        numeric_columns = df.drop(columns="submission_date").columns
+
+        if "submission_date" not in columns:
+            raise ValueError("forecast_df must contain a 'submission_date' column.")
+
+        if df.shape != expected_shape:
+            raise ValueError(
+                f"Expected forecast_df to have shape {expected_shape}, but it has shape {df.shape}."
+            )
+
+        if df["submission_date"] != self.dates_to_predict:
+            raise ValueError(
+                "forecast_df['submission_date'] does not match dates_to_predict."
+            )
+
+        for i in numeric_columns:
+            if not pd_types.is_numeric_dtype(self.forecast_df[i]):
+                raise ValueError(
+                    "All forecast_df columns except 'submission_date' must be numeric,"
+                    f" but column {i} has type {df[i].dtypes}."
+                )
+
     def fit(self) -> None:
         """Fit a model using historic metric data provided by `metric_hub`."""
         print(f"Fitting {self.model_type} model.", flush=True)
@@ -107,13 +138,23 @@ class BaseForecast:
         print(f"Forecasting from {self.start_date} to {self.end_date}.", flush=True)
         self.predicted_at = datetime.utcnow()
         self._set_seed()
+
         self._predict()
+        self._validate_forecast_df()
+
         self._predict_legacy()
 
-    def _summarize(self, period: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        quantiles = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95]
+    def _summarize_to_period(
+        self,
+        period: str,
+        numpy_aggregations: List[str],
+        quantiles: List[int],
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        # build a list of all functions that we'll summarize the data by
+        aggregations = [getattr(np, i) for i in numpy_aggregations]
+        aggregations.extend([pdx.quantile(i) for i in quantiles])
 
-        # aggregate
+        # aggregate to the correct date period (day, month, year)
         observed_summarized = pdx.aggregate_to_period(self.observed_df, period)
         forecast_agg = pdx.aggregate_to_period(self.forecast_df, period)
 
@@ -122,14 +163,18 @@ class BaseForecast:
             observed_summarized, on="submission_date", how="left"
         ).fillna(0)
 
-        # add observed data samples in any overlapping forecasted period
+        # Add observed data samples to any overlapping forecasted period. This
+        # ensures that any forecast made partway through a period accounts for
+        # previously observed data within the period. For example, when a monthly
+        # forecast is generated in the middle of the month.
         forecast_agg += overlap[["value"]].values
 
         # calculate summary metrics for forecast samples
-        forecast_summarized = forecast_agg.agg(
-            [np.mean, *[pdx.quantile(i) for i in quantiles]],
-            axis=1,
+        forecast_summarized = forecast_agg.drop(columns="submission_date").agg(
+            aggregations, axis=1
         )
+        forecast_summarized["submission_date"] = forecast_agg["submission_date"]
+
         return observed_summarized, forecast_summarized
 
     def _summarize_legacy(
@@ -157,36 +202,20 @@ class BaseForecast:
 
     def summarize(
         self,
-        periods: List[str],
+        periods: List[str] = field(default_factory=list),
+        numpy_aggregations: List[str] = field(default_factory=list),
+        quantiles: List[str] = field(default_factory=list),
     ) -> None:
         """Aggregate observed and forecasted data."""
         legacy_dfs = []
         observed_dfs = []
         forecast_dfs = []
         for period in periods:
-            observed, forecast = self._summarize(period)
+            observed, forecast = self._summarize_to_period(
+                period,
+                numpy_aggregations,
+                quantiles,
+            )
             if period != "day":
                 legacy_dfs.append(self.summarize_legacy(period, observed, forecast))
             # add details
-
-
-@dataclass
-class BQ:
-    def write_df(self, df: pd.DataFrame):
-        pass
-
-    def write_model(self, forecast: BaseForecast, forecast_parameters: Dict) -> None:
-        df = pd.DataFrame(
-            {
-                "id": forecast.model_id,
-                "trained_at": forecast.trained_at,
-                "metric_id": forecast.metric_id,
-                "params": forecast_parameters,
-            }
-        )
-        self.write_df(df)
-
-    def write_metric(self, forecast: BaseForecast, forecast_parameters: Dict) -> None:
-        forecast.forecast_df
-        df = pd.DataFrame({})
-        self.write_df()
