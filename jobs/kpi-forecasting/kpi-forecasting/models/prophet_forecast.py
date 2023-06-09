@@ -23,7 +23,11 @@ class ProphetForecast(BaseForecast):
         Fit a Prophet model using the `observed_df` that was generated using
         Metric Hub. This method updates `self.model`.
         """
-        self.model = prophet.Prophet(**self.parameters, mcmc_samples=0)
+        self.model = prophet.Prophet(
+            **self.parameters,
+            uncertainty_samples=self.number_of_simulations,
+            mcmc_samples=0,
+        )
 
         if self.use_holidays:
             self.model.add_country_holidays(country_name="US")
@@ -36,24 +40,23 @@ class ProphetForecast(BaseForecast):
         # fit the model
         self.model.fit(train)
 
-    def _predict(self) -> None:
+    def _predict(self) -> pd.DataFrame:
         """
         Forecast using `self.model`. This method updates `self.forecast_df`.
         """
-        # generate the range of dates to forecast
-        future_dates = pd.DataFrame(
-            {"ds": pd.date_range(self.start_date, self.end_date).date}
-        )
-        self.forecast_df = self.model.predictive_samples(future_dates)
+        # generate the forecast samples
+        df = pd.DataFrame(self.model.predictive_samples(self.dates_to_predict)["yhat"])
 
-    def _predict_legacy(self) -> None:
+        # add dates_to_predict to the samples
+        df["submission_date"] = self.dates_to_predict
+
+        return df
+
+    def _predict_legacy(self) -> pd.DataFrame:
         """
         Recreate the legacy Big Query data model.
         """
-        future_dates = pd.DataFrame(
-            {"ds": pd.date_range(self.start_date, self.end_date).date}
-        )
-        df = self.model.predict(future_dates)
+        df = self.model.predict(self.dates_to_predict)
 
         # set legacy column values
         df["metric"] = self.metric_hub.alias
@@ -108,4 +111,4 @@ class ProphetForecast(BaseForecast):
             if column not in df.columns:
                 df[column] = 0.0
 
-        self.legacy_forecast_df = df[columns]
+        return df[columns]
