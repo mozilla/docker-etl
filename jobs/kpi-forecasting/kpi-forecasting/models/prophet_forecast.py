@@ -10,14 +10,6 @@ from typing import Dict
 
 @dataclass
 class ProphetForecast(BaseForecast):
-    @property
-    def _column_mapping(self) -> Dict[str, str]:
-        """Map Metric Hub column names to the names that Prophet expects."""
-        return {
-            "submission_date": "ds",
-            self.metric_hub.alias: "y",
-        }
-
     def _fit(self) -> None:
         """
         Fit a Prophet model using the `observed_df` that was generated using
@@ -35,7 +27,10 @@ class ProphetForecast(BaseForecast):
         # Rename training data to have column names that Prophet expects. We
         # create a copy here so that we don't modify the original dataframe.
         train = self.observed_df.copy(deep=True)
-        train.rename(columns=self._column_mapping, inplace=True)
+        train.rename(
+            columns={"submission_date": "ds", self.metric_hub.alias: "y"},
+            inplace=True,
+        )
 
         # fit the model
         self.model.fit(train)
