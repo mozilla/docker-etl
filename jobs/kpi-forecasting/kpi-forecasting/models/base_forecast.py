@@ -154,7 +154,7 @@ class BaseForecast:
         aggregations = [getattr(np, i) for i in numpy_aggregations]
         aggregations.extend([pdx.quantile(i) for i in quantiles])
 
-        # aggregate to the correct date period (day, month, year)
+        # aggregate metric to the correct date period (day, month, year)
         observed_summarized = pdx.aggregate_to_period(self.observed_df, period)
         forecast_agg = pdx.aggregate_to_period(self.forecast_df, period)
 
@@ -169,7 +169,7 @@ class BaseForecast:
         # forecast is generated in the middle of the month.
         forecast_agg += overlap[["value"]].values
 
-        # calculate summary metrics for forecast samples
+        # calculate summary values for forecast samples
         forecast_summarized = forecast_agg.drop(columns="submission_date").agg(
             aggregations, axis=1
         )

@@ -5,7 +5,6 @@ import prophet
 from datetime import datetime
 from dataclasses import dataclass
 from models.base_forecast import BaseForecast
-from typing import Dict
 
 
 @dataclass
@@ -24,23 +23,21 @@ class ProphetForecast(BaseForecast):
         if self.use_holidays:
             self.model.add_country_holidays(country_name="US")
 
-        # Rename training data to have column names that Prophet expects. We
-        # create a copy here so that we don't modify the original dataframe.
-        train = self.observed_df.copy(deep=True)
-        train.rename(
-            columns={"submission_date": "ds", self.metric_hub.alias: "y"},
-            inplace=True,
+        # Modify observed data to have column names that Prophet expects, and fit
+        # the model
+        self.model.fit(
+            self.observed_df.rename(
+                columns={"submission_date": "ds", self.metric_hub.alias: "y"},
+            )
         )
-
-        # fit the model
-        self.model.fit(train)
 
     def _predict(self) -> pd.DataFrame:
         """
         Forecast using `self.model`. This method updates `self.forecast_df`.
         """
         # generate the forecast samples
-        df = pd.DataFrame(self.model.predictive_samples(self.dates_to_predict)["yhat"])
+        samples = self.model.predictive_samples(self.dates_to_predict)
+        df = pd.DataFrame(samples["yhat"])
 
         # add dates_to_predict to the samples
         df["submission_date"] = self.dates_to_predict
