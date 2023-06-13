@@ -45,10 +45,6 @@ class MetricHub:
             "\n", "\n" + " " * 19
         )
 
-        # Make sure start_date and end_date strings are formatted correctly
-        self.start_date = self._enquote(self.start_date)
-        self.end_date = self._enquote(self.end_date) or "CURRENT_DATE()"
-
     def _enquote(self, x) -> Optional[str]:
         """
         Enclose a string in quotes. This is helpful for query templating.
@@ -66,12 +62,17 @@ class MetricHub:
     @property
     def query(self) -> str:
         """Build a string to query the relevant metric values from Big Query."""
+
+        # Make sure start_date and end_date strings are formatted correctly
+        start_date = self._enquote(self.start_date)
+        end_date = self._enquote(self.end_date) or "CURRENT_DATE()"
+
         return dedent(
             f"""
             SELECT {self.submission_date_column} AS submission_date,
                    {self.metric.select_expr} AS value
               FROM {self.from_expression}
-             WHERE {self.submission_date_column} BETWEEN {self.start_date} AND {self.end_date}
+             WHERE {self.submission_date_column} BETWEEN {start_date} AND {end_date}
              GROUP BY {self.submission_date_column}
             """
         )
@@ -88,5 +89,10 @@ class MetricHub:
         df[self.submission_date_column] = pd.to_datetime(
             df[self.submission_date_column]
         ).dt.date
+
+        # Track the min and max dates in the data, which may not be equal to the
+        # start/end dates
+        self.min_date = str(df[self.submission_date_column].min())
+        self.max_date = str(df[self.submission_date_column].max())
 
         return df

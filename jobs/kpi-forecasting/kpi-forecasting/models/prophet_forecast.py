@@ -5,10 +5,15 @@ import prophet
 from datetime import datetime
 from dataclasses import dataclass
 from models.base_forecast import BaseForecast
+from typing import Dict
 
 
 @dataclass
 class ProphetForecast(BaseForecast):
+    @property
+    def column_names_map(self) -> Dict[str, str]:
+        return {"submission_date": "ds", "value": "y"}
+
     def _fit(self) -> None:
         """
         Fit a Prophet model using the `observed_df` that was generated using
@@ -25,18 +30,16 @@ class ProphetForecast(BaseForecast):
 
         # Modify observed data to have column names that Prophet expects, and fit
         # the model
-        self.model.fit(
-            self.observed_df.rename(
-                columns={"submission_date": "ds", self.metric_hub.alias: "y"},
-            )
-        )
+        self.model.fit(self.observed_df.rename(columns=self.column_names_map))
 
     def _predict(self) -> pd.DataFrame:
         """
         Forecast using `self.model`. This method updates `self.forecast_df`.
         """
         # generate the forecast samples
-        samples = self.model.predictive_samples(self.dates_to_predict)
+        samples = self.model.predictive_samples(
+            self.dates_to_predict.rename(columns=self.column_names_map)
+        )
         df = pd.DataFrame(samples["yhat"])
 
         # add dates_to_predict to the samples
@@ -48,7 +51,12 @@ class ProphetForecast(BaseForecast):
         """
         Recreate the legacy Big Query data model.
         """
-        df = self.model.predict(self.dates_to_predict)
+        # TODO: This method should be removed once the forecasting data model is updated:
+        # https://docs.google.com/document/d/18esfJraogzUf1gbZv25vgXkHigCLefazyvzly9s-1k0.
+
+        df = self.model.predict(
+            self.dates_to_predict.rename(columns=self.column_names_map)
+        )
 
         # set legacy column values
         df["metric"] = self.metric_hub.alias

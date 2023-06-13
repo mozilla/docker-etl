@@ -12,19 +12,16 @@ MODELS = {
 def main() -> None:
     # Load the config
     config = YAML(filepath=CLI.args.config).data
-    model_type = config.forecast.model_type
+    model_type = config.forecast_model.model_type
 
     if model_type in MODELS:
-        # instantiate the model
-        model = MODELS[model_type](
-            metric_hub=MetricHub(**config.metric_hub),
-            **config.forecast,
-        )
+        metric_hub = MetricHub(**config.metric_hub)
+        model = MODELS[model_type](metric_hub=metric_hub, **config.forecast_model)
 
         model.fit()
         model.predict()
-        model.summarize()
-        model.write_results(**config.output)
+        model.summarize(**config.summarize)
+        # model.write_results(**config.output)
 
     else:
         raise ValueError(f"Don't know how to forecast using {model_type}.")
