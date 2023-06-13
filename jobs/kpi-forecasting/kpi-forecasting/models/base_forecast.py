@@ -1,7 +1,7 @@
+import json
 import numpy as np
 import pandas as pd
 import pandas_extras as pdx
-import uuid
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -62,9 +62,13 @@ class BaseForecast:
         self.number_of_simulations = 1000
 
         # metadata
-        self.model_id = str(uuid.uuid4())
-        self.metric_id = str(uuid.uuid4())
-        self.prediction_id = str(uuid.uuid4())
+        self.metadata_params = json.dumps(
+            {
+                "model_type": self.model_type.lower(),
+                "model_params": self.parameters.toDict(),
+                "use_holidays": self.use_holidays,
+            }
+        )
 
     def _fit(self) -> None:
         """
@@ -73,17 +77,19 @@ class BaseForecast:
         """
         raise NotImplementedError
 
-    def _predict(self) -> None:
+    def _predict(self) -> pd.DataFrame:
         """
-        Forecast using `self.model`. This method should update `self.forecast_df`.
+        Forecast using `self.model`. This method should return a dataframe that will
+        be validated by `_validate_forecast_df`.
         """
         raise NotImplementedError
 
-    def _predict_legacy(self) -> None:
+    def _predict_legacy(self) -> pd.DataFrame:
         """
-        Forecast using `self.model`, adhering to the legacy data format. This
-        method should eventually be removed.
+        Forecast using `self.model`, adhering to the legacy data format.
         """
+        # TODO: This method should be removed once the forecasting data model is updated:
+        # https://docs.google.com/document/d/18esfJraogzUf1gbZv25vgXkHigCLefazyvzly9s-1k0.
         raise NotImplementedError
 
     @property
@@ -114,9 +120,9 @@ class BaseForecast:
                 f"Expected forecast_df to have shape {expected_shape}, but it has shape {df.shape}."
             )
 
-        if df["submission_date"] != self.dates_to_predict:
+        if not df["submission_date"].equals(self.dates_to_predict["submission_date"]):
             raise ValueError(
-                "forecast_df['submission_date'] does not match dates_to_predict."
+                "forecast_df['submission_date'] does not match dates_to_predict['submission_date']."
             )
 
         for i in numeric_columns:
@@ -139,12 +145,14 @@ class BaseForecast:
         self.predicted_at = datetime.utcnow()
         self._set_seed()
 
-        self._predict()
+        self.forecast_df = self._predict()
         self._validate_forecast_df()
 
-        self._predict_legacy()
+        # TODO: This line should be removed once the forecasting data model is updated:
+        # https://docs.google.com/document/d/18esfJraogzUf1gbZv25vgXkHigCLefazyvzly9s-1k0.
+        self.forecast_df_legacy = self._predict_legacy()
 
-    def _summarize_to_period(
+    def _summarize(
         self,
         period: str,
         numpy_aggregations: List[str],
@@ -159,46 +167,116 @@ class BaseForecast:
         forecast_agg = pdx.aggregate_to_period(self.forecast_df, period)
 
         # find periods of overlap between observed and forecasted data
-        overlap = forecast_agg.join(
+        overlap = forecast_agg.merge(
             observed_summarized, on="submission_date", how="left"
         ).fillna(0)
 
-        # Add observed data samples to any overlapping forecasted period. This
-        # ensures that any forecast made partway through a period accounts for
-        # previously observed data within the period. For example, when a monthly
-        # forecast is generated in the middle of the month.
-        forecast_agg += overlap[["value"]].values
-
-        # calculate summary values for forecast samples
-        forecast_summarized = forecast_agg.drop(columns="submission_date").agg(
-            aggregations, axis=1
+        forecast_summarized = (
+            forecast_agg.set_index("submission_date")
+            # Add observed data samples to any overlapping forecasted period. This
+            # ensures that any forecast made partway through a period accounts for
+            # previously observed data within the period. For example, when a monthly
+            # forecast is generated in the middle of the month.
+            .add(overlap[["value"]].values)
+            # calculate summary values, aggregating by submission_date,
+            .agg(aggregations, axis=1).reset_index()
+            # "melt" the df from wide-format to long-format.
+            .melt(id_vars="submission_date", var_name="measure")
         )
-        forecast_summarized["submission_date"] = forecast_agg["submission_date"]
 
-        return observed_summarized, forecast_summarized
-
-    def _summarize_legacy(
-        self,
-        period: str,
-        observed_summarized,
-        forecast_summarized,
-    ) -> pd.DataFrame:
-        forecast_summarized.rename(columns={"mean", "value"}, inplace=True)
-
-        observed_summarized["type"] = "actual"
+        # add datasource-specific metadata columns
         forecast_summarized["type"] = "forecast"
+        observed_summarized["type"] = "historical"
+        observed_summarized["measure"] = "observed"
 
-        all_aggregated = pd.merge(
-            observed_summarized,
-            forecast_summarized,
-            on=["submission_date", "type", "value"],
-            how="outer",
+        # create a single dataframe that contains observed and forecasted data
+        df = pd.concat([observed_summarized, forecast_summarized])
+
+        # add forecast model metadata columns
+        df["forecast_trained_at"] = self.trained_at
+        df["forecast_predicted_at"] = self.predicted_at
+        df["forecast_parameters"] = self.metadata_params
+        df["forecast_start_date"] = self.start_date
+        df["forecast_end_date"] = self.end_date
+
+        # add metric hub metadata columns
+        df["metric_collected_at"] = self.collected_at
+        df["metric_alias"] = self.metric_hub.alias.lower()
+        df["metric_hub_slug"] = self.metric_hub.slug.lower()
+        df["metric_app_name"] = self.metric_hub.app_name.lower()
+        df["metric_start_date"] = self.metric_hub.min_date
+        df["metric_end_date"] = self.metric_hub.max_date
+
+        # add summary metadata columns
+        df["summary_aggregation_level"] = period.lower()
+
+        return df
+
+    def _summarize_legacy(self) -> pd.DataFrame:
+        """
+        Converts a summarized dataframe to the legacy format.
+        """
+        # TODO: This method should be removed once the forecasting data model is updated:
+        # https://docs.google.com/document/d/18esfJraogzUf1gbZv25vgXkHigCLefazyvzly9s-1k0.
+
+        df = self.summary_df.copy(deep=True)
+
+        # rename columns to legacy values
+        df.rename(
+            columns={
+                "forecast_end_date": "asofdate",
+                "submission_date": "date",
+                "metric_alias": "target",
+                "summary_aggregation_level": "unit",
+            },
+            inplace=True,
         )
-        all_aggregated["target"] = self.metric_hub.alias
-        all_aggregated["unit"] = period
-        all_aggregated["asofdate"] = self.forecast_df["submission_date"].max()
+        df["forecast_date"] = df["forecast_predicted_at"].dt.date
+        df["type"] = df["type"].replace("historical", "actual")
+        df["measure"] = df["measure"].replace("observed", "value")
 
-        return all_aggregated
+        # pivot the df from "long" to "wide" format
+        index_columns = [
+            "asofdate",
+            "date",
+            "target",
+            "unit",
+            "forecast_parameters",
+            "forecast_date",
+        ]
+        df = (
+            df[index_columns + ["measure", "value"]]
+            .pivot(
+                index=index_columns,
+                columns="measure",
+                values="value",
+            )
+            .reset_index()
+        )
+        df.columns.name = None
+
+        # When there's an overlap in the observed and forecasted period -- for
+        # example, when a monthly forecast is generated mid-month -- the legacy
+        # format only records the forecasted value, not the observed value. To
+        # account for this, we'll just find the max of the "mean" (forecasted) and
+        # "value" (observed) data. In all non-overlapping observed periods, the
+        # forecasted value will be NULL. In all non-overlapping forecasted periods,
+        # the observed value will be NULL. In overlapping periods, the forecasted
+        # value will always be larger because it is the sum of the observed and forecasted
+        # values. Below is a query that demonstrates the legacy behavior:
+        #
+        # SELECT *
+        #   FROM `moz-fx-data-shared-prod.telemetry_derived.kpi_automated_forecast_confidences_v1`
+        #  WHERE asofdate = "2023-12-31"
+        #    AND target = "mobile"
+        #    AND unit = "month"
+        #    AND forecast_date = "2022-06-04"
+        #    AND date BETWEEN "2022-05-01" AND "2022-06-01"
+        #  ORDER BY date
+        df["value"] = df[["mean", "value"]].max(axis=1)
+        df.drop(columns=["mean"], inplace=True)
+
+        return df
 
     def summarize(
         self,
@@ -207,15 +285,10 @@ class BaseForecast:
         quantiles: List[str] = field(default_factory=list),
     ) -> None:
         """Aggregate observed and forecasted data."""
-        legacy_dfs = []
-        observed_dfs = []
-        forecast_dfs = []
-        for period in periods:
-            observed, forecast = self._summarize_to_period(
-                period,
-                numpy_aggregations,
-                quantiles,
-            )
-            if period != "day":
-                legacy_dfs.append(self.summarize_legacy(period, observed, forecast))
-            # add details
+        self.summary_df = pd.concat(
+            [self._summarize(i, numpy_aggregations, quantiles) for i in periods]
+        )
+
+        # TODO: remove this once the forecasting data model is updated:
+        # https://docs.google.com/document/d/18esfJraogzUf1gbZv25vgXkHigCLefazyvzly9s-1k0.
+        self.summary_df_legacy = self._summarize_legacy()

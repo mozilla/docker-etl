@@ -6,7 +6,7 @@ metric_hub:
   start_date: "2023-05-13"
   end_date: NULL
 
-forecast:
+forecast_model:
   model_type: "prophet"
   start_date: NULL
   end_date: NULL
@@ -24,6 +24,4 @@ summarize:
 output:
   project: "moz-fx-data-shared-prod"
   dataset: "telemetry_derived"
-  models_table: "kpi_forecast_models"
-  features_table: "kpi_forecast_metrics"
-  predictions_table: "kpi_forecast_predictions"
+  table: "kpi_forecast_predictions"
