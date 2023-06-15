@@ -12,4 +12,3 @@ services:
     environment:
       - CLOUDSDK_CONFIG=/tmp/.config/gcloud
       - CLOUDSDK_CORE_PROJECT
-    tty: true
