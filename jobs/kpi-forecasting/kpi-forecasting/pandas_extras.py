@@ -2,13 +2,13 @@ import numpy as np
 import pandas as pd
 
 
-def percentile(q: int = 50, name_format: str = "p{:02.0f}"):
+def percentile(p: int = 50, name_format: str = "p{:02.0f}"):
     """A method to calculate percentiles along dataframe axes via the `pandas.agg` method."""
 
     def f(x):
-        return x.percentile(q / 100)
+        return x.quantile(p / 100)
 
-    f.__name__ = name_format.format(q)
+    f.__name__ = name_format.format(p)
     return f
 
 

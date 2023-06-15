@@ -145,7 +145,7 @@ class BaseForecast:
         """
         # build a list of all functions that we'll summarize the data by
         aggregations = [getattr(np, i) for i in numpy_aggregations]
-        aggregations.extend([pdx.percentiles(i) for i in percentiles])
+        aggregations.extend([pdx.percentile(i) for i in percentiles])
 
         # aggregate metric to the correct date period (day, month, year)
         observed_summarized = pdx.aggregate_to_period(self.observed_df, period)
@@ -228,17 +228,17 @@ class BaseForecast:
             {
                 "measure": {
                     "observed": "value",
-                    "q05": "yhat_p5",
-                    "q10": "yhat_p10",
-                    "q20": "yhat_p20",
-                    "q30": "yhat_p30",
-                    "q40": "yhat_p40",
-                    "q50": "yhat_p50",
-                    "q60": "yhat_p60",
-                    "q70": "yhat_p70",
-                    "q80": "yhat_p80",
-                    "q90": "yhat_p90",
-                    "q95": "yhat_p95",
+                    "p05": "yhat_p5",
+                    "p10": "yhat_p10",
+                    "p20": "yhat_p20",
+                    "p30": "yhat_p30",
+                    "p40": "yhat_p40",
+                    "p50": "yhat_p50",
+                    "p60": "yhat_p60",
+                    "p70": "yhat_p70",
+                    "p80": "yhat_p80",
+                    "p90": "yhat_p90",
+                    "p95": "yhat_p95",
                 },
                 "target": {
                     "desktop_dau": "desktop",
