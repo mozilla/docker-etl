@@ -1,4 +1,4 @@
-FROM python:3.10-slim-bullseye
+FROM python:3.10
 LABEL maintainer="Brad Ochocki <bochocki@mozilla.com>"
 
 # https://github.com/mozilla-services/Dockerflow/blob/master/docs/building-container.md
