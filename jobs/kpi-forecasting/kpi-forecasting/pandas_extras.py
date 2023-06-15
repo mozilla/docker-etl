@@ -2,11 +2,11 @@ import numpy as np
 import pandas as pd
 
 
-def quantile(q: int = 50, name_format: str = "q{:02.0f}"):
-    """A method to calculate quantiles along dataframe axes via the `pandas.agg` method."""
+def percentile(q: int = 50, name_format: str = "p{:02.0f}"):
+    """A method to calculate percentiles along dataframe axes via the `pandas.agg` method."""
 
     def f(x):
-        return x.quantile(q / 100)
+        return x.percentile(q / 100)
 
     f.__name__ = name_format.format(q)
     return f
