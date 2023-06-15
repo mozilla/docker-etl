@@ -53,26 +53,19 @@ cd ~/path/to/conda/envs/kpi-forecasting-dev/lib/python3.10/site-packages/prophet
 install_name_tool -add_rpath /path/to/conda/envs/kpi-forecasting-dev/lib/cmdstan-2.32.2/stan/lib/stan_math/lib/tbb prophet_model.bin
 ```
 
-### YAML Configs
+# YAML Configs
 
-For consistency, keys are lowercased
+Each of the sections in the YAML files contains a list of arguments that are passed to their relevant objects or methods.
+Definitions should be documented in the code.
 
-- target: platform you wish to run, current accepted values are 'desktop' and 'mobile'
-- query_name: the name of the .sql file in the sql_queries folder to use to pull data from
-- columns: will cut down query to only the columns included in this list. Rather than try to be so supremely flexible that it ends up making more work down the road to comply to an API spec, this repo is set up to handle the desktop and mobile scripts as they currently exist. If you wish to add a new forecast, model it after Mobile
-- forecast_parameters: model fit parameters, must conform to prophet API spec
-- dataset_project: the project to use for pulling data from, e.g. mozdata
-- write_project: project that results will be written too, e.g. moz-fx-data-bq-data-science
-- output_table: table to write results to, if testing consider something like {your-name}.automation_experiment
-- confidences_table: table to write confidences too, if confidences is not None. if it is, will be ignored
-- forecast_variable: the variable you are actually forecasting, e.g. QDOU or DAU
-- holidays: boolean - include holidays (if set to False holidays will always show zero, but the columns will still exist)
-- stop_date: date to stop the forecast at
-- confidences: aggregation unit for confidence intervals, can be ds_month, ds_year or None
+# Development
 
-## Development
+- `./kpi-forecasting/kpi_forecasting.py` is the main control script.
+- `./kpi-forecasting/configs` contains configuration YAML files.
+- `./kpi-forecasting/models` contains` the forecasting models.
 
-./kpi_forecasting.py is the main control script
-/Utils contains the bulk of the python code
-/yaml contains configuration yaml files
-/sql_queries contains the queries to pull data from bigquery
+This repo was designed to make it simple to add new forecasting models in the future. In general, a model needs only to inherit
+the `models.base_forecast.BaseForecast` class and implement the `_fit` and `_predict` methods.
+
+One caveat is that, in order for aggregations over time periods to work (e.g. monthly forecasts), the `_predict` method must generate a number
+of simulated timeseries. This enables the measurement of variation across a range of possible outcomes. This number is set by `BaseForecast.number_of_simulations`.
