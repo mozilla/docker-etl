@@ -3,7 +3,7 @@ from models.prophet_forecast import ProphetForecast
 from metric_hub import MetricHub
 
 
-# A dictionary of available models in the fit_forecast directory.
+# A dictionary of available models in the `models` directory.
 MODELS = {
     "prophet": ProphetForecast,
 }
@@ -21,7 +21,7 @@ def main() -> None:
         model.fit()
         model.predict()
         model.summarize(**config.summarize)
-        # model.write_results(**config.output)
+        model.write_results(**config.output)
 
     else:
         raise ValueError(f"Don't know how to forecast using {model_type}.")

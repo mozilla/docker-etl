@@ -34,7 +34,7 @@ class ProphetForecast(BaseForecast):
 
     def _predict(self) -> pd.DataFrame:
         """
-        Forecast using `self.model`. This method updates `self.forecast_df`.
+        Forecast using `self.model`.
         """
         # generate the forecast samples
         samples = self.model.predictive_samples(
@@ -42,14 +42,15 @@ class ProphetForecast(BaseForecast):
         )
         df = pd.DataFrame(samples["yhat"])
 
-        # add dates_to_predict to the samples
+        # add dates_to_predict to the output
         df["submission_date"] = self.dates_to_predict
 
         return df
 
     def _predict_legacy(self) -> pd.DataFrame:
         """
-        Recreate the legacy Big Query data model.
+        Recreate the legacy format used in
+        `moz-fx-data-shared-prod.telemetry_derived.kpi_automated_forecast_v1`.
         """
         # TODO: This method should be removed once the forecasting data model is updated:
         # https://docs.google.com/document/d/18esfJraogzUf1gbZv25vgXkHigCLefazyvzly9s-1k0.
@@ -59,15 +60,19 @@ class ProphetForecast(BaseForecast):
         )
 
         # set legacy column values
-        df["metric"] = self.metric_hub.alias
+        if "dau" in self.metric_hub.alias.lower():
+            df["metric"] = "DAU"
+        else:
+            df["metric"] = self.metric_hub.alias
+
         df["forecast_date"] = str(datetime.utcnow().date())
         df["forecast_parameters"] = str(
             json.dumps({**self.parameters, "holidays": self.use_holidays})
         )
 
-        if "desktop" in self.metric_hub.app_name:
+        if "desktop" in self.metric_hub.alias.lower():
             df["target"] = "desktop"
-        elif "mobile" in self.metric_hub.app_name:
+        elif "mobile" in self.metric_hub.alias.lower():
             df["target"] = "mobile"
         else:
             df["target"] = None

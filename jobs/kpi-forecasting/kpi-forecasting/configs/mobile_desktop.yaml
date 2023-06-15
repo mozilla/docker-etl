@@ -1,19 +1,19 @@
 ---
 metric_hub:
-  app_name: "firefox_desktop"
-  slug: "daily_active_users_v2"
-  alias: "desktop_dau"
-  start_date: "2018-01-01"
+  app_name: "multi_product"
+  slug: "mobile_daily_active_users_v1"
+  alias: "mobile_dau"
+  start_date: "2021-02-01"
   end_date: NULL
 
 forecast_model:
   model_type: "prophet"
   start_date: NULL
   end_date: NULL
-  use_holidays: False
+  use_holidays: True
   parameters:
-    seasonality_prior_scale: 0.00825
-    changepoint_prior_scale: 0.15983
+    seasonality_prior_scale: 0.01
+    changepoint_prior_scale: 0.01
     weekly_seasonality: True
     yearly_seasonaility: True
 

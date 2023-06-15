@@ -90,7 +90,7 @@ class MetricHub:
             df[self.submission_date_column]
         ).dt.date
 
-        # Track the min and max dates in the data, which may not be equal to the
+        # Track the min and max dates in the data, which may differ from the
         # start/end dates
         self.min_date = str(df[self.submission_date_column].min())
         self.max_date = str(df[self.submission_date_column].max())
