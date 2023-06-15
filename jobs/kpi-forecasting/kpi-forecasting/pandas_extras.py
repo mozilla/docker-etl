@@ -2,14 +2,9 @@ import numpy as np
 import pandas as pd
 
 
-def quantile(q: int = 50, name_format: str = "yhat_p{:02.0f}"):
-    """
-    TODO
-    """
+def quantile(q: int = 50, name_format: str = "q{:02.0f}"):
+    """A method to calculate quantiles along dataframe axes via the `pandas.agg` method."""
 
-    # TODO: Change name_format from "yhat_p{:02.0f}" to "q{:02.0f}" once the forecasting
-    # data model is updated:
-    # https://docs.google.com/document/d/18esfJraogzUf1gbZv25vgXkHigCLefazyvzly9s-1k0.
     def f(x):
         return x.quantile(q / 100)
 
