@@ -343,15 +343,15 @@ class BaseForecast:
         project: str,
         dataset: str,
         table: str,
-        write_disposition: str = "WRITE_APPEND",
-        project_legacy: str = "moz-fx-data-bq-data-science",  # "moz-fx-data-shared_prod",
-        dataset_legacy: str = "bochocki",  # "telemetry_derived",
+        project_legacy: str,
+        dataset_legacy: str,
         forecast_table_legacy: str = "kpi_automated_forecast_v1",
         confidences_table_legacy: str = "kpi_automated_forecast_confidences_v1",
+        write_disposition: str = "WRITE_APPEND",
     ) -> None:
         """Write `self.summary_df` to Big Query."""
         print(f"Writing results to `{project}.{dataset}.{table}`.", flush=True)
-        client = bigquery.Client()
+        client = bigquery.Client(project=project)
         schema = [
             bigquery.SchemaField("submission_date", bq_types.DATE),
             bigquery.SchemaField("aggregation_period", bq_types.STRING),

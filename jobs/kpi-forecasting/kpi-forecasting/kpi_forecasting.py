@@ -11,7 +11,7 @@ MODELS = {
 
 def main() -> None:
     # Load the config
-    config = YAML(filepath=CLI.args.config).data
+    config = YAML(filepath=CLI().args.config).data
     model_type = config.forecast_model.model_type
 
     if model_type in MODELS:

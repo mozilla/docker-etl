@@ -22,6 +22,8 @@ class MetricHub:
             date the metric should be queried.
         alias (str): An alias for the metric. For example, 'DAU' instead of
             'daily_active_users'.
+        project (str): The Big Query project to use when establishing a connection
+            to the Big Query client.
     """
 
     app_name: str
@@ -29,6 +31,7 @@ class MetricHub:
     start_date: str
     end_date: str = None
     alias: str = None
+    project: str = "mozdata"
 
     def __post_init__(self) -> None:
         # Set useful attributes based on the Metric Hub definition
@@ -83,7 +86,7 @@ class MetricHub:
             f"\nQuerying for '{self.app_name}.{self.slug}' aliased as '{self.alias}':"
             f"\n{self.query}"
         )
-        df = bigquery.Client().query(self.query).to_dataframe()
+        df = bigquery.Client(project=self.project).query(self.query).to_dataframe()
 
         # ensure submission_date has type 'date'
         df[self.submission_date_column] = pd.to_datetime(
