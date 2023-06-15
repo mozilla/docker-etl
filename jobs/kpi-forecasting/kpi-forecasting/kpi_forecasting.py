@@ -21,7 +21,7 @@ def main() -> None:
         model.fit()
         model.predict()
         model.summarize(**config.summarize)
-        model.write_results(**config.output)
+        model.write_results(**config.write_results)
 
     else:
         raise ValueError(f"Don't know how to forecast using {model_type}.")

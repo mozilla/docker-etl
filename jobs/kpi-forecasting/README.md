@@ -1,45 +1,57 @@
-# Desktop, Mobile and Pocket KPI Forecast Automation
+# KPI and other Metric Forecasting
 
-This job contains scripts for projecting year-end KPI values for Desktop
-and Mobile DAU.
+This job forecasts [Metric Hub](https://mozilla.github.io/metric-hub/) metrics based on YAML configs defined in `.kpi-forecasting/configs`.
 
-## Usage
+# Usage
 
-This script is intended to be run in a docker container.
-Build the docker image with:
+### Docker Container
+
+This job is intended to be run in a Docker container. If you're not familiar with Docker, it can be helpful to first install
+[Docker Desktop](https://docs.docker.com/desktop/) which provides a GUI.
+
+From the top-level `kpi-forecasting` directory, build the Docker image with the following command (note the trailing `.`):
 
 ```sh
 docker build -t kpi-forecasting .
 ```
 
-To run locally, install dependencies with:
+A metric can be forecasted by using a command line argument to pass the relevant YAML file to the `kpi_forecasting.py` script.
+[Here are approaches for accessing a Docker container's terminal](https://docs.docker.com/desktop/use-desktop/container/#integrated-terminal).
+
+The following command forecasts Desktop DAU numbers:
 
 ```sh
+python ~/kpi-forecasting/kpi_forecasting.py -c ~/kpi-forecasting/configs/dau_desktop.yaml
+```
+
+### Local Python
+
+You can also run the code outside of a Docker container. The code below creates a new Conda environment called `kpi-forecasting-dev`.
+It assumes you have Conda installed. If you'd like to run the code in a Jupyter notebook, it is handy to install Jupyter in a `base` environment.
+The `ipykernel` commands below will ensure that the `kpi-forecasting-dev` environment is made available to Jupyter.
+
+```sh
+conda create --name kpi-forecasting-dev python=3.10 pip ipykernel
+conda activate kpi-forecasting-dev
+ipython kernel install --name kpi-forecasting-dev --user
 pip install -r requirements.txt
+conda deactivate
 ```
 
-Run the scripts with:
+If you're running on an M1 Mac, there are [currently some additional steps](https://github.com/facebook/prophet/issues/2250#issuecomment-1317709209) that you'll need to take to get Prophet running. From within
+your python environment, run:
+
+```python
+import cmdstanpy
+cmdstanpy.install_cmdstan(overwrite=True, compiler=True, dir='/path/to/conda/envs/kpi-forecasting-dev/lib/')
+```
+
+and then from the command line:
 
 ```sh
-python ~/kpi-forecasting/kpi_forecasting.py -c ~/kpi-forecasting/yaml/desktop_non_cumulative.yaml
-
-python ~/kpi-forecasting/kpi_forecasting.py -c ~/kpi-forecasting/yaml/mobile_non_cumulative.yaml
+cd ~/path/to/conda/envs/kpi-forecasting-dev/lib/python3.10/site-packages/prophet/stan_model
+install_name_tool -add_rpath /path/to/conda/envs/kpi-forecasting-dev/lib/cmdstan-2.32.2/stan/lib/stan_math/lib/tbb prophet_model.bin
 ```
-
-### On SQL Queries And Preprocessing
-
-One of the challenges in automating multiple forecasts is that data formats may not always be consistent. This is a challenge precisely because Prophet demands that data conform to a very strict standard of two columns; 'ds' and 'y' as its primary inputs. Other columns can be added as regressors, but often these are trivial to implement in Python but challenging to implement in SQL, or vice versa, depending on their specifics.
-
-Rather than try and force things to conform to an ultra-strict standard to solve a wide variety of forecasts, this repo focuses ONLY on KPIs, and is organized in such a way to make that easier to maintain.
-
-The idiomatic way to handle this is to use the "columns" key in the YAML to specify which columns to bring into the FitForecast section of this stack, and to write a specific handler for regressors in that section. Your query should return things in this column order:
-
-| date | variable to predict | regressor_00 | regressor_01 | etc |
-| ---- | ------------------- | ------------ | ------------ | --- |
-
-Failure to conform to this order will result in failure as prophet model inputs are taken by POSITION, rather than by key. You will want to maintain this order in your YAML columns list as well.
-
-Is this generic? No. Nor does it try to be. However, because of the limited number of cases, it makes more sense to handle the cases this repo is trying to cover rather than hypothetical future ones.
 
 ### YAML Configs
 

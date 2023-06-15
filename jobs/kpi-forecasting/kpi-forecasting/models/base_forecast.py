@@ -15,10 +15,9 @@ from typing import Dict, List, Tuple
 @dataclass
 class BaseForecast:
     """
-    A base class for fitting, forecasting, and aggregating. This class should not
-    be invoked directly; it should be inherited by a child class. The child class
-    needs to implement `_fit`, `_forecast`, and `_aggregate` methods in order to
-    work.
+    A base class for fitting, forecasting, and summarizing forecasts. This class
+    should not be invoked directly; it should be inherited by a child class. The
+    child class needs to implement `_fit` and `_forecast` methods in order to work.
 
     Args:
         model_type (str): The name of the forecasting model that's being used.
@@ -32,6 +31,9 @@ class BaseForecast:
             date the metric should be queried.
         metric_hub (MetricHub): A MetricHub object that provides details about the
             metric to be forecasted.
+        number_of_simulations (int): The number of simulated timeseries that the forecast
+            should generate. Since many forecast models are probablistic, this enables the
+            measurement of variation across a range of possible outcomes.
     """
 
     model_type: str
@@ -40,6 +42,7 @@ class BaseForecast:
     start_date: str
     end_date: str
     metric_hub: MetricHub
+    number_of_simulations: int = 1000
 
     def __post_init__(self) -> None:
         # fetch observed observed data
@@ -53,10 +56,10 @@ class BaseForecast:
             {"submission_date": pd.date_range(self.start_date, self.end_date).date}
         )
 
-        # model-specific attributes
+        # initialize unset attributes
         self.model = None
         self.forecast_df = None
-        self.number_of_simulations = 1000
+        self.summary_df = None
 
         # metadata
         self.metadata_params = json.dumps(
@@ -134,7 +137,7 @@ class BaseForecast:
         self,
         period: str,
         numpy_aggregations: List[str],
-        quantiles: List[int],
+        percentiles: List[int],
     ) -> pd.DataFrame:
         """
         Calculate summary metrics for `self.forecast_df` over a given period, and
@@ -142,7 +145,7 @@ class BaseForecast:
         """
         # build a list of all functions that we'll summarize the data by
         aggregations = [getattr(np, i) for i in numpy_aggregations]
-        aggregations.extend([pdx.quantile(i) for i in quantiles])
+        aggregations.extend([pdx.percentiles(i) for i in percentiles])
 
         # aggregate metric to the correct date period (day, month, year)
         observed_summarized = pdx.aggregate_to_period(self.observed_df, period)
@@ -322,16 +325,25 @@ class BaseForecast:
 
     def summarize(
         self,
-        periods: List[str] = field(default_factory=list),
-        numpy_aggregations: List[str] = field(default_factory=list),
-        quantiles: List[str] = field(default_factory=list),
+        periods: List[str] = ["day", "month"],
+        numpy_aggregations: List[str] = ["mean"],
+        percentiles: List[int] = [10, 50, 90],
     ) -> None:
         """
         Calculate summary metrics for `self.forecast_df` and add metadata.
-        The dataframe returned here will be reported in bigquery.
+        The dataframe returned here will be reported in Big Query when
+        `write_results` is called.
+
+        Args:
+            periods (List[str]): A list of the time periods that the data should be aggregated and
+                summarized by. For example ["day", "month"]
+            numpy_aggregations (List[str]): A list of numpy methods (represented as strings) that can
+                be applied to summarize numeric values in a numpy dataframe. For example, ["mean"].
+            percentiles (List[int]): A list of integers representing the percentiles that should be reported
+                in the summary. For example [50] would calculate the 50th percentile (i.e. the median).
         """
         self.summary_df = pd.concat(
-            [self._summarize(i, numpy_aggregations, quantiles) for i in periods]
+            [self._summarize(i, numpy_aggregations, percentiles) for i in periods]
         )
 
         # TODO: remove this once the forecasting data model is updated:
@@ -345,11 +357,21 @@ class BaseForecast:
         table: str,
         project_legacy: str,
         dataset_legacy: str,
+        write_disposition: str = "WRITE_APPEND",
         forecast_table_legacy: str = "kpi_automated_forecast_v1",
         confidences_table_legacy: str = "kpi_automated_forecast_confidences_v1",
-        write_disposition: str = "WRITE_APPEND",
     ) -> None:
-        """Write `self.summary_df` to Big Query."""
+        """
+        Write `self.summary_df` to Big Query.
+
+        Args:
+            project (str): The Big Query project that the data should be written to.
+            dataset (str): The Big Query dataset that the data should be written to.
+            table (str): The Big Query table that the data should be written to.
+            write_disposition (str): In the event that the destination table exists,
+                should the table be overwritten ("WRITE_TRUNCATE") or appended to
+                ("WRITE_APPEND")?
+        """
         print(f"Writing results to `{project}.{dataset}.{table}`.", flush=True)
         client = bigquery.Client(project=project)
         schema = [
