@@ -9,10 +9,17 @@ This job forecasts [Metric Hub](https://mozilla.github.io/metric-hub/) metrics b
 This job is intended to be run in a Docker container. If you're not familiar with Docker, it can be helpful to first install
 [Docker Desktop](https://docs.docker.com/desktop/) which provides a GUI.
 
-From the top-level `kpi-forecasting` directory, build the Docker image with the following command (note the trailing `.`):
+First, ensure that you have `CLOUDSDK_CONFIG` set as a environment variable for your shell so that Docker can find your gcloud credentials.
+The default is `~/.config/gcloud`:
 
 ```sh
-docker build -t kpi-forecasting .
+export CLOUDSDK_CONFIG="~/.config/gcloud"
+```
+
+From the top-level `kpi-forecasting` directory, build and run the Docker image with the following command:
+
+```sh
+docker compose up
 ```
 
 A metric can be forecasted by using a command line argument to pass the relevant YAML file to the `kpi_forecasting.py` script.
@@ -27,7 +34,7 @@ python ~/kpi-forecasting/kpi_forecasting.py -c ~/kpi-forecasting/configs/dau_des
 ### Local Python
 
 You can also run the code outside of a Docker container. The code below creates a new Conda environment called `kpi-forecasting-dev`.
-It assumes you have Conda installed. If you'd like to run the code in a Jupyter notebook, it is handy to install Jupyter in a `base` environment.
+It assumes you have Conda installed. If you'd like to run the code in a Jupyter notebook, it is handy to install Jupyter in your `base` environment.
 The `ipykernel` commands below will ensure that the `kpi-forecasting-dev` environment is made available to Jupyter.
 
 ```sh
@@ -38,8 +45,7 @@ pip install -r requirements.txt
 conda deactivate
 ```
 
-If you're running on an M1 Mac, there are [currently some additional steps](https://github.com/facebook/prophet/issues/2250#issuecomment-1317709209) that you'll need to take to get Prophet running. From within
-your python environment, run:
+If you're running on an M1 Mac, there are [currently some additional steps](https://github.com/facebook/prophet/issues/2250#issuecomment-1317709209) that you'll need to take to get Prophet running. From within your python environment, run:
 
 ```python
 import cmdstanpy
@@ -69,3 +75,5 @@ the `models.base_forecast.BaseForecast` class and implement the `_fit` and `_pre
 
 One caveat is that, in order for aggregations over time periods to work (e.g. monthly forecasts), the `_predict` method must generate a number
 of simulated timeseries. This enables the measurement of variation across a range of possible outcomes. This number is set by `BaseForecast.number_of_simulations`.
+
+When testing locally, be sure to modify any config files to use non-production `project` and `dataset` values that you have write access to; otherwise the `write_output` step will fail.
