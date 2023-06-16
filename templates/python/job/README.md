@@ -17,9 +17,9 @@ To run locally, install dependencies with:
 pip install -r requirements.txt
 ```
 
-Run the script with 
+Run the script with
 
-```sh   
+```sh
 python3 -m python_template_job.main
 ```
 
@@ -32,12 +32,6 @@ pytest
 ```
 
 `flake8` and `black` are included for code linting and formatting:
-
-```sh
-pytest --black --flake8
-```
-
-or
 
 ```sh
 flake8 python_template_job/ tests/

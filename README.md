@@ -60,7 +60,7 @@ job creation, e.g. `ci_job.template.yaml`.
 
 ## Development
 
-The tools in this repository are intended for python 3.8+.
+The tools in this repository are intended for python 3.10+.
 
 To install dependencies:
 
@@ -79,7 +79,14 @@ pip-compile --generate-hashes requirements.in
 To run tests:
 
 ```sh
-pytest --flake8 --black tests/
+python -m pytest tests/
+```
+
+For formating and linter checks:
+
+```sh
+black docker_etl/ tests/
+flake8 docker_etl/ tests/
 ```
 
 ### Adding a new job
