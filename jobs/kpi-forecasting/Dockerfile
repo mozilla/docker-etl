@@ -1,4 +1,4 @@
-FROM python:3.10
+FROM python:3.10-slim-bullseye
 LABEL maintainer="Brad Ochocki <bochocki@mozilla.com>"
 
 # https://github.com/mozilla-services/Dockerflow/blob/master/docs/building-container.md
@@ -12,6 +12,8 @@ RUN groupadd --gid ${USER_ID} ${GROUP_ID} && \
 
 WORKDIR ${HOME}
 
+RUN apt-get -y update
+RUN apt-get -y install git
 RUN pip install --upgrade pip
 
 COPY requirements.txt requirements.txt
