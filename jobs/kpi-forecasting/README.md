@@ -16,16 +16,22 @@ The default is `~/.config/gcloud`:
 export CLOUDSDK_CONFIG="~/.config/gcloud"
 ```
 
-From the top-level `kpi-forecasting` directory, build and run the Docker image with the following command:
+To [build or re-build the Docker image](https://docs.docker.com/engine/reference/commandline/compose_build/), run the following command from the top-level `kpi-forecasting`. To force Docker to rebuild from scratch, pass the `--no-cache` flag.
+
+```sh
+docker compose build
+```
+
+Start a container from the Docker image with the following command:
 
 ```sh
 docker compose up
 ```
 
-A metric can be forecasted by using a command line argument to pass the relevant YAML file to the `kpi_forecasting.py` script.
+A metric can be forecasted by using a command line argument that passes the relevant YAML file to the `kpi_forecasting.py` script.
 [Here are approaches for accessing a Docker container's terminal](https://docs.docker.com/desktop/use-desktop/container/#integrated-terminal).
 
-The following command forecasts Desktop DAU numbers:
+For example, the following command forecasts Desktop DAU numbers:
 
 ```sh
 python ~/kpi-forecasting/kpi_forecasting.py -c ~/kpi-forecasting/configs/dau_desktop.yaml
@@ -45,18 +51,18 @@ pip install -r requirements.txt
 conda deactivate
 ```
 
-If you're running on an M1 Mac, there are [currently some additional steps](https://github.com/facebook/prophet/issues/2250#issuecomment-1317709209) that you'll need to take to get Prophet running. From within your python environment, run:
+If you're running on an M1 Mac, there are [currently some additional steps](https://github.com/facebook/prophet/issues/2250#issuecomment-1317709209) that you'll need to take to get Prophet running. From within your python environment, run the following (making sure to update the path appropriately):
 
 ```python
 import cmdstanpy
-cmdstanpy.install_cmdstan(overwrite=True, compiler=True, dir='/path/to/conda/envs/kpi-forecasting-dev/lib/')
+cmdstanpy.install_cmdstan(overwrite=True, compiler=True, dir='/PATH/TO/CONDA/envs/kpi-forecasting-dev/lib/')
 ```
 
 and then from the command line:
 
 ```sh
-cd ~/path/to/conda/envs/kpi-forecasting-dev/lib/python3.10/site-packages/prophet/stan_model
-install_name_tool -add_rpath /path/to/conda/envs/kpi-forecasting-dev/lib/cmdstan-2.32.2/stan/lib/stan_math/lib/tbb prophet_model.bin
+cd ~/PATH/TO/CONDA/envs/kpi-forecasting-dev/lib/python3.10/site-packages/prophet/stan_model
+install_name_tool -add_rpath /PATH/TO/CONDA/envs/kpi-forecasting-dev/lib/cmdstan-2.32.2/stan/lib/stan_math/lib/tbb prophet_model.bin
 ```
 
 # YAML Configs
@@ -68,10 +74,10 @@ Definitions should be documented in the code.
 
 - `./kpi-forecasting/kpi_forecasting.py` is the main control script.
 - `./kpi-forecasting/configs` contains configuration YAML files.
-- `./kpi-forecasting/models` contains` the forecasting models.
+- `./kpi-forecasting/models` contains the forecasting models.
 
-This repo was designed to make it simple to add new forecasting models in the future. In general, a model needs only to inherit
-the `models.base_forecast.BaseForecast` class and implement the `_fit` and `_predict` methods.
+This repo was designed to make it simple to add new forecasting models in the future. In general, a model needs to inherit
+the `models.base_forecast.BaseForecast` class and to implement the `_fit` and `_predict` methods. Output from the `_fit` method will automatically be validated by `BaseForecast._validate_forecast_df`.
 
 One caveat is that, in order for aggregations over time periods to work (e.g. monthly forecasts), the `_predict` method must generate a number
 of simulated timeseries. This enables the measurement of variation across a range of possible outcomes. This number is set by `BaseForecast.number_of_simulations`.
