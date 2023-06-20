@@ -61,12 +61,20 @@ class ProphetForecast(BaseForecast):
             json.dumps({**self.parameters, "holidays": self.use_holidays})
         )
 
-        if "desktop" in self.metric_hub.alias.lower():
+        alias = self.metric_hub.alias.lower()
+
+        if ("desktop" in alias) and ("mobile" in alias):
+            raise ValueError(
+                "Metric Hub alias must include either 'desktop' or 'mobile', not both."
+            )
+        elif "desktop" in alias:
             df["target"] = "desktop"
-        elif "mobile" in self.metric_hub.alias.lower():
+        elif "mobile" in alias:
             df["target"] = "mobile"
         else:
-            df["target"] = None
+            raise ValueError(
+                "Metric Hub alias must include either 'desktop' or 'mobile'."
+            )
 
         columns = [
             "ds",
