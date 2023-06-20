@@ -12,12 +12,13 @@ RUN groupadd --gid ${USER_ID} ${GROUP_ID} && \
 
 WORKDIR ${HOME}
 
-RUN apt-get -y update
-RUN apt-get -y install git
-RUN pip install --upgrade pip
+RUN apt-get -y update && apt-get -y install \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --upgrade pip --no-cache-dir
 
 COPY requirements.txt requirements.txt
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt --no-cache-dir
 
 COPY . .
 
