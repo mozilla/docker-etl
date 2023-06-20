@@ -27,4 +27,4 @@ write_results:
   project_legacy: "moz-fx-data-shared_prod"
   dataset: "telemetry_derived"
   dataset_legacy: "telemetry_derived"
-  table: "kpi_forecasts"
+  table: "kpi_forecasts_v0"
