@@ -19,11 +19,9 @@ def aggregate_to_period(
     date_col: str = "submission_date",
 ) -> pd.DataFrame:
     """Floor dates to the correct period and aggregate."""
-    if period.lower() in ["day", "month", "year"]:
-        period = period[0]
-    else:
+    if period.lower() not in ["day", "month", "year"]:
         raise ValueError(f"Don't know how to floor dates by {period}.")
 
     x = df.copy(deep=True)
-    x[date_col] = pd.to_datetime(x[date_col]).dt.to_period(period).dt.to_timestamp()
+    x[date_col] = pd.to_datetime(x[date_col]).dt.to_period(period[0]).dt.to_timestamp()
     return x.groupby(date_col).agg(aggregation).reset_index()
