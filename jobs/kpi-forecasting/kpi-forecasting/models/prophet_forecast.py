@@ -15,10 +15,6 @@ class ProphetForecast(BaseForecast):
         return {"submission_date": "ds", "value": "y"}
 
     def _fit(self) -> None:
-        """
-        Fit a Prophet model using the `observed_df` that was generated using
-        Metric Hub. This method updates `self.model`.
-        """
         self.model = prophet.Prophet(
             **self.parameters,
             uncertainty_samples=self.number_of_simulations,
@@ -33,16 +29,11 @@ class ProphetForecast(BaseForecast):
         self.model.fit(self.observed_df.rename(columns=self.column_names_map))
 
     def _predict(self) -> pd.DataFrame:
-        """
-        Forecast using `self.model`.
-        """
         # generate the forecast samples
         samples = self.model.predictive_samples(
             self.dates_to_predict.rename(columns=self.column_names_map)
         )
         df = pd.DataFrame(samples["yhat"])
-
-        # add dates_to_predict to the output
         df["submission_date"] = self.dates_to_predict
 
         return df
