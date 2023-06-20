@@ -1,6 +1,7 @@
 import pandas as pd
 
 from dataclasses import dataclass
+from datetime import datetime
 from google.cloud import bigquery
 from mozanalysis.config import ConfigLoader
 from textwrap import dedent
@@ -34,6 +35,9 @@ class MetricHub:
     project: str = "mozdata"
 
     def __post_init__(self) -> None:
+        self.start_date = pd.to_datetime(self.start_date).date()
+        self.end_date = pd.to_datetime(self.end_date or datetime.utcnow()).date()
+
         # Set useful attributes based on the Metric Hub definition
         metric = ConfigLoader.get_metric(
             metric_slug=self.slug,
@@ -48,34 +52,16 @@ class MetricHub:
             "\n", "\n" + " " * 19
         )
 
-    def _enquote(self, x) -> Optional[str]:
-        """
-        Enclose a string in quotes. This is helpful for query templating.
-
-        Examples:
-            self._enquote("1998")
-            > "'1998'"
-            self._enquote(None)
-            > None
-        """
-        if x is not None:
-            x = f"'{x}'"
-        return x
-
     @property
     def query(self) -> str:
         """Build a string to query the relevant metric values from Big Query."""
-
-        # Make sure start_date and end_date strings are formatted correctly
-        start_date = self._enquote(self.start_date)
-        end_date = self._enquote(self.end_date) or "CURRENT_DATE()"
 
         return dedent(
             f"""
             SELECT {self.submission_date_column} AS submission_date,
                    {self.metric.select_expr} AS value
               FROM {self.from_expression}
-             WHERE {self.submission_date_column} BETWEEN {start_date} AND {end_date}
+             WHERE {self.submission_date_column} BETWEEN '{self.start_date}' AND '{self.end_date}'
              GROUP BY {self.submission_date_column}
             """
         )
