@@ -83,5 +83,3 @@ One caveat is that, in order for aggregations over time periods to work (e.g. mo
 of simulated timeseries. This enables the measurement of variation across a range of possible outcomes. This number is set by `BaseForecast.number_of_simulations`.
 
 When testing locally, be sure to modify any config files to use non-production `project` and `dataset` values that you have write access to; otherwise the `write_output` step will fail.
-
-There is [an ongoing project](https://docs.google.com/document/d/18esfJraogzUf1gbZv25vgXkHigCLefazyvzly9s-1k0/edit) to re-model the way we store forecast data in Big Query. One key change in this refactor is to format output data to be as close as possible to what we expect the new data model to look like, while also preserving the legacy data model for the time being. Methods related to legacy outputs are clearly marked in the code (usually including legacy in the method name) and are commented with TODO items that indicate which code paths can be removed once the transition has been made.
