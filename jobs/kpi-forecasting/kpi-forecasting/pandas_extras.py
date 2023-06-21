@@ -20,7 +20,9 @@ def aggregate_to_period(
 ) -> pd.DataFrame:
     """Floor dates to the correct period and aggregate."""
     if period.lower() not in ["day", "month", "year"]:
-        raise ValueError(f"Don't know how to floor dates by {period}.")
+        raise ValueError(
+            f"Don't know how to floor dates by {period}. Please use 'day', 'month', or 'year'."
+        )
 
     x = df.copy(deep=True)
     x[date_col] = pd.to_datetime(x[date_col]).dt.to_period(period[0]).dt.to_timestamp()
