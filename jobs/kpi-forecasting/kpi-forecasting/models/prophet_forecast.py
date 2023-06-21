@@ -44,7 +44,7 @@ class ProphetForecast(BaseForecast):
         `moz-fx-data-shared-prod.telemetry_derived.kpi_automated_forecast_v1`.
         """
         # TODO: This method should be removed once the forecasting data model is updated:
-        # https://docs.google.com/document/d/18esfJraogzUf1gbZv25vgXkHigCLefazyvzly9s-1k0.
+        # https://mozilla-hub.atlassian.net/browse/DS-2676
 
         df = self.model.predict(
             self.dates_to_predict.rename(columns=self.column_names_map)

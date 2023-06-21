@@ -89,7 +89,7 @@ class BaseForecast:
         Forecast using `self.model`, adhering to the legacy data format.
         """
         # TODO: This method should be removed once the forecasting data model is updated:
-        # https://docs.google.com/document/d/18esfJraogzUf1gbZv25vgXkHigCLefazyvzly9s-1k0.
+        # https://mozilla-hub.atlassian.net/browse/DS-2676
         raise NotImplementedError
 
     @property
@@ -208,7 +208,7 @@ class BaseForecast:
         `moz-fx-data-shared-prod.telemetry_derived.kpi_automated_forecast_confidences_v1`
         """
         # TODO: This method should be removed once the forecasting data model is updated:
-        # https://docs.google.com/document/d/18esfJraogzUf1gbZv25vgXkHigCLefazyvzly9s-1k0.
+        # https://mozilla-hub.atlassian.net/browse/DS-2676
 
         df = self.summary_df.copy(deep=True)
 
@@ -320,7 +320,7 @@ class BaseForecast:
         self._validate_forecast_df()
 
         # TODO: This line should be removed once the forecasting data model is updated:
-        # https://docs.google.com/document/d/18esfJraogzUf1gbZv25vgXkHigCLefazyvzly9s-1k0.
+        # https://mozilla-hub.atlassian.net/browse/DS-2676
         self.forecast_df_legacy = self._predict_legacy()
 
     def summarize(
@@ -347,7 +347,7 @@ class BaseForecast:
         )
 
         # TODO: remove this once the forecasting data model is updated:
-        # https://docs.google.com/document/d/18esfJraogzUf1gbZv25vgXkHigCLefazyvzly9s-1k0.
+        # https://mozilla-hub.atlassian.net/browse/DS-2676
         self.summary_df_legacy = self._summarize_legacy()
 
     def write_results(
@@ -405,7 +405,7 @@ class BaseForecast:
         job.result()
 
         # TODO: remove the below jobs once the forecasting data model is updated:
-        # https://docs.google.com/document/d/18esfJraogzUf1gbZv25vgXkHigCLefazyvzly9s-1k0.
+        # https://mozilla-hub.atlassian.net/browse/DS-2676
 
         job = client.load_table_from_dataframe(
             dataframe=self.forecast_df_legacy,
