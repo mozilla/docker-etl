@@ -4,8 +4,6 @@
 #
 #    pip-compile
 #
-attrs==23.1.0
-    # via pytest
 black==23.3.0
     # via pytest-black
 build==0.10.0
@@ -21,8 +19,12 @@ click==8.0.4
     #   -r requirements.in
     #   black
     #   pip-tools
-flake8==5.0.4
-    # via pytest-flake8
+exceptiongroup==1.1.1
+    # via pytest
+flake8==4.0.1
+    # via
+    #   -r requirements.in
+    #   pytest-flake8
 google-api-core[grpc]==2.11.1
     # via
     #   google-cloud-bigquery
@@ -54,7 +56,6 @@ idna==3.4
     # via requests
 importlib-metadata==4.2.0
     # via
-    #   attrs
     #   build
     #   click
     #   flake8
@@ -62,10 +63,8 @@ importlib-metadata==4.2.0
     #   pytest
 iniconfig==2.0.0
     # via pytest
-mccabe==0.7.0
+mccabe==0.6.1
     # via flake8
-more-itertools==9.1.0
-    # via pytest
 mypy-extensions==1.0.0
     # via black
 packaging==23.1
@@ -91,28 +90,26 @@ protobuf==4.23.3
     #   googleapis-common-protos
     #   grpcio-status
     #   proto-plus
-py==1.11.0
-    # via pytest
 pyasn1==0.5.0
     # via
     #   pyasn1-modules
     #   rsa
 pyasn1-modules==0.3.0
     # via google-auth
-pycodestyle==2.9.1
+pycodestyle==2.8.0
     # via flake8
-pyflakes==2.5.0
+pyflakes==2.4.0
     # via flake8
 pyproject-hooks==1.0.0
     # via build
-pytest==6.0.2
+pytest==7.3.2
     # via
     #   -r requirements.in
     #   pytest-black
     #   pytest-flake8
-pytest-black==0.3.11
+pytest-black==0.3.12
     # via -r requirements.in
-pytest-flake8==1.0.6
+pytest-flake8==1.1.1
     # via -r requirements.in
 python-dateutil==2.8.2
     # via google-cloud-bigquery
@@ -127,14 +124,13 @@ six==1.16.0
     #   google-auth
     #   python-dateutil
 toml==0.10.2
-    # via
-    #   pytest
-    #   pytest-black
+    # via pytest-black
 tomli==2.0.1
     # via
     #   black
     #   build
     #   pyproject-hooks
+    #   pytest
 typed-ast==1.5.4
     # via black
 typing-extensions==4.6.3
