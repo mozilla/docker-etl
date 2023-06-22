@@ -1,14 +1,12 @@
 # Python Template Job
 
-This is an example of a dockerized Python job.
-
 ## Usage
 
 This script is intended to be run in a docker container.
 Build the docker image with:
 
 ```sh
-docker build -t python-template-job .
+docker build -t client-generation .
 ```
 
 To run locally, install dependencies with:
@@ -20,7 +18,13 @@ pip install -r requirements.txt
 Run the script with 
 
 ```sh   
-python3 -m python_template_job.main
+python3 -m client_regeneration.main
+```
+
+or as a container
+
+```sh
+docker run client-regeneration python client_regeneration/main.py --seed 10
 ```
 
 ## Development
@@ -40,6 +44,6 @@ pytest --black --flake8
 or
 
 ```sh
-flake8 python_template_job/ tests/
-black --diff python_template_job/ tests/
+flake8 client_regeneration/ tests/
+black --diff client_regeneration/ tests/
 ```
