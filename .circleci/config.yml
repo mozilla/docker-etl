@@ -79,13 +79,13 @@ jobs:
 
   build-job-client-regeneration:
     docker:
-      - image: docker:stable-git
+      - image: << pipeline.parameters.git-image >>
     steps:
       - checkout
       - compare-branch:
           pattern: ^jobs/client-regeneration/
       - setup_remote_docker:
-          version: 19.03.13
+          version: << pipeline.parameters.docker-version >>
       - run:
           name: Build Docker image
           command: docker build -t app:build jobs/client-regeneration/
