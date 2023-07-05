@@ -301,6 +301,7 @@ def create_replacements(
 ):
     # create a table mapping regenerated clients to their matching replacements.
     # TODO: Can we get rid of these?
+    print(f"Creating replacements for seed {seed} from {start_date} to {end_date}")
     replacement_table_name = (
         """mozdata.analysis.regen_sim_client_replacements_{}""".format(str(seed))
     )
@@ -379,15 +380,15 @@ def main(seed, start_date, end_date, lookback):
     start_date, end_date = str(start_date.date()), str(end_date.date())
     print(seed, start_date, end_date, lookback)
 
-    # client = bigquery.Client()
-    # run_simulation(
-    #     client,
-    #     seed=seed,
-    #     start_date=start_date,
-    #     column_list=COLUMN_LIST,
-    #     end_date=end_date,
-    #     lookback=lookback,
-    # )
+    client = bigquery.Client(project="mozdata")
+    run_simulation(
+        client,
+        seed=seed,
+        start_date=start_date,
+        column_list=COLUMN_LIST,
+        end_date=end_date,
+        lookback=lookback,
+    )
 
 
 if __name__ == "__main__":
