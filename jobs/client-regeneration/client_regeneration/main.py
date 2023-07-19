@@ -302,6 +302,109 @@ def update_churn_pool(client, seed, date):
 #     return table_name
 #
 
+def write_baseline_clients_daily(client, seed, start_date):
+  table_name = """mozdata.analysis.regen_sim_replaced_baseline_clients_daily_{}""".format(str(seed))
+  q = f"""
+  CREATE OR REPLACE TABLE {table_name}
+  AS
+  WITH base AS (
+      SELECT
+        COALESCE(r.replacement_id, c.client_id) AS client_id,
+        COALESCE(r.first_seen_date, c.first_seen_date) AS first_seen_date,
+        c.client_id AS original_client_id,
+        c.first_seen_date AS original_first_seen_date,
+        c.submission_date,
+        c.country,
+        c.device_model,
+        regened_last_date,
+
+      FROM `mozdata.fenix.baseline_clients_daily` c
+      LEFT JOIN `mozdata.analysis.regen_sim_client_replacements_{str(seed)}` r
+      -- we want the history starting on the regen date.
+      ON (c.client_id = r.client_id) AND (c.submission_date BETWEEN r.regen_date AND r.regened_last_date)
+      WHERE c.submission_date >= DATE("{str(start_date)}")
+  ),
+
+  numbered AS (
+      SELECT
+          *,
+          ROW_NUMBER() OVER (PARTITION BY client_id, submission_date ORDER BY regened_last_date DESC) AS rn
+      FROM base
+      -- this is to handle the case where the same ID ends a replacement and starts another replacement on the same day, leading to more than one row / client.
+      -- in that case, we ignore the entry from the earlier replacement.
+  )
+
+  SELECT
+      * EXCEPT(regened_last_date, rn)
+  FROM numbered
+  WHERE rn = 1
+  """
+
+def write_usage_history(client, seed, start_date, end_date):
+  table_name = """mozdata.analysis.regen_sim_replaced_clients_last_seen_{}""".format(str(seed))
+  q = f"""
+  DECLARE start_date DATE DEFAULT "{str(start_date)}";
+  DECLARE end_date DATE DEFAULT "{str(end_date)}";
+
+  CREATE TEMP FUNCTION process_bits(bits BYTES) AS (
+    STRUCT(
+      bits,
+
+      -- An INT64 version of the bits, compatible with bits28 functions
+      CAST(CONCAT('0x', TO_HEX(RIGHT(bits, 4))) AS INT64) << 36 >> 36 AS bits28,
+
+      -- An INT64 version of the bits with 64 days of history
+      CAST(CONCAT('0x', TO_HEX(RIGHT(bits, 4))) AS INT64) AS bits64,
+
+      -- A field like days_since_seen from clients_last_seen.
+      udf.bits_to_days_since_seen(bits) AS days_since_active,
+
+      -- Days since first active, analogous to first_seen_date in clients_first_seen
+      udf.bits_to_days_since_first_seen(bits) AS days_since_first_active
+    )
+  );
+
+  CREATE OR REPLACE TABLE {table_name}
+  PARTITION BY submission_date
+  AS
+  WITH
+  alltime AS (
+    SELECT
+      client_id,
+      first_seen_date,
+      -- BEGIN
+      -- Here we produce bit pattern fields based on the daily aggregates from the
+      -- previous step;
+      udf.bits_from_offsets(
+        ARRAY_AGG(
+          DATE_DIFF(end_date, submission_date, DAY)
+        )
+      ) AS days_active_bits,
+      -- END
+    FROM
+      mozdata.analysis.regen_sim_replaced_baseline_clients_daily_{str(seed)}
+    WHERE submission_date BETWEEN start_date AND end_date
+    GROUP BY
+      client_id, first_seen_date
+  )
+  SELECT
+    end_date - i AS submission_date,
+    first_seen_date,
+    client_id,
+    process_bits(days_active_bits >> i) AS days_active
+  FROM
+    alltime
+  -- The cross join parses each input row into one row per day since the client
+  -- was first seen, emulating the format of the existing clients_last_seen table.
+  CROSS JOIN
+    UNNEST(GENERATE_ARRAY(0, DATE_DIFF(end_date, start_date, DAY))) AS i
+  WHERE
+    (days_active_bits >> i) IS NOT NULL
+  """
+
+  job = client.query(q)
+  job.result()
+  return(table_name)
 
 def create_replacements(
     client: bigquery.Client,
@@ -364,8 +467,9 @@ def run_simulation(
         lookback=lookback,
     )
     # TODO:
+    write_baseline_clients_daily(client, seed=seed, start_date=start_date)
     # write_attributed_clients_history(client, seed=seed, start_date=start_date)
-    # write_usage_history(client, seed=seed, start_date=start_date)
+    write_usage_history(client, seed=seed, start_date=start_date, end_date=end_date)
 
 
 @click.command()
