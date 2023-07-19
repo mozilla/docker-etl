@@ -77,6 +77,9 @@ def sample_for_replacement_bq(client, date, column_list, seed, lookback):
           -- number the clients randomly within bucket. adding the seed makes the sort order reproducable.
           ROW_NUMBER() OVER (PARTITION BY bucket ORDER BY FARM_FINGERPRINT(CONCAT(client_id, {str(seed)}))) AS rn,
         FROM churned
+        -- do not sample from from churned clients with FSD equal to the current date that is undergoing replacement (i.e. clients that churn the same day they are new)
+        -- these clients will be eligible for replacement, but they won't serve as replacements on the same day.
+        WHERE first_seen_date != DATE("{date}")
       ),
 
       regen AS (
@@ -177,40 +180,49 @@ def update_churn_pool(client, seed, date):
     job.result()
 
 
-# def write_attributed_clients_history(client, seed, start_date):
-#     table_name = (
-#         """mozdata.analysis.regen_sim_replaced_attributable_clients_{}""".format(
-#             str(seed)
-#         )
-#     )
-#     q = f"""
-#     -- this query replaces regenerated (i.e. 'fake new') client_ids with their matches in `attributable_clients`
-#     -- the main purpose here is to get the daily ad click and search data.
-#
-#     CREATE OR REPLACE TABLE {table_name}
-#     AS
-#         SELECT
-#           COALESCE(r.replacement_id, c.client_id) AS client_id,
-#           COALESCE(r.first_seen_date, c.cohort_date) AS first_seen_date,
-#           c.client_id AS original_client_id,
-#           r.label,
-#           c.submission_date,
-#           ad_clicks,
-#           searches,
-#           searches_with_ads,
-#           country,
-#           sample_id
-#         FROM `mozdata.fenix.attributable_clients` c --switch to v2 when ready
-#         LEFT JOIN `mozdata.analysis.regen_sim_client_replacements_{str(seed)}` r
-#         -- we want the history starting on the regen date.
-#         ON (c.client_id = r.client_id) AND (c.submission_date BETWEEN r.regen_date AND r.regened_last_date)
-#         AND c.submission_date >= DATE("{start_date}")
-#     """
-#
-#     job = client.query(q)
-#     job.result()
-#
-#     return table_name
+def write_attributed_clients_history(client, seed, start_date):
+  table_name = """mozdata.analysis.regen_sim_replaced_attributable_clients_v2_{}""".format(str(seed))
+  q = f"""
+  CREATE OR REPLACE TABLE {table_name}
+  AS
+  WITH base AS (
+      SELECT
+        COALESCE(r.replacement_id, c.client_id) AS client_id,
+        COALESCE(r.first_seen_date, c.cohort_date) AS first_seen_date,
+        c.client_id AS original_client_id,
+        r.label,
+        c.submission_date,
+        ad_clicks,
+        searches,
+        searches_with_ads,
+        first_reported_country,
+        sample_id,
+        regened_last_date
+      FROM `mozdata.fenix.attributable_clients_v2` c
+      LEFT JOIN `mozdata.analysis.regen_sim_client_replacements_{str(seed)}` r
+      -- we want the history starting on the regen date.
+      ON (c.client_id = r.client_id) AND (c.submission_date BETWEEN r.regen_date AND r.regened_last_date)
+      AND c.submission_date >= DATE("{str(start_date)}")
+  ),
+
+  numbered AS (
+      SELECT
+          *,
+          ROW_NUMBER() OVER (PARTITION BY client_id, submission_date ORDER BY regened_last_date DESC) AS rn
+      FROM base
+      -- this is to handle the case where the same ID ends a replacement and starts another replacement on the same day, leading to more than one row / client.
+      -- in that case, we ignore the last day of the earlier replacement.
+  )
+
+  SELECT
+      * EXCEPT(regened_last_date, rn)
+  FROM numbered
+  WHERE rn = 1
+  """
+
+  job = client.query(q)
+  job.result()
+  return(table_name)
 #
 #
 # def write_usage_history(client, seed, start_date):
@@ -352,7 +364,7 @@ def run_simulation(
         lookback=lookback,
     )
     # TODO:
-    # write_attributed_clients_history(client, seed=seed, start_date=start_date)
+    write_attributed_clients_history(client, seed=seed, start_date=start_date)
     # write_usage_history(client, seed=seed, start_date=start_date)
 
 
