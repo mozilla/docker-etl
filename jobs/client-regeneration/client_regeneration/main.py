@@ -239,8 +239,8 @@ def write_baseline_clients_daily(client, seed, start_date):
         c.submission_date,
         c.country,
         c.device_model,
+        udf.safe_sample_id(COALESCE(r.replacement_id, c.client_id)) AS sample_id,
         regened_last_date,
-
       FROM `mozdata.fenix.baseline_clients_daily` c
       LEFT JOIN `mozdata.analysis.regen_sim_client_replacements_{str(seed)}` r
       -- we want the history starting on the regen date.
