@@ -1,3 +1,14 @@
+# directories
+.cache
 .idea
-.vscode
+.ipython
+.ipynb_checkpoints
+.local
 .python-version
+.python_history
+.vscode
+envs
+
+# filetypes
+*.ipynb
+*.pyc
