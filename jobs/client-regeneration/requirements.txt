@@ -10,7 +10,7 @@ build==0.10.0
     # via pip-tools
 cachetools==5.3.1
     # via google-auth
-certifi==2023.5.7
+certifi==2023.7.22
     # via requests
 charset-normalizer==3.1.0
     # via requests
@@ -19,8 +19,6 @@ click==8.0.4
     #   -r requirements.in
     #   black
     #   pip-tools
-exceptiongroup==1.1.1
-    # via pytest
 flake8==4.0.1
     # via
     #   -r requirements.in
@@ -54,13 +52,6 @@ grpcio-status==1.54.2
     # via google-api-core
 idna==3.4
     # via requests
-importlib-metadata==4.2.0
-    # via
-    #   build
-    #   click
-    #   flake8
-    #   pluggy
-    #   pytest
 iniconfig==2.0.0
     # via pytest
 mccabe==0.6.1
@@ -125,27 +116,12 @@ six==1.16.0
     #   python-dateutil
 toml==0.10.2
     # via pytest-black
-tomli==2.0.1
-    # via
-    #   black
-    #   build
-    #   pyproject-hooks
-    #   pytest
-typed-ast==1.5.4
-    # via black
-typing-extensions==4.6.3
-    # via
-    #   black
-    #   importlib-metadata
-    #   platformdirs
 urllib3==1.26.16
     # via
     #   google-auth
     #   requests
 wheel==0.40.0
     # via pip-tools
-zipp==3.15.0
-    # via importlib-metadata
 
 # The following packages are considered to be unsafe in a requirements file:
 # pip
