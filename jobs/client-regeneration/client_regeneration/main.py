@@ -378,6 +378,60 @@ def write_baseline_clients_yearly(client, seed, start_date, end_date):
         )
 
 
+def write_baseline_clients_daily_with_searches(client, seed, start_date):
+    table_name = """mozdata.analysis.regen_sim_replaced_baseline_clients_daily_with_searches_{}""".format(
+        str(seed)
+    )
+    q = f"""
+  CREATE OR REPLACE TABLE {table_name}
+  AS
+  WITH
+  base AS (
+      SELECT
+        c.client_id,
+        c.first_seen_date AS first_seen_date,
+        c.submission_date,
+        c.country,
+        c.device_model,
+        COALESCE(a.searches, 0) AS searches,
+        COALESCE(a.searches_with_ads, 0) AS searches_with_ads,
+        COALESCE(a.ad_clicks, 0) AS ad_clicks,
+      FROM `mozdata.fenix.baseline_clients_daily` c
+      LEFT JOIN `mozdata.fenix.attributable_clients_v2` a
+      USING(client_id, submission_date)
+      WHERE c.submission_date >= DATE("{str(start_date)}")
+  ),
+
+  replaced AS (
+      SELECT
+        COALESCE(r.replacement_id, c.client_id) AS client_id,
+        COALESCE(r.first_seen_date, c.first_seen_date) AS first_seen_date,
+        udf.safe_sample_id(COALESCE(r.replacement_id, c.client_id)) AS sample_id,
+        c.country,
+        c.device_model,
+        c.submission_date,
+        ARRAY_AGG(c.client_id IGNORE NULLS ORDER BY regened_last_date) AS original_client_id,
+        ARRAY_AGG(c.first_seen_date IGNORE NULLS ORDER BY regened_last_date) AS original_first_seen_date,
+        SUM(searches) AS searches,
+        SUM(searches_with_ads) AS searches_with_ads,
+        SUM(ad_clicks) AS ad_clicks,
+      FROM base c
+      LEFT JOIN `mozdata.analysis.regen_sim_client_replacements_{str(seed)}` r
+      -- we want the history starting on the regen date.
+      ON (c.client_id = r.client_id) AND (c.submission_date BETWEEN r.regen_date AND r.regened_last_date)
+      GROUP BY 1,2,3,4,5,6
+  )
+
+  SELECT
+      *
+  FROM replaced
+  """
+
+    job = client.query(q)
+    job.result()
+    return table_name
+
+
 def write_usage_history(client, seed, start_date, end_date):
     table_name = """mozdata.analysis.regen_sim_replaced_clients_last_seen_{}""".format(
         str(seed)
@@ -516,6 +570,9 @@ def run_simulation(
     if "clients-daily" in actions:
         write_baseline_clients_daily(client, seed=seed, start_date=start_date)
 
+    if "clients-daily-with-search" in actions:
+        write_baseline_clients_daily_with_searches(client, seed=seed, start_date=start_date)
+
     if "clients-yearly" in actions:
         init_baseline_clients_yearly(client, seed=seed)
         write_baseline_clients_yearly(
@@ -523,7 +580,7 @@ def run_simulation(
         )
 
     # if "attributed-clients" in actions:
-        # write_attributed_clients_history(client, seed=seed, start_date=start_date)
+    # write_attributed_clients_history(client, seed=seed, start_date=start_date)
 
 
 @click.command()
@@ -550,7 +607,14 @@ def run_simulation(
     "--actions",
     required=True,
     type=click.Choice(
-        ["replacement", "usage-history", "clients-daily", "clients-yearly", "attributed-clients"],
+        [
+            "replacement",
+            "usage-history",
+            "clients-daily",
+            "clients-daily-with-search",
+            "clients-yearly",
+            "attributed-clients",
+        ],
     ),
     multiple=True,
 )
