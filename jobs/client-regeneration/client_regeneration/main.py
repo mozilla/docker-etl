@@ -1,3 +1,5 @@
+from typing import List
+
 import click
 
 from google.cloud import bigquery
@@ -492,13 +494,13 @@ def run_simulation(
     column_list: list,
     end_date: str,
     lookback: int,
-    action: str,
+    actions: List[str],
 ):
     # at a high level there are two main steps here 1. go day by day and match regenerated client_ids to replacement
     # client_ids that "look like" they churned in the prior `lookback` days. write the matches to a table 2. using
     # the matches from 2, write alternative client histories where regenerated clients are given their replacement ids.
 
-    if "replacement" == action:
+    if "replacement" in actions:
         create_replacements(
             client,
             seed=seed,
@@ -508,19 +510,19 @@ def run_simulation(
             lookback=lookback,
         )
 
-    if "usage-history" == action:
+    if "usage-history" in actions:
         write_usage_history(client, seed=seed, start_date=start_date, end_date=end_date)
 
-    if "clients-daily" == action:
+    if "clients-daily" in actions:
         write_baseline_clients_daily(client, seed=seed, start_date=start_date)
 
-    if "clients-yearly" == action:
+    if "clients-yearly" in actions:
         init_baseline_clients_yearly(client, seed=seed)
         write_baseline_clients_yearly(
             client, seed=seed, start_date=start_date, end_date=end_date
         )
 
-    # if "attributed-clients" == action:
+    # if "attributed-clients" in actions:
         # write_attributed_clients_history(client, seed=seed, start_date=start_date)
 
 
@@ -545,18 +547,19 @@ def run_simulation(
     default=DEFAULT_LOOKBACK,
 )
 @click.option(
-    "--action",
+    "--actions",
     required=True,
     type=click.Choice(
-        ["replacement", "usage-history", "clients-daily", "clients-yearly", "attributed-clients"]
+        ["replacement", "usage-history", "clients-daily", "clients-yearly", "attributed-clients"],
     ),
+    multiple=True,
 )
 # TODO: column list as a parameter?
-def main(seed, start_date, end_date, lookback, action):
+def main(seed, start_date, end_date, lookback, actions):
     start_date, end_date = str(start_date.date()), str(end_date.date())
-    print(seed, start_date, end_date, lookback)
 
     client = bigquery.Client(project="mozdata")
+
     run_simulation(
         client,
         seed=seed,
@@ -564,7 +567,7 @@ def main(seed, start_date, end_date, lookback, action):
         column_list=COLUMN_LIST,
         end_date=end_date,
         lookback=lookback,
-        action=action,
+        actions=actions,
     )
 
 
