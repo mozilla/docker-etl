@@ -74,7 +74,7 @@ python3 -c "import pyspark; print(pyspark.__path__[0])"
 
 mkdir -p "$DATA_DIR"
 START_DS=2023-05-21
-END_DS=2023-07-18
+END_DS=2023-07-27
 echo "START_DS is $START_DS and END_DS is $END_DS"
 for ds_nodash in $(ds_nodash_range "$START_DS" "$END_DS"); do
     echo "copying $ds_nodash"
