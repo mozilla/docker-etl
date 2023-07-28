@@ -226,8 +226,12 @@ def update_churn_pool(client, seed, date):
 
 
 def write_baseline_clients_daily(client, seed, start_date):
-  table_name = """mozdata.analysis.regen_sim_replaced_baseline_clients_daily_{}""".format(str(seed))
-  q = f"""
+    table_name = (
+        """mozdata.analysis.regen_sim_replaced_baseline_clients_daily_{}""".format(
+            str(seed)
+        )
+    )
+    q = f"""
   CREATE OR REPLACE TABLE {table_name}
   AS
   WITH base AS (
@@ -262,13 +266,16 @@ def write_baseline_clients_daily(client, seed, start_date):
   FROM numbered
   WHERE rn = 1
   """
-  job = client.query(q)
-  job.result()
-  return(table_name)
+    job = client.query(q)
+    job.result()
+    return table_name
+
 
 def write_usage_history(client, seed, start_date, end_date):
-  table_name = """mozdata.analysis.regen_sim_replaced_clients_last_seen_{}""".format(str(seed))
-  q = f"""
+    table_name = """mozdata.analysis.regen_sim_replaced_clients_last_seen_{}""".format(
+        str(seed)
+    )
+    q = f"""
   DECLARE start_date DATE DEFAULT "{str(start_date)}";
   DECLARE end_date DATE DEFAULT "{str(end_date)}";
 
@@ -328,9 +335,10 @@ def write_usage_history(client, seed, start_date, end_date):
     (days_active_bits >> i) IS NOT NULL
   """
 
-  job = client.query(q)
-  job.result()
-  return(table_name)
+    job = client.query(q)
+    job.result()
+    return table_name
+
 
 def create_replacements(
     client: bigquery.Client,
