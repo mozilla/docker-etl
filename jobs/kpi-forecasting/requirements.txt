@@ -15,7 +15,7 @@ ephem==4.1.4
 exceptiongroup==1.1.1
 fonttools==4.40.0
 gitdb==4.0.10
-GitPython==3.1.31
+GitPython==3.1.32
 google-api-core==2.11.1
 google-auth==2.20.0
 google-cloud-bigquery==3.11.1
