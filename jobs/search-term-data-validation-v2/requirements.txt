@@ -1,5 +1,5 @@
 pandas==1.3.5
-numpy==1.21.0
+numpy==1.22.0
 google-cloud-bigquery==3.0.1
 spacy>=3.0.0,<4.0.0
 spacy-fastlang==1.0.1
