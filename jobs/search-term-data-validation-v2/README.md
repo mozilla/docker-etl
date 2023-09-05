@@ -28,7 +28,7 @@ pip install -r requirements.txt
 Run the scripts with: 
 
 ```sh   
-python search_term_data_validation_v2/main.py --data_validation_origin <Name of destination table in either mozdata or shared-prod>
+python search_term_data_validation_v2/main.py --data_validation_origin <table_name> --data_validation_reporting_destination <table_name>
 ```
 
 The origin table in mozdata (which we treat as staging) is: `mozdata.search_terms_unsanitized_analysis.prototype_data_validation_metrics`
