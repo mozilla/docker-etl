@@ -165,6 +165,22 @@ jobs:
           command: docker run app:build black .
 
 
+  build-job-macroeconomic-indices:
+    docker:
+      - image: << pipeline.parameters.git-image >>
+    steps:
+      - checkout
+      - compare-branch:
+          pattern: ^jobs/macroeconomic-indices/
+      - setup_remote_docker:
+          version: << pipeline.parameters.docker-version >>
+      - run:
+          name: Build Docker image
+          command: docker build -t app:build jobs/macroeconomic-indices/
+      - run:
+          name: Test Code
+          command: docker run app:build pytest --flake8 --black
+
   build-job-mozaggregator2bq:
     docker:
       - image: << pipeline.parameters.git-image >>
@@ -358,6 +374,20 @@ workflows:
             branches:
               only: main
 
+
+  job-macroeconomic-indices:
+    jobs:
+      - build-job-macroeconomic-indices
+      - gcp-gcr/build-and-push-image:
+          context: data-eng-airflow-gcr
+          docker-context: jobs/macroeconomic-indices/
+          path: jobs/macroeconomic-indices/
+          image: macroeconomic-indices_docker_etl
+          requires:
+            - build-job-macroeconomic-indices
+          filters:
+            branches:
+              only: main
 
   job-mozaggregator2bq:
     jobs:
