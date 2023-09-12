@@ -1,6 +1,9 @@
 # Macroeconomic Indices Job
 
-This is an example of a dockerized Python job.
+This job pulls stock exchange and foreign exchange data from [financialmodelingprep.com]
+and loads to BigQuery for use in analysis. We have an FMP account that allows us to pull
+and use this data for internal use. Credentials can be found in the `Revenue data` vault
+in 1Password
 
 ## Usage
 
