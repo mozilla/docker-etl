@@ -1,3 +1,5 @@
+print("Look at me! I'm running a Python command! WOW!")
+
 import argparse
 import pandas as pd
 
