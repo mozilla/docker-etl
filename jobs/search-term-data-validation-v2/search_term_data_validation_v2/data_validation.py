@@ -1,3 +1,5 @@
+print("Hello from search_term_data_validation_v2/data_validation.py!")
+
 from google.cloud import bigquery
 from datetime import date, timedelta, datetime
 from collections import namedtuple
