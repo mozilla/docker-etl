@@ -34,4 +34,4 @@ print(f"Input Dataframe Shape: {validation_df.shape}")
 
 print("Recording validation results...")
 record_validation_results(validation_df, args.data_validation_reporting_destination)
-
+print("Finished! Good work!")

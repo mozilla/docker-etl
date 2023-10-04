@@ -10,8 +10,6 @@ from metaflow import FlowSpec, Parameter, step
 
 from data_validation import retrieve_data_validation_metrics, record_validation_results
 
-print("Dependencies successfully imported!")
-
 class SearchTermDataValidationFlow(FlowSpec):
     data_validation_origin = Parameter('data_validation_origin',
                                        help='The table from which to draw the data for validation',
@@ -25,14 +23,23 @@ class SearchTermDataValidationFlow(FlowSpec):
 
     @step
     def start(self):
+        '''
+        Metaflow flows must begin with a function called 'start.'
+        So here's the start function. It just prints out
+        the inputs for debugging in production.
+        '''
         print(f"Data Validation Origin: {self.data_validation_origin}")
         print(f"Data Validation Reporting Destination: {self.data_validation_reporting_destination}")
 
-        print("success up to here...")
         self.next(self.retrieve_metrics)
 
     @step
     def retrieve_metrics(self):
+        '''
+        Retrieves search term sanitization aggregation data from BigQuery,
+        then checks that they have not varied outside appreciable tolerances
+        in the past X days ('X' is a window set for each metric)
+        '''
         print("Retrieving Data Validation Metrics Now...")
 
         self.validation_df = retrieve_data_validation_metrics(self.data_validation_origin)
@@ -40,13 +47,23 @@ class SearchTermDataValidationFlow(FlowSpec):
 
     @step
     def record_results(self):
-        print(f"Input Dataframe Shape: {validation_df.shape}")
+        '''
+        Shoves the validation metrics calculated in the prior step into a BigQuery table.
+        That table has a dashboard in looker, complete with alerts
+        to notify data scientists if there are any changes that require manual inspection.
+        '''
+        print(f"Input Dataframe Shape: {self.validation_df.shape}")
         print("Recording validation results...")
         record_validation_results(self.validation_df, self.data_validation_reporting_destination)
         self.next(self.end)
 
     @step
     def end(self):
+        '''
+         Metaflow flows end with a function called 'end.'
+         So here's the end function. It prints an encouraging message.
+         We could all use one every now and then.
+         '''
         print(f'That was easy!')
 
 if __name__ == '__main__':
