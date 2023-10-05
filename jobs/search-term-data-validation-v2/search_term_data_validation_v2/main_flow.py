@@ -6,10 +6,14 @@ import pandas as pd
 from datetime import date, timedelta
 from collections import namedtuple
 
+import wandb
+from wandb.integration.metaflow import wandb_log
 from metaflow import FlowSpec, Parameter, step
 
 from data_validation import retrieve_data_validation_metrics, record_validation_results
 
+
+@wandb_log(datasets=True, settings=wandb.Settings(project='search-terms-data-validation'))
 class SearchTermDataValidationFlow(FlowSpec):
     data_validation_origin = Parameter('data_validation_origin',
                                        help='The table from which to draw the data for validation',
@@ -25,8 +29,9 @@ class SearchTermDataValidationFlow(FlowSpec):
     def start(self):
         '''
         Metaflow flows must begin with a function called 'start.'
-        So here's the start function. It just prints out
-        the inputs for debugging in production.
+        So here's the start function.
+        It prints out the input parameters to the job
+        and initializes an experiment tracking run.
         '''
         print(f"Data Validation Origin: {self.data_validation_origin}")
         print(f"Data Validation Reporting Destination: {self.data_validation_reporting_destination}")
