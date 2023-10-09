@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 
-from setuptools import setup, find_packages
+from setuptools import setup
 
 readme = open("README.md").read()
 
 setup(
-    name="kpi-forecasting",
-    version="0.1.0",
+    name="kpi_forecasting",
+    version="1.0.0",
     author="Mozilla Corporation",
-    packages=find_packages(include=["kpi-forecasting"]),
+    packages=["kpi_forecasting", "configs", "models"],
     long_description=readme,
     include_package_data=True,
     license="MPL 2.0",
