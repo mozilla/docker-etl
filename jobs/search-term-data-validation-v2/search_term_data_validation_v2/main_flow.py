@@ -7,13 +7,13 @@ from datetime import date, timedelta
 from collections import namedtuple
 
 import wandb
-from wandb.integration.metaflow import wandb_log
+# from wandb.integration.metaflow import wandb_log
+# @wandb_log(datasets=True, settings=wandb.Settings(project='search-terms-data-validation'))
+
 from metaflow import FlowSpec, Parameter, step
 
 from data_validation import retrieve_data_validation_metrics, record_validation_results
 
-
-@wandb_log(datasets=True, settings=wandb.Settings(project='search-terms-data-validation'))
 class SearchTermDataValidationFlow(FlowSpec):
     data_validation_origin = Parameter('data_validation_origin',
                                        help='The table from which to draw the data for validation',
@@ -66,9 +66,19 @@ class SearchTermDataValidationFlow(FlowSpec):
     def end(self):
         '''
          Metaflow flows end with a function called 'end.'
-         So here's the end function. It prints an encouraging message.
+         So here's the end function. It logs artifacts to wandb
+         and then prints an encouraging message.
          We could all use one every now and then.
          '''
+        run = wandb.init(
+            project="instep-wandb-search-term-data-validation",
+            config={
+                "example_metric": "Example Value!"
+            }
+        )
+
+        run.log({"search-term-data-validation-df": wandb.Table(dataframe=self.validation_df)})
+
         print(f'That was easy!')
 
 if __name__ == '__main__':
