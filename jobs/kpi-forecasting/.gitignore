@@ -6,8 +6,17 @@
 .local
 .python-version
 .python_history
+.tests
+.venv
 .vscode
 envs
+venv
+
+# packaging
+build/
+dist/
+*.egg-info/
+*.egg
 
 # filetypes
 *.ipynb
