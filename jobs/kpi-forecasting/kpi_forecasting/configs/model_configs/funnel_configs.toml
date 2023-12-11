@@ -1,0 +1,714 @@
+## Daily Active Users
+[search_forecasting_daily_active_users]
+
+## search_forecasting_daily_active_users, Google desktop US personal
+[search_forecasting_daily_active_users.google_desktop_us_personal]
+start_date = "2018-01-01"
+
+[search_forecasting_daily_active_users.google_desktop_us_personal.segment]
+partner = "Google"
+device = "desktop"
+channel = "personal"
+country = "US"
+
+[search_forecasting_daily_active_users.google_desktop_us_personal.holidays]
+holidays = ["easter", "covid_sip11"]
+use_country_holidays = "US"
+
+[search_forecasting_daily_active_users.google_desktop_us_personal.regressors]
+[search_forecasting_daily_active_users.google_desktop_us_personal.regressors.post_esr_migration]
+name = "post_esr_migration"
+description = "Dates following migration of clients on old OS versions from release to ESR"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+[search_forecasting_daily_active_users.google_desktop_us_personal.regressors.in_covid]
+name = "in_covid"
+start_date = "2020-03-14"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_users.google_desktop_us_personal.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+[search_forecasting_daily_active_users.google_desktop_us_personal.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## search_forecasting_daily_active_users, Google desktop US ESR
+[search_forecasting_daily_active_users.google_desktop_us_esr]
+start_date = "2019-01-01"
+
+[search_forecasting_daily_active_users.google_desktop_us_esr.segment]
+partner = "Google"
+device = "desktop"
+channel = "esr"
+country = "US"
+
+[search_forecasting_daily_active_users.google_desktop_us_esr.regressor.post_esr_migration]
+name = "post_esr_migration"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_users.google_desktop_us_esr.holidays]
+holidays = ["covid_sip11"]
+use_country_holidays = "US"
+
+[search_forecasting_daily_active_users.google_desktop_us_esr.parameters]
+changepoint_prior_scale = [0.001, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+growth = "logistic"
+[search_forecasting_daily_active_users.google_desktop_us_esr.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## search_forecasting_daily_active_users, Google desktop ROW personal
+[search_forecasting_daily_active_users.google_desktop_row_personal]
+start_date = "2018-01-01"
+
+[search_forecasting_daily_active_users.google_desktop_row_personal.segment]
+partner = "Google"
+device = "desktop"
+channel = "personal"
+country = "ROW"
+
+[search_forecasting_daily_active_users.google_desktop_row_personal.holidays]
+holidays = ["easter", "covid_sip11"]
+
+[search_forecasting_daily_active_users.google_desktop_row_personal.regressors]
+[search_forecasting_daily_active_users.google_desktop_row_personal.regressors.post_esr_migration]
+name = "post_esr_migration"
+description = "Dates following migration of clients on old OS versions from release to ESR"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+[search_forecasting_daily_active_users.google_desktop_row_personal.regressors.in_covid]
+name = "in_covid"
+start_date = "2020-03-14"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_users.google_desktop_row_personal.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+[search_forecasting_daily_active_users.google_desktop_row_personal.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## search_forecasting_daily_active_users, Google desktop ROW ESR
+[search_forecasting_daily_active_users.google_desktop_row_esr]
+start_date = "2019-01-01"
+
+[search_forecasting_daily_active_users.google_desktop_row_esr.segment]
+partner = "Google"
+device = "desktop"
+channel = "esr"
+country = "ROW"
+
+[search_forecasting_daily_active_users.google_desktop_row_esr.regressor.post_esr_migration]
+name = "post_esr_migration"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_users.google_desktop_row_esr.holidays]
+holidays = ["covid_sip11"]
+
+[search_forecasting_daily_active_users.google_desktop_row_esr.parameters]
+changepoint_prior_scale = [0.001, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+growth = "logistic"
+[search_forecasting_daily_active_users.google_desktop_row_esr.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+### Total Search Count
+[search_forecasting_search_count]
+
+## search_forecasting_search_count, Google desktop US personal
+[search_forecasting_search_count.google_desktop_us_personal]
+start_date = "2018-01-01"
+
+[search_forecasting_search_count.google_desktop_us_personal.segment]
+partner = "Google"
+device = "desktop"
+channel = "personal"
+country = "US"
+
+[search_forecasting_search_count.google_desktop_us_personal.holidays]
+holidays = ["easter", "covid_sip11"]
+use_country_holidays = "US"
+
+[search_forecasting_search_count.google_desktop_us_personal.regressors]
+[search_forecasting_search_count.google_desktop_us_personal.regressors.post_esr_migration]
+name = "post_esr_migration"
+description = "Dates following migration of clients on old OS versions from release to ESR"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+[search_forecasting_search_count.google_desktop_us_personal.regressors.in_covid]
+name = "in_covid"
+start_date = "2020-03-14"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_search_count.google_desktop_us_personal.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+[search_forecasting_search_count.google_desktop_us_personal.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## search_forecasting_search_count, Google desktop US ESR
+[search_forecasting_search_count.google_desktop_us_esr]
+start_date = "2019-01-01"
+
+[search_forecasting_search_count.google_desktop_us_esr.segment]
+partner = "Google"
+device = "desktop"
+channel = "esr"
+country = "US"
+
+[search_forecasting_search_count.google_desktop_us_esr.regressor.post_esr_migration]
+name = "post_esr_migration"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_search_count.google_desktop_us_esr.holidays]
+holidays = ["covid_sip11"]
+use_country_holidays = "US"
+
+[search_forecasting_search_count.google_desktop_us_esr.parameters]
+changepoint_prior_scale = [0.001, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+growth = "logistic"
+[search_forecasting_search_count.google_desktop_us_esr.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## search_forecasting_search_count, Google desktop ROW personal
+[search_forecasting_search_count.google_desktop_row_personal]
+start_date = "2018-01-01"
+
+[search_forecasting_search_count.google_desktop_row_personal.segment]
+partner = "Google"
+device = "desktop"
+channel = "personal"
+country = "ROW"
+
+[search_forecasting_search_count.google_desktop_row_personal.holidays]
+holidays = ["easter", "covid_sip11"]
+
+[search_forecasting_search_count.google_desktop_row_personal.regressors]
+[search_forecasting_search_count.google_desktop_row_personal.regressors.post_esr_migration]
+name = "post_esr_migration"
+description = "Dates following migration of clients on old OS versions from release to ESR"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+[search_forecasting_search_count.google_desktop_row_personal.regressors.in_covid]
+name = "in_covid"
+start_date = "2020-03-14"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_search_count.google_desktop_row_personal.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+[search_forecasting_search_count.google_desktop_row_personal.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## search_forecasting_search_count, Google desktop ROW ESR
+[search_forecasting_search_count.google_desktop_row_esr]
+start_date = "2019-01-01"
+
+[search_forecasting_search_count.google_desktop_row_esr.segment]
+partner = "Google"
+device = "desktop"
+channel = "esr"
+country = "ROW"
+
+[search_forecasting_search_count.google_desktop_row_esr.regressor.post_esr_migration]
+name = "post_esr_migration"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_search_count.google_desktop_row_esr.holidays]
+holidays = ["covid_sip11"]
+
+[search_forecasting_search_count.google_desktop_row_esr.parameters]
+changepoint_prior_scale = [0.001, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+growth = "logistic"
+[search_forecasting_search_count.google_desktop_row_esr.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## DAU with Google Default
+[search_forecasting_daily_active_users_w_google_default]
+
+## search_forecasting_daily_active_users_w_google_default, Google desktop US personal
+[search_forecasting_daily_active_users_w_google_default.google_desktop_us_personal]
+start_date = "2018-01-01"
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_us_personal.segment]
+partner = "Google"
+device = "desktop"
+channel = "personal"
+country = "US"
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_us_personal.holidays]
+holidays = ["easter", "covid_sip11"]
+use_country_holidays = "US"
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_us_personal.regressors]
+[search_forecasting_daily_active_users_w_google_default.google_desktop_us_personal.regressors.post_esr_migration]
+name = "post_esr_migration"
+description = "Dates following migration of clients on old OS versions from release to ESR"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+[search_forecasting_daily_active_users_w_google_default.google_desktop_us_personal.regressors.in_covid]
+name = "in_covid"
+start_date = "2020-03-14"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_us_personal.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+[search_forecasting_daily_active_users_w_google_default.google_desktop_us_personal.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## search_forecasting_daily_active_users_w_google_default, Google desktop US ESR
+[search_forecasting_daily_active_users_w_google_default.google_desktop_us_esr]
+start_date = "2019-01-01"
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_us_esr.segment]
+partner = "Google"
+device = "desktop"
+channel = "esr"
+country = "US"
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_us_esr.regressor.post_esr_migration]
+name = "post_esr_migration"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_us_esr.holidays]
+holidays = ["covid_sip11"]
+use_country_holidays = "US"
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_us_esr.parameters]
+changepoint_prior_scale = [0.001, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+growth = "logistic"
+[search_forecasting_daily_active_users_w_google_default.google_desktop_us_esr.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## search_forecasting_daily_active_users_w_google_default, Google desktop ROW personal
+[search_forecasting_daily_active_users_w_google_default.google_desktop_row_personal]
+start_date = "2018-01-01"
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_row_personal.segment]
+partner = "Google"
+device = "desktop"
+channel = "personal"
+country = "ROW"
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_row_personal.holidays]
+holidays = ["easter", "covid_sip11"]
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_row_personal.regressors]
+[search_forecasting_daily_active_users_w_google_default.google_desktop_row_personal.regressors.post_esr_migration]
+name = "post_esr_migration"
+description = "Dates following migration of clients on old OS versions from release to ESR"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+[search_forecasting_daily_active_users_w_google_default.google_desktop_row_personal.regressors.in_covid]
+name = "in_covid"
+start_date = "2020-03-14"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_row_personal.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+[search_forecasting_daily_active_users_w_google_default.google_desktop_row_personal.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## search_forecasting_daily_active_users_w_google_default, Google desktop ROW ESR
+[search_forecasting_daily_active_users_w_google_default.google_desktop_row_esr]
+start_date = "2019-01-01"
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_row_esr.segment]
+partner = "Google"
+device = "desktop"
+channel = "esr"
+country = "ROW"
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_row_esr.regressor.post_esr_migration]
+name = "post_esr_migration"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_row_esr.holidays]
+holidays = ["covid_sip11"]
+
+[search_forecasting_daily_active_users_w_google_default.google_desktop_row_esr.parameters]
+changepoint_prior_scale = [0.001, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+growth = "logistic"
+[search_forecasting_daily_active_users_w_google_default.google_desktop_row_esr.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## DAU searchers with Google default
+[search_forecasting_daily_active_searchers_w_google_default]
+
+## search_forecasting_daily_active_searchers_w_google_default, Google desktop US personal
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_personal]
+start_date = "2018-01-01"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_personal.segment]
+partner = "Google"
+device = "desktop"
+channel = "personal"
+country = "US"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_personal.holidays]
+holidays = ["easter", "covid_sip11"]
+use_country_holidays = "US"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_personal.regressors]
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_personal.regressors.post_esr_migration]
+name = "post_esr_migration"
+description = "Dates following migration of clients on old OS versions from release to ESR"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_personal.regressors.in_covid]
+name = "in_covid"
+start_date = "2020-03-14"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_personal.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_personal.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## search_forecasting_daily_active_searchers_w_google_default, Google desktop US ESR
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_esr]
+start_date = "2019-01-01"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_esr.segment]
+partner = "Google"
+device = "desktop"
+channel = "esr"
+country = "US"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_esr.regressor.post_esr_migration]
+name = "post_esr_migration"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_esr.holidays]
+holidays = ["covid_sip11"]
+use_country_holidays = "US"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_esr.parameters]
+changepoint_prior_scale = [0.001, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+growth = "logistic"
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_esr.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## search_forecasting_daily_active_searchers_w_google_default, Google desktop ROW personal
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_personal]
+start_date = "2018-01-01"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_personal.segment]
+partner = "Google"
+device = "desktop"
+channel = "personal"
+country = "ROW"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_personal.holidays]
+holidays = ["easter", "covid_sip11"]
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_personal.regressors]
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_personal.regressors.post_esr_migration]
+name = "post_esr_migration"
+description = "Dates following migration of clients on old OS versions from release to ESR"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_personal.regressors.in_covid]
+name = "in_covid"
+start_date = "2020-03-14"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_personal.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_personal.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## search_forecasting_daily_active_searchers_w_google_default, Google desktop ROW ESR
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_esr]
+start_date = "2019-01-01"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_esr.segment]
+partner = "Google"
+device = "desktop"
+channel = "esr"
+country = "ROW"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_esr.regressor.post_esr_migration]
+name = "post_esr_migration"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_esr.holidays]
+holidays = ["covid_sip11"]
+
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_esr.parameters]
+changepoint_prior_scale = [0.001, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+growth = "logistic"
+[search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_esr.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## Search ad clicks
+[search_forecasting_ad_clicks]
+
+## search_forecasting_ad_clicks, Google desktop US personal
+[search_forecasting_ad_clicks.google_desktop_us_personal]
+start_date = "2018-01-01"
+
+[search_forecasting_ad_clicks.google_desktop_us_personal.segment]
+partner = "Google"
+device = "desktop"
+channel = "personal"
+country = "US"
+
+[search_forecasting_ad_clicks.google_desktop_us_personal.holidays]
+holidays = ["easter", "covid_sip11"]
+use_country_holidays = "US"
+
+[search_forecasting_ad_clicks.google_desktop_us_personal.regressors]
+[search_forecasting_ad_clicks.google_desktop_us_personal.regressors.post_esr_migration]
+name = "post_esr_migration"
+description = "Dates following migration of clients on old OS versions from release to ESR"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+[search_forecasting_ad_clicks.google_desktop_us_personal.regressors.in_covid]
+name = "in_covid"
+start_date = "2020-03-14"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_ad_clicks.google_desktop_us_personal.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+[search_forecasting_ad_clicks.google_desktop_us_personal.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## search_forecasting_ad_clicks, Google desktop US ESR
+[search_forecasting_ad_clicks.google_desktop_us_esr]
+start_date = "2019-01-01"
+
+[search_forecasting_ad_clicks.google_desktop_us_esr.segment]
+partner = "Google"
+device = "desktop"
+channel = "esr"
+country = "US"
+
+[search_forecasting_ad_clicks.google_desktop_us_esr.regressor.post_esr_migration]
+name = "post_esr_migration"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_ad_clicks.google_desktop_us_esr.holidays]
+holidays = ["covid_sip11"]
+use_country_holidays = "US"
+
+[search_forecasting_ad_clicks.google_desktop_us_esr.parameters]
+changepoint_prior_scale = [0.001, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+growth = "logistic"
+[search_forecasting_ad_clicks.google_desktop_us_esr.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## search_forecasting_ad_clicks, Google desktop ROW personal
+[search_forecasting_ad_clicks.google_desktop_row_personal]
+start_date = "2018-01-01"
+
+[search_forecasting_ad_clicks.google_desktop_row_personal.segment]
+partner = "Google"
+device = "desktop"
+channel = "personal"
+country = "ROW"
+
+[search_forecasting_ad_clicks.google_desktop_row_personal.holidays]
+holidays = ["easter", "covid_sip11"]
+
+[search_forecasting_ad_clicks.google_desktop_row_personal.regressors]
+[search_forecasting_ad_clicks.google_desktop_row_personal.regressors.post_esr_migration]
+name = "post_esr_migration"
+description = "Dates following migration of clients on old OS versions from release to ESR"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+[search_forecasting_ad_clicks.google_desktop_row_personal.regressors.in_covid]
+name = "in_covid"
+start_date = "2020-03-14"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_ad_clicks.google_desktop_row_personal.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+[search_forecasting_ad_clicks.google_desktop_row_personal.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
+
+## search_forecasting_ad_clicks, Google desktop ROW ESR
+[search_forecasting_ad_clicks.google_desktop_row_esr]
+start_date = "2019-01-01"
+
+[search_forecasting_ad_clicks.google_desktop_row_esr.segment]
+partner = "Google"
+device = "desktop"
+channel = "esr"
+country = "ROW"
+
+[search_forecasting_ad_clicks.google_desktop_row_esr.regressor.post_esr_migration]
+name = "post_esr_migration"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_ad_clicks.google_desktop_row_esr.holidays]
+holidays = ["covid_sip11"]
+
+[search_forecasting_ad_clicks.google_desktop_row_esr.parameters]
+changepoint_prior_scale = [0.001, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+growth = "logistic"
+[search_forecasting_ad_clicks.google_desktop_row_esr.cv_settings]
+initial = "1296"
+period = "30"
+horizon = "30"
+parallel = "processes"
