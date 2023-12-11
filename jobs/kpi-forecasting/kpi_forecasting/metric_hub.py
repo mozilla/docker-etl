@@ -62,7 +62,7 @@ class MetricHub:
         # Add query snippets for segments
         if self.segments:
             segment_select_query = []
-            for alias, sql in self.segments:
+            for alias, sql in self.segments.items():
                 segment_select_query.append(f"  {sql} AS {alias},")
             self.segment_select_query = "\n    ".join(segment_select_query)
             self.segment_groupby_query = "\n ,".join(self.segments.keys())
@@ -74,17 +74,12 @@ class MetricHub:
         if self.segments:
             return dedent(
                 f"""
-            WITH cte AS (
                 SELECT {self.submission_date_column} AS submission_date,
                     {self.metric.select_expr} AS value,
                     {self.segment_select_query}
                 FROM {self.from_expression}
                 WHERE {self.submission_date_column} BETWEEN '{self.start_date}' AND '{self.end_date}'
                     {self.where}
-                )
-                SELECT
-                    *
-                FROM cte
                 GROUP BY {self.submission_date_column},
                     {self.segment_groupby_query}
             """

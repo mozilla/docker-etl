@@ -1,7 +1,12 @@
+import itertools
+import json
+from pathlib import Path
+
 import pandas as pd
 from pandas.api import types as pd_types
 import numpy as np
 import prophet
+from prophet.diagnostics import cross_validation
 
 from google.cloud import bigquery
 from google.cloud.bigquery.enums import SqlTypeNames as bq_types
@@ -9,12 +14,22 @@ from google.cloud.bigquery.enums import SqlTypeNames as bq_types
 from datetime import datetime
 from dataclasses import dataclass
 from kpi_forecasting.models.base_forecast import BaseForecast
+from kpi_forecasting.configs.model_configs import (
+    FunnelConfigs,
+    Config,
+    ProphetRegressor,
+)
 from kpi_forecasting import pandas_extras as pdx
-from typing import Dict, List
+from typing import Dict, List, Union
+
+MODEL_CONFIG_PATH = Path("configs/model_configs")
+FUNNEL_CONFIG_FILE_NAME = "funnel_configs.toml"
 
 
 @dataclass
 class FunnelForecast(BaseForecast):
+    funnel_config_path: str = ""
+
     def __post_init__(self) -> None:
         super().__post_init__()
         combination_df = (
@@ -24,52 +39,195 @@ class FunnelForecast(BaseForecast):
             .drop("count", axis=1)
         )
         segment_combinations = []
-        for _, row in combination_df:
+        for _, row in combination_df.iterrows():
             segment_combinations.append(row.to_dict())
 
-        self.segment_combinations = segment_combinations
+        funnel_configs = FunnelConfigs.collect_funnel_configs(
+            self.funnel_config_path
+            or Path(__file__).parent.parent
+            / MODEL_CONFIG_PATH
+            / FUNNEL_CONFIG_FILE_NAME
+        )
 
         # initialize a list to hold models for each segment
-        self.segment_models = []
+        ## populate the list with segments and parameters for the segment
+        segment_models = []
+        for segment in segment_combinations:
+            recipe_dict = {"segment": segment}
+            for config in funnel_configs.configs:
+                if config.metric == self.metric_hub.slug and config.segment == segment:
+                    recipe_dict["config"] = config
+                    break
+            if "config" not in recipe_dict.keys():
+                recipe_dict["config"] = Config(
+                    metric=self.metric_hub.slug,
+                    slug=json.dumps(segment),
+                    segment=segment,
+                    start_date=self.start_date,
+                    holidays=None,
+                    regressors=[],
+                    parameters=self.parameters,
+                    cv_settings=self.parameters["cv_settings"]
+                    if "cv_settings" in self.parameters.keys()
+                    else None,
+                    use_country_holidays=self.use_holidays,
+                )
+
+            segment_models.append(recipe_dict)
+        self.segment_models = segment_models
 
     @property
     def column_names_map(self) -> Dict[str, str]:
         return {"submission_date": "ds", "value": "y"}
 
+    def _fill_regressor_dates(self, regressor: ProphetRegressor) -> ProphetRegressor:
+        for date in ["start_date", "end_date"]:
+            if getattr(regressor, date) is None:
+                setattr(regressor, date, getattr(self, date))
+            elif isinstance(getattr(regressor, date), str):
+                setattr(regressor, date, pd.to_datetime(getattr(regressor, date)))
+        return regressor
+
     def _fit(self) -> None:
         # fit and save a Prophet model for each segment combination
-        for recipe in self.segment_combinations:
+        for recipe in self.segment_models:
+            if any(
+                isinstance(param, list)
+                for param in recipe["config"].parameters.values()
+            ):
+                parameters = self._auto_tuning(recipe)
+            else:
+                parameters = recipe["config"].parameters
+
             model = prophet.Prophet(
-                **self.parameters,
+                **parameters,
                 uncertainty_samples=self.number_of_simulations,
                 mcmc_samples=0,
             )
 
-            # TODO: Figure out what country_name's holidays to use for ROW. DE?
-            if self.use_holidays:
-                model.add_country_holidays(country_name="US")
+            if recipe["config"].use_country_holidays:
+                model.add_country_holidays(
+                    country_name=recipe["config"].use_country_holidays
+                )
 
             # Modify observed data to have column names that Prophet expects, and fit
             # the model on rows that match the segment recipe
-            model.fit(
+            test_dat = (
                 self.observed_df.loc[
-                    (self.observed_df[list(recipe)] == pd.Series(recipe)).all(axis=1)
-                ].rename(columns=self.column_names_map)
+                    (
+                        self.observed_df[list(recipe["segment"])]
+                        == pd.Series(recipe["segment"])
+                    ).all(axis=1)
+                ]
+                .rename(columns=self.column_names_map)
+                .copy()
             )
-            self.segment_models.append({"segment": {**recipe}, "trained_model": model})
+            if "growth" in parameters.keys() and parameters["growth"] == "logistic":
+                test_dat["floor"] = test_dat["y"].min() * 0.5
+                test_dat["cap"] = test_dat["y"].max() * 1.5
+            model.fit(test_dat)
+            model.plot_components
+            recipe["parameters"] = parameters
+            recipe["trained_model"] = model
 
-    def _predict(self, model: prophet.Prophet) -> pd.DataFrame:
-        # generate the forecast samples
-        samples = model.predictive_samples(
-            self.dates_to_predict.rename(columns=self.column_names_map)
+    def _auto_tuning(
+        self, recipe: Dict[str, Union[Dict[str, str], Config]]
+    ) -> Dict[str, float]:
+        for k, v in recipe["config"].parameters.items():
+            if not isinstance(v, list):
+                recipe["config"].parameters[k] = [v]
+
+        param_grid = [
+            dict(zip(recipe["config"].parameters.keys(), v))
+            for v in itertools.product(*recipe["config"].parameters.values())
+        ]
+
+        test_dat = (
+            self.observed_df.loc[
+                (
+                    self.observed_df[list(recipe["segment"])]
+                    == pd.Series(recipe["segment"])
+                ).all(axis=1)
+            ]
+            .rename(columns=self.column_names_map)
+            .copy(deep=True)
         )
+        bias = []
+        if recipe["config"].regressors:
+            test_dat = self._add_regressors(test_dat)
+        for params in param_grid:
+            if isinstance(recipe["config"].holidays, pd.DataFrame):
+                params["holidays"] = recipe["config"].holidays
+
+            m = prophet.Prophet(**params)
+
+            for regressor in recipe["config"].regressors:
+                m.add_regressor(
+                    regressor.name,
+                    prior_scale=regressor.prior_scale,
+                    mode=regressor.mode,
+                )
+
+            if recipe["config"].use_country_holidays:
+                m.add_country_holidays(
+                    country_name=recipe["config"].use_country_holidays
+                )
+
+            if "growth" in params and params["growth"] == "logistic":
+                test_dat["floor"] = test_dat["y"].min() * 0.5
+                test_dat["cap"] = test_dat["y"].max() * 1.5
+
+            m.fit(test_dat)
+
+            df_cv = cross_validation(m, **recipe["config"].cv_settings)
+
+            df_bias = df_cv.groupby("cutoff")[["yhat", "y"]].sum().reset_index()
+            df_bias["pcnt_bias"] = df_bias["yhat"] / df_bias["y"] - 1
+            bias.append(df_bias.tail(3)["pcnt_bias"].mean())
+
+        min_abs_bias_index = [
+            x
+            for x in range(len(bias))
+            if bias[x] == min(np.min(bias), np.max(bias), key=np.abs)
+        ][0]
+
+        return param_grid[min_abs_bias_index]
+
+    def _add_regressors(
+        self, test_dat: pd.DataFrame, regressors: List[ProphetRegressor]
+    ):
+        df = test_dat.copy().rename(columns=self.column_names_map)
+        for regressor in regressors:
+            regressor = self._fill_regressor_dates(regressor)
+            df[regressor.name] = np.where(
+                (df["ds"] >= regressor.start_date) & (df["ds"] <= regressor.start_date),
+                0,
+                1,
+            )
+        return df
+
+    def _predict(
+        self, recipe: Dict[str, Union[Dict[str, str], Config, prophet.Prophet]]
+    ) -> pd.DataFrame:
+        # generate the forecast samples
+        if recipe["config"].regressors:
+            dates_to_predict = self._add_regressors(self.dates_to_predict)
+        else:
+            dates_to_predict = self.dates_to_predict.rename(
+                columns=self.column_names_map
+            ).copy()
+        if "growth" in recipe["config"].parameters.keys():
+            dates_to_predict["floor"] = dates_to_predict["y"].min() * 0.5
+            dates_to_predict["cap"] = dates_to_predict["y"].max() * 1.5
+
+        samples = recipe["trained_model"].predictive_samples(dates_to_predict)
         df = pd.DataFrame(samples["yhat"])
         df["submission_date"] = self.dates_to_predict
 
         return df
 
     def _validate_forecast_df(self, df: pd.DataFrame) -> None:
-        """Validate that `self.forecast_df` has been generated correctly."""
+        """Validate that `forecast_df` has been generated correctly for each segment."""
         columns = df.columns
         expected_shape = (len(self.dates_to_predict), 1 + self.number_of_simulations)
         numeric_columns = df.drop(columns=["submission_date"]).columns
@@ -88,7 +246,7 @@ class FunnelForecast(BaseForecast):
             )
 
         for i in numeric_columns:
-            if not pd_types.is_numeric_dtype(self.forecast_df[i]):
+            if not pd_types.is_numeric_dtype(df[i]):
                 raise ValueError(
                     "All forecast_df columns except 'submission_date' and segment dims must be numeric,"
                     f" but column {i} has type {df[i].dtypes}."
@@ -97,7 +255,7 @@ class FunnelForecast(BaseForecast):
     def _summarize(
         self,
         observed_df: pd.DataFrame,
-        forecast_df: pd.DataFrame,
+        segment_results: pd.DataFrame,
         period: str,
         numpy_aggregations: List[str],
         percentiles: List[int],
@@ -112,7 +270,7 @@ class FunnelForecast(BaseForecast):
 
         # aggregate metric to the correct date period (day, month, year)
         observed_summarized = pdx.aggregate_to_period(observed_df, period)
-        forecast_agg = pdx.aggregate_to_period(forecast_df, period)
+        forecast_agg = pdx.aggregate_to_period(segment_results["forecast_df"], period)
 
         # find periods of overlap between observed and forecasted data
         overlap = forecast_agg.merge(
@@ -161,7 +319,7 @@ class FunnelForecast(BaseForecast):
         df["forecast_end_date"] = self.end_date
         df["forecast_trained_at"] = self.trained_at
         df["forecast_predicted_at"] = self.predicted_at
-        df["forecast_parameters"] = self.metadata_params
+        df["forecast_parameters"] = json.dumps(segment_results["parameters"].toDict())
 
         return df
 
@@ -171,11 +329,11 @@ class FunnelForecast(BaseForecast):
         self._set_seed()
         self.predicted_at = datetime.utcnow()
 
-        for segment in self.segment_models:
-            forecast_df = self._predict(segment["trained_model"])
+        for recipe in self.segment_models:
+            forecast_df = self._predict(recipe)
             self._validate_forecast_df(forecast_df)
 
-            segment["forecast_df"] = forecast_df.copy(deep=True)
+            recipe["forecast_df"] = forecast_df.copy(deep=True)
             del forecast_df
 
     def summarize(
@@ -190,7 +348,7 @@ class FunnelForecast(BaseForecast):
                 [
                     self._summarize(
                         self.observed_df,
-                        segment["forecast_df"],
+                        segment,
                         i,
                         numpy_aggregations,
                         percentiles,
@@ -198,7 +356,7 @@ class FunnelForecast(BaseForecast):
                     for i in periods
                 ]
             )
-            for dim, dim_value in segment["segment"]:
+            for dim, dim_value in segment["segment"].items():
                 summary_df[dim] = dim_value
 
             summary_df_list.append(summary_df.copy(deep=True))
