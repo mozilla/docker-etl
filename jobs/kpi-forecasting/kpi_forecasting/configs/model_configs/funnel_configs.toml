@@ -35,9 +35,9 @@ changepoint_range = [0.8, 0.9]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 [search_forecasting_daily_active_users.google_desktop_us_personal.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1296 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## search_forecasting_daily_active_users, Google desktop US ESR
@@ -61,15 +61,14 @@ holidays = ["covid_sip11"]
 use_country_holidays = "US"
 
 [search_forecasting_daily_active_users.google_desktop_us_esr.parameters]
-changepoint_prior_scale = [0.001, 0.01, 0.1]
-changepoint_range = [0.8, 0.9]
+changepoint_prior_scale = [0.001, 0.01, 0.1, 0.2, 0.5]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 growth = "logistic"
 [search_forecasting_daily_active_users.google_desktop_us_esr.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## search_forecasting_daily_active_users, Google desktop ROW personal
@@ -105,9 +104,9 @@ changepoint_range = [0.8, 0.9]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 [search_forecasting_daily_active_users.google_desktop_row_personal.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1296 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## search_forecasting_daily_active_users, Google desktop ROW ESR
@@ -130,15 +129,14 @@ mode = "multiplicative"
 holidays = ["covid_sip11"]
 
 [search_forecasting_daily_active_users.google_desktop_row_esr.parameters]
-changepoint_prior_scale = [0.001, 0.01, 0.1]
-changepoint_range = [0.8, 0.9]
+changepoint_prior_scale = [0.001, 0.01, 0.1, 0.2, 0.5]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 growth = "logistic"
 [search_forecasting_daily_active_users.google_desktop_row_esr.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ### Total Search Count
@@ -178,9 +176,9 @@ changepoint_range = [0.8, 0.9]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 [search_forecasting_search_count.google_desktop_us_personal.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1296 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## search_forecasting_search_count, Google desktop US ESR
@@ -204,15 +202,14 @@ holidays = ["covid_sip11"]
 use_country_holidays = "US"
 
 [search_forecasting_search_count.google_desktop_us_esr.parameters]
-changepoint_prior_scale = [0.001, 0.01, 0.1]
-changepoint_range = [0.8, 0.9]
+changepoint_prior_scale = [0.001, 0.01, 0.1, 0.2, 0.5]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 growth = "logistic"
 [search_forecasting_search_count.google_desktop_us_esr.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## search_forecasting_search_count, Google desktop ROW personal
@@ -248,9 +245,9 @@ changepoint_range = [0.8, 0.9]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 [search_forecasting_search_count.google_desktop_row_personal.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1296 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## search_forecasting_search_count, Google desktop ROW ESR
@@ -273,18 +270,17 @@ mode = "multiplicative"
 holidays = ["covid_sip11"]
 
 [search_forecasting_search_count.google_desktop_row_esr.parameters]
-changepoint_prior_scale = [0.001, 0.01, 0.1]
-changepoint_range = [0.8, 0.9]
+changepoint_prior_scale = [0.001, 0.01, 0.1, 0.2, 0.5]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 growth = "logistic"
 [search_forecasting_search_count.google_desktop_row_esr.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
-## DAU with Google Default
+### DAU with Google Default
 [search_forecasting_daily_active_users_w_google_default]
 
 ## search_forecasting_daily_active_users_w_google_default, Google desktop US personal
@@ -321,9 +317,9 @@ changepoint_range = [0.8, 0.9]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 [search_forecasting_daily_active_users_w_google_default.google_desktop_us_personal.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1296 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## search_forecasting_daily_active_users_w_google_default, Google desktop US ESR
@@ -347,15 +343,14 @@ holidays = ["covid_sip11"]
 use_country_holidays = "US"
 
 [search_forecasting_daily_active_users_w_google_default.google_desktop_us_esr.parameters]
-changepoint_prior_scale = [0.001, 0.01, 0.1]
-changepoint_range = [0.8, 0.9]
+changepoint_prior_scale = [0.001, 0.01, 0.1, 0.2, 0.5]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 growth = "logistic"
 [search_forecasting_daily_active_users_w_google_default.google_desktop_us_esr.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## search_forecasting_daily_active_users_w_google_default, Google desktop ROW personal
@@ -386,14 +381,13 @@ prior_scale = 1
 mode = "multiplicative"
 
 [search_forecasting_daily_active_users_w_google_default.google_desktop_row_personal.parameters]
-changepoint_prior_scale = [0.001, 0.005, 0.01, 0.1]
-changepoint_range = [0.8, 0.9]
+changepoint_prior_scale = [0.001, 0.005, 0.01, 0.1, 0.2, 0.5]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 [search_forecasting_daily_active_users_w_google_default.google_desktop_row_personal.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1296 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## search_forecasting_daily_active_users_w_google_default, Google desktop ROW ESR
@@ -416,15 +410,14 @@ mode = "multiplicative"
 holidays = ["covid_sip11"]
 
 [search_forecasting_daily_active_users_w_google_default.google_desktop_row_esr.parameters]
-changepoint_prior_scale = [0.001, 0.01, 0.1]
-changepoint_range = [0.8, 0.9]
+changepoint_prior_scale = [0.001, 0.01, 0.1, 0.2, 0.5]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 growth = "logistic"
 [search_forecasting_daily_active_users_w_google_default.google_desktop_row_esr.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## DAU searchers with Google default
@@ -464,9 +457,9 @@ changepoint_range = [0.8, 0.9]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 [search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_personal.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1296 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## search_forecasting_daily_active_searchers_w_google_default, Google desktop US ESR
@@ -490,15 +483,14 @@ holidays = ["covid_sip11"]
 use_country_holidays = "US"
 
 [search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_esr.parameters]
-changepoint_prior_scale = [0.001, 0.01, 0.1]
-changepoint_range = [0.8, 0.9]
+changepoint_prior_scale = [0.001, 0.01, 0.1, 0.2, 0.5]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 growth = "logistic"
 [search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_esr.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## search_forecasting_daily_active_searchers_w_google_default, Google desktop ROW personal
@@ -534,9 +526,9 @@ changepoint_range = [0.8, 0.9]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 [search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_personal.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1296 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## search_forecasting_daily_active_searchers_w_google_default, Google desktop ROW ESR
@@ -559,15 +551,14 @@ mode = "multiplicative"
 holidays = ["covid_sip11"]
 
 [search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_esr.parameters]
-changepoint_prior_scale = [0.001, 0.01, 0.1]
-changepoint_range = [0.8, 0.9]
+changepoint_prior_scale = [0.001, 0.01, 0.1, 0.2, 0.5]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 growth = "logistic"
 [search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_esr.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## Search ad clicks
@@ -607,9 +598,9 @@ changepoint_range = [0.8, 0.9]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 [search_forecasting_ad_clicks.google_desktop_us_personal.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1296 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## search_forecasting_ad_clicks, Google desktop US ESR
@@ -633,15 +624,14 @@ holidays = ["covid_sip11"]
 use_country_holidays = "US"
 
 [search_forecasting_ad_clicks.google_desktop_us_esr.parameters]
-changepoint_prior_scale = [0.001, 0.01, 0.1]
-changepoint_range = [0.8, 0.9]
+changepoint_prior_scale = [0.001, 0.01, 0.1, 0.2, 0.5]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 growth = "logistic"
 [search_forecasting_ad_clicks.google_desktop_us_esr.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## search_forecasting_ad_clicks, Google desktop ROW personal
@@ -677,9 +667,9 @@ changepoint_range = [0.8, 0.9]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 [search_forecasting_ad_clicks.google_desktop_row_personal.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1296 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
 
 ## search_forecasting_ad_clicks, Google desktop ROW ESR
@@ -702,13 +692,12 @@ mode = "multiplicative"
 holidays = ["covid_sip11"]
 
 [search_forecasting_ad_clicks.google_desktop_row_esr.parameters]
-changepoint_prior_scale = [0.001, 0.01, 0.1]
-changepoint_range = [0.8, 0.9]
+changepoint_prior_scale = [0.001, 0.01, 0.1, 0.2, 0.5]
 yearly_seasonality = [25, 35]
 weekly_seasonality = true
 growth = "logistic"
 [search_forecasting_ad_clicks.google_desktop_row_esr.cv_settings]
-initial = "1296"
-period = "30"
-horizon = "30"
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
 parallel = "processes"
