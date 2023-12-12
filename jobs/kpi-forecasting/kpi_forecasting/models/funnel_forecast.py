@@ -154,7 +154,7 @@ class FunnelForecast(BaseForecast):
         )
         bias = []
         if recipe["config"].regressors:
-            test_dat = self._add_regressors(test_dat)
+            test_dat = self._add_regressors(test_dat, recipe["config"].regressors)
         for params in param_grid:
             if isinstance(recipe["config"].holidays, pd.DataFrame):
                 params["holidays"] = recipe["config"].holidays
@@ -176,7 +176,10 @@ class FunnelForecast(BaseForecast):
             if "growth" in params and params["growth"] == "logistic":
                 test_dat["floor"] = test_dat["y"].min() * 0.5
                 test_dat["cap"] = test_dat["y"].max() * 1.5
-
+                recipe["logistic_growth_limits"] = {
+                    "floor": test_dat["y"].min() * 0.5,
+                    "cap": test_dat["y"].max() * 1.5,
+                }
             m.fit(test_dat)
 
             df_cv = cross_validation(m, **recipe["config"].cv_settings)
@@ -197,10 +200,12 @@ class FunnelForecast(BaseForecast):
         self, test_dat: pd.DataFrame, regressors: List[ProphetRegressor]
     ):
         df = test_dat.copy().rename(columns=self.column_names_map)
+        df["ds"] = pd.to_datetime(df["ds"])
         for regressor in regressors:
             regressor = self._fill_regressor_dates(regressor)
             df[regressor.name] = np.where(
-                (df["ds"] >= regressor.start_date) & (df["ds"] <= regressor.start_date),
+                (df["ds"] >= pd.to_datetime(regressor.start_date))
+                & (df["ds"] <= pd.to_datetime(regressor.start_date)),
                 0,
                 1,
             )
@@ -211,18 +216,47 @@ class FunnelForecast(BaseForecast):
     ) -> pd.DataFrame:
         # generate the forecast samples
         if recipe["config"].regressors:
-            dates_to_predict = self._add_regressors(self.dates_to_predict)
+            dates_to_predict = self._add_regressors(
+                self.dates_to_predict, recipe["config"].regressors
+            )
         else:
             dates_to_predict = self.dates_to_predict.rename(
                 columns=self.column_names_map
             ).copy()
         if "growth" in recipe["config"].parameters.keys():
-            dates_to_predict["floor"] = dates_to_predict["y"].min() * 0.5
-            dates_to_predict["cap"] = dates_to_predict["y"].max() * 1.5
+            dates_to_predict["floor"] = recipe["logistic_growth_limits"]["floor"]
+            dates_to_predict["cap"] = recipe["logistic_growth_limits"]["cap"]
 
         samples = recipe["trained_model"].predictive_samples(dates_to_predict)
         df = pd.DataFrame(samples["yhat"])
         df["submission_date"] = self.dates_to_predict
+
+        component_cols = [
+            "trend",
+            "trend_upper",
+            "trend_lower",
+            "weekly",
+            "weekly_upper",
+            "weekly_lower",
+            "yearly",
+            "yearly_upper",
+            "yearly_lower",
+            "multiplicative_terms",
+            "multiplicative_terms_upper",
+            "multiplicative_terms_lower",
+            "additive_terms",
+            "additive_terms_upper",
+            "additive_terms_lower",
+        ]
+
+        recipe["component_df"] = recipe["trained_model"].predict(dates_to_predict)
+        recipe["component_df"] = recipe["component_df"][
+            [c for c in component_cols if c in recipe["component_df"].columns]
+        ]
+        for col in [
+            c for c in component_cols if c not in recipe["component_df"].columns
+        ]:
+            recipe["component_df"][col] = np.nan
 
         return df
 
@@ -254,8 +288,7 @@ class FunnelForecast(BaseForecast):
 
     def _summarize(
         self,
-        observed_df: pd.DataFrame,
-        segment_results: pd.DataFrame,
+        segment_results: Dict[str, Union[str, Dict, pd.DataFrame]],
         period: str,
         numpy_aggregations: List[str],
         percentiles: List[int],
@@ -269,7 +302,15 @@ class FunnelForecast(BaseForecast):
         aggregations.extend([pdx.percentile(i) for i in percentiles])
 
         # aggregate metric to the correct date period (day, month, year)
-        observed_summarized = pdx.aggregate_to_period(observed_df, period)
+        observed_summarized = pdx.aggregate_to_period(
+            self.observed_df.loc[
+                (
+                    self.observed_df[list(segment_results["segment"])]
+                    == pd.Series(segment_results["segment"])
+                ).all(axis=1)
+            ],
+            period,
+        )
         forecast_agg = pdx.aggregate_to_period(segment_results["forecast_df"], period)
 
         # find periods of overlap between observed and forecasted data
@@ -319,7 +360,13 @@ class FunnelForecast(BaseForecast):
         df["forecast_end_date"] = self.end_date
         df["forecast_trained_at"] = self.trained_at
         df["forecast_predicted_at"] = self.predicted_at
-        df["forecast_parameters"] = json.dumps(segment_results["parameters"].toDict())
+        if "holidays" in segment_results["parameters"].keys() and isinstance(
+            segment_results["parameters"]["holidays"], pd.DataFrame
+        ):
+            segment_results["parameters"]["holidays"] = (
+                segment_results["parameters"]["holidays"]["holiday"].unique().tolist()
+            )
+        df["forecast_parameters"] = json.dumps(segment_results["parameters"])
 
         return df
 
@@ -343,11 +390,11 @@ class FunnelForecast(BaseForecast):
         percentiles: List[int] = [10, 50, 90],
     ) -> None:
         summary_df_list = []
+        component_df_list = []
         for segment in self.segment_models:
             summary_df = pd.concat(
                 [
                     self._summarize(
-                        self.observed_df,
                         segment,
                         i,
                         numpy_aggregations,
@@ -358,18 +405,22 @@ class FunnelForecast(BaseForecast):
             )
             for dim, dim_value in segment["segment"].items():
                 summary_df[dim] = dim_value
-
+                segment["component_df"][dim] = dim_value
             summary_df_list.append(summary_df.copy(deep=True))
+            component_df_list.append(segment["component_df"])
             del summary_df
 
         self.summary_df = pd.concat(summary_df_list, ignore_index=True)
+        self.component_df_list = component_df_list
 
     def write_results(
         self,
         project: str,
-        dataset: str,
-        table: str,
+        forecast_dataset: str,
+        forecast_table: str,
         write_disposition: str = "WRITE_APPEND",
+        components_table: str = "",
+        components_dataset: str = "",
     ) -> None:
         """
         Write `self.summary_df` to Big Query.
@@ -382,7 +433,10 @@ class FunnelForecast(BaseForecast):
                 should the table be overwritten ("WRITE_TRUNCATE") or appended to
                 ("WRITE_APPEND")?
         """
-        print(f"Writing results to `{project}.{dataset}.{table}`.", flush=True)
+        print(
+            f"Writing results to `{project}.{forecast_dataset}.{forecast_table}`.",
+            flush=True,
+        )
         client = bigquery.Client(project=project)
         schema = [
             bigquery.SchemaField("submission_date", bq_types.DATE),
@@ -408,7 +462,7 @@ class FunnelForecast(BaseForecast):
         ]
         job = client.load_table_from_dataframe(
             dataframe=self.summary_df,
-            destination=f"{project}.{dataset}.{table}",
+            destination=f"{project}.{forecast_dataset}.{forecast_table}",
             job_config=bigquery.LoadJobConfig(
                 schema=schema,
                 autodetect=False,
@@ -417,3 +471,40 @@ class FunnelForecast(BaseForecast):
         )
         # Wait for the job to complete.
         job.result()
+
+        if components_table:
+            components_df = pd.concat(self.component_df_list, ignore_index=True)
+            numeric_cols = components_df.dtypes[
+                components_df.dtypes == float
+            ].index.tolist()
+            string_cols = components_df.dtypes[
+                components_df.dtypes == object
+            ].index.tolist()
+            components_df["metric_slug"] = self.metric_hub.slug
+            components_df["trained_at"] = self.trained_at
+
+            schema = [
+                bigquery.SchemaField("metric_slug", bq_types.STRING),
+                bigquery.SchemaField("trained_at", bq_types.TIMESTAMP),
+            ]
+            schema += [
+                bigquery.SchemaField(col, bq_types.STRING) for col in string_cols
+            ]
+            schema += [
+                bigquery.SchemaField(col, bq_types.FLOAT) for col in numeric_cols
+            ]
+
+            if not components_dataset:
+                components_dataset = forecast_dataset
+
+            job = client.load_table_from_dataframe(
+                dataframe=components_df,
+                destination=f"{project}.{components_dataset}.{components_table}",
+                job_config=bigquery.LoadJobConfig(
+                    schema=schema,
+                    autodetect=False,
+                    write_disposition=write_disposition,
+                ),
+            )
+
+            job.result()
