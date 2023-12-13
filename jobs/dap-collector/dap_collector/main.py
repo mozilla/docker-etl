@@ -17,10 +17,10 @@ CMD = f"./collect --task-id {{task_id}} --leader {LEADER} --vdaf {{vdaf}} {{vdaf
 INTERVAL_LENGTH = 300
 
 
-def read_tasks():
+def read_tasks(task_config_url):
     """Read task configuration from Google Cloud bucket."""
-    url = "https://storage.googleapis.com/collector-config-prod/tasks.json"
-    resp = requests.get(url)
+
+    resp = requests.get(task_config_url)
     tasks = resp.json()
     return tasks
 
@@ -76,6 +76,7 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
         stdout = stdout.decode()
         stderr = stderr.decode()
     except asyncio.exceptions.TimeoutError:
+        res["collection_duration"] = time.perf_counter() - start_counter
         res["error"] = f"TIMEOUT"
         return res
     res["collection_duration"] = time.perf_counter() - start_counter
@@ -185,7 +186,9 @@ def ensure_table(bqclient, table_id):
 def store_data(results, bqclient, table_id):
     """Inserts the results into BQ. Assumes that they are already in the right format"""
     insert_res = bqclient.insert_rows_json(table=table_id, json_rows=results)
-    assert len(insert_res) == 0
+    if len(insert_res) != 0:
+        print(insert_res)
+        assert len(insert_res) == 0
 
 
 @click.command()
@@ -210,11 +213,16 @@ def store_data(results, bqclient, table_id):
     help="Date at which the backfill will start, going backwards (YYYY-MM-DD)",
     required=True,
 )
-def main(project, table_id, auth_token, hpke_private_key, date):
+@click.option(
+    "--task-config-url",
+    help="URL where a JSON definition of the tasks to be collected can be found.",
+    required=True,
+)
+def main(project, table_id, auth_token, hpke_private_key, date, task_config_url):
     table_id = project + "." + table_id
     bqclient = bigquery.Client(project=project)
     ensure_table(bqclient, table_id)
-    for task in read_tasks():
+    for task in read_tasks(task_config_url):
         print(f"Now processing task: {task['task_id']}")
         results = asyncio.run(collect_task(task, auth_token, hpke_private_key, date))
         store_data(results, bqclient, table_id)
