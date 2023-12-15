@@ -1,0 +1,13 @@
+job-telemetry-dev-cycle:
+  jobs:
+    - build-job-telemetry-dev-cycle
+    - gcp-gcr/build-and-push-image:
+        context: data-eng-airflow-gcr
+        docker-context: jobs/telemetry-dev-cycle/
+        path: jobs/telemetry-dev-cycle/
+        image: telemetry-dev-cycle_docker_etl
+        requires:
+          - build-job-telemetry-dev-cycle
+        filters:
+          branches:
+            only: main
