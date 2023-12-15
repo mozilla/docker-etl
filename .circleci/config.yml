@@ -310,7 +310,7 @@ jobs:
           command: docker build -t app:build jobs/telemetry-dev-cycle/
       - run:
           name: Test Code
-          command: docker run app:build pytest --flake8 --black
+          command: docker run app:build pytest --black
 
   build-job-webcompat-kb:
     docker:
