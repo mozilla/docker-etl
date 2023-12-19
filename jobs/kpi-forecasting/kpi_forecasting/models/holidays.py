@@ -92,7 +92,7 @@ class HolidayCollection:
 
     fenix_migration = pd.DataFrame(
         {
-            "holiday": "covid_sip2",
+            "holiday": "fenix_migration",
             "ds": pd.to_datetime(["2020-09-15"]),
             "lower_window": -28,
             "upper_window": 30,

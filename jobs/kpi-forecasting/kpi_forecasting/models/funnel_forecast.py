@@ -20,7 +20,7 @@ from kpi_forecasting.configs.model_configs import (
     ProphetRegressor,
 )
 from kpi_forecasting import pandas_extras as pdx
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Tuple
 
 MODEL_CONFIG_PATH = Path("configs/model_configs")
 FUNNEL_CONFIG_FILE_NAME = "funnel_configs.toml"
@@ -88,6 +88,68 @@ class FunnelForecast(BaseForecast):
                 setattr(regressor, date, pd.to_datetime(getattr(regressor, date)))
         return regressor
 
+    def _build_model(
+        self,
+        recipe: Dict[str, Union[str, FunnelConfigs]],
+        parameters: Dict[str, Union[float, str, bool]],
+    ) -> prophet.Prophet:
+        # Builds a Prophet class from parameters. Adds regressors and holidays
+        ## from config file
+        if isinstance(recipe["config"].holidays, pd.DataFrame):
+            parameters["holidays"] = recipe["config"].holidays
+        m = prophet.Prophet(
+            **parameters,
+            uncertainty_samples=self.number_of_simulations,
+            mcmc_samples=0,
+        )
+        if recipe["config"].use_country_holidays:
+            m.add_country_holidays(country_name=recipe["config"].use_country_holidays)
+        for regressor in recipe["config"].regressors:
+            m.add_regressor(
+                regressor.name,
+                prior_scale=regressor.prior_scale,
+                mode=regressor.mode,
+            )
+
+        return m
+
+    def _build_model_dataframe(
+        self,
+        recipe: Dict[str, Union[str, FunnelConfigs]],
+        task: str,
+        add_logistic_growth_cols: bool = False,
+    ) -> pd.DataFrame:
+        if task == "train":
+            df = (
+                self.observed_df.loc[
+                    (
+                        self.observed_df[list(recipe["segment"])]
+                        == pd.Series(recipe["segment"])
+                    ).all(axis=1)
+                ]
+                .rename(columns=self.column_names_map)
+                .copy()
+            )
+            if add_logistic_growth_cols:
+                df["floor"] = df["y"].min() * 0.5
+                df["cap"] = df["y"].max() * 1.5
+                recipe["logistic_growth_limits"] = {
+                    "floor": df["y"].min() * 0.5,
+                    "cap": df["y"].max() * 1.5,
+                }
+        elif task == "predict":
+            df = self.dates_to_predict.rename(columns=self.column_names_map).copy()
+            if add_logistic_growth_cols:
+                df["floor"] = recipe["logistic_growth_limits"]["floor"]
+                df["cap"] = recipe["logistic_growth_limits"]["cap"]
+        else:
+            raise ValueError("task not in ['train','predict']")
+
+        if recipe["config"].regressors:
+            df = self._add_regressors(df, recipe["config"].regressors)
+
+        return df
+
     def _fit(self) -> None:
         # fit and save a Prophet model for each segment combination
         for recipe in self.segment_models:
@@ -99,40 +161,26 @@ class FunnelForecast(BaseForecast):
             else:
                 parameters = recipe["config"].parameters
 
-            model = prophet.Prophet(
-                **parameters,
-                uncertainty_samples=self.number_of_simulations,
-                mcmc_samples=0,
+            # Initialize model; build model dataframe
+            model = self._build_model(recipe, parameters)
+            add_log_growth_cols = (
+                "growth" in parameters.keys() and parameters["growth"] == "logistic"
             )
+            test_dat = self._build_model_dataframe(recipe, "train", add_log_growth_cols)
 
-            if recipe["config"].use_country_holidays:
-                model.add_country_holidays(
-                    country_name=recipe["config"].use_country_holidays
-                )
-
-            # Modify observed data to have column names that Prophet expects, and fit
-            # the model on rows that match the segment recipe
-            test_dat = (
-                self.observed_df.loc[
-                    (
-                        self.observed_df[list(recipe["segment"])]
-                        == pd.Series(recipe["segment"])
-                    ).all(axis=1)
-                ]
-                .rename(columns=self.column_names_map)
-                .copy()
-            )
-            if "growth" in parameters.keys() and parameters["growth"] == "logistic":
-                test_dat["floor"] = test_dat["y"].min() * 0.5
-                test_dat["cap"] = test_dat["y"].max() * 1.5
             model.fit(test_dat)
-            model.plot_components
+
             recipe["parameters"] = parameters
             recipe["trained_model"] = model
 
     def _auto_tuning(
         self, recipe: Dict[str, Union[Dict[str, str], Config]]
     ) -> Dict[str, float]:
+        add_log_growth_cols = (
+            "growth" in recipe["config"].parameters.keys()
+            and recipe["config"].parameters["growth"] == "logistic"
+        )
+
         for k, v in recipe["config"].parameters.items():
             if not isinstance(v, list):
                 recipe["config"].parameters[k] = [v]
@@ -142,44 +190,11 @@ class FunnelForecast(BaseForecast):
             for v in itertools.product(*recipe["config"].parameters.values())
         ]
 
-        test_dat = (
-            self.observed_df.loc[
-                (
-                    self.observed_df[list(recipe["segment"])]
-                    == pd.Series(recipe["segment"])
-                ).all(axis=1)
-            ]
-            .rename(columns=self.column_names_map)
-            .copy(deep=True)
-        )
+        test_dat = self._build_model_dataframe(recipe, "train", add_log_growth_cols)
         bias = []
-        if recipe["config"].regressors:
-            test_dat = self._add_regressors(test_dat, recipe["config"].regressors)
+
         for params in param_grid:
-            if isinstance(recipe["config"].holidays, pd.DataFrame):
-                params["holidays"] = recipe["config"].holidays
-
-            m = prophet.Prophet(**params)
-
-            for regressor in recipe["config"].regressors:
-                m.add_regressor(
-                    regressor.name,
-                    prior_scale=regressor.prior_scale,
-                    mode=regressor.mode,
-                )
-
-            if recipe["config"].use_country_holidays:
-                m.add_country_holidays(
-                    country_name=recipe["config"].use_country_holidays
-                )
-
-            if "growth" in params and params["growth"] == "logistic":
-                test_dat["floor"] = test_dat["y"].min() * 0.5
-                test_dat["cap"] = test_dat["y"].max() * 1.5
-                recipe["logistic_growth_limits"] = {
-                    "floor": test_dat["y"].min() * 0.5,
-                    "cap": test_dat["y"].max() * 1.5,
-                }
+            m = self._build_model(recipe, params)
             m.fit(test_dat)
 
             df_cv = cross_validation(m, **recipe["config"].cv_settings)
@@ -215,17 +230,13 @@ class FunnelForecast(BaseForecast):
         self, recipe: Dict[str, Union[Dict[str, str], Config, prophet.Prophet]]
     ) -> pd.DataFrame:
         # generate the forecast samples
-        if recipe["config"].regressors:
-            dates_to_predict = self._add_regressors(
-                self.dates_to_predict, recipe["config"].regressors
-            )
-        else:
-            dates_to_predict = self.dates_to_predict.rename(
-                columns=self.column_names_map
-            ).copy()
-        if "growth" in recipe["config"].parameters.keys():
-            dates_to_predict["floor"] = recipe["logistic_growth_limits"]["floor"]
-            dates_to_predict["cap"] = recipe["logistic_growth_limits"]["cap"]
+        add_log_growth_cols = (
+            "growth" in recipe["parameters"].keys()
+            and recipe["parameters"]["growth"] == "logistic"
+        )
+        dates_to_predict = self._build_model_dataframe(
+            recipe, "predict", add_log_growth_cols
+        )
 
         samples = recipe["trained_model"].predictive_samples(dates_to_predict)
         df = pd.DataFrame(samples["yhat"])
@@ -250,13 +261,6 @@ class FunnelForecast(BaseForecast):
         ]
 
         recipe["component_df"] = recipe["trained_model"].predict(dates_to_predict)
-        recipe["component_df"] = recipe["component_df"][
-            [c for c in component_cols if c in recipe["component_df"].columns]
-        ]
-        for col in [
-            c for c in component_cols if c not in recipe["component_df"].columns
-        ]:
-            recipe["component_df"][col] = np.nan
 
         return df
 
