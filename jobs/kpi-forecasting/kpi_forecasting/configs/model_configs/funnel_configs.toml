@@ -21,7 +21,7 @@ name = "post_esr_migration"
 description = "Dates following migration of clients on old OS versions from release to ESR"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 [search_forecasting_daily_active_users.google_desktop_us_personal.regressors.in_covid]
 name = "in_covid"
 start_date = "2020-03-14"
@@ -54,7 +54,7 @@ country = "US"
 name = "post_esr_migration"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 
 [search_forecasting_daily_active_users.google_desktop_us_esr.holidays]
 holidays = ["covid_sip11"]
@@ -90,7 +90,7 @@ name = "post_esr_migration"
 description = "Dates following migration of clients on old OS versions from release to ESR"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 [search_forecasting_daily_active_users.google_desktop_row_personal.regressors.in_covid]
 name = "in_covid"
 start_date = "2020-03-14"
@@ -123,7 +123,7 @@ country = "ROW"
 name = "post_esr_migration"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 
 [search_forecasting_daily_active_users.google_desktop_row_esr.holidays]
 holidays = ["covid_sip11"]
@@ -138,6 +138,84 @@ initial = "1196 days"
 period = "30 days"
 horizon = "30 days"
 parallel = "processes"
+
+## search_forecasting_daily_active_users, Google mobile US
+[search_forecasting_daily_active_users.google_mobile_us_all]
+start_date = "2021-01-01"
+
+[search_forecasting_daily_active_users.google_mobile_us_all.segment]
+partner = "Google"
+device = "mobile"
+channel = "all"
+country = "US"
+
+[search_forecasting_daily_active_users.google_mobile_us_all.holidays]
+holidays = ["easter"]
+use_country_holidays = "US"
+
+[search_forecasting_daily_active_users.google_mobile_us_all.regressors]
+[search_forecasting_daily_active_users.google_mobile_us_all.regressors.after_fenix]
+name = "after_fenix"
+description = "Dates following migration of fenix clients"
+start_date = "2020-08-15"
+prior_scale = 1
+mode = "additive"
+[search_forecasting_daily_active_users.google_mobile_us_all.regressors.in_covid]
+name = "addcode_topsite"
+start_date = "2021-01-27"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_users.google_mobile_us_all.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.05]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = true
+weekly_seasonality = true
+[search_forecasting_daily_active_users.google_mobile_us_all.cv_settings]
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
+parallel = "processes"
+
+## search_forecasting_daily_active_users, Google mobile ROW
+[search_forecasting_daily_active_users.google_mobile_row_all]
+start_date = "2021-01-01"
+
+[search_forecasting_daily_active_users.google_mobile_row_all.segment]
+partner = "Google"
+device = "mobile"
+channel = "all"
+country = "ROW"
+
+[search_forecasting_daily_active_users.google_mobile_row_all.holidays]
+holidays = ["easter"]
+
+[search_forecasting_daily_active_users.google_mobile_row_all.regressors]
+[search_forecasting_daily_active_users.google_mobile_row_all.regressors.after_fenix]
+name = "after_fenix"
+description = "Dates following migration of fenix clients"
+start_date = "2020-08-15"
+prior_scale = 1
+mode = "additive"
+[search_forecasting_daily_active_users.google_mobile_row_all.regressors.in_covid]
+name = "addcode_topsite"
+start_date = "2021-01-27"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_users.google_mobile_row_all.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.05]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = true
+weekly_seasonality = true
+[search_forecasting_daily_active_users.google_mobile_row_all.cv_settings]
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
+parallel = "processes"
+
 
 ### Total Search Count
 [search_forecasting_search_count]
@@ -162,7 +240,7 @@ name = "post_esr_migration"
 description = "Dates following migration of clients on old OS versions from release to ESR"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 [search_forecasting_search_count.google_desktop_us_personal.regressors.in_covid]
 name = "in_covid"
 start_date = "2020-03-14"
@@ -195,7 +273,7 @@ country = "US"
 name = "post_esr_migration"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 
 [search_forecasting_search_count.google_desktop_us_esr.holidays]
 holidays = ["covid_sip11"]
@@ -231,7 +309,7 @@ name = "post_esr_migration"
 description = "Dates following migration of clients on old OS versions from release to ESR"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 [search_forecasting_search_count.google_desktop_row_personal.regressors.in_covid]
 name = "in_covid"
 start_date = "2020-03-14"
@@ -264,7 +342,7 @@ country = "ROW"
 name = "post_esr_migration"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 
 [search_forecasting_search_count.google_desktop_row_esr.holidays]
 holidays = ["covid_sip11"]
@@ -275,6 +353,83 @@ yearly_seasonality = [25, 35]
 weekly_seasonality = true
 growth = "logistic"
 [search_forecasting_search_count.google_desktop_row_esr.cv_settings]
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
+parallel = "processes"
+
+## search_forecasting_search_count, Google mobile US
+[search_forecasting_search_count.google_mobile_us_all]
+start_date = "2020-01-01"
+
+[search_forecasting_search_count.google_mobile_us_all.segment]
+partner = "Google"
+device = "mobile"
+channel = "all"
+country = "US"
+
+[search_forecasting_search_count.google_mobile_us_all.holidays]
+holidays = ["easter"]
+use_country_holidays = "US"
+
+[search_forecasting_search_count.google_mobile_us_all.regressors]
+[search_forecasting_search_count.google_mobile_us_all.regressors.after_fenix]
+name = "after_fenix"
+description = "Dates following migration of fenix clients"
+start_date = "2020-08-15"
+prior_scale = 1
+mode = "additive"
+[search_forecasting_search_count.google_mobile_us_all.regressors.in_covid]
+name = "addcode_topsite"
+start_date = "2021-01-27"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_search_count.google_mobile_us_all.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.05]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = true
+weekly_seasonality = true
+[search_forecasting_search_count.google_mobile_us_all.cv_settings]
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
+parallel = "processes"
+
+## search_forecasting_search_count, Google mobile ROW
+[search_forecasting_search_count.google_mobile_row_all]
+start_date = "2020-01-01"
+
+[search_forecasting_search_count.google_mobile_row_all.segment]
+partner = "Google"
+device = "mobile"
+channel = "all"
+country = "ROW"
+
+[search_forecasting_search_count.google_mobile_row_all.holidays]
+holidays = ["easter"]
+
+[search_forecasting_search_count.google_mobile_row_all.regressors]
+[search_forecasting_search_count.google_mobile_row_all.regressors.after_fenix]
+name = "after_fenix"
+description = "Dates following migration of fenix clients"
+start_date = "2020-08-15"
+prior_scale = 1
+mode = "additive"
+[search_forecasting_search_count.google_mobile_row_all.regressors.in_covid]
+name = "addcode_topsite"
+start_date = "2021-01-27"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_search_count.google_mobile_row_all.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.05]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = true
+weekly_seasonality = true
+[search_forecasting_search_count.google_mobile_row_all.cv_settings]
 initial = "1196 days"
 period = "30 days"
 horizon = "30 days"
@@ -303,7 +458,7 @@ name = "post_esr_migration"
 description = "Dates following migration of clients on old OS versions from release to ESR"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 [search_forecasting_daily_active_users_w_google_default.google_desktop_us_personal.regressors.in_covid]
 name = "in_covid"
 start_date = "2020-03-14"
@@ -336,7 +491,7 @@ country = "US"
 name = "post_esr_migration"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 
 [search_forecasting_daily_active_users_w_google_default.google_desktop_us_esr.holidays]
 holidays = ["covid_sip11"]
@@ -372,7 +527,7 @@ name = "post_esr_migration"
 description = "Dates following migration of clients on old OS versions from release to ESR"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 [search_forecasting_daily_active_users_w_google_default.google_desktop_row_personal.regressors.in_covid]
 name = "in_covid"
 start_date = "2020-03-14"
@@ -404,7 +559,7 @@ country = "ROW"
 name = "post_esr_migration"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 
 [search_forecasting_daily_active_users_w_google_default.google_desktop_row_esr.holidays]
 holidays = ["covid_sip11"]
@@ -443,7 +598,7 @@ name = "post_esr_migration"
 description = "Dates following migration of clients on old OS versions from release to ESR"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 [search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_personal.regressors.in_covid]
 name = "in_covid"
 start_date = "2020-03-14"
@@ -476,7 +631,7 @@ country = "US"
 name = "post_esr_migration"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 
 [search_forecasting_daily_active_searchers_w_google_default.google_desktop_us_esr.holidays]
 holidays = ["covid_sip11"]
@@ -512,7 +667,7 @@ name = "post_esr_migration"
 description = "Dates following migration of clients on old OS versions from release to ESR"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 [search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_personal.regressors.in_covid]
 name = "in_covid"
 start_date = "2020-03-14"
@@ -545,14 +700,14 @@ country = "ROW"
 name = "post_esr_migration"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 
 [search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_esr.holidays]
 holidays = ["covid_sip11"]
 
 [search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_esr.parameters]
 changepoint_prior_scale = [0.001, 0.01, 0.1, 0.2, 0.5]
-yearly_seasonality = [25, 35]
+yearly_seasonality = true
 weekly_seasonality = true
 growth = "logistic"
 [search_forecasting_daily_active_searchers_w_google_default.google_desktop_row_esr.cv_settings]
@@ -560,6 +715,84 @@ initial = "1196 days"
 period = "30 days"
 horizon = "30 days"
 parallel = "processes"
+
+## search_forecasting_daily_active_searchers_w_google_default, Google mobile US
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_us_all]
+start_date = "2020-01-01"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_us_all.segment]
+partner = "Google"
+device = "mobile"
+channel = "all"
+country = "US"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_us_all.holidays]
+holidays = ["easter"]
+use_country_holidays = "US"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_us_all.regressors]
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_us_all.regressors.after_fenix]
+name = "after_fenix"
+description = "Dates following migration of fenix clients"
+start_date = "2020-08-15"
+prior_scale = 1
+mode = "additive"
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_us_all.regressors.in_covid]
+name = "addcode_topsite"
+start_date = "2021-01-27"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_us_all.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.05]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = true
+weekly_seasonality = true
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_us_all.cv_settings]
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
+parallel = "processes"
+
+## search_forecasting_daily_active_searchers_w_google_default, Google mobile ROW
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_row_all]
+start_date = "2020-01-01"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_row_all.segment]
+partner = "Google"
+device = "mobile"
+channel = "all"
+country = "ROW"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_row_all.holidays]
+holidays = ["easter"]
+
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_row_all.regressors]
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_row_all.regressors.after_fenix]
+name = "after_fenix"
+description = "Dates following migration of fenix clients"
+start_date = "2020-08-15"
+prior_scale = 1
+mode = "additive"
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_row_all.regressors.in_covid]
+name = "addcode_topsite"
+start_date = "2021-01-27"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_row_all.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.05]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = true
+weekly_seasonality = true
+[search_forecasting_daily_active_searchers_w_google_default.google_mobile_row_all.cv_settings]
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
+parallel = "processes"
+
 
 ## Search ad clicks
 [search_forecasting_ad_clicks]
@@ -584,7 +817,7 @@ name = "post_esr_migration"
 description = "Dates following migration of clients on old OS versions from release to ESR"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 [search_forecasting_ad_clicks.google_desktop_us_personal.regressors.in_covid]
 name = "in_covid"
 start_date = "2020-03-14"
@@ -617,7 +850,7 @@ country = "US"
 name = "post_esr_migration"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 
 [search_forecasting_ad_clicks.google_desktop_us_esr.holidays]
 holidays = ["covid_sip11"]
@@ -653,7 +886,7 @@ name = "post_esr_migration"
 description = "Dates following migration of clients on old OS versions from release to ESR"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 [search_forecasting_ad_clicks.google_desktop_row_personal.regressors.in_covid]
 name = "in_covid"
 start_date = "2020-03-14"
@@ -686,7 +919,7 @@ country = "ROW"
 name = "post_esr_migration"
 start_date = "2023-07-14"
 prior_scale = 1
-mode = "multiplicative"
+mode = "additive"
 
 [search_forecasting_ad_clicks.google_desktop_row_esr.holidays]
 holidays = ["covid_sip11"]
@@ -697,6 +930,302 @@ yearly_seasonality = [25, 35]
 weekly_seasonality = true
 growth = "logistic"
 [search_forecasting_ad_clicks.google_desktop_row_esr.cv_settings]
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
+parallel = "processes"
+
+## search_forecasting_ad_clicks, Google mobile US
+[search_forecasting_ad_clicks.google_mobile_us_all]
+start_date = "2019-03-01"
+
+[search_forecasting_ad_clicks.google_mobile_us_all.segment]
+partner = "Google"
+device = "mobile"
+channel = "all"
+country = "US"
+
+[search_forecasting_ad_clicks.google_mobile_us_all.holidays]
+holidays = ["easter"]
+use_country_holidays = "US"
+
+[search_forecasting_ad_clicks.google_mobile_us_all.regressors]
+[search_forecasting_ad_clicks.google_mobile_us_all.regressors.after_fenix]
+name = "after_fenix"
+description = "Dates following migration of fenix clients"
+start_date = "2020-08-15"
+prior_scale = 1
+mode = "additive"
+[search_forecasting_ad_clicks.google_mobile_us_all.regressors.in_covid]
+name = "addcode_topsite"
+start_date = "2021-01-27"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_ad_clicks.google_mobile_us_all.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.05]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = true
+weekly_seasonality = true
+[search_forecasting_ad_clicks.google_mobile_us_all.cv_settings]
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
+parallel = "processes"
+
+## search_forecasting_daily_active_searchers_w_google_default, Google mobile ROW
+[search_forecasting_ad_clicks.google_mobile_row_all]
+start_date = "2019-03-01"
+
+[search_forecasting_ad_clicks.google_mobile_row_all.segment]
+partner = "Google"
+device = "mobile"
+channel = "all"
+country = "ROW"
+
+[search_forecasting_ad_clicks.google_mobile_row_all.holidays]
+holidays = ["easter"]
+
+[search_forecasting_ad_clicks.google_mobile_row_all.regressors]
+[search_forecasting_ad_clicks.google_mobile_row_all.regressors.after_fenix]
+name = "after_fenix"
+description = "Dates following migration of fenix clients"
+start_date = "2020-08-15"
+prior_scale = 1
+mode = "additive"
+[search_forecasting_ad_clicks.google_mobile_row_all.regressors.in_covid]
+name = "addcode_topsite"
+start_date = "2021-01-27"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_ad_clicks.google_mobile_row_all.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.05]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = true
+weekly_seasonality = true
+[search_forecasting_ad_clicks.google_mobile_row_all.cv_settings]
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
+parallel = "processes"
+
+
+## Search ad RPMs
+[search_forecasting_rpm]
+
+## search_forecasting_rpm, Google desktop US personal
+[search_forecasting_rpm.google_desktop_us_personal]
+start_date = "2019-03-01"
+
+[search_forecasting_rpm.google_desktop_us_personal.segment]
+partner = "Google"
+device = "desktop"
+channel = "personal"
+country = "US"
+
+[search_forecasting_rpm.google_desktop_us_personal.holidays]
+holidays = ["easter", "covid_sip11"]
+use_country_holidays = "US"
+
+[search_forecasting_rpm.google_desktop_us_personal.regressors]
+[search_forecasting_rpm.google_desktop_us_personal.regressors.post_esr_migration]
+name = "post_esr_migration"
+description = "Dates following migration of clients on old OS versions from release to ESR"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "additive"
+[search_forecasting_rpm.google_desktop_us_personal.regressors.in_covid]
+name = "in_covid"
+start_date = "2020-03-14"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_rpm.google_desktop_us_personal.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+[search_forecasting_rpm.google_desktop_us_personal.cv_settings]
+initial = "1296 days"
+period = "30 days"
+horizon = "30 days"
+parallel = "processes"
+
+## search_forecasting_rpm, Google desktop US ESR
+[search_forecasting_rpm.google_desktop_us_esr]
+start_date = "2019-03-01"
+
+[search_forecasting_rpm.google_desktop_us_esr.segment]
+partner = "Google"
+device = "desktop"
+channel = "esr"
+country = "US"
+
+[search_forecasting_rpm.google_desktop_us_esr.regressor.post_esr_migration]
+name = "post_esr_migration"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "additive"
+
+[search_forecasting_rpm.google_desktop_us_esr.holidays]
+holidays = ["covid_sip11"]
+use_country_holidays = "US"
+
+[search_forecasting_rpm.google_desktop_us_esr.parameters]
+changepoint_prior_scale = [0.001, 0.01, 0.1, 0.2, 0.5]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+growth = "logistic"
+[search_forecasting_rpm.google_desktop_us_esr.cv_settings]
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
+parallel = "processes"
+
+## search_forecasting_rpm, Google desktop ROW personal
+[search_forecasting_rpm.google_desktop_row_personal]
+start_date = "2019-03-01"
+
+[search_forecasting_rpm.google_desktop_row_personal.segment]
+partner = "Google"
+device = "desktop"
+channel = "personal"
+country = "ROW"
+
+[search_forecasting_rpm.google_desktop_row_personal.holidays]
+holidays = ["easter", "covid_sip11"]
+
+[search_forecasting_rpm.google_desktop_row_personal.regressors]
+[search_forecasting_rpm.google_desktop_row_personal.regressors.post_esr_migration]
+name = "post_esr_migration"
+description = "Dates following migration of clients on old OS versions from release to ESR"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "additive"
+[search_forecasting_rpm.google_desktop_row_personal.regressors.in_covid]
+name = "in_covid"
+start_date = "2020-03-14"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_rpm.google_desktop_row_personal.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.01, 0.1]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+[search_forecasting_rpm.google_desktop_row_personal.cv_settings]
+initial = "1296 days"
+period = "30 days"
+horizon = "30 days"
+parallel = "processes"
+
+## search_forecasting_rpm, Google desktop ROW ESR
+[search_forecasting_rpm.google_desktop_row_esr]
+start_date = "2019-03-01"
+
+[search_forecasting_rpm.google_desktop_row_esr.segment]
+partner = "Google"
+device = "desktop"
+channel = "esr"
+country = "ROW"
+
+[search_forecasting_rpm.google_desktop_row_esr.regressor.post_esr_migration]
+name = "post_esr_migration"
+start_date = "2023-07-14"
+prior_scale = 1
+mode = "additive"
+
+[search_forecasting_rpm.google_desktop_row_esr.holidays]
+holidays = ["covid_sip11"]
+
+[search_forecasting_rpm.google_desktop_row_esr.parameters]
+changepoint_prior_scale = [0.001, 0.01, 0.1, 0.2, 0.5]
+yearly_seasonality = [25, 35]
+weekly_seasonality = true
+growth = "logistic"
+[search_forecasting_rpm.google_desktop_row_esr.cv_settings]
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
+parallel = "processes"
+
+## search_forecasting_rpm, Google mobile US
+[search_forecasting_rpm.google_mobile_us_all]
+start_date = "2019-03-01"
+
+[search_forecasting_rpm.google_mobile_us_all.segment]
+partner = "Google"
+device = "mobile"
+channel = "all"
+country = "US"
+
+[search_forecasting_rpm.google_mobile_us_all.holidays]
+holidays = ["easter"]
+use_country_holidays = "US"
+
+[search_forecasting_rpm.google_mobile_us_all.regressors]
+[search_forecasting_rpm.google_mobile_us_all.regressors.after_fenix]
+name = "after_fenix"
+description = "Dates following migration of fenix clients"
+start_date = "2020-08-15"
+prior_scale = 1
+mode = "additive"
+[search_forecasting_rpm.google_mobile_us_all.regressors.in_covid]
+name = "addcode_topsite"
+start_date = "2021-01-27"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_rpm.google_mobile_us_all.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.05]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = true
+weekly_seasonality = true
+[search_forecasting_rpm.google_mobile_us_all.cv_settings]
+initial = "1196 days"
+period = "30 days"
+horizon = "30 days"
+parallel = "processes"
+
+## search_forecasting_daily_active_searchers_w_google_default, Google mobile ROW
+[search_forecasting_rpm.google_mobile_row_all]
+start_date = "2019-03-01"
+
+[search_forecasting_rpm.google_mobile_row_all.segment]
+partner = "Google"
+device = "mobile"
+channel = "all"
+country = "ROW"
+
+[search_forecasting_rpm.google_mobile_row_all.holidays]
+holidays = ["easter"]
+
+[search_forecasting_rpm.google_mobile_row_all.regressors]
+[search_forecasting_rpm.google_mobile_row_all.regressors.after_fenix]
+name = "after_fenix"
+description = "Dates following migration of fenix clients"
+start_date = "2020-08-15"
+prior_scale = 1
+mode = "additive"
+[search_forecasting_rpm.google_mobile_row_all.regressors.in_covid]
+name = "addcode_topsite"
+start_date = "2021-01-27"
+end_date = "2021-07-31"
+prior_scale = 1
+mode = "multiplicative"
+
+[search_forecasting_rpm.google_mobile_row_all.parameters]
+changepoint_prior_scale = [0.001, 0.005, 0.05]
+changepoint_range = [0.8, 0.9]
+yearly_seasonality = true
+weekly_seasonality = true
+[search_forecasting_rpm.google_mobile_row_all.cv_settings]
 initial = "1196 days"
 period = "30 days"
 horizon = "30 days"
