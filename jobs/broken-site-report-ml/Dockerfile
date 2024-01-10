@@ -1,5 +1,5 @@
-FROM python:3.10-slim-bullseye
-LABEL maintainer="Brad Ochocki <bochocki@mozilla.com>"
+FROM python:3.8
+MAINTAINER REPLACE ME <replaceme@mozilla.com>
 
 # https://github.com/mozilla-services/Dockerflow/blob/master/docs/building-container.md
 ARG USER_ID="10001"
@@ -12,15 +12,14 @@ RUN groupadd --gid ${USER_ID} ${GROUP_ID} && \
 
 WORKDIR ${HOME}
 
-RUN apt-get -y update && apt-get -y install \
-    git \
-    && rm -rf /var/lib/apt/lists/*
-RUN pip install --upgrade pip --no-cache-dir
+RUN pip install --upgrade pip
 
 COPY requirements.txt requirements.txt
+RUN pip install -r requirements.txt
 
 COPY . .
-RUN pip install -e . -r requirements.txt --no-cache-dir
+
+RUN pip install .
 
 # Drop root and change ownership of the application folder to the user
 RUN chown -R ${USER_ID}:${GROUP_ID} ${HOME}
