@@ -64,36 +64,27 @@ class MetricHub:
             segment_select_query = []
             for alias, sql in self.segments.items():
                 segment_select_query.append(f"  {sql} AS {alias},")
-            self.segment_select_query = "\n    ".join(segment_select_query)
-            self.segment_groupby_query = "\n ,".join(self.segments.keys())
+            self.segment_select_query = ",\n    ".join(segment_select_query)
+            self.segment_groupby_query = ",\n ,".join(self.segments.keys())
+        else:
+            self.segment_select_query = ""
+            self.segment_groupby_query = ""
 
         self.where = f"AND {self.where}" if self.where else ""
 
     def query(self) -> str:
         """Build a string to query the relevant metric values from Big Query."""
-        if self.segments:
-            return dedent(
-                f"""
-                SELECT {self.submission_date_column} AS submission_date,
-                    {self.metric.select_expr} AS value,
-                    {self.segment_select_query}
-                FROM {self.from_expression}
-                WHERE {self.submission_date_column} BETWEEN '{self.start_date}' AND '{self.end_date}'
-                    {self.where}
-                GROUP BY {self.submission_date_column},
-                    {self.segment_groupby_query}
-            """
-            )
-
         return dedent(
             f"""
             SELECT {self.submission_date_column} AS submission_date,
-                   {self.metric.select_expr} AS value
-              FROM {self.from_expression}
-             WHERE {self.submission_date_column} BETWEEN '{self.start_date}' AND '{self.end_date}'
+                {self.metric.select_expr} AS value
+                {self.segment_select_query}
+            FROM {self.from_expression}
+            WHERE {self.submission_date_column} BETWEEN '{self.start_date}' AND '{self.end_date}'
                 {self.where}
-             GROUP BY {self.submission_date_column}
-            """
+            GROUP BY {self.submission_date_column}
+                {self.segment_groupby_query}
+        """
         )
 
     def fetch(self) -> pd.DataFrame:
