@@ -41,3 +41,17 @@ def test_metrichub_with_segments():
 
     query = test_metric_hub.query()
     assert "segment1 AS test_segment1,\n     segment2 AS test_segment2" in query
+
+
+def test_metrichub_with_segments_and_where():
+    test_metric_hub = MetricHub(
+        app_name="multi_product",
+        slug="mobile_daily_active_users_v1",
+        start_date="2024-01-01",
+        where="test_condition = condition",
+        segments={"test_segment1": "segment1", "test_segment2": "segment2"},
+    )
+
+    query = test_metric_hub.query()
+    assert f"\n    AND {test_metric_hub.where}" in query
+    assert "segment1 AS test_segment1,\n     segment2 AS test_segment2" in query
