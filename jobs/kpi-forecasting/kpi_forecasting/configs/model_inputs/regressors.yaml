@@ -5,7 +5,7 @@ post_esr_migration:
   prior_scale: 1
   mode: "additive"
 
-in_covid:
+addcode_topsite:
   description: "Period that covers early impact of Covid"
   start_date: "2020-03-14"
   end_date: "2021-07-31"
@@ -15,5 +15,12 @@ in_covid:
 after_fenix:
   description: "Dates following migration of fenix clients"
   start_date: "2020-08-15"
+  prior_scale: 1
+  mode: "additive"
+
+in_covid:
+  description: "Dates following migration of fenix clients"
+  start_date: "2020-03-14"
+  end_date: "2021-07-31"
   prior_scale: 1
   mode: "additive"
