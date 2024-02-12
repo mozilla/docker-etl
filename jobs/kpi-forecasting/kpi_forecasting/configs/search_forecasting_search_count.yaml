@@ -4,10 +4,10 @@ metric_hub:
   slug: "search_forecasting_search_count"
   alias: "search_forecasting_search_count"
   start_date: "2018-01-01"
-  end_date: NULL
+  end_date: "last complete month"
 
 forecast_model:
-  model_type: "prophet"
+  model_type: "funnel"
   segment_settings:
     desktop:
       start_date: "2018-01-01"
