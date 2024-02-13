@@ -16,7 +16,7 @@ def previous_period_last_date(last_period: str, now: datetime.datetime):
     if last_period not in ["last complete month", "last complete year"]:
         raise ValueError("Unrecognized end date string.")
 
-    if last_period == "last_complete_year":
+    if last_period == "last complete year":
         return datetime.date(now.year - 1, 12, 31)
 
     return datetime.date(now.year, now.month, 1) - datetime.timedelta(days=1)

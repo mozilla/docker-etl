@@ -26,7 +26,7 @@ def test_parse_end_date_prev_year():
 
     yr = datetime.datetime.utcnow().date()
 
-    assert parsed_date == datetime.date(yr, 12, 1)
+    assert parsed_date == datetime.date(yr.year - 1, 12, 31)
 
 
 def test_parse_end_date_prev_month():
@@ -36,4 +36,4 @@ def test_parse_end_date_prev_month():
 
     prev = previous_period_last_date(dt, now)
 
-    assert prev == datetime.date(2023, 12, 1)
+    assert prev == datetime.date(2023, 12, 31)
