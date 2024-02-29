@@ -4,6 +4,7 @@ version: 2.1
 parameters:
   docker-version:
     type: string
+    # `default` is recommended by CircleCI: https://discuss.circleci.com/t/remote-docker-image-deprecations-and-eol-for-2024/50176#what-do-i-need-to-do-2
     default: default
   git-image:
     type: string
