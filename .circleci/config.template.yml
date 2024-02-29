@@ -4,7 +4,7 @@ version: 2.1
 parameters:
   docker-version:
     type: string
-    default: 20.10.18
+    default: default
   git-image:
     type: string
     default: docker:25.0.3-git
