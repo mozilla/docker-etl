@@ -1,14 +1,29 @@
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from datetime import datetime
+import itertools
+import json
+from typing import Dict, List, Union
 
+from google.cloud import bigquery
+from google.cloud.bigquery.enums import SqlTypeNames as bq_types
+import numpy as np
 import pandas as pd
+from pandas.api import types as pd_types
 import prophet
+from prophet.diagnostics import cross_validation
 
-from kpi_forecasting.configs.model_inputs import ProphetHoliday, ProphetRegressor
+from kpi_forecasting.configs.model_inputs import (
+    ProphetHoliday,
+    ProphetRegressor,
+    holiday_collection,
+    regressor_collection,
+)
+from kpi_forecasting.models.base_forecast import BaseForecast
+from kpi_forecasting import pandas_extras as pdx
 
 
 @dataclass
-class SegmentModelHolder:
+class SegmentModelSettings:
     """
     Holds the configuration and results for each segment
     in a funnel forecasting model.
@@ -17,13 +32,527 @@ class SegmentModelHolder:
     segment: Dict[str, str]
     start_date: str
     end_date: str
-    holidays: List[ProphetHoliday]
-    regressors: List[ProphetRegressor]
-    parameters: Dict[str, Union[List[float], float]]
+    grid_parameters: Dict[str, Union[List[float], float]]
     cv_settings: Dict[str, str]
-    trend_change: Optional[str] = ""
+    holidays: List[ProphetHoliday] = []
+    regressors: List[ProphetRegressor] = []
 
     # Hold results as models are trained and forecasts made
     segment_model: prophet.Prophet = None
-    trained_parameters: Dict[str, str] = None
+    trained_parameters: Dict[str, str] = {}
     forecast_df: pd.DataFrame = None
+    component_df: pd.DataFrame = None
+
+
+@dataclass
+class FunnelForecast(BaseForecast):
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # Overwrite dates_to_predict to provide historical date forecasts
+        self.dates_to_predict = pd.DataFrame(
+            {
+                "submission_date": pd.date_range(
+                    self.metric_hub.start_date, self.end_date
+                ).date
+            }
+        )
+
+        combination_df = (
+            self.observed_df[self.metric_hub.segments.keys()]
+            .value_counts()
+            .reset_index(name="count")
+            .drop("count", axis=1)
+        )
+        segment_combinations = []
+        for _, row in combination_df.iterrows():
+            segment_combinations.append(row.to_dict())
+
+        # initialize a list to hold models for each segment
+        ## populate the list with segments and parameters for the segment
+        split_dim = self.parameters.model_settings_split_dim
+
+        segment_models = []
+        for segment in segment_combinations:
+            model_params = getattr(self.parameters.segment_settings, segment[split_dim])
+            if model_params.holidays:
+                holiday_list = [
+                    getattr(holiday_collection.data, h) for h in model_params.holidays
+                ]
+            if model_params.regressors:
+                regressor_list = [
+                    getattr(regressor_collection.data, r)
+                    for r in model_params.regressors
+                ]
+
+            segment_models.append(
+                SegmentModelSettings(
+                    segment=segment,
+                    start_date=model_params.start_date,
+                    end_date=self.end_date,
+                    holidays=[] or [ProphetHoliday(**h) for h in holiday_list],
+                    regressors=[] or [ProphetRegressor(**r) for r in regressor_list],
+                    grid_parameters=dict(model_params.grid_parameters),
+                    cv_settings=dict(model_params.cv_settings),
+                )
+            )
+        self.segment_models = segment_models
+
+    @property
+    def column_names_map(self) -> Dict[str, str]:
+        return {"submission_date": "ds", "value": "y"}
+
+    def _fill_regressor_dates(self, regressor: ProphetRegressor) -> ProphetRegressor:
+        for date in ["start_date", "end_date"]:
+            if getattr(regressor, date) is None:
+                setattr(regressor, date, getattr(self, date))
+            elif isinstance(getattr(regressor, date), str):
+                setattr(regressor, date, pd.to_datetime(getattr(regressor, date)))
+        return regressor
+
+    def _build_model(
+        self,
+        segment_settings: SegmentModelSettings,
+        parameters: Dict[str, Union[float, str, bool]],
+    ) -> prophet.Prophet:
+        # Builds a Prophet class from parameters. Adds regressors and holidays
+        ## from config file
+        if segment_settings.holidays:
+            parameters["holidays"] = pd.concat(
+                [
+                    pd.DataFrame(
+                        {
+                            "holiday": h.name,
+                            "ds": pd.to_datetime(h.ds),
+                            "lower_window": h.lower_window,
+                            "upper_window": h.upper_window,
+                        }
+                    )
+                    for h in segment_settings.holidays
+                ],
+                ignore_index=True,
+            )
+
+        m = prophet.Prophet(
+            **parameters,
+            uncertainty_samples=self.number_of_simulations,
+            mcmc_samples=0,
+        )
+        for regressor in segment_settings.regressors:
+            m.add_regressor(
+                regressor.name,
+                prior_scale=regressor.prior_scale,
+                mode=regressor.mode,
+            )
+
+        return m
+
+    def _build_model_dataframe(
+        self,
+        segment_settings: SegmentModelSettings,
+        task: str,
+        add_logistic_growth_cols: bool = False,
+    ) -> pd.DataFrame:
+        if task == "train":
+            df = (
+                self.observed_df.loc[
+                    (
+                        (
+                            self.observed_df[list(segment_settings.segment)]
+                            == pd.Series(segment_settings.segment)
+                        ).all(axis=1)
+                    )
+                    & (
+                        self.observed_df["submission_date"]
+                        >= segment_settings.start_date
+                    )
+                ]
+                .rename(columns=self.column_names_map)
+                .copy()
+            )
+
+            if add_logistic_growth_cols:
+                df["floor"] = df["y"].min() * 0.5
+                df["cap"] = df["y"].max() * 1.5
+
+        elif task == "predict":
+            df = self.dates_to_predict.rename(columns=self.column_names_map).copy()
+            if add_logistic_growth_cols:
+                df["floor"] = segment_settings.trained_parameters["floor"]
+                df["cap"] = segment_settings.trained_parameters["cap"]
+        else:
+            raise ValueError("task not in ['train','predict']")
+
+        if segment_settings.regressors:
+            df = self._add_regressors(df, segment_settings.regressors)
+
+        return df
+
+    def _fit(self) -> None:
+        # fit and save a Prophet model for each segment combination
+        for recipe in self.segment_models:
+            parameters = self._auto_tuning(recipe)
+
+            # Initialize model; build model dataframe
+            add_log_growth_cols = (
+                "growth" in parameters.keys() and parameters["growth"] == "logistic"
+            )
+            test_dat = self._build_model_dataframe(recipe, "train", add_log_growth_cols)
+            model = self._build_model(
+                recipe, parameters, [test_dat["ds"].min(), test_dat["ds"].max()]
+            )
+
+            model.fit(test_dat)
+            if add_log_growth_cols:
+                parameters["floor"] = test_dat["floor"].values[0]
+                parameters["cap"] = test_dat["cap"].values[0]
+
+            recipe.trained_parameters = parameters
+            recipe.segment_model = model
+
+    def _auto_tuning(self, recipe: SegmentModelSettings) -> Dict[str, float]:
+        add_log_growth_cols = (
+            "growth" in recipe.grid_parameters.keys()
+            and recipe.grid_parameters["growth"] == "logistic"
+        )
+
+        for k, v in recipe.grid_parameters.items():
+            if not isinstance(v, list):
+                recipe.grid_parameters[k] = [v]
+
+        param_grid = [
+            dict(zip(recipe.grid_parameters.keys(), v))
+            for v in itertools.product(*recipe.grid_parameters.values())
+        ]
+
+        test_dat = self._build_model_dataframe(recipe, "train", add_log_growth_cols)
+        bias = []
+
+        for params in param_grid:
+            m = self._build_model(
+                recipe, params, [test_dat["ds"].min(), test_dat["ds"].max()]
+            )
+            m.fit(test_dat)
+
+            df_cv = cross_validation(m, **recipe["config"].cv_settings)
+
+            df_bias = df_cv.groupby("cutoff")[["yhat", "y"]].sum().reset_index()
+            df_bias["pcnt_bias"] = df_bias["yhat"] / df_bias["y"] - 1
+            bias.append(df_bias.tail(3)["pcnt_bias"].mean())
+
+        min_abs_bias_index = [
+            x
+            for x in range(len(bias))
+            if bias[x] == min(np.min(bias), np.max(bias), key=np.abs)
+        ][0]
+
+        return param_grid[min_abs_bias_index]
+
+    def _add_regressors(
+        self, test_dat: pd.DataFrame, regressors: List[ProphetRegressor]
+    ):
+        df = test_dat.copy().rename(columns=self.column_names_map)
+        df["ds"] = pd.to_datetime(df["ds"])
+        for regressor in regressors:
+            regressor = self._fill_regressor_dates(regressor)
+            df[regressor.name] = np.where(
+                (df["ds"] >= pd.to_datetime(regressor.start_date))
+                & (df["ds"] <= pd.to_datetime(regressor.end_date)),
+                0,
+                1,
+            )
+        return df
+
+    def _predict(self, recipe: SegmentModelSettings) -> pd.DataFrame:
+        # generate the forecast samples
+        add_log_growth_cols = (
+            "growth" in recipe["parameters"].keys()
+            and recipe["parameters"]["growth"] == "logistic"
+        )
+        dates_to_predict = self._build_model_dataframe(
+            recipe, "predict", add_log_growth_cols
+        )
+
+        samples = recipe.segment_model.predictive_samples(dates_to_predict)
+        df = pd.DataFrame(samples["yhat"])
+        df["submission_date"] = self.dates_to_predict
+
+        component_cols = [
+            "ds",
+            "yhat",
+            "trend",
+            "trend_upper",
+            "trend_lower",
+            "weekly",
+            "weekly_upper",
+            "weekly_lower",
+            "yearly",
+            "yearly_upper",
+            "yearly_lower",
+        ]
+
+        component_df = recipe["trained_model"].predict(dates_to_predict)[component_cols]
+
+        component_df = component_df.merge(
+            recipe.segment_model.history[["ds", "y"]],
+            on="ds",
+            how="left",
+        ).fillna(0)
+        component_df.rename(columns={"ds": "submission_date"}, inplace=True)
+
+        recipe.component_df = component_df.copy()
+
+        recipe.component_df["component_modes"] = json.dumps(
+            recipe.segment_model.component_modes
+        )
+
+        return df.loc[
+            pd.to_datetime(df["submission_date"]) >= pd.to_datetime(self.start_date)
+        ]
+
+    def _validate_forecast_df(self, df: pd.DataFrame) -> None:
+        """Validate that `forecast_df` has been generated correctly for each segment."""
+        columns = df.columns
+        numeric_columns = df.drop(columns=["submission_date"]).columns
+
+        if "submission_date" not in columns:
+            raise ValueError("forecast_df must contain a 'submission_date' column.")
+
+        for i in numeric_columns:
+            if not pd_types.is_numeric_dtype(df[i]):
+                raise ValueError(
+                    "All forecast_df columns except 'submission_date' and segment dims must be numeric,"
+                    f" but column {i} has type {df[i].dtypes}."
+                )
+
+    def _summarize(
+        self,
+        segment_settings: SegmentModelSettings,
+        period: str,
+        numpy_aggregations: List[str],
+        percentiles: List[int],
+    ) -> pd.DataFrame:
+        """
+        Calculate summary metrics for `forecast_df` over a given period, and
+        add metadata.
+        """
+        # build a list of all functions that we'll summarize the data by
+        aggregations = [getattr(np, i) for i in numpy_aggregations]
+        aggregations.extend([pdx.percentile(i) for i in percentiles])
+
+        # aggregate metric to the correct date period (day, month, year)
+        observed_summarized = pdx.aggregate_to_period(
+            (
+                self.observed_df.loc[
+                    (
+                        (
+                            self.observed_df[list(segment_settings.segment)]
+                            == pd.Series(segment_settings.segment)
+                        ).all(axis=1)
+                    )
+                    & (
+                        self.observed_df["submission_date"]
+                        >= segment_settings.start_date
+                    )
+                ]
+                .rename(columns=self.column_names_map)
+                .copy()
+            ),
+            period,
+        )
+        forecast_agg = pdx.aggregate_to_period(segment_settings.forecast_df, period)
+
+        # find periods of overlap between observed and forecasted data
+        overlap = forecast_agg.merge(
+            observed_summarized,
+            on="submission_date",
+            how="left",
+        ).fillna(0)
+
+        forecast_summarized = (
+            forecast_agg.set_index("submission_date")
+            # Add observed data samples to any overlapping forecasted period. This
+            # ensures that any forecast made partway through a period accounts for
+            # previously observed data within the period. For example, when a monthly
+            # forecast is generated in the middle of the month.
+            .add(overlap[["value"]].values)
+            # calculate summary values, aggregating by submission_date,
+            .agg(aggregations, axis=1).reset_index()
+            # "melt" the df from wide-format to long-format.
+            .melt(id_vars="submission_date", var_name="measure")
+        )
+
+        # add datasource-specific metadata columns
+        forecast_summarized["source"] = "forecast"
+        observed_summarized["source"] = "historical"
+        observed_summarized["measure"] = "observed"
+
+        # create a single dataframe that contains observed and forecasted data
+        df = pd.concat([observed_summarized, forecast_summarized])
+
+        # add summary metadata columns
+        df["aggregation_period"] = period.lower()
+
+        # reorder columns to make interpretation easier
+        df = df[["submission_date", "aggregation_period", "source", "measure", "value"]]
+
+        # add Metric Hub metadata columns
+        df["metric_alias"] = self.metric_hub.alias.lower()
+        df["metric_hub_app_name"] = self.metric_hub.app_name.lower()
+        df["metric_hub_slug"] = self.metric_hub.slug.lower()
+        df["metric_start_date"] = pd.to_datetime(self.metric_hub.min_date)
+        df["metric_end_date"] = pd.to_datetime(self.metric_hub.max_date)
+        df["metric_collected_at"] = self.collected_at
+
+        # add forecast model metadata columns
+        df["forecast_start_date"] = self.start_date
+        df["forecast_end_date"] = self.end_date
+        df["forecast_trained_at"] = self.trained_at
+        df["forecast_predicted_at"] = self.predicted_at
+        df["forecast_parameters"] = json.dumps(segment_settings.trained_parameters)
+
+        return df
+
+    def predict(self) -> None:
+        """Generate a forecast from `start_date` to `end_date`."""
+        print(f"Forecasting from {self.start_date} to {self.end_date}.", flush=True)
+        self._set_seed()
+        self.predicted_at = datetime.utcnow()
+
+        for segment_settings in self.segment_models:
+            forecast_df = self._predict(segment_settings)
+            self._validate_forecast_df(forecast_df)
+
+            segment_settings.forecast_df = forecast_df.copy(deep=True)
+            del forecast_df
+
+    def summarize(
+        self,
+        periods: List[str] = ["day", "month"],
+        numpy_aggregations: List[str] = ["mean"],
+        percentiles: List[int] = [10, 50, 90],
+    ) -> None:
+        summary_df_list = []
+        component_df_list = []
+        for segment in self.segment_models:
+            summary_df = pd.concat(
+                [
+                    self._summarize(
+                        segment,
+                        i,
+                        numpy_aggregations,
+                        percentiles,
+                    )
+                    for i in periods
+                ]
+            )
+            for dim, dim_value in segment["segment"].items():
+                summary_df[dim] = dim_value
+                segment["component_df"][dim] = dim_value
+            summary_df_list.append(summary_df.copy(deep=True))
+            component_df_list.append(segment["component_df"])
+            del summary_df
+
+        self.summary_df = pd.concat(summary_df_list, ignore_index=True)
+        self.component_df_list = component_df_list
+
+    def write_results(
+        self,
+        project: str,
+        forecast_dataset: str,
+        forecast_table: str,
+        write_disposition: str = "WRITE_APPEND",
+        components_table: str = "",
+        components_dataset: str = "",
+    ) -> None:
+        """
+        Write `self.summary_df` to Big Query.
+
+        Args:
+            project (str): The Big Query project that the data should be written to.
+            dataset (str): The Big Query dataset that the data should be written to.
+            table (str): The Big Query table that the data should be written to.
+            write_disposition (str): In the event that the destination table exists,
+                should the table be overwritten ("WRITE_TRUNCATE") or appended to
+                ("WRITE_APPEND")?
+        """
+        print(
+            f"Writing results to `{project}.{forecast_dataset}.{forecast_table}`.",
+            flush=True,
+        )
+        client = bigquery.Client(project=project)
+        schema = [
+            bigquery.SchemaField("submission_date", bq_types.DATE),
+            *[
+                bigquery.SchemaField(k, bq_types.STRING)
+                for k in self.metric_hub.segments.keys()
+            ],
+            bigquery.SchemaField("aggregation_period", bq_types.STRING),
+            bigquery.SchemaField("source", bq_types.STRING),
+            bigquery.SchemaField("measure", bq_types.STRING),
+            bigquery.SchemaField("value", bq_types.FLOAT),
+            bigquery.SchemaField("metric_alias", bq_types.STRING),
+            bigquery.SchemaField("metric_hub_app_name", bq_types.STRING),
+            bigquery.SchemaField("metric_hub_slug", bq_types.STRING),
+            bigquery.SchemaField("metric_start_date", bq_types.DATE),
+            bigquery.SchemaField("metric_end_date", bq_types.DATE),
+            bigquery.SchemaField("metric_collected_at", bq_types.TIMESTAMP),
+            bigquery.SchemaField("forecast_start_date", bq_types.DATE),
+            bigquery.SchemaField("forecast_end_date", bq_types.DATE),
+            bigquery.SchemaField("forecast_trained_at", bq_types.TIMESTAMP),
+            bigquery.SchemaField("forecast_predicted_at", bq_types.TIMESTAMP),
+            bigquery.SchemaField("forecast_parameters", bq_types.STRING),
+        ]
+        job = client.load_table_from_dataframe(
+            dataframe=self.summary_df,
+            destination=f"{project}.{forecast_dataset}.{forecast_table}",
+            job_config=bigquery.LoadJobConfig(
+                schema=schema,
+                autodetect=False,
+                write_disposition=write_disposition,
+            ),
+        )
+        # Wait for the job to complete.
+        job.result()
+
+        if components_table:
+            components_df = pd.concat(self.component_df_list, ignore_index=True)
+            numeric_cols = components_df.dtypes[
+                components_df.dtypes == float
+            ].index.tolist()
+            string_cols = components_df.dtypes[
+                components_df.dtypes == object
+            ].index.tolist()
+            components_df["metric_slug"] = self.metric_hub.slug
+            components_df["trained_at"] = self.trained_at
+
+            schema = [
+                bigquery.SchemaField("submission_date", bq_types.DATE),
+                bigquery.SchemaField("metric_slug", bq_types.STRING),
+                bigquery.SchemaField("trained_at", bq_types.TIMESTAMP),
+            ]
+            schema += [
+                bigquery.SchemaField(col, bq_types.STRING) for col in string_cols
+            ]
+            schema += [
+                bigquery.SchemaField(col, bq_types.FLOAT) for col in numeric_cols
+            ]
+
+            if not components_dataset:
+                components_dataset = forecast_dataset
+
+            job = client.load_table_from_dataframe(
+                dataframe=components_df,
+                destination=f"{project}.{components_dataset}.{components_table}",
+                job_config=bigquery.LoadJobConfig(
+                    schema=schema,
+                    autodetect=False,
+                    write_disposition=write_disposition,
+                    schema_update_options=[
+                        bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION
+                    ],
+                ),
+            )
+
+            job.result()
