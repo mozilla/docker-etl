@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 import itertools
 import json
@@ -34,12 +34,12 @@ class SegmentModelSettings:
     end_date: str
     grid_parameters: Dict[str, Union[List[float], float]]
     cv_settings: Dict[str, str]
-    holidays: List[ProphetHoliday] = []
-    regressors: List[ProphetRegressor] = []
+    holidays: list = field(default_factory=list[ProphetHoliday])
+    regressors: list = field(default_factory=list[ProphetRegressor])
 
     # Hold results as models are trained and forecasts made
     segment_model: prophet.Prophet = None
-    trained_parameters: Dict[str, str] = {}
+    trained_parameters: dict = field(default_factory=dict[str, str])
     forecast_df: pd.DataFrame = None
     component_df: pd.DataFrame = None
 
@@ -191,16 +191,20 @@ class FunnelForecast(BaseForecast):
 
     def _fit(self) -> None:
         # fit and save a Prophet model for each segment combination
-        for recipe in self.segment_models:
-            parameters = self._auto_tuning(recipe)
+        for segment_settings in self.segment_models:
+            parameters = self._auto_tuning(segment_settings)
 
             # Initialize model; build model dataframe
             add_log_growth_cols = (
                 "growth" in parameters.keys() and parameters["growth"] == "logistic"
             )
-            test_dat = self._build_model_dataframe(recipe, "train", add_log_growth_cols)
+            test_dat = self._build_model_dataframe(
+                segment_settings, "train", add_log_growth_cols
+            )
             model = self._build_model(
-                recipe, parameters, [test_dat["ds"].min(), test_dat["ds"].max()]
+                segment_settings,
+                parameters,
+                [test_dat["ds"].min(), test_dat["ds"].max()],
             )
 
             model.fit(test_dat)
@@ -208,8 +212,8 @@ class FunnelForecast(BaseForecast):
                 parameters["floor"] = test_dat["floor"].values[0]
                 parameters["cap"] = test_dat["cap"].values[0]
 
-            recipe.trained_parameters = parameters
-            recipe.segment_model = model
+            segment_settings.trained_parameters = parameters
+            segment_settings.segment_model = model
 
     def _auto_tuning(self, recipe: SegmentModelSettings) -> Dict[str, float]:
         add_log_growth_cols = (
@@ -302,10 +306,6 @@ class FunnelForecast(BaseForecast):
         component_df.rename(columns={"ds": "submission_date"}, inplace=True)
 
         recipe.component_df = component_df.copy()
-
-        recipe.component_df["component_modes"] = json.dumps(
-            recipe.segment_model.component_modes
-        )
 
         return df.loc[
             pd.to_datetime(df["submission_date"]) >= pd.to_datetime(self.start_date)
@@ -447,15 +447,15 @@ class FunnelForecast(BaseForecast):
                     for i in periods
                 ]
             )
-            for dim, dim_value in segment["segment"].items():
+            for dim, dim_value in segment.segment.items():
                 summary_df[dim] = dim_value
-                segment["component_df"][dim] = dim_value
+                segment.component_df[dim] = dim_value
             summary_df_list.append(summary_df.copy(deep=True))
-            component_df_list.append(segment["component_df"])
+            component_df_list.append(segment.component_df)
             del summary_df
 
         self.summary_df = pd.concat(summary_df_list, ignore_index=True)
-        self.component_df_list = component_df_list
+        self.component_df_list = pd.concat(component_df_list, ignore_index=True)
 
     def write_results(
         self,
