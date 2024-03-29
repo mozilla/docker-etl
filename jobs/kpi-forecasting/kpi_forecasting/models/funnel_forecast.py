@@ -584,12 +584,12 @@ class FunnelForecast(BaseForecast):
                 self.components_df.dtypes == object
             ].index.tolist()
             self.components_df["metric_slug"] = self.metric_hub.slug
-            self.components_df["trained_at"] = self.trained_at
+            self.components_df["forecast_trained_at"] = self.trained_at
 
             schema = [
                 bigquery.SchemaField("submission_date", bq_types.DATE),
                 bigquery.SchemaField("metric_slug", bq_types.STRING),
-                bigquery.SchemaField("trained_at", bq_types.TIMESTAMP),
+                bigquery.SchemaField("forecast_trained_at", bq_types.TIMESTAMP),
             ]
             schema += [
                 bigquery.SchemaField(col, bq_types.STRING) for col in string_cols
