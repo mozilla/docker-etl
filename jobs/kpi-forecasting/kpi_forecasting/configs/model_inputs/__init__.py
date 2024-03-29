@@ -22,6 +22,7 @@ class ProphetRegressor:
     """
 
     name: str
+    description: str
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     prior_scale: Union[int, float] = 1

@@ -41,7 +41,7 @@ class SegmentModelSettings:
     segment_model: prophet.Prophet = None
     trained_parameters: dict = field(default_factory=dict[str, str])
     forecast_df: pd.DataFrame = None
-    component_df: pd.DataFrame = None
+    components_df: pd.DataFrame = None
 
 
 @dataclass
@@ -71,33 +71,39 @@ class FunnelForecast(BaseForecast):
 
         # initialize a list to hold models for each segment
         ## populate the list with segments and parameters for the segment
-        split_dim = self.parameters.model_settings_split_dim
+        split_dim = self.parameters["model_setting_split_dim"]
 
         segment_models = []
         for segment in segment_combinations:
-            model_params = getattr(self.parameters.segment_settings, segment[split_dim])
-            if model_params.holidays:
+            model_params = getattr(
+                self.parameters["segment_settings"], segment[split_dim]
+            )
+            if model_params["holidays"]:
                 holiday_list = [
-                    getattr(holiday_collection.data, h) for h in model_params.holidays
+                    getattr(holiday_collection.data, h)
+                    for h in model_params["holidays"]
                 ]
-            if model_params.regressors:
+            if model_params["regressors"]:
                 regressor_list = [
                     getattr(regressor_collection.data, r)
-                    for r in model_params.regressors
+                    for r in model_params["regressors"]
                 ]
 
             segment_models.append(
                 SegmentModelSettings(
                     segment=segment,
-                    start_date=model_params.start_date,
+                    start_date=model_params["start_date"],
                     end_date=self.end_date,
                     holidays=[] or [ProphetHoliday(**h) for h in holiday_list],
                     regressors=[] or [ProphetRegressor(**r) for r in regressor_list],
-                    grid_parameters=dict(model_params.grid_parameters),
-                    cv_settings=dict(model_params.cv_settings),
+                    grid_parameters=dict(model_params["grid_parameters"]),
+                    cv_settings=dict(model_params["cv_settings"]),
                 )
             )
         self.segment_models = segment_models
+
+        # initialize unset attributes
+        self.components_df = None
 
     @property
     def column_names_map(self) -> Dict[str, str]:
@@ -165,7 +171,9 @@ class FunnelForecast(BaseForecast):
                     )
                     & (
                         self.observed_df["submission_date"]
-                        >= segment_settings.start_date
+                        >= datetime.strptime(
+                            segment_settings.start_date, "%Y-%m-%d"
+                        ).date()
                     )
                 ]
                 .rename(columns=self.column_names_map)
@@ -201,45 +209,45 @@ class FunnelForecast(BaseForecast):
             test_dat = self._build_model_dataframe(
                 segment_settings, "train", add_log_growth_cols
             )
-            model = self._build_model(
-                segment_settings,
-                parameters,
-                [test_dat["ds"].min(), test_dat["ds"].max()],
-            )
+            model = self._build_model(segment_settings, parameters)
 
             model.fit(test_dat)
             if add_log_growth_cols:
                 parameters["floor"] = test_dat["floor"].values[0]
                 parameters["cap"] = test_dat["cap"].values[0]
 
+            if "holidays" in parameters.keys():
+                parameters["holidays"] = (
+                    parameters["holidays"]["holiday"].unique().tolist()
+                )
             segment_settings.trained_parameters = parameters
             segment_settings.segment_model = model
 
-    def _auto_tuning(self, recipe: SegmentModelSettings) -> Dict[str, float]:
+    def _auto_tuning(self, segment_settings: SegmentModelSettings) -> Dict[str, float]:
         add_log_growth_cols = (
-            "growth" in recipe.grid_parameters.keys()
-            and recipe.grid_parameters["growth"] == "logistic"
+            "growth" in segment_settings.grid_parameters.keys()
+            and segment_settings.grid_parameters["growth"] == "logistic"
         )
 
-        for k, v in recipe.grid_parameters.items():
+        for k, v in segment_settings.grid_parameters.items():
             if not isinstance(v, list):
-                recipe.grid_parameters[k] = [v]
+                segment_settings.grid_parameters[k] = [v]
 
         param_grid = [
-            dict(zip(recipe.grid_parameters.keys(), v))
-            for v in itertools.product(*recipe.grid_parameters.values())
+            dict(zip(segment_settings.grid_parameters.keys(), v))
+            for v in itertools.product(*segment_settings.grid_parameters.values())
         ]
 
-        test_dat = self._build_model_dataframe(recipe, "train", add_log_growth_cols)
+        test_dat = self._build_model_dataframe(
+            segment_settings, "train", add_log_growth_cols
+        )
         bias = []
 
         for params in param_grid:
-            m = self._build_model(
-                recipe, params, [test_dat["ds"].min(), test_dat["ds"].max()]
-            )
+            m = self._build_model(segment_settings, params)
             m.fit(test_dat)
 
-            df_cv = cross_validation(m, **recipe["config"].cv_settings)
+            df_cv = cross_validation(m, **segment_settings.cv_settings)
 
             df_bias = df_cv.groupby("cutoff")[["yhat", "y"]].sum().reset_index()
             df_bias["pcnt_bias"] = df_bias["yhat"] / df_bias["y"] - 1
@@ -268,17 +276,17 @@ class FunnelForecast(BaseForecast):
             )
         return df
 
-    def _predict(self, recipe: SegmentModelSettings) -> pd.DataFrame:
+    def _predict(self, segment_settings: SegmentModelSettings) -> pd.DataFrame:
         # generate the forecast samples
         add_log_growth_cols = (
-            "growth" in recipe["parameters"].keys()
-            and recipe["parameters"]["growth"] == "logistic"
+            "growth" in segment_settings.trained_parameters.keys()
+            and segment_settings.trained_parameters["growth"] == "logistic"
         )
         dates_to_predict = self._build_model_dataframe(
-            recipe, "predict", add_log_growth_cols
+            segment_settings, "predict", add_log_growth_cols
         )
 
-        samples = recipe.segment_model.predictive_samples(dates_to_predict)
+        samples = segment_settings.segment_model.predictive_samples(dates_to_predict)
         df = pd.DataFrame(samples["yhat"])
         df["submission_date"] = self.dates_to_predict
 
@@ -296,16 +304,18 @@ class FunnelForecast(BaseForecast):
             "yearly_lower",
         ]
 
-        component_df = recipe["trained_model"].predict(dates_to_predict)[component_cols]
+        components_df = segment_settings.segment_model.predict(dates_to_predict)[
+            component_cols
+        ]
 
-        component_df = component_df.merge(
-            recipe.segment_model.history[["ds", "y"]],
+        components_df = components_df.merge(
+            segment_settings.segment_model.history[["ds", "y"]],
             on="ds",
             how="left",
         ).fillna(0)
-        component_df.rename(columns={"ds": "submission_date"}, inplace=True)
+        components_df.rename(columns={"ds": "submission_date"}, inplace=True)
 
-        recipe.component_df = component_df.copy()
+        segment_settings.components_df = components_df.copy()
 
         return df.loc[
             pd.to_datetime(df["submission_date"]) >= pd.to_datetime(self.start_date)
@@ -325,6 +335,15 @@ class FunnelForecast(BaseForecast):
                     "All forecast_df columns except 'submission_date' and segment dims must be numeric,"
                     f" but column {i} has type {df[i].dtypes}."
                 )
+
+    def _percentile_name_map(self, percentiles: List[int]) -> Dict[str, str]:
+        percentiles.sort()
+        return {
+            f"p{percentiles[0]}": "value_low",
+            f"p50": "value_mid",
+            f"p{percentiles[2]}": "value_high",
+            "mean": "value",
+        }
 
     def _summarize(
         self,
@@ -353,11 +372,11 @@ class FunnelForecast(BaseForecast):
                     )
                     & (
                         self.observed_df["submission_date"]
-                        >= segment_settings.start_date
+                        >= datetime.strptime(
+                            segment_settings.start_date, "%Y-%m-%d"
+                        ).date()
                     )
-                ]
-                .rename(columns=self.column_names_map)
-                .copy()
+                ].copy()
             ),
             period,
         )
@@ -379,14 +398,15 @@ class FunnelForecast(BaseForecast):
             .add(overlap[["value"]].values)
             # calculate summary values, aggregating by submission_date,
             .agg(aggregations, axis=1).reset_index()
-            # "melt" the df from wide-format to long-format.
-            .melt(id_vars="submission_date", var_name="measure")
-        )
+        ).rename(columns=self._percentile_name_map(percentiles))
 
         # add datasource-specific metadata columns
         forecast_summarized["source"] = "forecast"
         observed_summarized["source"] = "historical"
-        observed_summarized["measure"] = "observed"
+
+        # add segment columns to forecast  table
+        for dim, value in segment_settings.segment.items():
+            forecast_summarized[dim] = value
 
         # create a single dataframe that contains observed and forecasted data
         df = pd.concat([observed_summarized, forecast_summarized])
@@ -395,7 +415,17 @@ class FunnelForecast(BaseForecast):
         df["aggregation_period"] = period.lower()
 
         # reorder columns to make interpretation easier
-        df = df[["submission_date", "aggregation_period", "source", "measure", "value"]]
+        df = df[
+            [
+                "submission_date",
+                "aggregation_period",
+                "source",
+                "value",
+                "value_low",
+                "value_mid",
+                "value_high",
+            ]
+        ]
 
         # add Metric Hub metadata columns
         df["metric_alias"] = self.metric_hub.alias.lower()
@@ -434,7 +464,7 @@ class FunnelForecast(BaseForecast):
         percentiles: List[int] = [10, 50, 90],
     ) -> None:
         summary_df_list = []
-        component_df_list = []
+        components_df_list = []
         for segment in self.segment_models:
             summary_df = pd.concat(
                 [
@@ -449,13 +479,13 @@ class FunnelForecast(BaseForecast):
             )
             for dim, dim_value in segment.segment.items():
                 summary_df[dim] = dim_value
-                segment.component_df[dim] = dim_value
+                segment.components_df[dim] = dim_value
             summary_df_list.append(summary_df.copy(deep=True))
-            component_df_list.append(segment.component_df)
+            components_df_list.append(segment.components_df)
             del summary_df
 
         self.summary_df = pd.concat(summary_df_list, ignore_index=True)
-        self.component_df_list = pd.concat(component_df_list, ignore_index=True)
+        self.components_df = pd.concat(components_df_list, ignore_index=True)
 
     def write_results(
         self,
@@ -490,8 +520,10 @@ class FunnelForecast(BaseForecast):
             ],
             bigquery.SchemaField("aggregation_period", bq_types.STRING),
             bigquery.SchemaField("source", bq_types.STRING),
-            bigquery.SchemaField("measure", bq_types.STRING),
             bigquery.SchemaField("value", bq_types.FLOAT),
+            bigquery.SchemaField("value_low", bq_types.FLOAT),
+            bigquery.SchemaField("value_mid", bq_types.FLOAT),
+            bigquery.SchemaField("value_high", bq_types.FLOAT),
             bigquery.SchemaField("metric_alias", bq_types.STRING),
             bigquery.SchemaField("metric_hub_app_name", bq_types.STRING),
             bigquery.SchemaField("metric_hub_slug", bq_types.STRING),
@@ -517,15 +549,14 @@ class FunnelForecast(BaseForecast):
         job.result()
 
         if components_table:
-            components_df = pd.concat(self.component_df_list, ignore_index=True)
-            numeric_cols = components_df.dtypes[
-                components_df.dtypes == float
+            numeric_cols = self.components_df.dtypes[
+                self.components_df.dtypes == float
             ].index.tolist()
-            string_cols = components_df.dtypes[
-                components_df.dtypes == object
+            string_cols = self.components_df.dtypes[
+                self.components_df.dtypes == object
             ].index.tolist()
-            components_df["metric_slug"] = self.metric_hub.slug
-            components_df["trained_at"] = self.trained_at
+            self.components_df["metric_slug"] = self.metric_hub.slug
+            self.components_df["trained_at"] = self.trained_at
 
             schema = [
                 bigquery.SchemaField("submission_date", bq_types.DATE),
@@ -541,9 +572,13 @@ class FunnelForecast(BaseForecast):
 
             if not components_dataset:
                 components_dataset = forecast_dataset
+            print(
+                f"Writing model components to `{project}.{components_dataset}.{components_table}`.",
+                flush=True,
+            )
 
             job = client.load_table_from_dataframe(
-                dataframe=components_df,
+                dataframe=self.components_df,
                 destination=f"{project}.{components_dataset}.{components_table}",
                 job_config=bigquery.LoadJobConfig(
                     schema=schema,
