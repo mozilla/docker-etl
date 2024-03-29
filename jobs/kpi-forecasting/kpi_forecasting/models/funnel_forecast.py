@@ -59,12 +59,16 @@ class FunnelForecast(BaseForecast):
             }
         )
 
+        # Construct a DataFrame containing all combination of segment values
+        ## in the observed_df
         combination_df = (
             self.observed_df[self.metric_hub.segments.keys()]
             .value_counts()
             .reset_index(name="count")
             .drop("count", axis=1)
         )
+
+        # Construct dictionaries from those combinations
         segment_combinations = []
         for _, row in combination_df.iterrows():
             segment_combinations.append(row.to_dict())
@@ -73,6 +77,8 @@ class FunnelForecast(BaseForecast):
         ## populate the list with segments and parameters for the segment
         split_dim = self.parameters["model_setting_split_dim"]
 
+        # For each segment combinination, get the model parameters from the config
+        ## file. Parse the holidays and regressors specified in the config file.
         segment_models = []
         for segment in segment_combinations:
             model_params = getattr(
@@ -89,6 +95,7 @@ class FunnelForecast(BaseForecast):
                     for r in model_params["regressors"]
                 ]
 
+            # Create a SegmentModelSettings object for each segment combination
             segment_models.append(
                 SegmentModelSettings(
                     segment=segment,
@@ -110,6 +117,10 @@ class FunnelForecast(BaseForecast):
         return {"submission_date": "ds", "value": "y"}
 
     def _fill_regressor_dates(self, regressor: ProphetRegressor) -> ProphetRegressor:
+        # A ProphetRegressor can be created without a 'start_date' or 'end_date', in which, so
+        ## checks for either date missing and fills in with the appropriate date (e.g. if
+        ## 'start_date' is missing, assume that the regressor starts at the beginning of the
+        ## observed data)
         for date in ["start_date", "end_date"]:
             if getattr(regressor, date) is None:
                 setattr(regressor, date, getattr(self, date))
@@ -160,16 +171,17 @@ class FunnelForecast(BaseForecast):
         task: str,
         add_logistic_growth_cols: bool = False,
     ) -> pd.DataFrame:
+        # build training dataframe
         if task == "train":
             df = (
                 self.observed_df.loc[
-                    (
+                    (  # filter observed_df to rows that exactly match segment dict
                         (
                             self.observed_df[list(segment_settings.segment)]
                             == pd.Series(segment_settings.segment)
                         ).all(axis=1)
                     )
-                    & (
+                    & (  # filter observed_df if segment start date > metric_hub start date
                         self.observed_df["submission_date"]
                         >= datetime.strptime(
                             segment_settings.start_date, "%Y-%m-%d"
@@ -179,11 +191,12 @@ class FunnelForecast(BaseForecast):
                 .rename(columns=self.column_names_map)
                 .copy()
             )
-
+            # define limits for logistic growth
             if add_logistic_growth_cols:
                 df["floor"] = df["y"].min() * 0.5
                 df["cap"] = df["y"].max() * 1.5
 
+        # predict dataframe only needs dates to predict, logistic growth limits, and regressors
         elif task == "predict":
             df = self.dates_to_predict.rename(columns=self.column_names_map).copy()
             if add_logistic_growth_cols:
@@ -261,13 +274,14 @@ class FunnelForecast(BaseForecast):
 
         return param_grid[min_abs_bias_index]
 
-    def _add_regressors(
-        self, test_dat: pd.DataFrame, regressors: List[ProphetRegressor]
-    ):
-        df = test_dat.copy().rename(columns=self.column_names_map)
+    def _add_regressors(self, dat: pd.DataFrame, regressors: List[ProphetRegressor]):
+        # add regressor columns to train or predict df
+        df = dat.copy().rename(columns=self.column_names_map)
         df["ds"] = pd.to_datetime(df["ds"])
         for regressor in regressors:
             regressor = self._fill_regressor_dates(regressor)
+            # finds rows where date is in regressor date ranges and sets that regressor
+            ## value to 1, else 0
             df[regressor.name] = np.where(
                 (df["ds"] >= pd.to_datetime(regressor.start_date))
                 & (df["ds"] <= pd.to_datetime(regressor.end_date)),
@@ -282,10 +296,12 @@ class FunnelForecast(BaseForecast):
             "growth" in segment_settings.trained_parameters.keys()
             and segment_settings.trained_parameters["growth"] == "logistic"
         )
+        # add regressors, logistic growth limits (if applicable) to predict dataframe
         dates_to_predict = self._build_model_dataframe(
             segment_settings, "predict", add_log_growth_cols
         )
 
+        # draws samples from Prophet posterior distribution, to provide percentile predictions
         samples = segment_settings.segment_model.predictive_samples(dates_to_predict)
         df = pd.DataFrame(samples["yhat"])
         df["submission_date"] = self.dates_to_predict
@@ -304,10 +320,13 @@ class FunnelForecast(BaseForecast):
             "yearly_lower",
         ]
 
+        # use 'predict' method to return components from the Prophet model
         components_df = segment_settings.segment_model.predict(dates_to_predict)[
             component_cols
         ]
 
+        # join observed data to components df, which allows for calc of intra-sample
+        ## error rates and how components resulted in those predictions
         components_df = components_df.merge(
             segment_settings.segment_model.history[["ds", "y"]],
             on="ds",
@@ -340,7 +359,7 @@ class FunnelForecast(BaseForecast):
         percentiles.sort()
         return {
             f"p{percentiles[0]}": "value_low",
-            f"p50": "value_mid",
+            f"p{percentiles[1]}": "value_mid",
             f"p{percentiles[2]}": "value_high",
             "mean": "value",
         }
@@ -356,6 +375,15 @@ class FunnelForecast(BaseForecast):
         Calculate summary metrics for `forecast_df` over a given period, and
         add metadata.
         """
+        if len(percentiles) != 3:
+            print(
+                """
+                  Can only pass a list of length 3 as percentiles, for lower, mid, and upper values.
+                  Will default to using [10, 50, 90].
+                  """,
+                flush=True,
+            )
+            percentiles = [10, 50, 90]
         # build a list of all functions that we'll summarize the data by
         aggregations = [getattr(np, i) for i in numpy_aggregations]
         aggregations.extend([pdx.percentile(i) for i in percentiles])
