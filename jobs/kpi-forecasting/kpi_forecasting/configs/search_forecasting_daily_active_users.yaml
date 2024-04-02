@@ -35,17 +35,17 @@ forecast_model:
           period: "30 days"
           horizon: "30 days"
       mobile:
-        start_date: "2019-03-01"
+        start_date: "2021-01-01"
         end_date: NULL
         holidays: ["easter"]
         regressors: ["after_fenix", "in_covid"]
         grid_parameters:
-          changepoint_prior_scale: [0.001, 0.01, 0.1, 0.2, 0.5]
+          changepoint_prior_scale: [0.001, 0.01, 0.1, 0.2]
           weekly_seasonality: True
           yearly_seasonality: True
           growth: "logistic"
         cv_settings:
-          initial: "931 days"
+          initial: "366 days"
           period: "30 days"
           horizon: "30 days"
 
