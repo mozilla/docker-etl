@@ -28,3 +28,9 @@ in_covid:
   end_date: "2021-07-31"
   prior_scale: 1
   mode: "additive"
+
+ad_click_bug:
+  name: "ad_click_bug"
+  description: "Period after known bug surfaced regarding ad clicks"
+  start_date: "2023-07-01"
+  mode: "multiplicative"

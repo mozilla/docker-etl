@@ -24,10 +24,11 @@ forecast_model:
         start_date: "2018-01-01"
         end_date: NULL
         holidays: ["easter", "covid_sip11"]
-        regressors: ["post_esr_migration", "in_covid"]
+        regressors: ["post_esr_migration", "in_covid", "ad_click_bug"]
         grid_parameters:
           changepoint_prior_scale: [0.001, 0.01, 0.1, 0.2, 0.5]
           changepoint_range: [0.8, 0.9]
+          n_changepoints: [25, 50]
           weekly_seasonality: True
           yearly_seasonality: True
         cv_settings:
