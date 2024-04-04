@@ -34,13 +34,14 @@ forecast_model:
           initial: "1296 days"
           period: "30 days"
           horizon: "30 days"
+          parallel: "processes"
       mobile:
         start_date: "2020-01-01"
         end_date: NULL
         holidays: ["easter"]
         regressors: ["after_fenix", "in_covid"]
         grid_parameters:
-          changepoint_prior_scale: [0.001, 0.01, 0.1, 0.2]
+          changepoint_prior_scale: [0.001, 0.01, 0.1]
           weekly_seasonality: True
           yearly_seasonality: True
           growth: "logistic"
@@ -48,6 +49,7 @@ forecast_model:
           initial: "366 days"
           period: "30 days"
           horizon: "30 days"
+          parallel: "processes"
 
 summarize:
   periods: ["day", "month"]
