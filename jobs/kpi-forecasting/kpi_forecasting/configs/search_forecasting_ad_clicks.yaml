@@ -35,13 +35,16 @@ forecast_model:
           initial: "1296 days"
           period: "30 days"
           horizon: "30 days"
+          parallel: "processes"
       mobile:
         start_date: "2022-01-01"
         end_date: NULL
         holidays: ["easter"]
         regressors: ["after_fenix", "in_covid"]
         grid_parameters:
-          changepoint_prior_scale: [0.001, 0.01, 0.1, 0.2, 0.5]
+          changepoint_prior_scale: [.01, .1, .15, .2]
+          changepoint_range: [0.8, 0.9, 1]
+          n_changepoints: [25, 50]
           weekly_seasonality: True
           yearly_seasonality: True
           growth: "logistic"
@@ -49,6 +52,7 @@ forecast_model:
           initial: "366 days"
           period: "30 days"
           horizon: "30 days"
+          parallel: "processes"
 
 summarize:
   periods: ["day", "month"]
