@@ -304,7 +304,7 @@ class FunnelForecast(BaseForecast):
         # draws samples from Prophet posterior distribution, to provide percentile predictions
         samples = segment_settings.segment_model.predictive_samples(dates_to_predict)
         df = pd.DataFrame(samples["yhat"])
-        df["submission_date"] = self.dates_to_predict
+        df["submission_date"] = dates_to_predict["ds"]
 
         component_cols = [
             "ds",
