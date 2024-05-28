@@ -5,7 +5,8 @@ from unittest import TestCase
 from webcompat_kb.main import BugzillaToBigQuery
 from webcompat_kb.main import extract_int_from_field
 from webcompat_kb.main import parse_string_to_json
-from webcompat_kb.main import RELATION_CONFIG, LINK_FIELDS
+from webcompat_kb.main import merge_relations
+from webcompat_kb.main import RELATION_CONFIG, LINK_FIELDS, CORE_AS_KB_FIELDS
 
 SAMPLE_BUGS = [
     {
@@ -148,6 +149,49 @@ SAMPLE_BREAKAGE_BUGS = [
         "component": "Desktop",
         "severity": "--",
         "priority": "--",
+    },
+]
+
+SAMPLE_CORE_AS_KB_BUGS = [
+    {
+        "whiteboard": "",
+        "see_also": ["https://bugzilla.mozilla.org/show_bug.cgi?id=1740472"],
+        "severity": "S3",
+        "product": "Core",
+        "depends_on": [],
+        "summary": "Consider adding support for Error.captureStackTrace",
+        "resolution": "",
+        "last_change_time": "2024-05-27T15:07:03Z",
+        "keywords": ["parity-chrome", "parity-safari", "webcompat:platform-bug"],
+        "priority": "P3",
+        "creation_time": "2024-03-21T16:40:27Z",
+        "cf_user_story": "",
+        "status": "NEW",
+        "blocks": [1539848, 1729514, 1896383],
+        "url": "",
+        "cf_last_resolved": None,
+        "component": "JavaScript Engine",
+        "id": 1886820,
+    },
+    {
+        "depends_on": [1896672],
+        "product": "Core",
+        "severity": "S2",
+        "see_also": ["https://bugzilla.mozilla.org/show_bug.cgi?id=1863217"],
+        "whiteboard": "",
+        "resolution": "",
+        "summary": "Popup blocker is too strict when opening new windows",
+        "status": "NEW",
+        "cf_user_story": "",
+        "priority": "P3",
+        "creation_time": "2024-04-30T14:04:23Z",
+        "keywords": ["webcompat:platform-bug"],
+        "last_change_time": "2024-05-14T15:19:21Z",
+        "id": 1894244,
+        "component": "DOM: Window and Location",
+        "cf_last_resolved": None,
+        "url": "",
+        "blocks": [1656444, 1835339, 222222],
     },
 ]
 
@@ -376,6 +420,25 @@ class TestMain(TestCase):
             },
         ]
 
+    def test_merge_relations(self):
+        bugs, _ = self.bz.process_fields(SAMPLE_BUGS, RELATION_CONFIG)
+        relations = self.bz.build_relations(bugs, RELATION_CONFIG)
+
+        core_as_kb_config = {key: RELATION_CONFIG[key] for key in CORE_AS_KB_FIELDS}
+        core_as_kb_bugs = self.bz.filter_core_as_kb_bugs(
+            SAMPLE_CORE_AS_KB_BUGS, {}, {1896383}
+        )
+        ckb_data, _ = self.bz.process_fields(core_as_kb_bugs, core_as_kb_config)
+        ckb_relations = self.bz.build_relations(ckb_data, core_as_kb_config)
+
+        merged = merge_relations(relations, ckb_relations)
+
+        assert merged["breakage_reports"] == [
+            {"knowledge_base_bug": 111111, "breakage_bug": 222222},
+            {"knowledge_base_bug": 111111, "breakage_bug": 1734557},
+            {"knowledge_base_bug": 1886820, "breakage_bug": 1896383},
+        ]
+
     def test_add_links(self):
         bugs, _ = self.bz.process_fields(SAMPLE_BUGS, RELATION_CONFIG)
         core_bugs, _ = self.bz.process_fields(
@@ -519,3 +582,35 @@ class TestMain(TestCase):
             ]
         }
         self.assertEqual(parse_string_to_json(input_str), expected)
+
+    def test_filter_core_as_kb_bugs(self):
+        core_as_kb_bugs = self.bz.filter_core_as_kb_bugs(
+            SAMPLE_CORE_AS_KB_BUGS, {1835339}, {1896383, 222222}
+        )
+
+        assert core_as_kb_bugs == [
+            {
+                "whiteboard": "",
+                "see_also": ["https://bugzilla.mozilla.org/show_bug.cgi?id=1740472"],
+                "severity": "S3",
+                "product": "Core",
+                "depends_on": [],
+                "summary": "Consider adding support for Error.captureStackTrace",
+                "resolution": "",
+                "last_change_time": "2024-05-27T15:07:03Z",
+                "keywords": [
+                    "parity-chrome",
+                    "parity-safari",
+                    "webcompat:platform-bug",
+                ],
+                "priority": "P3",
+                "creation_time": "2024-03-21T16:40:27Z",
+                "cf_user_story": "",
+                "status": "NEW",
+                "blocks": [1896383],
+                "url": "",
+                "cf_last_resolved": None,
+                "component": "JavaScript Engine",
+                "id": 1886820,
+            }
+        ]
