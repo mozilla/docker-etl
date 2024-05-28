@@ -1,9 +1,9 @@
 import requests
-import json, sys, re
-import datetime
+import json
+import sys
+import re
 import logging
-#from integrations.api.connectors.Workday.secrets_workday import config as wd_config
-from api.Workday.secrets_workday import config as wd_config 
+from api.Workday.secrets_workday import config as wd_config
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +25,13 @@ class LocalConfig(object):
             "GMT+02:00 Eastern European Time (Bucharest)": "Europe/Bucharest",
             "GMT+02:00 Eastern European Time (Helsinki)": "Europe/Helsinki",
             "GMT+02:00 Israel Time (Jerusalem)": "Europe/Kaliningrad",
-            "GMT+02:00 South Africa Standard Time (Johannesburg)": "Africa/Johannesburg",
+            "GMT+02:00 South Africa Standard Time (Johannesburg)":
+                "Africa/Johannesburg",
             "GMT+03:00 East Africa Time (Nairobi)": "Africa/Nairobi",
             "GMT+03:00 Moscow Standard Time (Moscow)": "Europe/Moscow",
             "GMT+05:00 Pakistan Standard Time (Karachi)": "Asia/Karachi",
-            "GMT+05:00 Yekaterinburg Standard Time (Yekaterinburg)": "Asia/Yekaterinburg",
+            "GMT+05:00 Yekaterinburg Standard Time (Yekaterinburg)":
+                "Asia/Yekaterinburg",
             "GMT+05:30 India Standard Time (Kolkata)": "Asia/Kolkata",
             "GMT+06:00 East Kazakhstan Time (Almaty)": "Asia/Almaty",
             "GMT+07:00 Indochina Time (Ho Chi Minh City)": "Asia/Ho_Chi_Minh",
@@ -41,7 +43,8 @@ class LocalConfig(object):
             "GMT+08:00 Hong Kong Standard Time (Hong Kong)": "Asia/Hong_Kong",
             "GMT+09:00 Japan Standard Time (Tokyo)": "Asia/Tokyo",
             "GMT+09:30 Australian Central Standard Time (Darwin)": "Australia/Darwin",
-            "GMT+10:00 Australian Eastern Standard Time (Brisbane)": "Australia/Brisbane",
+            "GMT+10:00 Australian Eastern Standard Time (Brisbane)":
+                "Australia/Brisbane",
             "GMT+12:00 New Zealand Time (Auckland)": "Australia/Brisbane",
             "GMT-03:00 Argentina Standard Time (Buenos Aires)": "America/Buenos_Aires",
             "GMT-03:00 Brasilia Standard Time (Recife)": "America/Recife",
@@ -65,14 +68,14 @@ class LocalConfig(object):
         }
 
     def __getattr__(self, attr):
- 
+
         return wd_config[attr]
 
 
 _config = LocalConfig()
 
 
-def get_users(env):
+def get_users():
     """Gets all users from Workday
 
   Returns a list of dicts, each dict is an employee:
@@ -101,8 +104,8 @@ def get_users(env):
 
     logger.info("Gathering all Workday people")
     try:
-        xmatters_integration = getattr(_config,f"xmatters_integration_{env}")
-        
+        xmatters_integration = getattr(_config, "xmatters_integration")
+
         r = requests.get(
             xmatters_integration["people_url"],
             auth=(
@@ -112,15 +115,16 @@ def get_users(env):
             proxies=_config.proxies,
         )
         results = json.loads(r.text)
-        return [user for user in results["Report_Entry"] 
-                if not (user.get("User_Home_Country", "") == "" and 
-                        user.get("User_Home_Postal_Code", "") == "") ]
-        
-        #return results["Report_Entry"]
-    except:
+        return [user for user in results["Report_Entry"]
+                if not (user.get("User_Home_Country", "") == "" and
+                        user.get("User_Home_Postal_Code", "") == "")]
+
+        # return results["Report_Entry"]
+    except Exception:
         logger.critical(sys.exc_info()[0])
         raise
- 
+
+
 def get_sites():
     """Gets all sites from workday
 
@@ -139,7 +143,8 @@ def get_sites():
           'postal_code': 'Location Postal Code',
         }
 
-    One could successfully argue that the timezone format conversion should not happen here.
+    One could successfully argue that the timezone format conversion
+    should not happen here.
 
 
   """
@@ -184,108 +189,6 @@ def get_sites():
                 }
         return wd_locations
 
-    except:
-        logger.critical(sys.exc_info()[0])
-        raise
-
-
-def date_x_days_from(date, delta_days):
-    # TODO: move this to a util module
-    if type(date) is str:
-        date_l = [int(i) for i in date.split("-")]
-        date = datetime.date(date_l[0], date_l[1], date_l[2])
-    else:
-        # assume it's already a datetime obj?
-        pass
-
-    # now that "date" is a datetime object:
-    return str(date + datetime.timedelta(days=int(delta_days)))
-
-
-def get_dashboard_data(type, end_date, start_date=None):
-    logger.info("Gathering Workday People %s data" % type)
-
-    # Hannah from HR suggests setting setting Entry_Date(_and_Time) to
-    # sometime far in the future so that we have all the latest updates
-    # to the records we're fetching. Including fixes to incorrectly
-    # entered data.
-    entry_date = "2219-12-31"
-
-    if not re.match("^\d{4}-\d{2}-\d{2}$", end_date):
-        raise Exception("End Date does not match expected format")
-
-    if type == "headcount":
-        url = (
-            _config.hr_dashboard["urls"][type]
-            + "&Effective_as_of_Date_and_Time="
-            + end_date
-            + "T23%3A59%3A59.000-07%3A00"
-            + "&Entry_Date_and_Time="
-            + entry_date
-            + "T23%3A59%3A59.000-07%3A00"
-        )
-    else:
-        if not start_date:
-            # if no start date is provided, grab the last 7 days
-            start_date = date_x_days_from(end_date, "-6")
-
-        url = (
-            _config.hr_dashboard["urls"][type]
-            + "&Effective_End_Date="
-            + end_date
-            + "&Effective_Start_Date="
-            + start_date
-            + "&Effective_as_of_Date="
-            + end_date
-            + "-07%3A00"
-            + "&Entry_Date="
-            + entry_date
-            + "-07%3A00"
-        )
-
-    logger.debug("Will grab url: %s" % url)
-
-    return get_generic_workday_report(
-        url, _config.hr_dashboard["username"], _config.hr_dashboard["password"]
-    )
-
-
-def get_ta_dashboard_data(type, end_date, start_date=None):
-    logger.info("Gathering Workday TA %s data" % type)
-
-    if not re.match("^\d{4}-\d{2}-\d{2}$", end_date):
-        raise Exception("End Date does not match expected format")
-
-    # Hannah from HR suggests setting setting Entry_Date(_and_Time) to
-    # sometime far in the future so that we have all the latest updates
-    # to the records we're fetching. Including fixes to incorrectly
-    # entered data.
-    entry_date = "2219-12-31"
-
-    if type == "hires":
-        # FIXME: Hardcoded dates
-        url = (
-            _config.ta_dashboard["urls"][type]
-            + "&Effective_as_of_Date=2021-12-31-07%3A00"
-            + "&Entry_Date="
-            + entry_date
-            + "-07%3A00"
-            + "&Effective_Start_Date=2017-01-01-07%3A00"
-            + "&Effective_End_Date=2021-12-31-07%3A00"
-        )
-
-    logger.debug("Will grab url: %s" % url)
-
-    return get_generic_workday_report(
-        url, _config.ta_dashboard["username"], _config.ta_dashboard["password"]
-    )
-
-
-def get_generic_workday_report(url, uname, pword):
-    try:
-        r = requests.get(url, auth=(uname, pword), proxies=_config.proxies)
-        r.encoding = "utf-8"  # otherwise requests thinks it's ISO-8859-1
-        return r.text
-    except:
+    except Exception:
         logger.critical(sys.exc_info()[0])
         raise

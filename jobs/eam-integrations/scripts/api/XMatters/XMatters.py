@@ -4,9 +4,9 @@ import re
 
 import requests
 
-#from integrations.api.connectors import Util
+# from integrations.api.connectors import Util
 from api.util import Util
-#from integrations.api.connectors.XMatters.secrets_xmatters import config as xm_config
+# from integrations.api.connectors.XMatters.secrets_xmatters import config as xm_config
 from api.XMatters.secrets_xmatters import config as xm_config
 
 logger = logging.getLogger(__name__)
@@ -97,7 +97,7 @@ def get_all_sites():
       [...]
     }
   """
-    #https://mozilla-np.xmatters.com/xmatters.com/reapi/2015-04-01/sites
+    # https://mozilla-np.xmatters.com/xmatters.com/reapi/2015-04-01/sites
     logger.info("\n")
     logger.info("Gathering all XMatters sites")
     all_sites_url = _config.base_URL_old_api + "sites"
@@ -160,7 +160,8 @@ def get_all_people():
         u'externallyOwned': False,
         u'site': {
           u'id': u'2e6f8d1c-ced7-460e-bf5a-902109021090',
-          u'links': { u'self': u'/api/xm/1/sites/2e6f8d1c-ced7-460e-bf5a-902109021090' },
+          u'links':
+           { u'self': u'/api/xm/1/sites/2e6f8d1c-ced7-460e-bf5a-902109021090' },
           u'name': u'Beverly Hills Office'
         },
         u'properties': {
@@ -183,8 +184,8 @@ def get_all_people():
       [...]
     }
   """
-#https://mozilla-np.xmatters.com
-#https://mozilla-np.xmatters.com/api/xm/
+# https://mozilla-np.xmatters.com
+# https://mozilla-np.xmatters.com/api/xm/
     logger.info("\n")
     logger.info("Gathering all XMatters people")
     url = _config.base_URL + "/people"
@@ -350,7 +351,6 @@ def add_work_email_device(xm_user):
         )
 
     if response.status_code == 201:
-        rjson = response.json()
         return True
     else:
         logger.critical(
@@ -393,21 +393,21 @@ def add_site(site):
         )
         lat = coords[0]
         lng = coords[1]
-        if tz == None:
+        if tz is None:
             tz = "America/Los_Angeles"  # arbitrary
-        if lat == None:
+        if lat is None:
             lat = 0
-        if lng == None:
+        if lng is None:
             lng = 0
 
     site_data = {
         "name": site["name"],
         "timezone": str(tz),
         # skip address for now as it's mostly bad data (remote sites)
-        #'address1':  site['address'],
+        # 'address1':  site['address'],
         "country": site["country"],
         "city": site["city"],
-        #'state':     site['state'],
+        # 'state':     site['state'],
         "postalCode": site["postal_code"],
         "latitude": lat,
         "longitude": lng,
@@ -505,6 +505,7 @@ def delete_sites(xm_sites, xm_sites_in_wd):
 
     return True
 
+
 def sanitize_string_properties(input_str: str) -> str:
     """Remove known unwanted string patterns from string properties."""
     known_patterns = [
@@ -523,6 +524,8 @@ def sanitize_string_properties(input_str: str) -> str:
 # NEW API
 # https://help.xmatters.com/xmAPI/?python#modify-a-person
 #
+
+
 def update_user(wd_user, xm_user, xm_sites):
 
     logger.info(
@@ -588,7 +591,6 @@ def update_user(wd_user, xm_user, xm_sites):
         )
 
     if response.status_code == 200:
-        rjson = response.json()
         return person_data  # for the unittest
     else:
         logger.critical(
@@ -597,12 +599,12 @@ def update_user(wd_user, xm_user, xm_sites):
         )
         logger.critical(response)
         raise Exception(response.content)
-
-
 # NEW API
 # https://help.xmatters.com/xmAPI/?python#create-a-person
 #
-def  add_user(wd_user, xm_sites):
+
+
+def add_user(wd_user, xm_sites):
     logger.info("Adding user %s to XMatters" % (wd_user["User_Email_Address"]))
     url = _config.base_URL + "/people"
 
@@ -713,7 +715,7 @@ def actual_person_delete(target):
         logger.critical("Could not delete person!")
         logger.critical(response)
         logger.critical(response.content)
-        #raise Exception(response.content) TODO uncomment
+        raise Exception(response.content)
 
 
 def delete_users(xm_users, users_seen_in_wd):

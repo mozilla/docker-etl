@@ -1,16 +1,17 @@
-#!/usr/bin/env python3
-#!/usr/local/bin/python2.7
-
 from __future__ import division
-import sys, os, re, argparse
+from api import XMatters, Workday
+from api.util import Util
+import sys
+import os
+import re
+import argparse
 import logging
 
 sys.path.append(os.path.dirname(os.path.realpath(__file__)) + "/..")
 
 # from integrations.api.connectors import XMatters, Workday
 # from integrations.api.connectors import Util
-from api import XMatters, Workday
-from api.util import Util 
+
 
 def user_data_matches(wd_user, xm_user):
     manager_name = ""
@@ -159,11 +160,11 @@ def iterate_thru_wd_users(wd_users, xm_users, xm_sites):
                 logger.debug("%s good" % user["User_Email_Address"])
         else:
             # add user to XM
-            #XMatters.add_user(user, xm_sites)
+            # XMatters.add_user(user, xm_sites)
             xm_add_users.append(user)
             # time.sleep(5)
 
-    return wd_users_seen,xm_add_users
+    return wd_users_seen, xm_add_users
 
 
 def get_wd_sites_from_users(users):
@@ -196,12 +197,10 @@ def get_wd_sites_from_users(users):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Sync up XMatters with Workday")
-    parser.add_argument(
-        "-d", "--debug", action="store", help="debug level", type=int, default=3
-    )
+
     parser.add_argument(
         "-l",
-        "--log-level",
+        "--level",
         action="store",
         help="log level (debug, info, warning, error, or critical)",
         type=str,
@@ -212,23 +211,12 @@ if __name__ == "__main__":
         "--force",
         action="store_true",
         help="force changes even if there are a lot",
-        default="1" #TODO change this
-    )
-    
-    parser.add_argument(
-        "-e",
-        "--env",
-        action="store_true",
-        help="Select an environment [dev, prod]",
-        default="dev"
+
     )
 
     args = parser.parse_args()
 
-    args.force = 1
-     
-    
-    Util.set_up_logging(args.log_level)
+    Util.set_up_logging(args.level)
 
     logger = logging.getLogger(__name__)
 
@@ -238,7 +226,7 @@ if __name__ == "__main__":
     xm_sites, xm_sites_inactive = XMatters.get_all_sites()
 
     # get all users from workday
-    wd_users = Workday.get_users(args.env)
+    wd_users = Workday.get_users()
 
     # get the new style (zipcodes) sites from the user list
     wd_sites = get_wd_sites_from_users(wd_users)
@@ -249,7 +237,8 @@ if __name__ == "__main__":
     sites_percentage = len(xm_sites) / len(wd_sites)
     if sites_percentage > 1.1 or sites_percentage < 0.9:
         logger.critical(
-            "The number of sites in Workday vs XMatters is different by more than 10%% (%.02f%%)."
+            "The number of sites in Workday vs XMatters is \
+                 different by more than 10%% (%.02f%%)."
             % (abs(100 - sites_percentage * 100))
         )
         logger.critical("Stopping unless --force")
@@ -271,7 +260,8 @@ if __name__ == "__main__":
     users_percentage = len(xm_users) / len(wd_users)
     if users_percentage > 1.1 or users_percentage < 0.9:
         logger.critical(
-            "The number of users in Workday vs XMatters is different by more than 10%% (%.02f%%)."
+            "The number of users in Workday vs XMatters is \
+            different by more than 10%% (%.02f%%)."
             % (abs(100 - users_percentage * 100))
         )
         logger.critical("Stopping unless --force")
@@ -282,13 +272,14 @@ if __name__ == "__main__":
     #   if not in xmatters, add_task to xmatters
     #   if data doesn't match xmatters, update xmatters
     #   mark-as-seen in xmatters
-    users_seen_in_workday, xm_add_users = iterate_thru_wd_users(wd_users, xm_users, xm_sites)
-       
+    users_seen_in_workday, xm_add_users = iterate_thru_wd_users(wd_users,
+                                                                xm_users, xm_sites)
+
     # iterate through xmatters users who aren't marked-as-seen
     #   remove from xmatters
     XMatters.delete_users(xm_users, users_seen_in_workday)
 
     for user in xm_add_users:
         XMatters.add_user(user, xm_sites)
-        
+
     logger.info("Finished.")

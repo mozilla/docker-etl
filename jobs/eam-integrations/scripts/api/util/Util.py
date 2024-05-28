@@ -1,7 +1,8 @@
 import logging
 import re
 
-from .secrets_util import config as util_config 
+from .secrets_util import config as util_config
+
 
 class LocalConfig(object):
     def __init__(self):
@@ -13,7 +14,6 @@ class LocalConfig(object):
 
 _config = LocalConfig()
 
- 
 
 def set_up_logging(level):
     log_level = logging.INFO

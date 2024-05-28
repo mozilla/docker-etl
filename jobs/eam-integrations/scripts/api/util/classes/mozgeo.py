@@ -18,7 +18,7 @@ class MozGeo(object):
     def postal_to_coords(self, location):
         logging.debug("postal_to_coords called with %s" % location)
         res = self.geolocator.geocode(components=location)
-        if res == None:
+        if res is None:
             logging.error("No geolocation found for location %s" % location)
             return (None, None)
         else:

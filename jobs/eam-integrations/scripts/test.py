@@ -1,6 +1,5 @@
 import requests
 from requests.auth import HTTPBasicAuth
-import json
 
 base_URL = "https://mozilla-np.xmatters.com/api/xm/1"
 
