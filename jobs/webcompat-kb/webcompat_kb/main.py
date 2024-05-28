@@ -24,6 +24,7 @@ FIELD_MAP = {
     "n/a": None,
     "--": None,
 }
+CORE_AS_KB_KEYWORD = "webcompat:platform-bug"
 
 FILTER_CONFIG = {
     "wc": {
@@ -104,6 +105,13 @@ RELATION_CONFIG = {
 
 LINK_FIELDS = ["other_browser_issues", "standards_issues", "standards_positions"]
 
+CORE_AS_KB_FIELDS = [
+    "breakage_reports",
+    "other_browser_issues",
+    "standards_issues",
+    "standards_positions",
+]
+
 
 def extract_int_from_field(field):
     if field:
@@ -141,6 +149,15 @@ def parse_string_to_json(input_string):
         return ""
 
     return result_dict
+
+
+def merge_relations(main_dict, additional_dict):
+    for key, value in additional_dict.items():
+        if key in main_dict:
+            main_dict[key].extend(value)
+        else:
+            main_dict[key] = value
+    return main_dict
 
 
 class BugzillaToBigQuery:
@@ -193,6 +210,26 @@ class BugzillaToBigQuery:
             self.bugs_fetch_completed = False
             return []
 
+    def filter_core_as_kb_bugs(self, other, kb_bugs_ids, site_reports_ids):
+        core_as_kb_bugs = []
+        for bug in other:
+            if CORE_AS_KB_KEYWORD in bug["keywords"]:
+                # Check if the core bug already has a kb entry and skip if so
+                if any(blocked_id in kb_bugs_ids for blocked_id in bug["blocks"]):
+                    continue
+
+                # Only store a breakage bug as it's the relation we care about
+                filtered_blocks = [
+                    blocked_id
+                    for blocked_id in bug["blocks"]
+                    if blocked_id in site_reports_ids
+                ]
+                if filtered_blocks:
+                    bug["blocks"] = filtered_blocks
+                    core_as_kb_bugs.append(bug)
+
+        return core_as_kb_bugs
+
     def fetch_all_bugs(self):
         fetched_bugs = {}
 
@@ -202,11 +239,21 @@ class BugzillaToBigQuery:
 
         kb_bugs = []
         kb_depends_on_ids = set()
+        site_reports_ids = set()
+        kb_bugs_ids = set()
 
         for bug in fetched_bugs["wc"]:
             if bug["component"] == "Knowledge Base":
                 kb_bugs.append(bug)
                 kb_depends_on_ids.update(bug["depends_on"])
+                kb_bugs_ids.add(bug["id"])
+
+            elif bug["component"] == "Site Reports":
+                site_reports_ids.add(bug["id"])
+
+        core_as_kb_bugs = self.filter_core_as_kb_bugs(
+            fetched_bugs["other"], kb_bugs_ids, site_reports_ids
+        )
 
         logging.info("Fetching blocking bugs for KB bugs")
 
@@ -219,7 +266,7 @@ class BugzillaToBigQuery:
             + core_bugs
         )
 
-        return all_bugs, kb_bugs, core_bugs
+        return all_bugs, kb_bugs, core_bugs, core_as_kb_bugs
 
     def split_bugs(self, dep_bugs, bug_ids):
         core_bugs, breakage_bugs = [], []
@@ -301,7 +348,6 @@ class BugzillaToBigQuery:
     def update_bugs(self, bugs):
         res = []
         for bug in bugs:
-
             resolved = None
 
             if bug["status"] in ["RESOLVED", "VERIFIED"] and bug["cf_last_resolved"]:
@@ -578,7 +624,7 @@ class BugzillaToBigQuery:
             logging.info("Last import run recorded")
 
     def run(self):
-        all_bugs, kb_bugs, core_bugs = self.fetch_all_bugs()
+        all_bugs, kb_bugs, core_bugs, core_as_kb_bugs = self.fetch_all_bugs()
 
         if not self.bugs_fetch_completed:
             logging.info("Fetching bugs from Bugzilla was not completed, aborting")
@@ -613,6 +659,12 @@ class BugzillaToBigQuery:
 
         # Build relations for BQ tables.
         rels = self.build_relations(kb_data, RELATION_CONFIG)
+
+        if core_as_kb_bugs:
+            core_as_kb_config = {key: RELATION_CONFIG[key] for key in CORE_AS_KB_FIELDS}
+            ckb_data, _ = self.process_fields(core_as_kb_bugs, core_as_kb_config)
+            ckb_rels = self.build_relations(ckb_data, core_as_kb_config)
+            rels = merge_relations(rels, ckb_rels)
 
         all_bugs_unique = list({item["id"]: item for item in all_bugs}.values())
 
