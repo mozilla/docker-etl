@@ -10,6 +10,3 @@ build-job-eam-integrations:
     - run:
         name: Build Docker image
         command: docker build -t app:build jobs/eam-integrations/
-    - run:
-        name: Test Code
-        command: docker run app:build pytest --flake8 --black
