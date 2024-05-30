@@ -156,7 +156,7 @@ jobs:
     docker:
       - image: << pipeline.parameters.git-image >>
     steps:
-      - checkout
+      - checkout 
       - compare-branch:
           pattern: ^jobs/eam-integrations/
       - setup_remote_docker:
