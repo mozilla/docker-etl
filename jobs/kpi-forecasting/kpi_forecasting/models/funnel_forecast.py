@@ -46,8 +46,22 @@ class SegmentModelSettings:
 
 @dataclass
 class FunnelForecast(BaseForecast):
+    """
+    FunnelForecast class for generating and managing forecast models. The class handles
+    cases where forecasts for a combination of dimensions are required for a metric.
+
+    Inherits from BaseForecast and provides methods for initializing forecast
+    parameters, building models, generating forecasts, summarizing results,
+    and writing results to BigQuery.
+    """
 
     def __post_init__(self) -> None:
+        """
+        Post-initialization method to set up necessary attributes and configurations.
+
+        This method sets up the dates to predict, constructs segment combinations,
+        initializes models for each segment, and prepares attributes for storing results.
+        """
         super().__post_init__()
 
         # Overwrite dates_to_predict to provide historical date forecasts
@@ -63,9 +77,8 @@ class FunnelForecast(BaseForecast):
         ## in the observed_df
         combination_df = (
             self.observed_df[self.metric_hub.segments.keys()]
-            .value_counts()
-            .reset_index(name="count")
-            .drop("count", axis=1)
+            .drop_duplicates()
+            .reset_index()[self.metric_hub.segments.keys()]
         )
 
         # Construct dictionaries from those combinations
@@ -114,13 +127,29 @@ class FunnelForecast(BaseForecast):
 
     @property
     def column_names_map(self) -> Dict[str, str]:
+        """
+        Map column names from the dataset to the names required by Prophet.
+
+        Returns:
+            Dict[str, str]: Mapping of column names.
+        """
         return {"submission_date": "ds", "value": "y"}
 
     def _fill_regressor_dates(self, regressor: ProphetRegressor) -> ProphetRegressor:
-        # A ProphetRegressor can be created without a 'start_date' or 'end_date', in which, so
-        ## checks for either date missing and fills in with the appropriate date (e.g. if
-        ## 'start_date' is missing, assume that the regressor starts at the beginning of the
-        ## observed data)
+        """
+        Fill missing start and end dates for a regressor. A ProphetRegressor can be created
+        without a 'start_date' or 'end_date' being supplied, so this checks for either date attr
+        being missing and fills in with the appropriate date: if 'start_date' is missing, it assumes
+        that the regressor starts at the beginning of the observed data; if 'end_date' is missing,
+        it assumes that the regressor should be filled until the end of the forecast period.
+
+        Args:
+            regressor (ProphetRegressor): The regressor to fill dates for.
+
+        Returns:
+            ProphetRegressor: The regressor with filled dates.
+        """
+
         for date in ["start_date", "end_date"]:
             if getattr(regressor, date) is None:
                 setattr(regressor, date, getattr(self, date))
@@ -133,8 +162,16 @@ class FunnelForecast(BaseForecast):
         segment_settings: SegmentModelSettings,
         parameters: Dict[str, Union[float, str, bool]],
     ) -> prophet.Prophet:
-        # Builds a Prophet class from parameters. Adds regressors and holidays
-        ## from config file
+        """
+        Build a Prophet model from parameters.
+
+        Args:
+            segment_settings (SegmentModelSettings): The settings for the segment.
+            parameters (Dict[str, Union[float, str, bool]]): The parameters for the model.
+
+        Returns:
+            prophet.Prophet: The Prophet model.
+        """
         if segment_settings.holidays:
             parameters["holidays"] = pd.concat(
                 [
@@ -171,6 +208,18 @@ class FunnelForecast(BaseForecast):
         task: str,
         add_logistic_growth_cols: bool = False,
     ) -> pd.DataFrame:
+        """
+        Build the model dataframe for training or prediction.
+
+        Args:
+            segment_settings (SegmentModelSettings): The settings for the segment.
+            task (str): The task, either 'train' or 'predict'.
+            add_logistic_growth_cols (bool, optional): Whether to add logistic growth columns. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The dataframe for the model.
+        """
+
         # build training dataframe
         if task == "train":
             df = (
@@ -211,7 +260,9 @@ class FunnelForecast(BaseForecast):
         return df
 
     def _fit(self) -> None:
-        # fit and save a Prophet model for each segment combination
+        """
+        Fit and save a Prophet model for each segment combination.
+        """
         for segment_settings in self.segment_models:
             parameters = self._auto_tuning(segment_settings)
 
@@ -237,6 +288,15 @@ class FunnelForecast(BaseForecast):
             segment_settings.segment_model = model
 
     def _auto_tuning(self, segment_settings: SegmentModelSettings) -> Dict[str, float]:
+        """
+        Perform automatic tuning of model parameters.
+
+        Args:
+            segment_settings (SegmentModelSettings): The settings for the segment.
+
+        Returns:
+            Dict[str, float]: The tuned parameters.
+        """
         add_log_growth_cols = (
             "growth" in segment_settings.grid_parameters.keys()
             and segment_settings.grid_parameters["growth"] == "logistic"
@@ -275,7 +335,16 @@ class FunnelForecast(BaseForecast):
         return param_grid[min_abs_bias_index]
 
     def _add_regressors(self, dat: pd.DataFrame, regressors: List[ProphetRegressor]):
-        # add regressor columns to train or predict df
+        """
+        Add regressor columns to the dataframe for training or prediction.
+
+        Args:
+            dat (pd.DataFrame): The input dataframe.
+            regressors (List[ProphetRegressor]): The list of regressors to add.
+
+        Returns:
+            pd.DataFrame: The dataframe with regressors added.
+        """
         df = dat.copy().rename(columns=self.column_names_map)
         df["ds"] = pd.to_datetime(df["ds"])
         for regressor in regressors:
@@ -291,7 +360,15 @@ class FunnelForecast(BaseForecast):
         return df
 
     def _predict(self, segment_settings: SegmentModelSettings) -> pd.DataFrame:
-        # generate the forecast samples
+        """
+        Generate forecast samples for a segment.
+
+        Args:
+            segment_settings (SegmentModelSettings): The settings for the segment.
+
+        Returns:
+            pd.DataFrame: The forecasted values.
+        """
         add_log_growth_cols = (
             "growth" in segment_settings.trained_parameters.keys()
             and segment_settings.trained_parameters["growth"] == "logistic"
@@ -341,7 +418,15 @@ class FunnelForecast(BaseForecast):
         ]
 
     def _validate_forecast_df(self, df: pd.DataFrame) -> None:
-        """Validate that `forecast_df` has been generated correctly for each segment."""
+        """
+        Validate that the forecast dataframe has been generated correctly for each segment.
+
+        Args:
+            df (pd.DataFrame): The forecast dataframe.
+
+        Raises:
+            ValueError: If the dataframe does not meet the required conditions.
+        """
         columns = df.columns
         numeric_columns = df.drop(columns=["submission_date"]).columns
 
@@ -356,6 +441,16 @@ class FunnelForecast(BaseForecast):
                 )
 
     def _percentile_name_map(self, percentiles: List[int]) -> Dict[str, str]:
+        """
+        Map percentiles to their corresponding names for the BQ table.
+
+        Args:
+            percentiles (List[int]): The list of percentiles.
+
+        Returns:
+            Dict[str, str]: The mapping of percentile names.
+        """
+
         percentiles.sort()
         return {
             f"p{percentiles[0]}": "value_low",
@@ -372,8 +467,16 @@ class FunnelForecast(BaseForecast):
         percentiles: List[int],
     ) -> pd.DataFrame:
         """
-        Calculate summary metrics for `forecast_df` over a given period, and
-        add metadata.
+        Calculate summary metrics for `forecast_df` over a given period, and add metadata.
+
+        Args:
+            segment_settings (SegmentModelSettings): The settings for the segment.
+            period (str): The period for aggregation.
+            numpy_aggregations (List[str]): List of numpy aggregation functions.
+            percentiles (List[int]): List of percentiles.
+
+        Returns:
+            pd.DataFrame: The summarized dataframe.
         """
         if len(percentiles) != 3:
             print(
@@ -491,6 +594,14 @@ class FunnelForecast(BaseForecast):
         numpy_aggregations: List[str] = ["mean"],
         percentiles: List[int] = [10, 50, 90],
     ) -> None:
+        """
+        Summarize the forecast results over specified periods.
+
+        Args:
+            periods (List[str], optional): The periods for summarization. Defaults to ["day", "month"].
+            numpy_aggregations (List[str], optional): The numpy aggregation functions. Defaults to ["mean"].
+            percentiles (List[int], optional): The percentiles for summarization. Defaults to [10, 50, 90].
+        """
         summary_df_list = []
         components_df_list = []
         for segment in self.segment_models:
@@ -529,11 +640,12 @@ class FunnelForecast(BaseForecast):
 
         Args:
             project (str): The Big Query project that the data should be written to.
-            dataset (str): The Big Query dataset that the data should be written to.
-            table (str): The Big Query table that the data should be written to.
-            write_disposition (str): In the event that the destination table exists,
-                should the table be overwritten ("WRITE_TRUNCATE") or appended to
-                ("WRITE_APPEND")?
+            forecast_dataset (str): The Big Query dataset that the data should be written to.
+            forecast_table (str): The Big Query table that the data should be written to.
+            write_disposition (str, optional): In the event that the destination table exists,
+                should the table be overwritten ("WRITE_TRUNCATE") or appended to ("WRITE_APPEND")? Defaults to "WRITE_APPEND".
+            components_table (str, optional): The Big Query table for model components. Defaults to "".
+            components_dataset (str, optional): The Big Query dataset for model components. Defaults to "".
         """
         print(
             f"Writing results to `{project}.{forecast_dataset}.{forecast_table}`.",
