@@ -222,14 +222,15 @@ class FunnelForecast(BaseForecast):
 
         # build training dataframe
         if task == "train":
+
+            # find indices in observed_df for rows that exactly match segment dict
+            segment_historical_indices = (
+                self.observed_df[list(segment_settings.segment)]
+                == pd.Series(segment_settings.segment)
+            ).all(axis=1)
             df = (
                 self.observed_df.loc[
-                    (  # filter observed_df to rows that exactly match segment dict
-                        (
-                            self.observed_df[list(segment_settings.segment)]
-                            == pd.Series(segment_settings.segment)
-                        ).all(axis=1)
-                    )
+                    (segment_historical_indices)
                     & (  # filter observed_df if segment start date > metric_hub start date
                         self.observed_df["submission_date"]
                         >= datetime.strptime(
@@ -493,16 +494,18 @@ class FunnelForecast(BaseForecast):
         segment_observed_start_date = datetime.strptime(
             segment_settings.start_date, "%Y-%m-%d"
         ).date()
+
+        # find indices in observed_df for rows that exactly match segment dict
+        segment_historical_indices = (
+            self.observed_df[list(segment_settings.segment)]
+            == pd.Series(segment_settings.segment)
+        ).all(axis=1)
+
         # aggregate metric to the correct date period (day, month, year)
         observed_summarized = pdx.aggregate_to_period(
             (
                 self.observed_df.loc[
-                    (
-                        (
-                            self.observed_df[list(segment_settings.segment)]
-                            == pd.Series(segment_settings.segment)
-                        ).all(axis=1)
-                    )
+                    (segment_historical_indices)
                     & (
                         self.observed_df["submission_date"]
                         >= segment_observed_start_date
