@@ -464,7 +464,7 @@ class FunnelForecast(BaseForecast):
         segment_settings: SegmentModelSettings,
         period: str,
         numpy_aggregations: List[str],
-        percentiles: List[int],
+        percentiles: List[int] = [10, 50, 90],
     ) -> pd.DataFrame:
         """
         Calculate summary metrics for `forecast_df` over a given period, and add metadata.
@@ -479,18 +479,20 @@ class FunnelForecast(BaseForecast):
             pd.DataFrame: The summarized dataframe.
         """
         if len(percentiles) != 3:
-            print(
+            raise ValueError(
                 """
-                  Can only pass a list of length 3 as percentiles, for lower, mid, and upper values.
-                  Will default to using [10, 50, 90].
-                  """,
-                flush=True,
+                Can only pass a list of length 3 as percentiles, for lower, mid, and upper values.
+                """
             )
-            percentiles = [10, 50, 90]
         # build a list of all functions that we'll summarize the data by
         aggregations = [getattr(np, i) for i in numpy_aggregations]
         aggregations.extend([pdx.percentile(i) for i in percentiles])
 
+        # the start date for this segment's historical data, in cases where the full time series
+        ## of historical data is not used for model training
+        segment_observed_start_date = datetime.strptime(
+            segment_settings.start_date, "%Y-%m-%d"
+        ).date()
         # aggregate metric to the correct date period (day, month, year)
         observed_summarized = pdx.aggregate_to_period(
             (
@@ -503,9 +505,7 @@ class FunnelForecast(BaseForecast):
                     )
                     & (
                         self.observed_df["submission_date"]
-                        >= datetime.strptime(
-                            segment_settings.start_date, "%Y-%m-%d"
-                        ).date()
+                        >= segment_observed_start_date
                     )
                 ].copy()
             ),
@@ -585,8 +585,7 @@ class FunnelForecast(BaseForecast):
             forecast_df = self._predict(segment_settings)
             self._validate_forecast_df(forecast_df)
 
-            segment_settings.forecast_df = forecast_df.copy(deep=True)
-            del forecast_df
+            segment_settings.forecast_df = forecast_df
 
     def summarize(
         self,
