@@ -75,16 +75,12 @@ class FunnelForecast(BaseForecast):
 
         # Construct a DataFrame containing all combination of segment values
         ## in the observed_df
-        combination_df = (
-            self.observed_df[self.metric_hub.segments.keys()]
-            .drop_duplicates()
-            .reset_index()[self.metric_hub.segments.keys()]
-        )
+        combination_df = self.observed_df[
+            self.metric_hub.segments.keys()
+        ].drop_duplicates()
 
         # Construct dictionaries from those combinations
-        segment_combinations = []
-        for _, row in combination_df.iterrows():
-            segment_combinations.append(row.to_dict())
+        segment_combinations = combination_df.to_dict("records")
 
         # initialize a list to hold models for each segment
         ## populate the list with segments and parameters for the segment
@@ -97,6 +93,10 @@ class FunnelForecast(BaseForecast):
             model_params = getattr(
                 self.parameters["segment_settings"], segment[split_dim]
             )
+
+            holiday_list = []
+            regressor_list = []
+
             if model_params["holidays"]:
                 holiday_list = [
                     getattr(holiday_collection.data, h)
@@ -114,8 +114,8 @@ class FunnelForecast(BaseForecast):
                     segment=segment,
                     start_date=model_params["start_date"],
                     end_date=self.end_date,
-                    holidays=[] or [ProphetHoliday(**h) for h in holiday_list],
-                    regressors=[] or [ProphetRegressor(**r) for r in regressor_list],
+                    holidays=[ProphetHoliday(**h) for h in holiday_list],
+                    regressors=[ProphetRegressor(**r) for r in regressor_list],
                     grid_parameters=dict(model_params["grid_parameters"]),
                     cv_settings=dict(model_params["cv_settings"]),
                 )
@@ -327,11 +327,7 @@ class FunnelForecast(BaseForecast):
             df_bias["pcnt_bias"] = df_bias["yhat"] / df_bias["y"] - 1
             bias.append(df_bias.tail(3)["pcnt_bias"].mean())
 
-        min_abs_bias_index = [
-            x
-            for x in range(len(bias))
-            if bias[x] == min(np.min(bias), np.max(bias), key=np.abs)
-        ][0]
+        min_abs_bias_index = np.argmin(np.abs(bias))
 
         return param_grid[min_abs_bias_index]
 
