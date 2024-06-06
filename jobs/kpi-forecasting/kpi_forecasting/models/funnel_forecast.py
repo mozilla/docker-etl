@@ -325,6 +325,9 @@ class FunnelForecast(BaseForecast):
 
             df_bias = df_cv.groupby("cutoff")[["yhat", "y"]].sum().reset_index()
             df_bias["pcnt_bias"] = df_bias["yhat"] / df_bias["y"] - 1
+            # Prophet splits the historical data when doing cross validation using
+            # cutoffs. The `.tail(3)` limits the periods we consider for the best
+            # parameters to the 3 most recent cutoff periods.
             bias.append(df_bias.tail(3)["pcnt_bias"].mean())
 
         min_abs_bias_index = np.argmin(np.abs(bias))
@@ -400,7 +403,9 @@ class FunnelForecast(BaseForecast):
         ]
 
         # join observed data to components df, which allows for calc of intra-sample
-        ## error rates and how components resulted in those predictions
+        # error rates and how components resulted in those predictions. The `fillna`
+        # call will fill the missing y values for forecasted dates, where only yhat
+        # is available.
         components_df = components_df.merge(
             segment_settings.segment_model.history[["ds", "y"]],
             on="ds",
