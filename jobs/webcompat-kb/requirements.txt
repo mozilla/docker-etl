@@ -1,6 +1,5 @@
 click==8.1.7
-flake8==7.0.0
 google-cloud-bigquery==3.24.0
+pytest-ruff==0.3.2
 pytest==8.2.2
-pytest-black==0.3.12
-pytest-flake8==1.1.1
+ruff==0.4.8
