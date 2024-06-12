@@ -1,11 +1,13 @@
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch
+from google.cloud.bigquery import Row
 
 import pytest
 
 from webcompat_kb.main import BugzillaToBigQuery
 from webcompat_kb.main import extract_int_from_field
 from webcompat_kb.main import parse_string_to_json
+from webcompat_kb.main import parse_datetime_str
 from webcompat_kb.main import RELATION_CONFIG, LINK_FIELDS
 
 SAMPLE_BUGS = [
@@ -339,6 +341,201 @@ SAMPLE_HISTORY = [
     },
 ]
 
+MISSING_KEYWORDS_HISTORY = [
+    {
+        "id": 1898563,
+        "alias": None,
+        "history": [
+            {
+                "when": "2024-05-27T15:10:10Z",
+                "changes": [
+                    {
+                        "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux,android\r\n+impact:blocked\r\n+configuration:general\r\n+affects:all\n",  # noqa
+                        "field_name": "cf_user_story",
+                        "removed": "",
+                    },
+                    {"removed": "--", "field_name": "severity", "added": "S2"},
+                    {
+                        "removed": "",
+                        "added": "name@example.com",
+                        "field_name": "cc",
+                    },
+                    {"added": "P2", "field_name": "priority", "removed": "P1"},
+                    {"removed": "", "added": "1886128", "field_name": "depends_on"},
+                ],
+                "who": "name@example.com",
+            }
+        ],
+    },
+    {
+        "history": [
+            {
+                "who": "someone@example.com",
+                "when": "2024-05-13T16:03:18Z",
+                "changes": [
+                    {
+                        "field_name": "cf_user_story",
+                        "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux\r\n+impact:site-broken\r\n+configuration:general\r\n+affects:all\n",  # noqa
+                        "removed": "",
+                    },
+                    {"removed": "P3", "added": "P1", "field_name": "priority"},
+                    {
+                        "removed": "",
+                        "field_name": "keywords",
+                        "added": "webcompat:needs-diagnosis",
+                    },
+                    {"added": "S2", "field_name": "severity", "removed": "--"},
+                    {
+                        "removed": "",
+                        "field_name": "cc",
+                        "added": "someone@example.com",
+                    },
+                ],
+            },
+            {
+                "who": "someone@example.com",
+                "when": "2024-05-21T17:17:52Z",
+                "changes": [
+                    {"removed": "", "field_name": "cc", "added": "emilio@crisal.io"}
+                ],
+            },
+            {
+                "when": "2024-05-21T17:22:20Z",
+                "changes": [
+                    {"field_name": "depends_on", "added": "1886820", "removed": ""}
+                ],
+                "who": "someone@example.com",
+            },
+            {
+                "changes": [
+                    {
+                        "removed": "webcompat:needs-diagnosis",
+                        "field_name": "keywords",
+                        "added": "webcompat:needs-sitepatch",
+                    },
+                    {
+                        "added": "someone@example.com",
+                        "field_name": "cc",
+                        "removed": "",
+                    },
+                ],
+                "when": "2024-05-27T15:07:33Z",
+                "who": "someone@example.com",
+            },
+            {
+                "who": "someone@example.com",
+                "changes": [
+                    {"field_name": "depends_on", "added": "1876368", "removed": ""}
+                ],
+                "when": "2024-06-05T19:25:37Z",
+            },
+            {
+                "changes": [
+                    {"added": "someone@example.com", "field_name": "cc", "removed": ""}
+                ],
+                "when": "2024-06-09T02:49:27Z",
+                "who": "someone@example.com",
+            },
+            {
+                "who": "someone@example.com",
+                "changes": [
+                    {
+                        "field_name": "keywords",
+                        "added": "webcompat:sitepatch-applied",
+                        "removed": "webcompat:needs-sitepatch",
+                    }
+                ],
+                "when": "2024-06-11T16:34:22Z",
+            },
+        ],
+        "alias": None,
+        "id": 1896383,
+    },
+    {
+        "history": [
+            {
+                "who": "someone@example.com",
+                "changes": [
+                    {
+                        "field_name": "keywords",
+                        "added": "",
+                        "removed": "webcompat:needs-diagnosis",
+                    }
+                ],
+                "when": "2024-06-11T16:34:22Z",
+            },
+        ],
+        "alias": None,
+        "id": 222222,
+    },
+]
+
+MISSING_KEYWORDS_BUGS = [
+    {
+        "creator": "name@example.com",
+        "see_also": ["https://github.com/webcompat/web-bugs/issues/135636"],
+        "id": 1898563,
+        "component": "Site Reports",
+        "keywords": ["webcompat:needs-diagnosis", "webcompat:needs-sitepatch"],
+        "resolution": "",
+        "summary": "mylotto.co.nz - Website not supported on Firefox",
+        "product": "Web Compatibility",
+        "creator_detail": {
+            "real_name": "Sample",
+            "id": 111111,
+            "nick": "sample",
+            "email": "name@example.com",
+            "name": "name@example.com",
+        },
+        "status": "NEW",
+        "depends_on": [1886128],
+        "creation_time": "2024-05-23T16:40:29Z",
+    },
+    {
+        "component": "Site Reports",
+        "keywords": ["webcompat:sitepatch-applied"],
+        "see_also": ["https://github.com/webcompat/web-bugs/issues/136865"],
+        "id": 1896383,
+        "creator": "name@example.com",
+        "depends_on": [1886820, 1876368],
+        "status": "NEW",
+        "product": "Web Compatibility",
+        "creator_detail": {
+            "name": "name@example.com",
+            "id": 111111,
+            "email": "name@example.com",
+            "nick": "sample",
+            "real_name": "Sample",
+        },
+        "resolution": "",
+        "summary": "www.unimarc.cl - Buttons not working",
+        "creation_time": "2024-05-13T13:02:11Z",
+    },
+    {
+        "id": 222222,
+        "product": "Web Compatibility",
+        "blocks": [],
+        "status": "ASSIGNED",
+        "summary": "Test breakage bug",
+        "resolution": "",
+        "depends_on": [111111],
+        "see_also": [],
+        "component": "Desktop",
+        "severity": "--",
+        "priority": "--",
+        "creator_detail": {
+            "name": "name@example.com",
+            "id": 111111,
+            "email": "name@example.com",
+            "nick": "sample",
+            "real_name": "Sample",
+        },
+        "creator": "name@example.com",
+        "creation_time": "2024-05-13T13:02:11Z",
+        "keywords": [],
+    },
+]
+
 
 @pytest.fixture(scope="module")
 def bz():
@@ -559,8 +756,219 @@ def test_filter_bug_history_changes(bz):
         },
     ]
 
-    result = bz.filter_bug_history_changes(SAMPLE_HISTORY)
+    result, bug_ids = bz.extract_relevant_changes(SAMPLE_HISTORY)
     assert result == expected_result
+    assert bug_ids == {1536482, 1536483, 1536485}
+
+
+def test_create_synthetic_history(bz):
+    history, bug_ids = bz.extract_relevant_changes(MISSING_KEYWORDS_HISTORY)
+    result = bz.create_synthetic_history(MISSING_KEYWORDS_BUGS, history)
+
+    expected = [
+        {
+            "number": 1898563,
+            "who": "name@example.com",
+            "change_time": "2024-05-23T16:40:29Z",
+            "changes": [
+                {
+                    "added": "webcompat:needs-diagnosis, webcompat:needs-sitepatch",
+                    "field_name": "keywords",
+                    "removed": "",
+                }
+            ],
+        },
+        {
+            "number": 222222,
+            "who": "name@example.com",
+            "change_time": "2024-05-13T13:02:11Z",
+            "changes": [
+                {
+                    "added": "webcompat:needs-diagnosis",
+                    "field_name": "keywords",
+                    "removed": "",
+                }
+            ],
+        },
+    ]
+
+    assert result == expected
+
+
+@patch("webcompat_kb.main.BugzillaToBigQuery.get_existing_history_records_by_ids")
+def test_filter_only_unsaved_changes(mock_get_existing, bz):
+    schema = {"number": 0, "who": 1, "change_time": 2, "changes": 3}
+
+    mock_get_existing.return_value = [
+        Row(
+            (
+                1896383,
+                "someone@example.com",
+                datetime(2024, 5, 27, 15, 7, 33, tzinfo=timezone.utc),
+                [
+                    {
+                        "field_name": "keywords",
+                        "added": "webcompat:needs-sitepatch",
+                        "removed": "webcompat:needs-diagnosis",
+                    }
+                ],
+            ),
+            schema,
+        ),
+        Row(
+            (
+                1896383,
+                "someone@example.com",
+                datetime(2024, 6, 11, 16, 34, 22, tzinfo=timezone.utc),
+                [
+                    {
+                        "field_name": "keywords",
+                        "added": "webcompat:sitepatch-applied",
+                        "removed": "webcompat:needs-sitepatch",
+                    }
+                ],
+            ),
+            schema,
+        ),
+    ]
+
+    history, bug_ids = bz.extract_relevant_changes(MISSING_KEYWORDS_HISTORY)
+    result = bz.filter_only_unsaved_changes(history, bug_ids)
+
+    expected = [
+        {
+            "number": 1896383,
+            "who": "someone@example.com",
+            "change_time": "2024-05-13T16:03:18Z",
+            "changes": [
+                {
+                    "removed": "",
+                    "field_name": "keywords",
+                    "added": "webcompat:needs-diagnosis",
+                }
+            ],
+        },
+        {
+            "number": 222222,
+            "who": "someone@example.com",
+            "change_time": "2024-06-11T16:34:22Z",
+            "changes": [
+                {
+                    "field_name": "keywords",
+                    "added": "",
+                    "removed": "webcompat:needs-diagnosis",
+                }
+            ],
+        },
+    ]
+
+    assert result == expected
+
+
+@patch("webcompat_kb.main.BugzillaToBigQuery.get_existing_history_records_by_ids")
+def test_filter_only_unsaved_changes_empty(mock_get_existing, bz):
+    mock_get_existing.return_value = []
+
+    history, bug_ids = bz.extract_relevant_changes(MISSING_KEYWORDS_HISTORY)
+    result = bz.filter_only_unsaved_changes(history, bug_ids)
+
+    expected = [
+        {
+            "number": 1896383,
+            "who": "someone@example.com",
+            "change_time": "2024-05-13T16:03:18Z",
+            "changes": [
+                {
+                    "removed": "",
+                    "field_name": "keywords",
+                    "added": "webcompat:needs-diagnosis",
+                }
+            ],
+        },
+        {
+            "number": 1896383,
+            "who": "someone@example.com",
+            "change_time": "2024-05-27T15:07:33Z",
+            "changes": [
+                {
+                    "removed": "webcompat:needs-diagnosis",
+                    "field_name": "keywords",
+                    "added": "webcompat:needs-sitepatch",
+                }
+            ],
+        },
+        {
+            "number": 1896383,
+            "who": "someone@example.com",
+            "change_time": "2024-06-11T16:34:22Z",
+            "changes": [
+                {
+                    "field_name": "keywords",
+                    "added": "webcompat:sitepatch-applied",
+                    "removed": "webcompat:needs-sitepatch",
+                }
+            ],
+        },
+        {
+            "number": 222222,
+            "who": "someone@example.com",
+            "change_time": "2024-06-11T16:34:22Z",
+            "changes": [
+                {
+                    "field_name": "keywords",
+                    "added": "",
+                    "removed": "webcompat:needs-diagnosis",
+                }
+            ],
+        },
+    ]
+
+    assert result == expected
+
+
+@patch("webcompat_kb.main.BugzillaToBigQuery.get_existing_history_records_by_ids")
+def test_filter_only_unsaved_changes_synthetic(mock_get_existing, bz):
+    history, bug_ids = bz.extract_relevant_changes(MISSING_KEYWORDS_HISTORY)
+    s_history = bz.create_synthetic_history(MISSING_KEYWORDS_BUGS, history)
+
+    schema = {"number": 0, "who": 1, "change_time": 2, "changes": 3}
+
+    mock_get_existing.return_value = [
+        Row(
+            (
+                1898563,
+                "name@example.com",
+                datetime(2024, 5, 23, 16, 40, 29, tzinfo=timezone.utc),
+                [
+                    {
+                        "field_name": "keywords",
+                        "added": "webcompat:needs-diagnosis, webcompat:needs-sitepatch",  # noqa
+                        "removed": "",
+                    }
+                ],
+            ),
+            schema,
+        )
+    ]
+
+    result = bz.filter_only_unsaved_changes(s_history, bug_ids)
+
+    expected = [
+        {
+            "number": 222222,
+            "who": "name@example.com",
+            "change_time": "2024-05-13T13:02:11Z",
+            "changes": [
+                {
+                    "added": "webcompat:needs-diagnosis",
+                    "field_name": "keywords",
+                    "removed": "",
+                }
+            ],
+        }
+    ]
+
+    assert result == expected
 
 
 def test_empty_input():
@@ -759,3 +1167,8 @@ def test_convert_bug_data(bz):
     ]
     for bug, expected in zip(SAMPLE_BUGS, expected_data):
         assert bz.convert_bug_data(bug) == expected
+
+
+def test_parse_datetime():
+    result = parse_datetime_str("2024-06-11T16:35:50Z")
+    assert result == datetime(2024, 6, 11, 16, 35, 50, tzinfo=timezone.utc)
