@@ -24,12 +24,11 @@ FIELD_MAP = {
     "n/a": None,
     "--": None,
 }
-CORE_AS_KB_KEYWORD = "webcompat:platform-bug"
 
 FILTER_CONFIG = {
-    "wc": {
+    "site_reports_wc": {
         "product": "Web Compatibility",
-        "component": ["Knowledge Base", "Site Reports"],
+        "component": "Site Reports",
         "f1": "OP",
         "f2": "bug_status",
         "o2": "changedafter",
@@ -38,6 +37,18 @@ FILTER_CONFIG = {
         "f3": "resolution",
         "o3": "isempty",
         "f4": "CP",
+    },
+    "knowledge_base_wc": {
+        "product": "Web Compatibility",
+        "component": "Knowledge Base",
+    },
+    "knowledge_base_other": {
+        "f1": "product",
+        "o1": "notequals",
+        "v1": "Web Compatibility",
+        "f2": "keywords",
+        "o2": "substring",
+        "v2": "webcompat%3Aplatform-bug",
     },
     "interventions": {
         "product": "Web Compatibility",
@@ -208,33 +219,31 @@ class BugzillaToBigQuery:
             response = requests.get(url, params=params, headers=headers)
             response.raise_for_status()
             result = response.json()
-            return result["bugs"]
+            return {bug["id"]: bug for bug in result["bugs"]}
         except Exception as e:
             logging.error(f"Error: {e}")
             self.bugs_fetch_completed = False
-            return []
+            return {}
 
-    def filter_core_as_kb_bugs(self, other, kb_bugs_ids, site_reports_ids):
-        core_as_kb_bugs = []
-        ckb_depends_on_ids = set()
+    def filter_kb_other(self, kb_bugs_other, compat_kb_ids, site_report_ids):
+        filtered = {}
 
-        for bug in other:
-            if CORE_AS_KB_KEYWORD in bug["keywords"]:
-                # Check if the core bug already has a kb entry and skip if so
-                if any(blocked_id in kb_bugs_ids for blocked_id in bug["blocks"]):
-                    continue
+        for bug_id, source_bug in kb_bugs_other.items():
+            bug = {**source_bug}
 
-                # Only store a breakage bug as it's the relation we care about
-                bug["blocks"] = [
-                    blocked_id
-                    for blocked_id in bug["blocks"]
-                    if blocked_id in site_reports_ids
-                ]
+            # Check if the core bug already has a kb entry and skip if so
+            if any(blocked_id in compat_kb_ids for blocked_id in bug["blocks"]):
+                continue
 
-                ckb_depends_on_ids.update(bug["depends_on"])
-                core_as_kb_bugs.append(bug)
+            # Only store a breakage bug as it's the relation we care about
+            bug["blocks"] = [
+                blocked_id
+                for blocked_id in bug["blocks"]
+                if blocked_id in site_report_ids
+            ]
+            filtered[bug_id] = bug
 
-        return core_as_kb_bugs, ckb_depends_on_ids
+        return filtered
 
     def fetch_all_bugs(self):
         fetched_bugs = {}
@@ -243,40 +252,36 @@ class BugzillaToBigQuery:
             logging.info(f"Fetching {category.replace('_', ' ').title()} bugs")
             fetched_bugs[category] = self.fetch_bugs(filter_config)
 
-        kb_bugs = []
-        kb_depends_on_ids = set()
-        site_reports_ids = set()
-        kb_bugs_ids = set()
+        site_reports = fetched_bugs["site_reports_wc"]
 
-        for bug in fetched_bugs["wc"]:
-            if bug["component"] == "Knowledge Base":
-                kb_bugs.append(bug)
-                kb_depends_on_ids.update(bug["depends_on"])
-                kb_bugs_ids.add(bug["id"])
-
-            elif bug["component"] == "Site Reports":
-                site_reports_ids.add(bug["id"])
-
-        core_as_kb_bugs, ckb_depends_on_ids = self.filter_core_as_kb_bugs(
-            fetched_bugs["other"], kb_bugs_ids, site_reports_ids
+        kb_bugs = fetched_bugs["knowledge_base_wc"]
+        kb_bugs.update(
+            self.filter_kb_other(
+                fetched_bugs["knowledge_base_other"],
+                set(kb_bugs.keys()),
+                set(site_reports.keys()),
+            )
         )
 
-        kb_depends_on_ids.update(ckb_depends_on_ids)
-        merged_kb_bugs = kb_bugs + core_as_kb_bugs
+        kb_depends_on_ids = set()
+        for bug in kb_bugs.values():
+            kb_depends_on_ids |= set(bug["depends_on"])
 
         logging.info("Fetching blocking bugs for KB bugs")
-
         core_bugs = self.fetch_bugs({"id": ",".join(map(str, kb_depends_on_ids))})
 
-        all_bugs = (
-            fetched_bugs["wc"]
-            + fetched_bugs["interventions"]
-            + fetched_bugs["other"]
-            + fetched_bugs["parity"]
-            + core_bugs
-        )
+        all_bugs = {}
+        for bugs in [
+            site_reports,
+            kb_bugs,
+            fetched_bugs["interventions"],
+            fetched_bugs["other"],
+            fetched_bugs["parity"],
+            core_bugs,
+        ]:
+            all_bugs.update(bugs)
 
-        return all_bugs, merged_kb_bugs, core_bugs
+        return list(all_bugs.values(), list(kb_bugs.values()), list(core_bugs.values())
 
     def split_bugs(self, dep_bugs, bug_ids):
         core_bugs, breakage_bugs = [], []
