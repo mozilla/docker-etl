@@ -38,6 +38,14 @@ FILTER_CONFIG = {
         "o3": "isempty",
         "f4": "CP",
     },
+    "site_reports_other": {
+        "f1": "product",
+        "o1": "notequals",
+        "v1": "Web Compatibility",
+        "f2": "keywords",
+        "o2": "substring",
+        "v2": "webcompat%3Asite-report",
+    },
     "knowledge_base_wc": {
         "product": "Web Compatibility",
         "component": "Knowledge Base",
@@ -253,6 +261,7 @@ class BugzillaToBigQuery:
             fetched_bugs[category] = self.fetch_bugs(filter_config)
 
         site_reports = fetched_bugs["site_reports_wc"]
+        site_reports.update(fetched_bugs["site_reports_other"])
 
         kb_bugs = fetched_bugs["knowledge_base_wc"]
         kb_bugs.update(
