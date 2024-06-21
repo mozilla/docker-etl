@@ -217,7 +217,6 @@ class BugzillaToBigQuery:
         self.bugzilla_api_key = bugzilla_api_key
         self.bugs_fetch_completed = True
         self.history_fetch_completed = True
-        self.start_time: Optional[float] = None
 
     def fetch_bugs(self, params: Optional[dict[str, Any]] = None) -> MutBugsById:
         if params is None:
@@ -959,13 +958,13 @@ class BugzillaToBigQuery:
 
     def record_import_run(
         self,
+        start_time: float,
         history_fetch_completed: bool,
         count: int,
         history_count: int,
         last_change_time: datetime,
     ) -> None:
-        assert self.start_time is not None
-        elapsed_time = time.monotonic() - self.start_time
+        elapsed_time = time.monotonic() - start_time
         elapsed_time_delta = timedelta(seconds=elapsed_time)
         run_at = last_change_time - elapsed_time_delta
         formatted_time = run_at.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -986,7 +985,7 @@ class BugzillaToBigQuery:
             logging.info("Last import run recorded")
 
     def run(self) -> None:
-        self.start_time = time.monotonic()
+        start_time = time.monotonic()
 
         all_bugs, kb_bugs, core_bugs = self.fetch_all_bugs()
 
@@ -1042,6 +1041,7 @@ class BugzillaToBigQuery:
         )
 
         self.record_import_run(
+            start_time,
             self.history_fetch_completed,
             len(all_bugs),
             len(history_changes),
