@@ -10,168 +10,177 @@ from webcompat_kb.main import parse_string_to_json
 from webcompat_kb.main import parse_datetime_str
 from webcompat_kb.main import RELATION_CONFIG, LINK_FIELDS
 
-SAMPLE_BUGS = [
-    {
-        "see_also": [
-            "https://github.com/webcompat/web-bugs/issues/13503",
-            "https://github.com/webcompat/web-bugs/issues/91682",
-            "https://bugzilla.mozilla.org/show_bug.cgi?id=1633399",
-            "https://bugzilla.mozilla.org/show_bug.cgi?id=1735227",
-            "https://bugzilla.mozilla.org/show_bug.cgi?id=1739489",
-            "https://bugzilla.mozilla.org/show_bug.cgi?id=1739791",
-            "https://github.com/webcompat/web-bugs/issues/109064",
-            "https://github.com/mozilla-extensions/webcompat-addon/blob/5b391018e847a1eb30eba4784c86acd1c638ed26/src/injections/js/bug1739489-draftjs-beforeinput.js",  # noqa
-            "https://github.com/webcompat/web-bugs/issues/112848",
-            "https://github.com/webcompat/web-bugs/issues/117039",
-        ],
-        "cf_user_story": "url:cmcreg.bancosantander.es/*\r\nurl:new.reddit.com/*\r\nurl:web.whatsapp.com/*\r\nurl:facebook.com/*\r\nurl:twitter.com/*\r\nurl:reddit.com/*\r\nurl:mobilevikings.be/*\r\nurl:book.ersthelfer.tv/*",  # noqa
-        "severity": "--",
-        "priority": "--",
-        "depends_on": [903746],
-        "component": "Knowledge Base",
-        "product": "Web Compatibility",
-        "resolution": "",
-        "status": "NEW",
-        "blocks": [],
-        "id": 1835339,
-        "summary": "Missing implementation of textinput event",
-        "assigned_to": "test@example.org",
-        "creation_time": "2000-07-25T13:50:04Z",
-        "keywords": [],
-        "url": "",
-        "whiteboard": "",
-    },
-    {
-        "component": "Knowledge Base",
-        "product": "Web Compatibility",
-        "depends_on": [],
-        "see_also": [
-            "https://github.com/webcompat/web-bugs/issues/100260",
-            "https://github.com/webcompat/web-bugs/issues/22829",
-            "https://github.com/webcompat/web-bugs/issues/62926",
-            "https://github.com/webcompat/web-bugs/issues/66768",
-            "https://github.com/webcompat/web-bugs/issues/112423",
-            "https://mozilla.github.io/standards-positions/#webusb",
-            "https://github.com/webcompat/web-bugs/issues/122436",
-            "https://github.com/webcompat/web-bugs/issues/122127",
-            "https://github.com/webcompat/web-bugs/issues/120886",
-        ],
-        "summary": "Sites breaking due to the lack of WebUSB support",
-        "id": 1835416,
-        "blocks": [],
-        "resolution": "",
-        "priority": "--",
-        "severity": "--",
-        "cf_user_story": "url:webminidisc.com/*\r\nurl:app.webadb.com/*\r\nurl:www.numworks.com/*\r\nurl:webadb.github.io/*\r\nurl:www.stemplayer.com/*\r\nurl:wootility.io/*\r\nurl:python.microbit.org/*\r\nurl:flash.android.com/*",  # noqa
-        "status": "NEW",
-        "assigned_to": "nobody@mozilla.org",
-        "creation_time": "2000-07-25T13:50:04Z",
-        "keywords": [],
-        "url": "",
-        "whiteboard": "",
-    },
-    {
-        "component": "Knowledge Base",
-        "product": "Web Compatibility",
-        "depends_on": [555555],
-        "see_also": [
-            "https://crbug.com/606208",
-            "https://github.com/whatwg/html/issues/1896",
-            "https://w3c.github.io/trusted-types/dist/spec/",
-            "https://github.com/webcompat/web-bugs/issues/124877",
-            "https://github.com/mozilla/standards-positions/issues/20",
-            "https://github.com/WebKit/standards-positions/issues/186",
-        ],
-        "summary": "Test bug",
-        "id": 111111,
-        "blocks": [222222, 1734557],
-        "resolution": "",
-        "priority": "--",
-        "severity": "--",
-        "cf_user_story": "",
-        "status": "NEW",
-        "assigned_to": "nobody@mozilla.org",
-        "creation_time": "2000-07-25T13:50:04Z",
-        "keywords": [],
-        "url": "",
-        "whiteboard": "",
-    },
-]
+SAMPLE_BUGS = {
+    item["id"]: item
+    for item in [
+        {
+            "see_also": [
+                "https://github.com/webcompat/web-bugs/issues/13503",
+                "https://github.com/webcompat/web-bugs/issues/91682",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1633399",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1735227",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1739489",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1739791",
+                "https://github.com/webcompat/web-bugs/issues/109064",
+                "https://github.com/mozilla-extensions/webcompat-addon/blob/5b391018e847a1eb30eba4784c86acd1c638ed26/src/injections/js/bug1739489-draftjs-beforeinput.js",  # noqa
+                "https://github.com/webcompat/web-bugs/issues/112848",
+                "https://github.com/webcompat/web-bugs/issues/117039",
+            ],
+            "cf_user_story": "url:cmcreg.bancosantander.es/*\r\nurl:new.reddit.com/*\r\nurl:web.whatsapp.com/*\r\nurl:facebook.com/*\r\nurl:twitter.com/*\r\nurl:reddit.com/*\r\nurl:mobilevikings.be/*\r\nurl:book.ersthelfer.tv/*",  # noqa
+            "severity": "--",
+            "priority": "--",
+            "depends_on": [903746],
+            "component": "Knowledge Base",
+            "product": "Web Compatibility",
+            "resolution": "",
+            "status": "NEW",
+            "blocks": [],
+            "id": 1835339,
+            "summary": "Missing implementation of textinput event",
+            "assigned_to": "test@example.org",
+            "creation_time": "2000-07-25T13:50:04Z",
+            "keywords": [],
+            "url": "",
+            "whiteboard": "",
+        },
+        {
+            "component": "Knowledge Base",
+            "product": "Web Compatibility",
+            "depends_on": [],
+            "see_also": [
+                "https://github.com/webcompat/web-bugs/issues/100260",
+                "https://github.com/webcompat/web-bugs/issues/22829",
+                "https://github.com/webcompat/web-bugs/issues/62926",
+                "https://github.com/webcompat/web-bugs/issues/66768",
+                "https://github.com/webcompat/web-bugs/issues/112423",
+                "https://mozilla.github.io/standards-positions/#webusb",
+                "https://github.com/webcompat/web-bugs/issues/122436",
+                "https://github.com/webcompat/web-bugs/issues/122127",
+                "https://github.com/webcompat/web-bugs/issues/120886",
+            ],
+            "summary": "Sites breaking due to the lack of WebUSB support",
+            "id": 1835416,
+            "blocks": [],
+            "resolution": "",
+            "priority": "--",
+            "severity": "--",
+            "cf_user_story": "url:webminidisc.com/*\r\nurl:app.webadb.com/*\r\nurl:www.numworks.com/*\r\nurl:webadb.github.io/*\r\nurl:www.stemplayer.com/*\r\nurl:wootility.io/*\r\nurl:python.microbit.org/*\r\nurl:flash.android.com/*",  # noqa
+            "status": "NEW",
+            "assigned_to": "nobody@mozilla.org",
+            "creation_time": "2000-07-25T13:50:04Z",
+            "keywords": [],
+            "url": "",
+            "whiteboard": "",
+        },
+        {
+            "component": "Knowledge Base",
+            "product": "Web Compatibility",
+            "depends_on": [555555],
+            "see_also": [
+                "https://crbug.com/606208",
+                "https://github.com/whatwg/html/issues/1896",
+                "https://w3c.github.io/trusted-types/dist/spec/",
+                "https://github.com/webcompat/web-bugs/issues/124877",
+                "https://github.com/mozilla/standards-positions/issues/20",
+                "https://github.com/WebKit/standards-positions/issues/186",
+            ],
+            "summary": "Test bug",
+            "id": 111111,
+            "blocks": [222222, 1734557],
+            "resolution": "",
+            "priority": "--",
+            "severity": "--",
+            "cf_user_story": "",
+            "status": "NEW",
+            "assigned_to": "nobody@mozilla.org",
+            "creation_time": "2000-07-25T13:50:04Z",
+            "keywords": [],
+            "url": "",
+            "whiteboard": "",
+        },
+    ]
+}
 
-SAMPLE_CORE_BUGS = [
-    {
-        "id": 903746,
-        "severity": "--",
-        "priority": "--",
-        "cf_user_story": "",
-        "depends_on": [],
-        "status": "UNCONFIRMED",
-        "product": "Core",
-        "blocks": [1754236, 1835339],
-        "component": "DOM: Events",
-        "see_also": [
-            "https://bugzilla.mozilla.org/show_bug.cgi?id=1739489",
-            "https://bugzilla.mozilla.org/show_bug.cgi?id=1739791",
-            "https://bugzilla.mozilla.org/show_bug.cgi?id=1735227",
-            "https://bugzilla.mozilla.org/show_bug.cgi?id=1633399",
-            "https://github.com/webcompat/web-bugs/issues/109064",
-            "https://github.com/webcompat/web-bugs/issues/112848",
-            "https://github.com/webcompat/web-bugs/issues/117039",
-            "https://github.com/w3c/uievents/issues/353",
-        ],
-        "resolution": "",
-        "summary": "Missing textinput event",
-        "assigned_to": "nobody@mozilla.org",
-    },
-    {
-        "id": 555555,
-        "severity": "--",
-        "priority": "--",
-        "cf_user_story": "",
-        "depends_on": [],
-        "status": "UNCONFIRMED",
-        "product": "Core",
-        "blocks": [],
-        "component": "Test",
-        "see_also": ["https://mozilla.github.io/standards-positions/#testposition"],
-        "resolution": "",
-        "summary": "Test Core bug",
-        "assigned_to": "nobody@mozilla.org",
-    },
-]
+SAMPLE_CORE_BUGS = {
+    item["id"]: item
+    for item in [
+        {
+            "id": 903746,
+            "severity": "--",
+            "priority": "--",
+            "cf_user_story": "",
+            "depends_on": [],
+            "status": "UNCONFIRMED",
+            "product": "Core",
+            "blocks": [1754236, 1835339],
+            "component": "DOM: Events",
+            "see_also": [
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1739489",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1739791",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1735227",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1633399",
+                "https://github.com/webcompat/web-bugs/issues/109064",
+                "https://github.com/webcompat/web-bugs/issues/112848",
+                "https://github.com/webcompat/web-bugs/issues/117039",
+                "https://github.com/w3c/uievents/issues/353",
+            ],
+            "resolution": "",
+            "summary": "Missing textinput event",
+            "assigned_to": "nobody@mozilla.org",
+        },
+        {
+            "id": 555555,
+            "severity": "--",
+            "priority": "--",
+            "cf_user_story": "",
+            "depends_on": [],
+            "status": "UNCONFIRMED",
+            "product": "Core",
+            "blocks": [],
+            "component": "Test",
+            "see_also": ["https://mozilla.github.io/standards-positions/#testposition"],
+            "resolution": "",
+            "summary": "Test Core bug",
+            "assigned_to": "nobody@mozilla.org",
+        },
+    ]
+}
 
-SAMPLE_BREAKAGE_BUGS = [
-    {
-        "id": 1734557,
-        "product": "Web Compatibility",
-        "cf_user_story": "url:angusnicneven.com/*",
-        "blocks": [],
-        "status": "ASSIGNED",
-        "summary": "Javascript causes infinite scroll because event.path is undefined",
-        "resolution": "",
-        "depends_on": [111111],
-        "see_also": [],
-        "component": "Desktop",
-        "severity": "--",
-        "priority": "--",
-        "assigned_to": "nobody@mozilla.org",
-    },
-    {
-        "id": 222222,
-        "product": "Web Compatibility",
-        "cf_user_story": "url:example.com/*",
-        "blocks": [],
-        "status": "ASSIGNED",
-        "summary": "Test breakage bug",
-        "resolution": "",
-        "depends_on": [111111],
-        "see_also": [],
-        "component": "Desktop",
-        "severity": "--",
-        "priority": "--",
-        "assigned_to": "nobody@mozilla.org",
-    },
-]
+SAMPLE_BREAKAGE_BUGS = {
+    item["id"]: item
+    for item in [
+        {
+            "id": 1734557,
+            "product": "Web Compatibility",
+            "cf_user_story": "url:angusnicneven.com/*",
+            "blocks": [],
+            "status": "ASSIGNED",
+            "summary": "Javascript causes infinite scroll because event.path is undefined",
+            "resolution": "",
+            "depends_on": [111111],
+            "see_also": [],
+            "component": "Desktop",
+            "severity": "--",
+            "priority": "--",
+            "assigned_to": "nobody@mozilla.org",
+        },
+        {
+            "id": 222222,
+            "product": "Web Compatibility",
+            "cf_user_story": "url:example.com/*",
+            "blocks": [],
+            "status": "ASSIGNED",
+            "summary": "Test breakage bug",
+            "resolution": "",
+            "depends_on": [111111],
+            "see_also": [],
+            "component": "Desktop",
+            "severity": "--",
+            "priority": "--",
+            "assigned_to": "nobody@mozilla.org",
+        },
+    ]
+}
 
 SAMPLE_CORE_AS_KB_BUGS = {
     item["id"]: item
@@ -473,97 +482,103 @@ MISSING_KEYWORDS_HISTORY = [
     },
 ]
 
-MISSING_KEYWORDS_BUGS = [
-    {
-        "creator": "name@example.com",
-        "see_also": ["https://github.com/webcompat/web-bugs/issues/135636"],
-        "id": 1898563,
-        "component": "Site Reports",
-        "keywords": ["webcompat:needs-diagnosis", "webcompat:needs-sitepatch"],
-        "resolution": "",
-        "summary": "mylotto.co.nz - Website not supported on Firefox",
-        "product": "Web Compatibility",
-        "creator_detail": {
-            "real_name": "Sample",
-            "id": 111111,
-            "nick": "sample",
-            "email": "name@example.com",
-            "name": "name@example.com",
+MISSING_KEYWORDS_BUGS = {
+    item["id"]: item
+    for item in [
+        {
+            "creator": "name@example.com",
+            "see_also": ["https://github.com/webcompat/web-bugs/issues/135636"],
+            "id": 1898563,
+            "component": "Site Reports",
+            "keywords": ["webcompat:needs-diagnosis", "webcompat:needs-sitepatch"],
+            "resolution": "",
+            "summary": "mylotto.co.nz - Website not supported on Firefox",
+            "product": "Web Compatibility",
+            "creator_detail": {
+                "real_name": "Sample",
+                "id": 111111,
+                "nick": "sample",
+                "email": "name@example.com",
+                "name": "name@example.com",
+            },
+            "status": "NEW",
+            "depends_on": [1886128],
+            "creation_time": "2024-05-23T16:40:29Z",
         },
-        "status": "NEW",
-        "depends_on": [1886128],
-        "creation_time": "2024-05-23T16:40:29Z",
-    },
-    {
-        "component": "Site Reports",
-        "keywords": ["webcompat:sitepatch-applied"],
-        "see_also": ["https://github.com/webcompat/web-bugs/issues/136865"],
-        "id": 1896383,
-        "creator": "name@example.com",
-        "depends_on": [1886820, 1876368],
-        "status": "NEW",
-        "product": "Web Compatibility",
-        "creator_detail": {
-            "name": "name@example.com",
-            "id": 111111,
-            "email": "name@example.com",
-            "nick": "sample",
-            "real_name": "Sample",
+        {
+            "component": "Site Reports",
+            "keywords": ["webcompat:sitepatch-applied"],
+            "see_also": ["https://github.com/webcompat/web-bugs/issues/136865"],
+            "id": 1896383,
+            "creator": "name@example.com",
+            "depends_on": [1886820, 1876368],
+            "status": "NEW",
+            "product": "Web Compatibility",
+            "creator_detail": {
+                "name": "name@example.com",
+                "id": 111111,
+                "email": "name@example.com",
+                "nick": "sample",
+                "real_name": "Sample",
+            },
+            "resolution": "",
+            "summary": "www.unimarc.cl - Buttons not working",
+            "creation_time": "2024-05-13T13:02:11Z",
         },
-        "resolution": "",
-        "summary": "www.unimarc.cl - Buttons not working",
-        "creation_time": "2024-05-13T13:02:11Z",
-    },
-    {
-        "id": 222222,
-        "product": "Web Compatibility",
-        "blocks": [],
-        "status": "ASSIGNED",
-        "summary": "Test breakage bug",
-        "resolution": "",
-        "depends_on": [111111],
-        "see_also": [],
-        "component": "Desktop",
-        "severity": "--",
-        "priority": "--",
-        "creator_detail": {
-            "name": "name@example.com",
-            "id": 111111,
-            "email": "name@example.com",
-            "nick": "sample",
-            "real_name": "Sample",
+        {
+            "id": 222222,
+            "product": "Web Compatibility",
+            "blocks": [],
+            "status": "ASSIGNED",
+            "summary": "Test breakage bug",
+            "resolution": "",
+            "depends_on": [111111],
+            "see_also": [],
+            "component": "Desktop",
+            "severity": "--",
+            "priority": "--",
+            "creator_detail": {
+                "name": "name@example.com",
+                "id": 111111,
+                "email": "name@example.com",
+                "nick": "sample",
+                "real_name": "Sample",
+            },
+            "creator": "name@example.com",
+            "creation_time": "2024-05-13T13:02:11Z",
+            "keywords": [],
         },
-        "creator": "name@example.com",
-        "creation_time": "2024-05-13T13:02:11Z",
-        "keywords": [],
-    },
-]
+    ]
+}
 
-REMOVED_READDED_BUGS = [
-    {
-        "id": 333333,
-        "product": "Web Compatibility",
-        "blocks": [],
-        "status": "ASSIGNED",
-        "summary": "Test breakage bug",
-        "resolution": "",
-        "depends_on": [111111],
-        "see_also": [],
-        "component": "Desktop",
-        "severity": "--",
-        "priority": "--",
-        "creator_detail": {
-            "name": "name@example.com",
-            "id": 111111,
-            "email": "name@example.com",
-            "nick": "sample",
-            "real_name": "Sample",
-        },
-        "creator": "name@example.com",
-        "creation_time": "2024-05-13T13:02:11Z",
-        "keywords": ["webcompat:needs-diagnosis"],
-    }
-]
+REMOVED_READDED_BUGS = {
+    item["id"]: item
+    for item in [
+        {
+            "id": 333333,
+            "product": "Web Compatibility",
+            "blocks": [],
+            "status": "ASSIGNED",
+            "summary": "Test breakage bug",
+            "resolution": "",
+            "depends_on": [111111],
+            "see_also": [],
+            "component": "Desktop",
+            "severity": "--",
+            "priority": "--",
+            "creator_detail": {
+                "name": "name@example.com",
+                "id": 111111,
+                "email": "name@example.com",
+                "nick": "sample",
+                "real_name": "Sample",
+            },
+            "creator": "name@example.com",
+            "creation_time": "2024-05-13T13:02:11Z",
+            "keywords": ["webcompat:needs-diagnosis"],
+        }
+    ]
+}
 
 REMOVED_READDED_HISTORY = [
     {
@@ -726,14 +741,14 @@ def test_extract_int_from_field():
     assert field is None
 
 
-def test_process_fields_with_no_bugs(bz):
-    result = bz.process_fields([], RELATION_CONFIG)
+def test_process_relations_with_no_bugs(bz):
+    result = bz.process_relations({}, RELATION_CONFIG)
     expected = ({}, {})
     assert result == expected
 
 
-def test_process_fields(bz):
-    bugs, ids = bz.process_fields(SAMPLE_BUGS, RELATION_CONFIG)
+def test_process_relations(bz):
+    bugs, ids = bz.process_relations(SAMPLE_BUGS, RELATION_CONFIG)
     expected_processed_bugs = {
         1835339: {
             "core_bugs": [903746],
@@ -778,7 +793,7 @@ def test_process_fields(bz):
 
 
 def test_relations(bz):
-    bugs, _ = bz.process_fields(SAMPLE_BUGS, RELATION_CONFIG)
+    bugs, _ = bz.process_relations(SAMPLE_BUGS, RELATION_CONFIG)
     relations = bz.build_relations(bugs, RELATION_CONFIG)
 
     assert relations["core_bugs"] == [
@@ -823,8 +838,8 @@ def test_relations(bz):
 
 
 def test_add_links(bz):
-    bugs, _ = bz.process_fields(SAMPLE_BUGS, RELATION_CONFIG)
-    core_bugs, _ = bz.process_fields(
+    bugs, _ = bz.process_relations(SAMPLE_BUGS, RELATION_CONFIG)
+    core_bugs, _ = bz.process_relations(
         SAMPLE_CORE_BUGS, {key: RELATION_CONFIG[key] for key in LINK_FIELDS}
     )
 
@@ -841,8 +856,8 @@ def test_add_links(bz):
 
 
 def test_add_links_no_core(bz):
-    bugs, _ = bz.process_fields(SAMPLE_BUGS, RELATION_CONFIG)
-    core_bugs, _ = bz.process_fields(SAMPLE_CORE_BUGS, RELATION_CONFIG)
+    bugs, _ = bz.process_relations(SAMPLE_BUGS, RELATION_CONFIG)
+    core_bugs, _ = bz.process_relations(SAMPLE_CORE_BUGS, RELATION_CONFIG)
 
     result = bz.add_links(bugs, {})
 
@@ -854,14 +869,17 @@ def test_add_links_no_core(bz):
 
 
 def test_get_bugs_updated_since_last_import(bz):
-    all_bugs = [
-        {"id": 1, "last_change_time": "2023-04-01T10:00:00Z"},
-        {"id": 2, "last_change_time": "2023-04-02T11:30:00Z"},
-        {"id": 3, "last_change_time": "2023-04-03T09:45:00Z"},
-    ]
+    all_bugs = {
+        item["id"]: item
+        for item in [
+            {"id": 1, "last_change_time": "2023-04-01T10:00:00Z"},
+            {"id": 2, "last_change_time": "2023-04-02T11:30:00Z"},
+            {"id": 3, "last_change_time": "2023-04-03T09:45:00Z"},
+        ]
+    }
 
     last_import_time = datetime(2023, 4, 2, 10, 0, tzinfo=timezone.utc)
-    expected_result = [2, 3]
+    expected_result = {2, 3}
     result = bz.get_bugs_updated_since_last_import(all_bugs, last_import_time)
     assert result == expected_result
 
@@ -914,13 +932,13 @@ def test_filter_bug_history_changes(bz):
         },
     ]
 
-    result, bug_ids = bz.extract_relevant_fields(SAMPLE_HISTORY)
+    result, bug_ids = bz.extract_history_fields(SAMPLE_HISTORY)
     assert result == expected_result
     assert bug_ids == {1536482, 1536483, 1536485}
 
 
 def test_create_synthetic_history(bz):
-    history, bug_ids = bz.extract_relevant_fields(MISSING_KEYWORDS_HISTORY)
+    history, bug_ids = bz.extract_history_fields(MISSING_KEYWORDS_HISTORY)
     result = bz.create_synthetic_history(MISSING_KEYWORDS_BUGS, history)
 
     expected = [
@@ -954,7 +972,7 @@ def test_create_synthetic_history(bz):
 
 
 def test_create_synthetic_history_removed_readded(bz):
-    history, bug_ids = bz.extract_relevant_fields(REMOVED_READDED_HISTORY)
+    history, bug_ids = bz.extract_history_fields(REMOVED_READDED_HISTORY)
     result = bz.create_synthetic_history(REMOVED_READDED_BUGS, history)
 
     expected = [
@@ -1066,7 +1084,7 @@ def test_filter_only_unsaved_changes(mock_get_existing, bz):
         ),
     ]
 
-    history, bug_ids = bz.extract_relevant_fields(MISSING_KEYWORDS_HISTORY)
+    history, bug_ids = bz.extract_history_fields(MISSING_KEYWORDS_HISTORY)
     result = bz.filter_only_unsaved_changes(history, bug_ids)
 
     expected = [
@@ -1142,7 +1160,7 @@ def test_filter_only_unsaved_changes_multiple_changes(mock_get_existing, bz):
         ),
     ]
 
-    history, bug_ids = bz.extract_relevant_fields(KEYWORDS_AND_STATUS)
+    history, bug_ids = bz.extract_history_fields(KEYWORDS_AND_STATUS)
     result = bz.filter_only_unsaved_changes(history, bug_ids)
     changes = result[0]["changes"]
 
@@ -1166,7 +1184,7 @@ def test_filter_only_unsaved_changes_multiple_changes(mock_get_existing, bz):
 def test_filter_only_unsaved_changes_empty(mock_get_existing, bz):
     mock_get_existing.return_value = []
 
-    history, bug_ids = bz.extract_relevant_fields(MISSING_KEYWORDS_HISTORY)
+    history, bug_ids = bz.extract_history_fields(MISSING_KEYWORDS_HISTORY)
     result = bz.filter_only_unsaved_changes(history, bug_ids)
 
     expected = [
@@ -1225,7 +1243,7 @@ def test_filter_only_unsaved_changes_empty(mock_get_existing, bz):
 
 @patch("webcompat_kb.main.BugzillaToBigQuery.get_existing_history_records_by_ids")
 def test_filter_only_unsaved_changes_synthetic(mock_get_existing, bz):
-    history, bug_ids = bz.extract_relevant_fields(MISSING_KEYWORDS_HISTORY)
+    history, bug_ids = bz.extract_history_fields(MISSING_KEYWORDS_HISTORY)
     s_history = bz.create_synthetic_history(MISSING_KEYWORDS_BUGS, history)
 
     schema = {"number": 0, "who": 1, "change_time": 2, "changes": 3}
@@ -1463,7 +1481,7 @@ def test_convert_bug_data(bz):
             "whiteboard": "",
         },
     ]
-    for bug, expected in zip(SAMPLE_BUGS, expected_data):
+    for bug, expected in zip(SAMPLE_BUGS.values(), expected_data):
         assert bz.convert_bug_data(bug) == expected
 
 

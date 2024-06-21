@@ -3,9 +3,36 @@ import logging
 import requests
 import re
 import time
+from typing import (
+    Any,
+    Iterable,
+    Iterator,
+    Mapping,
+    MutableMapping,
+    NamedTuple,
+    Optional,
+    Union,
+)
+
 
 from google.cloud import bigquery
 from datetime import datetime, timedelta, timezone
+
+Bug = Mapping[str, Any]
+BugsById = Mapping[int, Bug]
+MutBugsById = MutableMapping[int, Bug]
+BugHistoryResponse = Mapping[str, Any]
+BugHistoryEntry = Mapping[str, Any]
+
+
+class HistoryRow(NamedTuple):
+    number: int
+    who: str
+    change_time: datetime
+    field_name: str
+    added: list[str]
+    removed: list[str]
+
 
 BUGZILLA_API = "https://bugzilla.mozilla.org/rest"
 
@@ -136,9 +163,10 @@ RELATION_CONFIG = {
 }
 
 LINK_FIELDS = ["other_browser_issues", "standards_issues", "standards_positions"]
+CORE_RELATION_CONFIG = {key: RELATION_CONFIG[key] for key in LINK_FIELDS}
 
 
-def extract_int_from_field(field):
+def extract_int_from_field(field: str) -> Optional[int]:
     if field:
         if field.lower() in FIELD_MAP:
             return FIELD_MAP[field.lower()]
@@ -150,13 +178,13 @@ def extract_int_from_field(field):
     return None
 
 
-def parse_string_to_json(input_string):
+def parse_string_to_json(input_string: str) -> Union[str, Mapping[str, Any]]:
     if not input_string:
         return ""
 
     lines = input_string.splitlines()
 
-    result_dict = {}
+    result_dict: dict[str, Any] = {}
 
     for line in lines:
         if line:
@@ -176,20 +204,22 @@ def parse_string_to_json(input_string):
     return result_dict
 
 
-def parse_datetime_str(s):
+def parse_datetime_str(s: str) -> datetime:
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
 
 class BugzillaToBigQuery:
-    def __init__(self, bq_project_id, bq_dataset_id, bugzilla_api_key):
+    def __init__(
+        self, bq_project_id: str, bq_dataset_id: str, bugzilla_api_key: Optional[str]
+    ):
         self.client = bigquery.Client(project=bq_project_id)
         self.bq_dataset_id = bq_dataset_id
         self.bugzilla_api_key = bugzilla_api_key
         self.bugs_fetch_completed = True
         self.history_fetch_completed = True
-        self.start_time = None
+        self.start_time: Optional[float] = None
 
-    def fetch_bugs(self, params=None):
+    def fetch_bugs(self, params: Optional[dict[str, Any]] = None) -> MutBugsById:
         if params is None:
             params = {}
 
@@ -233,7 +263,12 @@ class BugzillaToBigQuery:
             self.bugs_fetch_completed = False
             return {}
 
-    def filter_kb_other(self, kb_bugs_other, compat_kb_ids, site_report_ids):
+    def filter_kb_other(
+        self,
+        kb_bugs_other: BugsById,
+        compat_kb_ids: set[int],
+        site_report_ids: set[int],
+    ) -> BugsById:
         filtered = {}
 
         for bug_id, source_bug in kb_bugs_other.items():
@@ -253,7 +288,7 @@ class BugzillaToBigQuery:
 
         return filtered
 
-    def fetch_all_bugs(self):
+    def fetch_all_bugs(self) -> tuple[MutBugsById, MutBugsById, MutBugsById]:
         fetched_bugs = {}
 
         for category, filter_config in FILTER_CONFIG.items():
@@ -279,7 +314,7 @@ class BugzillaToBigQuery:
         logging.info("Fetching blocking bugs for KB bugs")
         core_bugs = self.fetch_bugs({"id": ",".join(map(str, kb_depends_on_ids))})
 
-        all_bugs = {}
+        all_bugs: dict[int, Bug] = {}
         for bugs in [
             site_reports,
             kb_bugs,
@@ -290,77 +325,68 @@ class BugzillaToBigQuery:
         ]:
             all_bugs.update(bugs)
 
-        return list(all_bugs.values(), list(kb_bugs.values()), list(core_bugs.values())
+        return all_bugs, kb_bugs, core_bugs
 
-    def split_bugs(self, dep_bugs, bug_ids):
-        core_bugs, breakage_bugs = [], []
+    def process_relations(
+        self, bugs: BugsById, relation_config: Mapping[str, Mapping[str, Any]]
+    ) -> tuple[Mapping[int, Mapping[str, list[int | str]]], Mapping[str, list[int]]]:
+        # The types here are wrong; the return values are lists of ints or lists of strings but not both.
+        # However enforcing that property is hard without building specific types for the two cases
+        relations: dict[int, dict[str, list[int | str]]] = {}
+        related_bug_ids: dict[str, list[int]] = {}
 
-        for bug in dep_bugs:
-            if bug["id"] in bug_ids.get("core", []):
-                core_bugs.append(bug)
-            elif bug["id"] in bug_ids.get("breakage", []):
-                breakage_bugs.append(bug)
+        for bug_id, bug in bugs.items():
+            relations[bug_id] = {rel: [] for rel in relation_config.keys()}
 
-        return core_bugs, breakage_bugs
+            for rel, config in relation_config.items():
+                related_items = bug[config["source"]]
 
-    def process_individual_bug(self, bug, relation_config, processed_bugs, bug_ids):
-        bug_id = bug["id"]
+                for item in related_items:
+                    if "condition" in config and not any(
+                        c in item for c in config["condition"]
+                    ):
+                        continue
 
-        if bug_id not in processed_bugs:
-            processed_bugs[bug_id] = {rel: [] for rel in relation_config.keys()}
+                    relations[bug_id][rel].append(item)
 
-        for rel, config in relation_config.items():
-            source_data = bug[config["source"]]
+                    if config.get("store_id"):
+                        assert isinstance(item, int)
+                        if config["store_id"] not in related_bug_ids:
+                            related_bug_ids[config["store_id"]] = []
 
-            for data in source_data:
-                if "condition" in config and not any(
-                    c in data for c in config["condition"]
-                ):
-                    continue
+                        related_bug_ids[config["store_id"]].append(item)
 
-                processed_bugs[bug_id][rel].append(data)
+        return relations, related_bug_ids
 
-                if config.get("store_id"):
-                    if config["store_id"] not in bug_ids:
-                        bug_ids[config["store_id"]] = []
-
-                    bug_ids[config["store_id"]].append(data)
-
-        return processed_bugs, bug_ids
-
-    def process_fields(self, bug_list, relation_config):
-        processed_bugs = {}
-        bug_ids = {}
-
-        for bug in bug_list:
-            processed_bugs, bug_ids = self.process_individual_bug(
-                bug, relation_config, processed_bugs, bug_ids
-            )
-
-        return processed_bugs, bug_ids
-
-    def add_links(self, kb_processed, dep_processed):
+    def add_links(
+        self,
+        kb_processed: Mapping[int, Mapping[str, list[int | str]]],
+        dep_processed: Mapping[int, Mapping[str, list[int | str]]],
+    ) -> Mapping[int, Mapping[str, list[int | str]]]:
         result = {**kb_processed}
 
-        for key in result:
-            for bug_id in result[key]["core_bugs"]:
+        for kb_bug_id in result:
+            for core_bug_id in result[kb_bug_id]["core_bugs"]:
+                assert isinstance(core_bug_id, int)
                 for sub_key in LINK_FIELDS:
-                    if sub_key in result[key] and sub_key in dep_processed.get(
-                        bug_id, {}
+                    if sub_key in result[kb_bug_id] and sub_key in dep_processed.get(
+                        core_bug_id, {}
                     ):
-                        result[key][sub_key].extend(
-                            x
-                            for x in dep_processed[bug_id][sub_key]
-                            if x not in result[key][sub_key]
-                        )
+                        for link_item in dep_processed[core_bug_id][sub_key]:
+                            if link_item not in result[kb_bug_id][sub_key]:
+                                result[kb_bug_id][sub_key].append(link_item)
 
         return result
 
-    def build_relations(self, bugs, relation_config):
-        relations = {key: [] for key in relation_config.keys()}
+    def build_relations(
+        self, bugs: BugsById, relation_config: Mapping[str, Mapping[str, Any]]
+    ) -> Mapping[str, list[Mapping[str, Any]]]:
+        relations: dict[str, list[Mapping[str, Any]]] = {
+            key: [] for key in relation_config.keys()
+        }
 
-        for bug_id, data in bugs.items():
-            for field_key, items in data.items():
+        for bug_id, bug in bugs.items():
+            for field_key, items in bug.items():
                 fields = relation_config[field_key]["fields"]
 
                 for row in items:
@@ -369,7 +395,7 @@ class BugzillaToBigQuery:
 
         return relations
 
-    def convert_bug_data(self, bug):
+    def convert_bug_data(self, bug: Bug) -> dict[str, Any]:
         resolved = None
         if bug["status"] in ["RESOLVED", "VERIFIED"] and bug["cf_last_resolved"]:
             resolved = bug["cf_last_resolved"]
@@ -398,8 +424,8 @@ class BugzillaToBigQuery:
             "whiteboard": bug["whiteboard"],
         }
 
-    def update_bugs(self, bugs):
-        res = [self.convert_bug_data(bug) for bug in bugs]
+    def update_bugs(self, bugs: BugsById):
+        res = [self.convert_bug_data(bug) for bug in bugs.values()]
 
         job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
@@ -508,7 +534,7 @@ class BugzillaToBigQuery:
                 table = self.client.get_table(relation_table)
                 logging.info(f"Loaded {table.num_rows} rows into {table}")
 
-    def get_last_import_datetime(self):
+    def get_last_import_datetime(self) -> Optional[datetime]:
         query = f"""
                 SELECT MAX(run_at) AS last_run_at
                 FROM `{self.bq_dataset_id}.import_runs`
@@ -518,7 +544,9 @@ class BugzillaToBigQuery:
         row = list(res)[0]
         return row["last_run_at"]
 
-    def fetch_history(self, bug_id, last_import_time=None):
+    def fetch_history(
+        self, bug_id: int, last_import_time: Optional[datetime] = None
+    ) -> Optional[BugHistoryResponse]:
         if not bug_id:
             raise ValueError("No bug id provided")
 
@@ -542,16 +570,19 @@ class BugzillaToBigQuery:
         except Exception as e:
             logging.error(f"Error: {e}")
             self.history_fetch_completed = False
-            return []
+            return None
 
-    def fetch_bugs_history(self, ids, last_import_time=None):
+    def fetch_bugs_history(
+        self, ids: Iterable[int], last_import_time: Optional[datetime] = None
+    ) -> list[BugHistoryResponse]:
         history = []
 
         for bug_id in ids:
             try:
                 logging.info(f"Fetching history from bugzilla for {bug_id}")
                 bug_history = self.fetch_history(bug_id, last_import_time)
-                history.append(bug_history)
+                if bug_history is not None:
+                    history.append(bug_history)
                 time.sleep(2)
 
             except Exception as e:
@@ -559,7 +590,7 @@ class BugzillaToBigQuery:
 
         return history
 
-    def update_history(self, records):
+    def update_history(self, records: list[BugHistoryEntry]) -> None:
         job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
             schema=[
@@ -583,7 +614,9 @@ class BugzillaToBigQuery:
         history_table = f"{self.bq_dataset_id}.bugs_history"
 
         job = self.client.load_table_from_json(
-            records,
+            (
+                dict(item) for item in records
+            ),  # Noop dict->dict converstion now to type check
             history_table,
             job_config=job_config,
         )
@@ -601,11 +634,10 @@ class BugzillaToBigQuery:
         table = self.client.get_table(history_table)
         logging.info(f"Loaded {len(records)} rows into {table}")
 
-        return records
-
-    def get_existing_history_records_by_ids(self, bug_ids):
-        numbers_list = list(bug_ids)
-        formatted_numbers = ", ".join(map(str, numbers_list))
+    def get_existing_history_records_by_ids(
+        self, bug_ids: Iterable[int]
+    ) -> Iterator[bigquery.Row]:
+        formatted_numbers = ", ".join(str(bug_id) for bug_id in bug_ids)
 
         query = f"""
                     SELECT *
@@ -615,7 +647,11 @@ class BugzillaToBigQuery:
         result = self.client.query(query).result()
         return result
 
-    def extract_flattened_history(self, records, is_existing=False):
+    def extract_flattened_history(
+        self,
+        records: Iterable[bigquery.Row | Mapping[str, Any]],
+        is_existing: bool = False,
+    ) -> set[HistoryRow]:
         history_set = set()
         for record in records:
             changes = record["changes"]
@@ -626,7 +662,7 @@ class BugzillaToBigQuery:
                 change_time = change_time.strftime("%Y-%m-%dT%H:%M:%SZ")
 
             for change in changes:
-                history_row = (
+                history_row = HistoryRow(
                     record["number"],
                     record["who"],
                     change_time,
@@ -638,27 +674,32 @@ class BugzillaToBigQuery:
 
         return history_set
 
-    def unflatten_history(self, diff):
-        changes = {}
+    def unflatten_history(self, diff: set[HistoryRow]) -> list[BugHistoryEntry]:
+        changes: dict[tuple[int, str, datetime], dict[str, Any]] = {}
         for item in diff:
-            number, who, change_time, field_name, added, removed = item
-            key = (number, who, change_time)
+            key = (item.number, item.who, item.change_time)
 
             if key not in changes:
                 changes[key] = {
-                    "number": number,
-                    "who": who,
-                    "change_time": change_time,
+                    "number": item.number,
+                    "who": item.who,
+                    "change_time": item.change_time,
                     "changes": [],
                 }
 
             changes[key]["changes"].append(
-                {"field_name": field_name, "added": added, "removed": removed}
+                {
+                    "field_name": item.field_name,
+                    "added": item.added,
+                    "removed": item.removed,
+                }
             )
 
         return list(changes.values())
 
-    def filter_only_unsaved_changes(self, history_updates, bug_ids):
+    def filter_only_unsaved_changes(
+        self, history_updates: list[BugHistoryEntry], bug_ids: set[int]
+    ) -> list[BugHistoryEntry]:
         existing_records = self.get_existing_history_records_by_ids(bug_ids)
 
         if not existing_records:
@@ -671,7 +712,9 @@ class BugzillaToBigQuery:
 
         return self.unflatten_history(diff)
 
-    def extract_relevant_fields(self, updated_history):
+    def extract_history_fields(
+        self, updated_history: list[BugHistoryResponse]
+    ) -> tuple[list[BugHistoryEntry], set[int]]:
         result = []
         bug_ids = set()
 
@@ -686,7 +729,7 @@ class BugzillaToBigQuery:
                 ]
 
                 if relevant_changes:
-                    filtered_record = {
+                    filtered_record: Mapping[str, Any] = {
                         "number": bug_history["id"],
                         "who": record["who"],
                         "change_time": record["when"],
@@ -700,23 +743,27 @@ class BugzillaToBigQuery:
 
         return result, bug_ids
 
-    def filter_relevant_history(self, updated_history):
+    def filter_relevant_history(
+        self, updated_history: list[BugHistoryResponse]
+    ) -> list[BugHistoryEntry]:
         only_unsaved_changes = []
-        result, bug_ids = self.extract_relevant_fields(updated_history)
+        result, bug_ids = self.extract_history_fields(updated_history)
 
         if result:
             only_unsaved_changes = self.filter_only_unsaved_changes(result, bug_ids)
 
         return only_unsaved_changes
 
-    def get_bugs_updated_since_last_import(self, all_bugs, last_import_time):
-        return [
+    def get_bugs_updated_since_last_import(
+        self, all_bugs: BugsById, last_import_time: datetime
+    ) -> set[int]:
+        return {
             bug["id"]
-            for bug in all_bugs
+            for bug in all_bugs.values()
             if parse_datetime_str(bug["last_change_time"]) > last_import_time
-        ]
+        }
 
-    def get_imported_ids(self):
+    def get_imported_ids(self) -> set[int]:
         query = f"""
                 SELECT number
                 FROM `{self.bq_dataset_id}.bugzilla_bugs`
@@ -728,8 +775,10 @@ class BugzillaToBigQuery:
 
         return imported_ids
 
-    def create_keyword_map(self, history):
-        keyword_history = {}
+    def create_keyword_map(
+        self, history: list[BugHistoryEntry]
+    ) -> Mapping[int, Mapping[str, Mapping[str, list[datetime]]]]:
+        keyword_history: dict[int, dict[str, dict[str, list[datetime]]]] = {}
 
         for record in history:
             bug_id = record["number"]
@@ -753,7 +802,9 @@ class BugzillaToBigQuery:
 
         return keyword_history
 
-    def is_removed_earliest(self, added_times, removed_times):
+    def is_removed_earliest(
+        self, added_times: list[datetime], removed_times: list[datetime]
+    ):
         events = [(at, "added") for at in added_times] + [
             (rt, "removed") for rt in removed_times
         ]
@@ -764,7 +815,12 @@ class BugzillaToBigQuery:
 
         return events[0][1] == "removed"
 
-    def get_missing_keywords(self, bug_id, current_keywords, keyword_history):
+    def get_missing_keywords(
+        self,
+        bug_id: int,
+        current_keywords: list[str],
+        keyword_history: Mapping[int, Mapping[str, Mapping[str, list[datetime]]]],
+    ) -> list[str]:
         missing_keywords = []
 
         # Check if keyword exists, but is not in "added" history
@@ -790,8 +846,10 @@ class BugzillaToBigQuery:
 
         return missing_keywords
 
-    def build_missing_history(self, bugs_without_history):
-        result = []
+    def build_missing_history(
+        self, bugs_without_history: Iterable[tuple[Bug, list[str]]]
+    ) -> list[BugHistoryEntry]:
+        result: list[BugHistoryEntry] = []
         for bug, missing_keywords in bugs_without_history:
             record = {
                 "number": bug["id"],
@@ -808,13 +866,14 @@ class BugzillaToBigQuery:
             result.append(record)
         return result
 
-    def create_synthetic_history(self, bugs, history):
+    def create_synthetic_history(
+        self, bugs: BugsById, history: list[BugHistoryEntry]
+    ) -> list[BugHistoryEntry]:
         keyword_history = self.create_keyword_map(history)
 
         bugs_without_history = []
 
-        for bug in bugs:
-            bug_id = bug["id"]
+        for bug_id, bug in bugs.items():
             current_keywords = bug["keywords"]
 
             missing_keywords = self.get_missing_keywords(
@@ -826,18 +885,24 @@ class BugzillaToBigQuery:
 
         return self.build_missing_history(bugs_without_history)
 
-    def fetch_history_for_new_bugs(self, all_bugs):
+    def fetch_history_for_new_bugs(
+        self, all_bugs: BugsById
+    ) -> tuple[list[BugHistoryEntry], set[int]]:
         only_unsaved_changes = []
 
         existing_ids = self.get_imported_ids()
-        all_ids = {bug["id"] for bug in all_bugs}
+        all_ids = set(all_bugs.keys())
         new_ids = all_ids - existing_ids
 
         logging.info(f"Fetching new bugs history: {list(new_ids)}")
 
-        new_bugs = [bug for bug in all_bugs if bug["id"] in new_ids]
+        new_bugs = {
+            bug_id: bug for bug_id, bug in all_bugs.items() if bug_id in new_ids
+        }
 
-        history, _ = self.extract_relevant_fields(self.fetch_bugs_history(new_ids))
+        history, _ = self.extract_history_fields(
+            self.fetch_bugs_history(new_bugs.keys())
+        )
 
         synthetic_history = self.create_synthetic_history(new_bugs, history)
 
@@ -850,7 +915,9 @@ class BugzillaToBigQuery:
 
         return only_unsaved_changes, new_ids
 
-    def fetch_history_updates(self, all_existing_bugs):
+    def fetch_history_updates(
+        self, all_existing_bugs: BugsById
+    ) -> list[BugHistoryResponse]:
         last_import_time = self.get_last_import_datetime()
 
         if last_import_time:
@@ -871,10 +938,12 @@ class BugzillaToBigQuery:
 
         return []
 
-    def fetch_update_history(self, all_bugs):
+    def fetch_update_history(self, all_bugs: BugsById) -> list[BugHistoryEntry]:
         filtered_new_history, new_ids = self.fetch_history_for_new_bugs(all_bugs)
 
-        existing_bugs = [bug for bug in all_bugs if bug["id"] not in new_ids]
+        existing_bugs = {
+            bug_id: bug for bug_id, bug in all_bugs.items() if bug_id not in new_ids
+        }
 
         existing_bugs_history = self.fetch_history_updates(existing_bugs)
 
@@ -883,13 +952,19 @@ class BugzillaToBigQuery:
         ) and self.history_fetch_completed:
             filtered_existing = self.filter_relevant_history(existing_bugs_history)
             filtered_records = filtered_existing + filtered_new_history
-            return self.update_history(filtered_records)
+            self.update_history(filtered_records)
+            return filtered_records
 
         return []
 
     def record_import_run(
-        self, history_fetch_completed, count, history_count, last_change_time
-    ):
+        self,
+        history_fetch_completed: bool,
+        count: int,
+        history_count: int,
+        last_change_time: datetime,
+    ) -> None:
+        assert self.start_time is not None
         elapsed_time = time.monotonic() - self.start_time
         elapsed_time_delta = timedelta(seconds=elapsed_time)
         run_at = last_change_time - elapsed_time_delta
@@ -910,7 +985,7 @@ class BugzillaToBigQuery:
         else:
             logging.info("Last import run recorded")
 
-    def run(self):
+    def run(self) -> None:
         self.start_time = time.monotonic()
 
         all_bugs, kb_bugs, core_bugs = self.fetch_all_bugs()
@@ -920,13 +995,12 @@ class BugzillaToBigQuery:
             return
 
         # Process KB bugs fields and get their dependant core/breakage bugs ids.
-        kb_data, kb_dep_ids = self.process_fields(kb_bugs, RELATION_CONFIG)
+        kb_data, kb_dep_ids = self.process_relations(kb_bugs, RELATION_CONFIG)
 
         dep_ids = {item for sublist in kb_dep_ids.values() for item in sublist}
 
         # Check for missing bugs
-        all_ids = {item["id"] for item in all_bugs}
-        missing_ids = dep_ids - all_ids
+        missing_ids = dep_ids - set(all_bugs.keys())
 
         if missing_ids:
             logging.info(
@@ -935,15 +1009,19 @@ class BugzillaToBigQuery:
             missing_bugs = self.fetch_bugs({"id": ",".join(map(str, missing_ids))})
 
             # Separate core bugs for updating relations.
-            core_missing, _ = self.split_bugs(missing_bugs, kb_dep_ids)
+            core_dependenies = set(kb_dep_ids.get("core", []))
+            core_missing = {
+                bug_id: bug
+                for bug_id, bug in missing_bugs.items()
+                if bug_id in core_dependenies
+            }
 
-            core_bugs.extend(core_missing)
-            all_bugs.extend(missing_bugs)
+            core_bugs.update(core_missing)
+            all_bugs.update(missing_bugs)
 
         # Process core bugs and update KB data with missing links from core bugs.
         if core_bugs:
-            core_config = {key: RELATION_CONFIG[key] for key in LINK_FIELDS}
-            core_data, _ = self.process_fields(core_bugs, core_config)
+            core_data, _ = self.process_relations(core_bugs, CORE_RELATION_CONFIG)
             kb_data = self.add_links(kb_data, core_data)
 
         # Build relations for BQ tables.
@@ -951,23 +1029,21 @@ class BugzillaToBigQuery:
 
         kb_ids = list(kb_data.keys())
 
-        all_bugs_unique = list({item["id"]: item for item in all_bugs}.values())
+        history_changes = self.fetch_update_history(all_bugs)
 
-        history_changes = self.fetch_update_history(all_bugs_unique)
-
-        self.update_bugs(all_bugs_unique)
+        self.update_bugs(all_bugs)
         self.update_kb_ids(kb_ids)
         self.update_relations(rels)
 
         last_change_time_max = parse_datetime_str(
-            max(all_bugs_unique, key=lambda x: x["last_change_time"])[
+            max(all_bugs.values(), key=lambda x: x["last_change_time"])[
                 "last_change_time"
             ]
         )
 
         self.record_import_run(
             self.history_fetch_completed,
-            len(all_bugs_unique),
+            len(all_bugs),
             len(history_changes),
             last_change_time_max,
         )
@@ -979,7 +1055,7 @@ class BugzillaToBigQuery:
 @click.option(
     "--bugzilla_api_key", help="Bugzilla API key", required=False, default=None
 )
-def main(bq_project_id, bq_dataset_id, bugzilla_api_key):
+def main(bq_project_id: str, bq_dataset_id: str, bugzilla_api_key: str) -> None:
     logging.getLogger().setLevel(logging.INFO)
 
     bz_bq = BugzillaToBigQuery(bq_project_id, bq_dataset_id, bugzilla_api_key)
