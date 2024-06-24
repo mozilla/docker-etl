@@ -71,7 +71,7 @@ FILTER_CONFIG = {
         "v1": "Web Compatibility",
         "f2": "keywords",
         "o2": "substring",
-        "v2": "webcompat%3Asite-report",
+        "v2": "webcompat:site-report",
     },
     "knowledge_base_wc": {
         "product": "Web Compatibility",
@@ -83,7 +83,7 @@ FILTER_CONFIG = {
         "v1": "Web Compatibility",
         "f2": "keywords",
         "o2": "substring",
-        "v2": "webcompat%3Aplatform-bug",
+        "v2": "webcompat:platform-bug",
     },
     "interventions": {
         "product": "Web Compatibility",
