@@ -136,6 +136,19 @@ jobs:
           name: Build Docker image
           command: docker build -t app:build jobs/dap-collector-ppa-dev/
 
+  build-job-dap-collector-ppa-prod:
+    docker:
+      - image: << pipeline.parameters.git-image >>
+    steps:
+      - checkout
+      - compare-branch:
+          pattern: ^jobs/dap-collector-ppa-prod/
+      - setup_remote_docker:
+          version: << pipeline.parameters.docker-version >>
+      - run:
+          name: Build Docker image
+          command: docker build -t app:build jobs/dap-collector-ppa-prod/
+
   build-job-desktop-mobile-mau-2020:
     docker:
       - image: << pipeline.parameters.git-image >>
@@ -398,6 +411,20 @@ workflows:
           image: dap-collector-ppa-dev_docker_etl
           requires:
             - build-job-dap-collector-ppa-dev
+          filters:
+            branches:
+              only: main
+
+  job-dap-collector-ppa-prod:
+    jobs:
+      - build-job-dap-collector-ppa-prod
+      - gcp-gcr/build-and-push-image:
+          context: data-eng-airflow-gcr
+          docker-context: jobs/dap-collector-ppa-prod/
+          path: jobs/dap-collector-ppa-prod/
+          image: dap-collector-ppa-prod_docker_etl
+          requires:
+            - build-job-dap-collector-ppa-prod
           filters:
             branches:
               only: main
