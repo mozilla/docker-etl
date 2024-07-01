@@ -632,8 +632,8 @@ class FunnelForecast(BaseForecast):
     def write_results(
         self,
         project: str,
-        forecast_dataset: str,
-        forecast_table: str,
+        dataset: str,
+        table: str,
         write_disposition: str = "WRITE_APPEND",
         components_table: str = "",
         components_dataset: str = "",
@@ -643,15 +643,15 @@ class FunnelForecast(BaseForecast):
 
         Args:
             project (str): The Big Query project that the data should be written to.
-            forecast_dataset (str): The Big Query dataset that the data should be written to.
-            forecast_table (str): The Big Query table that the data should be written to.
+            dataset (str): The Big Query dataset that the data should be written to.
+            table (str): The Big Query table that the data should be written to.
             write_disposition (str, optional): In the event that the destination table exists,
                 should the table be overwritten ("WRITE_TRUNCATE") or appended to ("WRITE_APPEND")? Defaults to "WRITE_APPEND".
             components_table (str, optional): The Big Query table for model components. Defaults to "".
             components_dataset (str, optional): The Big Query dataset for model components. Defaults to "".
         """
         print(
-            f"Writing results to `{project}.{forecast_dataset}.{forecast_table}`.",
+            f"Writing results to `{project}.{dataset}.{table}`.",
             flush=True,
         )
         client = bigquery.Client(project=project)
@@ -681,7 +681,7 @@ class FunnelForecast(BaseForecast):
         ]
         job = client.load_table_from_dataframe(
             dataframe=self.summary_df,
-            destination=f"{project}.{forecast_dataset}.{forecast_table}",
+            destination=f"{project}.{dataset}.{table}",
             job_config=bigquery.LoadJobConfig(
                 schema=schema,
                 autodetect=False,
@@ -714,7 +714,7 @@ class FunnelForecast(BaseForecast):
             ]
 
             if not components_dataset:
-                components_dataset = forecast_dataset
+                components_dataset = dataset
             print(
                 f"Writing model components to `{project}.{components_dataset}.{components_table}`.",
                 flush=True,
