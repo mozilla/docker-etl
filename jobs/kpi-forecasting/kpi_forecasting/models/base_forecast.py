@@ -4,12 +4,12 @@ import pandas as pd
 
 from google.cloud import bigquery
 from google.cloud.bigquery.enums import SqlTypeNames as bq_types
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from kpi_forecasting import pandas_extras as pdx
 from kpi_forecasting.metric_hub import MetricHub
 from pandas.api import types as pd_types
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 
 @dataclass
@@ -166,7 +166,8 @@ class BaseForecast:
             # forecast is generated in the middle of the month.
             .add(overlap[["value"]].values)
             # calculate summary values, aggregating by submission_date,
-            .agg(aggregations, axis=1).reset_index()
+            .agg(aggregations, axis=1)
+            .reset_index()
             # "melt" the df from wide-format to long-format.
             .melt(id_vars="submission_date", var_name="measure")
         )

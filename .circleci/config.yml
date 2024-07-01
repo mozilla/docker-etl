@@ -234,7 +234,7 @@ jobs:
           command: docker build -t app:build jobs/kpi-forecasting/
       - run:
           name: Test Code
-          command: docker run app:build black .
+          command: docker run app:build pytest --ruff --ruff-format
 
 
   build-job-mozaggregator2bq:

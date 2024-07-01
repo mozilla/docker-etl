@@ -4,7 +4,6 @@ from kpi_forecasting.utils import parse_end_date, previous_period_last_date
 
 
 def test_parse_end_date_with_date():
-
     dt = "2024-01-01"
     parsed_date = parse_end_date(dt)
 
@@ -12,7 +11,6 @@ def test_parse_end_date_with_date():
 
 
 def test_parse_end_date_with_none():
-
     dt = None
     parsed_date = parse_end_date(dt)
 
@@ -20,7 +18,6 @@ def test_parse_end_date_with_none():
 
 
 def test_parse_end_date_prev_year():
-
     dt = "last complete year"
     parsed_date = parse_end_date(dt)
 
@@ -30,7 +27,6 @@ def test_parse_end_date_prev_year():
 
 
 def test_parse_end_date_prev_month():
-
     dt = "last complete month"
     now = datetime.datetime(2024, 1, 1)
 
