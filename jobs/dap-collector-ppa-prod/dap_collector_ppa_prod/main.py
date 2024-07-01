@@ -252,11 +252,13 @@ def store_data(results, bqclient, table_id):
 )
 @click.option(
     "--auth-token",
+    envvar='AUTH_TOKEN',
     help="HTTP bearer token to authenticate to the leader",
     required=True,
 )
 @click.option(
     "--hpke-private-key",
+    envvar='HPKE_PRIVATE_KEY',
     help="The private key used to decrypt shares from the leader and helper.",
     required=True,
 )
