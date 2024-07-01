@@ -266,7 +266,7 @@ def store_data(results, bqclient, table_id):
     help="URL where a JSON definition of the ads to task map can be found.",
     required=True,
 )
-def main(project, ad_table_id, report_table_id, auth_token, hpke_private_key, date, task_config_url, ad_config_url):
+def main(project, ad_table_id, report_table_id, date, task_config_url, ad_config_url):
     hpke_private_key = os.environ.get("HPKE_PRIVATE_KEY", "")
     auth_token = os.environ.get("AUTH_TOKEN", "")
 
