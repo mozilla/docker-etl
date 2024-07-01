@@ -26,7 +26,12 @@ class Validator:
         self.output_table_id = (
             f"{self.output_project}.{self.output_dataset}.{self.output_table}"
         )
-        self.job_config = bigquery.QueryJobConfig(destination=self.output_table_id)
+
+        # table is so, so every time this runs it processes all the data
+        # and overwrites the old table
+        self.job_config = bigquery.QueryJobConfig(
+            destination=self.output_table_id, write_disposition="WRITE_TRUNCATE"
+        )
         self._load_config_data()
         self._extract_config_data()
 
