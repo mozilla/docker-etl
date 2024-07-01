@@ -2,7 +2,6 @@ import datetime
 
 
 def parse_end_date(end_date: str = None):
-
     dt = datetime.datetime.utcnow()
     if not end_date:
         return dt
@@ -12,7 +11,6 @@ def parse_end_date(end_date: str = None):
 
 
 def previous_period_last_date(last_period: str, now: datetime.datetime):
-
     if last_period not in ["last complete month", "last complete year"]:
         raise ValueError("Unrecognized end date string.")
 
