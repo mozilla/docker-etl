@@ -2,7 +2,6 @@ import asyncio
 import click
 import datetime
 import math
-import os
 import time
 
 from google.cloud import bigquery
@@ -252,6 +251,18 @@ def store_data(results, bqclient, table_id):
     required=True,
 )
 @click.option(
+    "--auth-token",
+    envvar='AUTH_TOKEN',
+    help="HTTP bearer token to authenticate to the leader",
+    required=True,
+)
+@click.option(
+    "--hpke-private-key",
+    envvar='HPKE_PRIVATE_KEY',
+    help="The private key used to decrypt shares from the leader and helper.",
+    required=True,
+)
+@click.option(
     "--date",
     help="Date at which the backfill will start, going backwards (YYYY-MM-DD)",
     required=True,
@@ -266,10 +277,7 @@ def store_data(results, bqclient, table_id):
     help="URL where a JSON definition of the ads to task map can be found.",
     required=True,
 )
-def main(project, ad_table_id, report_table_id, date, task_config_url, ad_config_url):
-    hpke_private_key = os.environ.get("HPKE_PRIVATE_KEY", "")
-    auth_token = os.environ.get("AUTH_TOKEN", "")
-
+def main(project, ad_table_id, report_table_id, auth_token, hpke_private_key, date, task_config_url, ad_config_url):
     global ads
     ad_table_id = project + "." + ad_table_id
     report_table_id = project + "." + report_table_id
