@@ -11,6 +11,7 @@ class Validator:
     output_project: str
     output_dataset: str
     output_table: str
+    input_config_path: str = "kpi_forecasting/configs"
 
     def __post_init__(self) -> None:
         """After initalization, set the following outputs after initialization
@@ -41,7 +42,7 @@ class Validator:
         are the values"""
         self.config_data = {}
         for config_file in self.input_config_list:
-            full_path = f"kpi_forecasting/configs/{config_file}"
+            full_path = f"{self.input_config_path}/{config_file}"
             config_data = YAML(full_path).data
             self.config_data[config_file] = config_data
 
