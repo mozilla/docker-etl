@@ -222,7 +222,6 @@ class FunnelForecast(BaseForecast):
 
         # build training dataframe
         if task == "train":
-
             # find indices in observed_df for rows that exactly match segment dict
             segment_historical_indices = (
                 self.observed_df[list(segment_settings.segment)]
@@ -532,7 +531,8 @@ class FunnelForecast(BaseForecast):
             # forecast is generated in the middle of the month.
             .add(overlap[["value"]].values)
             # calculate summary values, aggregating by submission_date,
-            .agg(aggregations, axis=1).reset_index()
+            .agg(aggregations, axis=1)
+            .reset_index()
         ).rename(columns=self._percentile_name_map(percentiles))
 
         # add datasource-specific metadata columns

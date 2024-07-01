@@ -1,8 +1,7 @@
 import attr
-from typing import List, Dict, Optional, Union
+from typing import List, Optional, Union
 from pathlib import Path
 
-import pandas as pd
 
 from kpi_forecasting.inputs import YAML
 
