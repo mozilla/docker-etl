@@ -57,7 +57,7 @@ summarize:
   percentiles: [10, 50, 90]
 
 write_results:
-  project: "moz-fx-data-shared_prod"
-  forecast_dataset: "search_derived"
-  forecast_table: "search_funnel_forecasts"
-  components_table: "search_forecast_model_components"
+  project: "moz-fx-data-shared-prod"
+  dataset: "search_derived"
+  table: "search_funnel_forecasts_v1"
+  components_table: "search_forecast_model_components_v1"

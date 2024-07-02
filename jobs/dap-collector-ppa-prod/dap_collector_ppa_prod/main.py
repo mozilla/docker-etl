@@ -101,7 +101,7 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
         res["reports"].append(rpt)
         return res
 
-    print(f"{collection_time} Result: code {proc.returncode}")
+    print(f"{timestamp} Result: code {proc.returncode}")
     rpt["collection_duration"] = time.perf_counter() - start_counter
 
     # Parse the output of the collect binary
@@ -126,7 +126,7 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
                     print(task["task_id"], i, ad)
                     if ad is not None:
                         cnt = {}
-                        cnt["collection_time"] = collection_time
+                        cnt["collection_time"] = timestamp
                         cnt["placement_id"] = ad["advertiserInfo"]["placementId"]
                         cnt["advertiser_id"] = ad["advertiserInfo"]["advertiserId"]
                         cnt["advertiser_name"] = ad["advertiserInfo"]["advertiserName"]
@@ -252,11 +252,13 @@ def store_data(results, bqclient, table_id):
 )
 @click.option(
     "--auth-token",
+    envvar='AUTH_TOKEN',
     help="HTTP bearer token to authenticate to the leader",
     required=True,
 )
 @click.option(
     "--hpke-private-key",
+    envvar='HPKE_PRIVATE_KEY',
     help="The private key used to decrypt shares from the leader and helper.",
     required=True,
 )
