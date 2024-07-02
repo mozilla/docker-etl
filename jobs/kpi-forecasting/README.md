@@ -76,7 +76,7 @@ python ~/kpi_forecasting.py -c ~/kpi_forecasting/configs/dau_desktop.yaml
 
 Note that, without write permissions to `moz-fx-data-shared-prod` this will generate a permissions error.
 
-The tests can be run locally with `python -m pytest` in the root directory
+The tests can be run locally with `python -m pytest` in the root directory of this subpackage.
 
 # YAML Configs
 
