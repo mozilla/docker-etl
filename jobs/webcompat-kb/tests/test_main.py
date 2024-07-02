@@ -179,6 +179,27 @@ SAMPLE_BREAKAGE_BUGS = {
             "priority": "--",
             "assigned_to": "nobody@mozilla.org",
         },
+        {
+            "whiteboard": "",
+            "see_also": [],
+            "severity": "S3",
+            "product": "Core",
+            "depends_on": [999999],
+            "summary": "Example core site report and platform bug",
+            "resolution": "",
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "keywords": ["webcompat:platform-bug", "webcompat:site-report"],
+            "priority": "P3",
+            "creation_time": "2024-03-21T16:40:27Z",
+            "cf_user_story": "",
+            "status": "NEW",
+            "blocks": [],
+            "url": "",
+            "cf_last_resolved": None,
+            "component": "JavaScript Engine",
+            "id": 444444,
+            "assigned_to": "nobody@mozilla.org",
+        },
     ]
 }
 
@@ -233,10 +254,10 @@ SAMPLE_CORE_AS_KB_BUGS = {
             "severity": "S3",
             "product": "Core",
             "depends_on": [999999],
-            "summary": "Example core issue",
+            "summary": "Example core site report and platform bug",
             "resolution": "",
             "last_change_time": "2024-05-27T15:07:03Z",
-            "keywords": ["webcompat:platform-bug"],
+            "keywords": ["webcompat:platform-bug", "webcompat:site-report"],
             "priority": "P3",
             "creation_time": "2024-03-21T16:40:27Z",
             "cf_user_story": "",
@@ -743,7 +764,7 @@ def test_extract_int_from_field():
 
 def test_process_relations_with_no_bugs(bz):
     result = bz.process_relations({}, RELATION_CONFIG)
-    expected = ({}, {})
+    expected = ({}, {"core": set(), "breakage": set()})
     assert result == expected
 
 
@@ -784,12 +805,27 @@ def test_process_relations(bz):
     }
 
     expected_bug_ids = {
-        "core": [903746, 555555],
-        "breakage": [222222, 1734557],
+        "core": {903746, 555555},
+        "breakage": {222222, 1734557},
     }
 
     assert bugs == expected_processed_bugs
     assert ids == expected_bug_ids
+
+
+def test_add_breakage_kb_entries(bz):
+    kb_bugs = {
+        bug_id: bug
+        for bug_id, bug in SAMPLE_BREAKAGE_BUGS.items()
+        if bug["product"] != "Web Compatibility"
+    }
+    kb_data, kb_dep_ids = bz.process_relations(kb_bugs, RELATION_CONFIG)
+    assert set(kb_data.keys()) == set(kb_bugs.keys())
+    assert kb_dep_ids["breakage"] == set()
+
+    bz.add_kb_entry_breakage(kb_data, kb_dep_ids, SAMPLE_BREAKAGE_BUGS)
+    assert kb_data[444444]["breakage_reports"] == [444444]
+    assert kb_dep_ids["breakage"] == set(kb_bugs.keys())
 
 
 def test_relations(bz):
@@ -1387,10 +1423,10 @@ def test_filter_kb_other(bz):
                 "severity": "S3",
                 "product": "Core",
                 "depends_on": [999999],
-                "summary": "Example core issue",
+                "summary": "Example core site report and platform bug",
                 "resolution": "",
                 "last_change_time": "2024-05-27T15:07:03Z",
-                "keywords": ["webcompat:platform-bug"],
+                "keywords": ["webcompat:platform-bug", "webcompat:site-report"],
                 "priority": "P3",
                 "creation_time": "2024-03-21T16:40:27Z",
                 "cf_user_story": "",

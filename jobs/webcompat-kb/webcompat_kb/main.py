@@ -355,6 +355,10 @@ class BugzillaToBigQuery:
         relations: dict[int, dict[str, list[int | str]]] = {}
         related_bug_ids: dict[str, set[int]] = {}
 
+        for config in relation_config.values():
+            if "store_id" in config:
+                related_bug_ids[config["store_id"]] = set()
+
         for bug_id, bug in bugs.items():
             relations[bug_id] = {rel: [] for rel in relation_config.keys()}
 
@@ -371,12 +375,25 @@ class BugzillaToBigQuery:
 
                     if config.get("store_id"):
                         assert isinstance(item, int)
-                        if config["store_id"] not in related_bug_ids:
-                            related_bug_ids[config["store_id"]] = set()
-
                         related_bug_ids[config["store_id"]].add(item)
 
         return relations, related_bug_ids
+
+    def add_kb_entry_breakage(
+        self,
+        kb_data: Mapping[int, Mapping[str, list[int | str]]],
+        kb_dep_ids: Mapping[str, set[int]],
+        site_reports: BugsById,
+    ) -> None:
+        """Add breakage relations for bugs that are both kb entries and also site reports
+
+        If a core bug has the webcompat:platform-bug keyword it's a kb entry.
+        If it also has the webcompat:site-report keyword it's a site report.
+        In this case we want the bug to reference itself in the breakage_reports table."""
+        for bug_id in set(kb_data.keys()) & set(site_reports.keys()):
+            if bug_id not in kb_dep_ids["breakage"]:
+                kb_data[bug_id]["breakage_reports"].append(bug_id)
+                kb_dep_ids["breakage"].add(bug_id)
 
     def fetch_missing_deps(
         self, all_bugs: BugsById, kb_dep_ids: Mapping[str, set[int]]
@@ -1047,6 +1064,7 @@ class BugzillaToBigQuery:
 
         # Process KB bugs fields and get their dependant core/breakage bugs ids.
         kb_data, kb_dep_ids = self.process_relations(kb_bugs, RELATION_CONFIG)
+        self.add_kb_entry_breakage(kb_data, kb_dep_ids, site_reports)
 
         fetch_missing_result = self.fetch_missing_deps(all_bugs, kb_dep_ids)
         if fetch_missing_result is None:
