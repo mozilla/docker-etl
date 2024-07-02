@@ -115,23 +115,24 @@ class Validator:
         else:
             segment_comma_separated = ""
         # in actual_deduped, the value for historical data won't change so we can use any_value without checking forecast_trained_at
-        compare_ctes = f"""WITH forecast_deduped as (SELECT submission_date, metric_alias {segment_comma_separated},
+        compare_ctes = f"""WITH forecast_deduped as (SELECT submission_date, metric_alias, aggregation_period {segment_comma_separated}, 
                                                     MAX(forecast_trained_at) as forecast_trained_at,
                                                     ANY_VALUE(value HAVING MAX forecast_trained_at) as forecast_value 
                                                     FROM {self.input_table_full} 
-                                                    WHERE source='forecast' AND aggregation_period='day'
-                                                    GROUP BY submission_date, metric_alias {segment_comma_separated}),
-                                actual_deduped as (SELECT submission_date, metric_alias {segment_comma_separated},
+                                                    WHERE source='forecast'
+                                                    GROUP BY submission_date, metric_alias, aggregation_period {segment_comma_separated}),
+                                actual_deduped as (SELECT submission_date, metric_alias, aggregation_period {segment_comma_separated},
                                                     ANY_VALUE(value) as actual_value 
                                                     FROM {self.input_table_full}
-                                                    WHERE source='historical' AND aggregation_period='day'
-                                                    GROUP BY submission_date, metric_alias {segment_comma_separated}),
+                                                    WHERE source='historical'
+                                                    GROUP BY submission_date, metric_alias, aggregation_period {segment_comma_separated}),
                             compare_data as (SELECT forecast_deduped.*, actual_deduped.actual_value,
                             (actual_deduped.actual_value-forecast_deduped.forecast_value) as difference,
                             (actual_deduped.actual_value-forecast_deduped.forecast_value)/actual_deduped.actual_value*100 as percent_difference,
                             ABS(actual_deduped.actual_value-forecast_deduped.forecast_value) as absolute_difference,
                             ABS(actual_deduped.actual_value-forecast_deduped.forecast_value)/actual_deduped.actual_value*100 as absolute_percent_difference
-                                                FROM forecast_deduped INNER JOIN actual_deduped USING (submission_date, metric_alias {segment_comma_separated}))"""
+                                                FROM forecast_deduped 
+                                                INNER JOIN actual_deduped USING (submission_date, metric_alias, aggregation_period {segment_comma_separated}))"""
         return f"{compare_ctes} SELECT * FROM compare_data"
 
     def fetch(self) -> pd.DataFrame:
