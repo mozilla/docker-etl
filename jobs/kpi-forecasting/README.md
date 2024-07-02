@@ -4,7 +4,7 @@ This job forecasts [Metric Hub](https://mozilla.github.io/metric-hub/) metrics b
 
 # Usage
 
-### Docker Container
+## Docker Container
 
 This job is intended to be run in a Docker container. If you're not familiar with Docker, it can be helpful to first install
 [Docker Desktop](https://docs.docker.com/desktop/) which provides a GUI.
@@ -28,16 +28,15 @@ Start a container from the Docker image with the following command:
 docker compose up
 ```
 
-A metric can be forecasted by using a command line argument that passes the relevant YAML file to the `kpi_forecasting.py` script.
-[Here are approaches for accessing a Docker container's terminal](https://docs.docker.com/desktop/use-desktop/container/#integrated-terminal).
-
-For example, the following command forecasts Desktop DAU numbers:
-
+To run the tests in the container the way they are run in the CI use the following command:
 ```sh
-python ~/kpi_forecasting.py -c ~/kpi_forecasting/configs/dau_desktop.yaml
+docker run kpi-forecasting-app  pytest --ruff --ruff-format
 ```
 
-### Local Python
+Note that if the code changes, `docker compose build` needs to be re-run for `docker run` to reflect the changes.
+
+## Local Python
+### Setup
 
 You can also run the code outside of a Docker container. The code below creates a new Conda environment called `kpi-forecasting-dev`.
 It assumes you have Conda installed. If you'd like to run the code in a Jupyter notebook, it is handy to install Jupyter in your `base` environment.
@@ -65,6 +64,20 @@ cd ~/PATH/TO/CONDA/envs/kpi-forecasting-dev/lib/python3.10/site-packages/prophet
 install_name_tool -add_rpath /PATH/TO/CONDA/envs/kpi-forecasting-dev/lib/cmdstan-2.32.2/stan/lib/stan_math/lib/tbb prophet_model.bin
 ```
 
+### Running locally
+A metric can be forecasted by using a command line argument that passes the relevant YAML file to the `kpi_forecasting.py` script.
+[Here are approaches for accessing a Docker container's terminal](https://docs.docker.com/desktop/use-desktop/container/#integrated-terminal).
+
+For example, the following command forecasts Desktop DAU numbers:
+
+```sh
+python ~/kpi_forecasting.py -c ~/kpi_forecasting/configs/dau_desktop.yaml
+```
+
+Note that, without write permissions to `moz-fx-data-shared-prod` this will generate a permissions error.
+
+The tests can be run locally with `python -m pytest` in the root directory
+
 # YAML Configs
 
 Each of the sections in the YAML files contains a list of arguments that are passed to their relevant objects or methods.
@@ -72,7 +85,8 @@ Definitions should be documented in the code.
 
 # Development
 
-- `./kpi_forecasting/kpi_forecasting.py` is the main control script.
+- `./kpi_forecasting/kpi_forecasting.py` is the main control script for KPI and Search Forecasting.
+- `./result_processing.py` is the control script for running validation on the tables crated by `kpi_forecasting.py`
 - `./kpi_forecasting/configs` contains configuration YAML files.
 - `./kpi_forecasting/models` contains the forecasting models.
 
