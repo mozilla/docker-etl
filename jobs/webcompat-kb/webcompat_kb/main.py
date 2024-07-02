@@ -90,8 +90,8 @@ FILTER_CONFIG = {
         "component": "Interventions",
     },
     "other": {
-        "v1": "Web Compatibility",
         "f1": "product",
+        "v1": "Web Compatibility",
         "o1": "notequals",
         "keywords": "webcompat:",
         "keywords_type": "regexp",
@@ -215,10 +215,11 @@ class BugzillaToBigQuery:
         self.client = bigquery.Client(project=bq_project_id)
         self.bq_dataset_id = bq_dataset_id
         self.bugzilla_api_key = bugzilla_api_key
-        self.bugs_fetch_completed = True
         self.history_fetch_completed = True
 
-    def fetch_bugs(self, params: Optional[dict[str, Any]] = None) -> MutBugsById:
+    def fetch_bugs(
+        self, params: Optional[dict[str, Any]] = None
+    ) -> tuple[bool, MutBugsById]:
         if params is None:
             params = {}
 
@@ -256,11 +257,14 @@ class BugzillaToBigQuery:
             response = requests.get(url, params=params, headers=headers)
             response.raise_for_status()
             result = response.json()
-            return {bug["id"]: bug for bug in result["bugs"]}
+            data = {bug["id"]: bug for bug in result["bugs"]}
+            fetch_completed = True
         except Exception as e:
             logging.error(f"Error: {e}")
-            self.bugs_fetch_completed = False
-            return {}
+            fetch_completed = False
+            data = {}
+
+        return fetch_completed, data
 
     def filter_kb_other(
         self,
@@ -287,12 +291,20 @@ class BugzillaToBigQuery:
 
         return filtered
 
-    def fetch_all_bugs(self) -> tuple[MutBugsById, MutBugsById, MutBugsById]:
+    def fetch_all_bugs(
+        self,
+    ) -> Optional[tuple[MutBugsById, MutBugsById, MutBugsById, MutBugsById]]:
+        """Get all the bugs that should be imported into BigQuery.
+
+        :returns: A tuple of (all bugs, site report bugs, knowledge base bugs,
+                              core bugs)."""
         fetched_bugs = {}
 
         for category, filter_config in FILTER_CONFIG.items():
             logging.info(f"Fetching {category.replace('_', ' ').title()} bugs")
-            fetched_bugs[category] = self.fetch_bugs(filter_config)
+            completed, fetched_bugs[category] = self.fetch_bugs(filter_config)
+            if not completed:
+                return None
 
         site_reports = fetched_bugs["site_reports_wc"]
         site_reports.update(fetched_bugs["site_reports_other"])
@@ -311,7 +323,11 @@ class BugzillaToBigQuery:
             kb_depends_on_ids |= set(bug["depends_on"])
 
         logging.info("Fetching blocking bugs for KB bugs")
-        core_bugs = self.fetch_bugs({"id": ",".join(map(str, kb_depends_on_ids))})
+        completed, core_bugs = self.fetch_bugs(
+            {"id": ",".join(map(str, kb_depends_on_ids))}
+        )
+        if not completed:
+            return None
 
         all_bugs: dict[int, Bug] = {}
         for bugs in [
@@ -324,15 +340,20 @@ class BugzillaToBigQuery:
         ]:
             all_bugs.update(bugs)
 
-        return all_bugs, kb_bugs, core_bugs
+        return all_bugs, site_reports, kb_bugs, core_bugs
 
     def process_relations(
         self, bugs: BugsById, relation_config: Mapping[str, Mapping[str, Any]]
-    ) -> tuple[Mapping[int, Mapping[str, list[int | str]]], Mapping[str, list[int]]]:
+    ) -> tuple[Mapping[int, Mapping[str, list[int | str]]], Mapping[str, set[int]]]:
+        """Build relationship tables based on information in the bugs.
+
+        :returns: A mapping {bug_id: {relationship name: [related items]}} and
+                  a mapping {store id: {bug ids}}
+        """
         # The types here are wrong; the return values are lists of ints or lists of strings but not both.
         # However enforcing that property is hard without building specific types for the two cases
         relations: dict[int, dict[str, list[int | str]]] = {}
-        related_bug_ids: dict[str, list[int]] = {}
+        related_bug_ids: dict[str, set[int]] = {}
 
         for bug_id, bug in bugs.items():
             relations[bug_id] = {rel: [] for rel in relation_config.keys()}
@@ -351,11 +372,41 @@ class BugzillaToBigQuery:
                     if config.get("store_id"):
                         assert isinstance(item, int)
                         if config["store_id"] not in related_bug_ids:
-                            related_bug_ids[config["store_id"]] = []
+                            related_bug_ids[config["store_id"]] = set()
 
-                        related_bug_ids[config["store_id"]].append(item)
+                        related_bug_ids[config["store_id"]].add(item)
 
         return relations, related_bug_ids
+
+    def fetch_missing_deps(
+        self, all_bugs: BugsById, kb_dep_ids: Mapping[str, set[int]]
+    ) -> Optional[tuple[BugsById, BugsById]]:
+        dep_ids = {item for sublist in kb_dep_ids.values() for item in sublist}
+
+        # Check for missing bugs
+        missing_ids = dep_ids - set(all_bugs.keys())
+
+        if missing_ids:
+            logging.info(
+                "Fetching missing core bugs and breakage reports from Bugzilla"
+            )
+            completed, missing_bugs = self.fetch_bugs(
+                {"id": ",".join(map(str, missing_ids))}
+            )
+            if not completed:
+                return None
+
+            # Separate core bugs for updating relations.
+            core_dependenies = set(kb_dep_ids.get("core", set()))
+            core_missing = {
+                bug_id: bug
+                for bug_id, bug in missing_bugs.items()
+                if bug_id in core_dependenies
+            }
+        else:
+            missing_bugs, core_missing = {}, {}
+
+        return missing_bugs, core_missing
 
     def add_links(
         self,
@@ -987,36 +1038,24 @@ class BugzillaToBigQuery:
     def run(self) -> None:
         start_time = time.monotonic()
 
-        all_bugs, kb_bugs, core_bugs = self.fetch_all_bugs()
+        fetch_all_result = self.fetch_all_bugs()
 
-        if not self.bugs_fetch_completed:
+        if fetch_all_result is None:
             logging.info("Fetching bugs from Bugzilla was not completed, aborting")
             return
+        all_bugs, site_reports, kb_bugs, core_bugs = fetch_all_result
 
         # Process KB bugs fields and get their dependant core/breakage bugs ids.
         kb_data, kb_dep_ids = self.process_relations(kb_bugs, RELATION_CONFIG)
 
-        dep_ids = {item for sublist in kb_dep_ids.values() for item in sublist}
+        fetch_missing_result = self.fetch_missing_deps(all_bugs, kb_dep_ids)
+        if fetch_missing_result is None:
+            logging.info("Fetching bugs from Bugzilla was not completed, aborting")
+            return
+        missing_bugs, core_missing = fetch_missing_result
 
-        # Check for missing bugs
-        missing_ids = dep_ids - set(all_bugs.keys())
-
-        if missing_ids:
-            logging.info(
-                "Fetching missing core bugs and breakage reports from Bugzilla"
-            )
-            missing_bugs = self.fetch_bugs({"id": ",".join(map(str, missing_ids))})
-
-            # Separate core bugs for updating relations.
-            core_dependenies = set(kb_dep_ids.get("core", []))
-            core_missing = {
-                bug_id: bug
-                for bug_id, bug in missing_bugs.items()
-                if bug_id in core_dependenies
-            }
-
-            core_bugs.update(core_missing)
-            all_bugs.update(missing_bugs)
+        core_bugs.update(core_missing)
+        all_bugs.update(missing_bugs)
 
         # Process core bugs and update KB data with missing links from core bugs.
         if core_bugs:
