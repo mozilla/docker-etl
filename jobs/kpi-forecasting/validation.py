@@ -1,4 +1,4 @@
-from kpi_forecasting.validator import Validator
+from kpi_forecasting.result_processing import Validator
 
 config_list_search = [
     "search_forecasting_ad_clicks.yaml",

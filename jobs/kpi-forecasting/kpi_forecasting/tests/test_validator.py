@@ -1,7 +1,7 @@
 import pytest
 import yaml
 
-from kpi_forecasting.validator import Validator
+from kpi_forecasting.result_processing import Validator
 
 
 @pytest.fixture(scope="module")
