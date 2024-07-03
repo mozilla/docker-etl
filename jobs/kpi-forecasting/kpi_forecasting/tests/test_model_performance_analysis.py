@@ -1,5 +1,8 @@
 import pytest
 import yaml
+import cmath
+
+import pandas as pd
 
 from kpi_forecasting.results_processing import ModelPerformanceAnalysis
 
@@ -77,6 +80,123 @@ def directory_of_configs(tmp_path_factory):
     with open(f6, "w") as outfile:
         yaml.dump(data_dict_nosegments2, outfile, default_flow_style=False)
     return f1.parent
+
+
+@pytest.fixture(scope="module")
+def get_dummy_model_performance_config(tmp_path_factory):
+    tmpdir = tmp_path_factory.mktemp("configs")
+
+    data_dict = {
+        "write_results": {
+            "project": "dummy",
+            "dataset": "dummy",
+            "table": "dummy",
+        },
+    }
+    f1 = tmpdir / "config.yaml"
+    with open(f1, "w") as outfile:
+        yaml.dump(data_dict, outfile, default_flow_style=False)
+    return f1.parent
+
+
+@pytest.fixture()
+def get_dummy_model_performance(get_dummy_model_performance_config):
+    mpa = ModelPerformanceAnalysis(
+        ["config.yaml"],
+        "dummy",
+        "dummy",
+        "dummy",
+        intra_forecast_agg_names=(sum,),
+        identifier_columns=("index",),
+        input_config_path=get_dummy_model_performance_config,
+    )
+    return mpa
+
+
+def test_get_most_recent_forecasts(get_dummy_model_performance):
+    index = [1, 1, 1, 2, 2, 2]
+    timestamp_increment_by_month = [
+        pd.Timestamp(2024, 1, 1) + pd.DateOffset(months=i) for i in range(3)
+    ]
+    forecast_trained_at_month = 2 * timestamp_increment_by_month
+    forecast_value = range(6)
+    input_df = pd.DataFrame(
+        {
+            "index": index,
+            "forecast_trained_at_month": forecast_trained_at_month,
+            "forecast_value": forecast_value,
+        }
+    )
+    output_df = get_dummy_model_performance._get_most_recent_forecasts(input_df)
+    expected_df = input_df.copy()
+    expected_df["forecast_value_previous_month"] = [1, 1, 1, 4, 4, 4]
+    expected_df["current_model_month"] = [pd.Timestamp(2024, 3, 1)] * 6
+    expected_df["previous_model_month"] = [pd.Timestamp(2024, 2, 1)] * 6
+
+    assert set(output_df.columns) == set(expected_df.columns)
+    assert output_df[output_df.columns].equals(expected_df[output_df.columns])
+
+
+def test_lookback_default(get_dummy_model_performance):
+    index = [1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2]
+    timestamp_increment_by_month = [
+        pd.Timestamp(2024, 1, 1) + pd.DateOffset(months=i) for i in range(6)
+    ]
+    forecast_trained_at_month = 2 * timestamp_increment_by_month
+    current_model_month = [max(timestamp_increment_by_month)] * 12
+    input_df = pd.DataFrame(
+        {
+            "index": index,
+            "forecast_trained_at_month": forecast_trained_at_month,
+            "current_model_month": current_model_month,
+        }
+    )
+    output_df = get_dummy_model_performance._apply_lookback(input_df)
+    assert output_df.equals(input_df)
+
+
+def test_lookback_three_mo(get_dummy_model_performance):
+    get_dummy_model_performance.intra_forecast_lookback_months = 3
+    index = [1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2]
+    timestamp_increment_by_month = [
+        pd.Timestamp(2024, 1, 1) + pd.DateOffset(months=i) for i in range(6)
+    ]
+    forecast_trained_at_month = 2 * timestamp_increment_by_month
+    current_model_month = [max(timestamp_increment_by_month)] * 12
+    input_df = pd.DataFrame(
+        {
+            "index": index,
+            "forecast_trained_at_month": forecast_trained_at_month,
+            "current_model_month": current_model_month,
+        }
+    )
+    output_df = get_dummy_model_performance._apply_lookback(input_df)
+
+    half_trained_at_month = [
+        pd.Timestamp(2024, 3, 1) + pd.DateOffset(months=i) for i in range(4)
+    ]
+    expected_df = pd.DataFrame(
+        {
+            "index": [1, 1, 1, 1, 2, 2, 2, 2],
+            "forecast_trained_at_month": half_trained_at_month * 2,
+            "current_model_month": current_model_month[:8],
+        }
+    )
+    assert output_df.reset_index(drop=True).equals(expected_df)
+
+
+def test_generate_schema_exception(get_dummy_model_performance):
+    df = pd.DataFrame(
+        {
+            "some_floats": [0.0, 1.0, 2.0],
+            "complex_numbers": [complex(1, 2), complex(2, 3), complex(3, 4)],
+        }
+    )
+    with pytest.raises(
+        Exception,
+        match="Schema is missing the following columns due to unexpected type: complex_numbers",
+    ):
+        _ = get_dummy_model_performance._generate_output_bq_schema(df)
 
 
 def test_no_segments_working(directory_of_configs):

@@ -24,6 +24,12 @@ class ModelPerformanceAnalysis:
         "percentile_25",
         "percentile_75",
     )
+    identifier_columns: tuple = (
+        "submission_date",
+        "metric_alias",
+        "aggregation_period",
+    )
+
     intra_forecast_lookback_months: int = 12 * 100  # will revisit in the year 2123
 
     def __post_init__(self) -> None:
@@ -58,7 +64,7 @@ class ModelPerformanceAnalysis:
         the underscore is the percentile to apply"""
         self.intra_forecast_agg_functions = [
             partial(np.percentile, q=int(el.split("_")[1]))
-            if "percentile" in el
+            if isinstance(el, str) and "percentile" in el
             else el
             for el in self.intra_forecast_agg_names
         ]
@@ -131,15 +137,15 @@ class ModelPerformanceAnalysis:
 
         self.input_table_full = input_table_full
         self.dimension_list = dimension_list
-        identifier_columns = ["submission_date", "metric_alias", "aggregation_period"]
+
         if len(self.dimension_list) > 0:
-            identifier_columns += self.dimension_list
-        self.identifier_columns = identifier_columns
+            self.identifier_columns = (*self.identifier_columns, *self.dimension_list)
+
+        # need identifier columns to be a list to make it easy to do pandas operations later
+        self.identifier_columns = list(self.identifier_columns)
 
     def _get_most_recent_forecasts(self, month_level_df: pd.DataFrame) -> pd.DataFrame:
         """Adds the following columns to month_level_df:
-                - current_model_month (timestamp):
-                    Timestamp of the first day of the month corresponding to the current forecast
                 - previous_model_month (timestamp):
                     Timestamp of the first day of the month corresponding to the current forecast
                 - forecast_value_previous_month (float): forecast value for the previous montb
