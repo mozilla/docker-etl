@@ -199,11 +199,18 @@ class ModelPerformanceAnalysis:
         return month_level_df
 
     def query_ctes(self) -> str:
-        """Creates ctes that can be used in a queries to generate the validation table.
-        The
+        """Creates the following ctes:
+            forecast_with_train_month: Adds forecast_trained_at_month column and filters to forecast rows
+            forecast_month_level: Creates a table with one forecast prediction per month for
+                each combination of values in self.identifier_columns.  It is possible for the model to have run multiple times
+                in a month so to dedupe the most recent model is chosen
+            forecast_deduped: Creates a table including only forecast rows and grouping by self.identifier_columns.
+                The most recent forecast is chosen for the deduping
+            actual_deduped: Creates a table including only historical (actual) rows and grouping by self.identifier_columns.
+            compare_data: joins forecast_deduped and actual_deduped and calculates metrics quantifiying the difference between them
 
         Returns:
-        (str): Query to generate validation table"""
+        (str): Query to generate model performance table"""
         identifiers_comma_separated = ",".join(self.identifier_columns)
         # in actual_deduped, the value for historical data won't change so we can use any_value without checking forecast_trained_at
         query_ctes = f"""WITH forecast_with_train_month as (SELECT {identifiers_comma_separated}, forecast_trained_at, value,
@@ -260,7 +267,7 @@ class ModelPerformanceAnalysis:
             from bigquery and return as a pandas dataframe
 
         Returns:
-            pd.DataFrame: Validation table as a pandas dataframe
+            pd.DataFrame: model performance table as a pandas dataframe
         """
         cte = self.query_ctes()
         month_level_df = self.client.query(
