@@ -1,7 +1,7 @@
 import pytest
 import yaml
 
-from kpi_forecasting.result_processing import Validator
+from kpi_forecasting.results_processing import ModelPerformanceAnalysis
 
 
 @pytest.fixture(scope="module")
@@ -81,28 +81,28 @@ def directory_of_configs(tmp_path_factory):
 
 def test_no_segments_working(directory_of_configs):
     config_list = ["config_nosegments1_1.yaml", "config_nosegments1_2.yaml"]
-    test_validator = Validator(
+    test_model_performance = ModelPerformanceAnalysis(
         config_list,
         "dummy",
         "dummy",
         "dummy",
         input_config_path=directory_of_configs,
     )
-    assert test_validator.input_table_full == "x.y.z"
-    assert test_validator.dimension_list == []
+    assert test_model_performance.input_table_full == "x.y.z"
+    assert test_model_performance.dimension_list == []
 
 
 def test_segments_working(directory_of_configs):
     config_list = ["config_hassegments1_1.yaml", "config_hassegments1_2.yaml"]
-    test_validator = Validator(
+    test_model_performance = ModelPerformanceAnalysis(
         config_list,
         "dummy",
         "dummy",
         "dummy",
         input_config_path=directory_of_configs,
     )
-    assert test_validator.input_table_full == "x.y.z"
-    assert set(test_validator.dimension_list) == {"a", "b", "c"}
+    assert test_model_performance.input_table_full == "x.y.z"
+    assert set(test_model_performance.dimension_list) == {"a", "b", "c"}
 
 
 def test_segment_error(directory_of_configs):
@@ -112,7 +112,7 @@ def test_segment_error(directory_of_configs):
         Exception,
         match="Dimension Data Does not all match for config list: config_hassegments1_1.yaml config_hassegments2_1.yaml",
     ):
-        _ = Validator(
+        _ = ModelPerformanceAnalysis(
             config_list,
             "dummy",
             "dummy",
@@ -128,7 +128,7 @@ def test_mixed_segment_error(directory_of_configs):
         Exception,
         match="Dimension Data Does not all match for config list: config_hassegments1_1.yaml config_nosegments1_2.yaml",
     ):
-        _ = Validator(
+        _ = ModelPerformanceAnalysis(
             config_list,
             "dummy",
             "dummy",
@@ -144,7 +144,7 @@ def test_input_table_with_segment_error(directory_of_configs):
         Exception,
         match="Input Table Data Does not all match for config list: config_hassegments2_1.yaml config_hassegments3_1.yaml",
     ):
-        _ = Validator(
+        _ = ModelPerformanceAnalysis(
             config_list,
             "dummy",
             "dummy",
@@ -160,7 +160,7 @@ def test_input_table_no_segment_error(directory_of_configs):
         Exception,
         match="Input Table Data Does not all match for config list: config_nosegments1_1.yaml config_nosegments2_1.yaml",
     ):
-        _ = Validator(
+        _ = ModelPerformanceAnalysis(
             config_list,
             "dummy",
             "dummy",

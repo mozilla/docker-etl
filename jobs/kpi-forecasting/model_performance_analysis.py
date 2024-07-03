@@ -1,4 +1,4 @@
-from kpi_forecasting.result_processing import Validator
+from kpi_forecasting.results_processing import ModelPerformanceAnalysis
 
 config_list_search = [
     "search_forecasting_ad_clicks.yaml",
@@ -12,11 +12,11 @@ kpi_output_name = "kpi_validation"
 
 
 def main() -> None:
-    search_validator = Validator(
+    search_validator = ModelPerformanceAnalysis(
         config_list_search, "moz-fx-data-bq-data-science", "jsnyder", search_output_name
     )
     search_validator.write()
-    kpi_validator = Validator(
+    kpi_validator = ModelPerformanceAnalysis(
         config_list_kpi, "moz-fx-data-bq-data-science", "jsnyder", kpi_output_name
     )
     kpi_validator.write()
