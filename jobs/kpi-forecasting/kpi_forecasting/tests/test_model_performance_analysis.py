@@ -13,7 +13,7 @@ def directory_of_configs(tmp_path_factory):
 
     data_dict_hassegments1 = {
         "write_results": {
-            "project": "",
+            "project": "x",
             "dataset": "y",
             "table": "z",
         },
@@ -29,7 +29,7 @@ def directory_of_configs(tmp_path_factory):
 
     data_dict_hassegments2 = {
         "write_results": {
-            "project": "",
+            "project": "x",
             "dataset": "y",
             "table": "z",
         },
@@ -42,7 +42,7 @@ def directory_of_configs(tmp_path_factory):
 
     data_dict_hassegments3 = {
         "write_results": {
-            "project": "",
+            "project": "q",
             "dataset": "p",
             "table": "z",
         },
@@ -55,7 +55,7 @@ def directory_of_configs(tmp_path_factory):
 
     data_dict_nosegments1 = {
         "write_results": {
-            "project": "",
+            "project": "x",
             "dataset": "y",
             "table": "z",
         },
@@ -70,7 +70,7 @@ def directory_of_configs(tmp_path_factory):
 
     data_dict_nosegments2 = {
         "write_results": {
-            "project": "",
+            "project": "a",
             "dataset": "q",
             "table": "z",
         },
@@ -83,14 +83,14 @@ def directory_of_configs(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
-def get_dummy_model_performance_config(tmp_path_factory):
+def get__model_performance_config(tmp_path_factory):
     tmpdir = tmp_path_factory.mktemp("configs")
 
     data_dict = {
         "write_results": {
             "project": "",
-            "dataset": "dummy",
-            "table": "dummy",
+            "dataset": "",
+            "table": "",
         },
     }
     f1 = tmpdir / "config.yaml"
@@ -100,20 +100,20 @@ def get_dummy_model_performance_config(tmp_path_factory):
 
 
 @pytest.fixture()
-def get_dummy_model_performance(get_dummy_model_performance_config):
+def get__model_performance(get__model_performance_config):
     mpa = ModelPerformanceAnalysis(
         ["config.yaml"],
-        "dummy",
-        "dummy",
-        "dummy",
+        "",
+        "",
+        "",
         intra_forecast_agg_names=(sum,),
         identifier_columns=("index",),
-        input_config_path=get_dummy_model_performance_config,
+        input_config_path=get__model_performance_config,
     )
     return mpa
 
 
-def test_get_most_recent_forecasts(get_dummy_model_performance):
+def test_get_most_recent_forecasts(get__model_performance):
     index = [1, 1, 1, 2, 2, 2]
     timestamp_increment_by_month = [
         pd.Timestamp(2024, 1, 1) + pd.DateOffset(months=i) for i in range(3)
@@ -127,7 +127,7 @@ def test_get_most_recent_forecasts(get_dummy_model_performance):
             "forecast_value": forecast_value,
         }
     )
-    output_df = get_dummy_model_performance._get_most_recent_forecasts(input_df)
+    output_df = get__model_performance._get_most_recent_forecasts(input_df)
     expected_df = input_df.copy()
     expected_df["forecast_value_previous_month"] = [1, 1, 1, 4, 4, 4]
     expected_df["current_model_month"] = [pd.Timestamp(2024, 3, 1)] * 6
@@ -137,7 +137,7 @@ def test_get_most_recent_forecasts(get_dummy_model_performance):
     assert output_df[output_df.columns].equals(expected_df[output_df.columns])
 
 
-def test_lookback_default(get_dummy_model_performance):
+def test_lookback_default(get__model_performance):
     index = [1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2]
     timestamp_increment_by_month = [
         pd.Timestamp(2024, 1, 1) + pd.DateOffset(months=i) for i in range(6)
@@ -151,12 +151,12 @@ def test_lookback_default(get_dummy_model_performance):
             "current_model_month": current_model_month,
         }
     )
-    output_df = get_dummy_model_performance._apply_lookback(input_df)
+    output_df = get__model_performance._apply_lookback(input_df)
     assert output_df.equals(input_df)
 
 
-def test_lookback_three_mo(get_dummy_model_performance):
-    get_dummy_model_performance.intra_forecast_lookback_months = 3
+def test_lookback_three_mo(get__model_performance):
+    get__model_performance.intra_forecast_lookback_months = 3
     index = [1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2]
     timestamp_increment_by_month = [
         pd.Timestamp(2024, 1, 1) + pd.DateOffset(months=i) for i in range(6)
@@ -170,7 +170,7 @@ def test_lookback_three_mo(get_dummy_model_performance):
             "current_model_month": current_model_month,
         }
     )
-    output_df = get_dummy_model_performance._apply_lookback(input_df)
+    output_df = get__model_performance._apply_lookback(input_df)
 
     half_trained_at_month = [
         pd.Timestamp(2024, 3, 1) + pd.DateOffset(months=i) for i in range(4)
@@ -185,7 +185,7 @@ def test_lookback_three_mo(get_dummy_model_performance):
     assert output_df.reset_index(drop=True).equals(expected_df)
 
 
-def test_generate_schema_exception(get_dummy_model_performance):
+def test_generate_schema_exception(get__model_performance):
     df = pd.DataFrame(
         {
             "some_floats": [0.0, 1.0, 2.0],
@@ -196,19 +196,19 @@ def test_generate_schema_exception(get_dummy_model_performance):
         Exception,
         match="Schema is missing the following columns due to unexpected type: complex_numbers",
     ):
-        _ = get_dummy_model_performance._generate_output_bq_schema(df)
+        _ = get__model_performance._generate_output_bq_schema(df)
 
 
 def test_no_segments_working(directory_of_configs):
     config_list = ["config_nosegments1_1.yaml", "config_nosegments1_2.yaml"]
     test_model_performance = ModelPerformanceAnalysis(
         config_list,
-        "dummy",
-        "dummy",
-        "dummy",
+        "",
+        "",
+        "",
         input_config_path=directory_of_configs,
     )
-    assert test_model_performance.input_table_full == ".y.z"
+    assert test_model_performance.input_table_full == "x.y.z"
     assert test_model_performance.dimension_list == []
 
 
@@ -216,12 +216,12 @@ def test_segments_working(directory_of_configs):
     config_list = ["config_hassegments1_1.yaml", "config_hassegments1_2.yaml"]
     test_model_performance = ModelPerformanceAnalysis(
         config_list,
-        "dummy",
-        "dummy",
-        "dummy",
+        "",
+        "",
+        "",
         input_config_path=directory_of_configs,
     )
-    assert test_model_performance.input_table_full == ".y.z"
+    assert test_model_performance.input_table_full == "x.y.z"
     assert set(test_model_performance.dimension_list) == {"a", "b", "c"}
 
 
@@ -234,9 +234,9 @@ def test_segment_error(directory_of_configs):
     ):
         _ = ModelPerformanceAnalysis(
             config_list,
-            "dummy",
-            "dummy",
-            "dummy",
+            "",
+            "",
+            "",
             input_config_path=directory_of_configs,
         )
 
@@ -250,9 +250,9 @@ def test_mixed_segment_error(directory_of_configs):
     ):
         _ = ModelPerformanceAnalysis(
             config_list,
-            "dummy",
-            "dummy",
-            "dummy",
+            "",
+            "",
+            "",
             input_config_path=directory_of_configs,
         )
 
@@ -266,9 +266,9 @@ def test_input_table_with_segment_error(directory_of_configs):
     ):
         _ = ModelPerformanceAnalysis(
             config_list,
-            "dummy",
-            "dummy",
-            "dummy",
+            "",
+            "",
+            "",
             input_config_path=directory_of_configs,
         )
 
@@ -282,8 +282,8 @@ def test_input_table_no_segment_error(directory_of_configs):
     ):
         _ = ModelPerformanceAnalysis(
             config_list,
-            "dummy",
-            "dummy",
-            "dummy",
+            "",
+            "",
+            "",
             input_config_path=directory_of_configs,
         )
