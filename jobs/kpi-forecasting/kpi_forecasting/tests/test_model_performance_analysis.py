@@ -13,7 +13,7 @@ def directory_of_configs(tmp_path_factory):
 
     data_dict_hassegments1 = {
         "write_results": {
-            "project": "x",
+            "project": "",
             "dataset": "y",
             "table": "z",
         },
@@ -29,7 +29,7 @@ def directory_of_configs(tmp_path_factory):
 
     data_dict_hassegments2 = {
         "write_results": {
-            "project": "x",
+            "project": "",
             "dataset": "y",
             "table": "z",
         },
@@ -42,7 +42,7 @@ def directory_of_configs(tmp_path_factory):
 
     data_dict_hassegments3 = {
         "write_results": {
-            "project": "q",
+            "project": "",
             "dataset": "p",
             "table": "z",
         },
@@ -55,7 +55,7 @@ def directory_of_configs(tmp_path_factory):
 
     data_dict_nosegments1 = {
         "write_results": {
-            "project": "x",
+            "project": "",
             "dataset": "y",
             "table": "z",
         },
@@ -70,7 +70,7 @@ def directory_of_configs(tmp_path_factory):
 
     data_dict_nosegments2 = {
         "write_results": {
-            "project": "a",
+            "project": "",
             "dataset": "q",
             "table": "z",
         },
@@ -88,7 +88,7 @@ def get_dummy_model_performance_config(tmp_path_factory):
 
     data_dict = {
         "write_results": {
-            "project": "dummy",
+            "project": "",
             "dataset": "dummy",
             "table": "dummy",
         },
@@ -208,7 +208,7 @@ def test_no_segments_working(directory_of_configs):
         "dummy",
         input_config_path=directory_of_configs,
     )
-    assert test_model_performance.input_table_full == "x.y.z"
+    assert test_model_performance.input_table_full == ".y.z"
     assert test_model_performance.dimension_list == []
 
 
@@ -221,7 +221,7 @@ def test_segments_working(directory_of_configs):
         "dummy",
         input_config_path=directory_of_configs,
     )
-    assert test_model_performance.input_table_full == "x.y.z"
+    assert test_model_performance.input_table_full == ".y.z"
     assert set(test_model_performance.dimension_list) == {"a", "b", "c"}
 
 

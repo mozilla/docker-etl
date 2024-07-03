@@ -43,19 +43,22 @@ class ModelPerformanceAnalysis:
             dimensions, where different combinations of values specify separate models
             If a model has no such columns, set to an empty list
         """
+
+        # table is so, so every time this runs it processes all the data
+        # and overwrites the old table
+
+        self._load_config_data()
+        self._extract_config_data()
+        self._set_intra_forecast_agg_functions()
         self.output_table_id = (
             f"{self.output_project}.{self.output_dataset}.{self.output_table}"
         )
 
-        # table is so, so every time this runs it processes all the data
-        # and overwrites the old table
-        self.job_config = bigquery.QueryJobConfig(
-            destination=self.output_table_id, write_disposition="WRITE_TRUNCATE"
-        )
-        self._load_config_data()
-        self._extract_config_data()
-        self._set_intra_forecast_agg_functions()
-        self.client = bigquery.Client(project=self.output_project)
+        if self.output_project:
+            # this case makes it possible to create
+            # an object without any bigquery setup
+            # for testing
+            self.client = bigquery.Client(project=self.output_project)
 
     def _set_intra_forecast_agg_functions(self):
         """parses function names from the config into functions where
@@ -197,6 +200,7 @@ class ModelPerformanceAnalysis:
 
     def query_ctes(self) -> str:
         """Creates ctes that can be used in a queries to generate the validation table.
+        The
 
         Returns:
         (str): Query to generate validation table"""
