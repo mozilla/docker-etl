@@ -74,6 +74,11 @@ For example, the following command forecasts Desktop DAU numbers:
 python ~/kpi_forecasting.py -c ~/kpi_forecasting/configs/dau_desktop.yaml
 ```
 
+Similarly, the model performance for the KPI forecast can be done by executing:
+```sh
+python ~/model_performance_analysis.py.py -c ~/kpi_forecasting/configs/kpi_model_validation.yaml   
+```
+
 Note that, without write permissions to `moz-fx-data-shared-prod` this will generate a permissions error.
 
 The tests can be run locally with `python -m pytest` in the root directory of this subpackage.
