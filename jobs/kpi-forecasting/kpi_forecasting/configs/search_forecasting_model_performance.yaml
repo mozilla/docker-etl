@@ -1,6 +1,6 @@
 input_config_list: ["search_forecasting_ad_clicks.yaml",  "search_forecasting_daily_active_users.yaml", "search_forecasting_search_count.yaml"]
-output_project: moz-fx-data-bq-data-science  # change before merging
-output_dataset: jsnyder # change before merging
-output_table: "search_validation" # change before merging
+output_project: moz-fx-data-shared-prod  
+output_dataset: search_derived 
+output_table:  search_forecast_model_performance
 
 

@@ -1,6 +1,6 @@
 input_config_list: ["dau_desktop.yaml", "dau_mobile.yaml"]
-output_project: moz-fx-data-bq-data-science  # change before merging
-output_dataset: jsnyder # change before merging
-output_table: "kpi_validation" # change before merging
+output_project: moz-fx-data-shared-prod
+output_dataset: telemetry_derived
+output_table: model_performance_kpi_forecasts
 
 
