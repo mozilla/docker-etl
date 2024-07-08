@@ -10,7 +10,7 @@ import numpy as np
 
 
 @dataclass
-class ModelPerformanceAnalysis:
+class PerformanceAnalysis:
     input_config_list: list[str]
     output_project: str
     output_dataset: str
@@ -40,8 +40,8 @@ class ModelPerformanceAnalysis:
             set inside of _load_config_data
         input_table_full: id of the input data table extracted from the configs
         dimension_list: indicates which columns of the input table represent
-            dimensions, where different combinations of values specify separate models
-            If a model has no such columns, set to an empty list
+            dimensions, where different combinations of values specify separate forecasts
+            If a forecast has no such columns, set to an empty list
         """
 
         # table is so, so every time this runs it processes all the data
@@ -87,8 +87,8 @@ class ModelPerformanceAnalysis:
             the attributes below:
                 input_table_full: id of the input data table extracted from the configs
                 dimension_list: indicates which columns of the input table represent
-                    dimensions, where different combinations of values specify separate models
-                    If a model has no such columns, set to an empty list
+                    dimensions, where different combinations of values specify separate forecasts
+                    If a forecast has no such columns, set to an empty list
 
         Raises:
             Exception: Raised if list of config files have different values for the dimension list
@@ -149,7 +149,7 @@ class ModelPerformanceAnalysis:
 
     def _get_most_recent_forecasts(self, month_level_df: pd.DataFrame) -> pd.DataFrame:
         """Adds the following columns to month_level_df:
-                - previous_model_month (timestamp):
+                - previous_forecast_month (timestamp):
                     Timestamp of the first day of the month corresponding to the current forecast
                 - forecast_value_previous_month (float): forecast value for the previous montb
         Args:
@@ -161,30 +161,30 @@ class ModelPerformanceAnalysis:
         Returns:
             pd.DataFrame: DataFrame with new columns added.  Has the same number of rows as input
         """
-        current_model_month_df = (
+        current_forecast_month_df = (
             month_level_df[self.identifier_columns + ["forecast_trained_at_month"]]
             .groupby(self.identifier_columns)
-            .agg(current_model_month=("forecast_trained_at_month", "max"))
+            .agg(current_forecast_month=("forecast_trained_at_month", "max"))
             .reset_index()
         )
         month_level_df = month_level_df.merge(
-            current_model_month_df, on=self.identifier_columns
+            current_forecast_month_df, on=self.identifier_columns
         )
 
-        exclude_current_model_month = month_level_df[
+        exclude_current_forecast_month = month_level_df[
             month_level_df["forecast_trained_at_month"]
-            != month_level_df["current_model_month"]
+            != month_level_df["current_forecast_month"]
         ]
-        previous_model_month_df = (
-            exclude_current_model_month[
+        previous_forecast_month_df = (
+            exclude_current_forecast_month[
                 self.identifier_columns + ["forecast_trained_at_month"]
             ]
             .groupby(self.identifier_columns)
-            .agg(previous_model_month=("forecast_trained_at_month", "max"))
+            .agg(previous_forecast_month=("forecast_trained_at_month", "max"))
             .reset_index()
         )
         month_level_df = month_level_df.merge(
-            previous_model_month_df, on=self.identifier_columns
+            previous_forecast_month_df, on=self.identifier_columns
         )
 
         month_level_df = month_level_df.merge(
@@ -192,7 +192,7 @@ class ModelPerformanceAnalysis:
                 self.identifier_columns
                 + ["forecast_trained_at_month", "forecast_value"]
             ],
-            left_on=self.identifier_columns + ["previous_model_month"],
+            left_on=self.identifier_columns + ["previous_forecast_month"],
             right_on=self.identifier_columns + ["forecast_trained_at_month"],
             suffixes=(None, "_previous_month"),
         ).drop(columns="forecast_trained_at_month_previous_month")
@@ -202,15 +202,15 @@ class ModelPerformanceAnalysis:
         """Creates the following ctes:
             forecast_with_train_month: Adds forecast_trained_at_month column and filters to forecast rows
             forecast_month_level: Creates a table with one forecast prediction per month for
-                each combination of values in self.identifier_columns.  It is possible for the model to have run multiple times
-                in a month so to dedupe the most recent model is chosen
+                each combination of values in self.identifier_columns.  It is possible for the forecast to have run multiple times
+                in a month so to dedupe the most recent forecast is chosen
             forecast_deduped: Creates a table including only forecast rows and grouping by self.identifier_columns.
                 The most recent forecast is chosen for the deduping
             actual_deduped: Creates a table including only historical (actual) rows and grouping by self.identifier_columns.
             compare_data: joins forecast_deduped and actual_deduped and calculates metrics quantifiying the difference between them
 
         Returns:
-        (str): Query to generate model performance table"""
+        (str): Query to generate forecast performance table"""
         identifiers_comma_separated = ",".join(self.identifier_columns)
         # in actual_deduped, the value for historical data won't change so we can use any_value without checking forecast_trained_at
         query_ctes = f"""WITH forecast_with_train_month as (SELECT {identifiers_comma_separated}, forecast_trained_at, value,
@@ -244,18 +244,18 @@ class ModelPerformanceAnalysis:
 
     def _apply_lookback(self, data_df: pd.DataFrame) -> pd.DataFrame:
         """Filters out data that occurs self.intra_forecast_lookback_months months
-            before current_model_month
+            before current_forecast_month
 
         Args:
             data_df (pd.DataFrame): input data frame.  Must have the following columns:
-                - current_model_month (timestamp)
+                - current_forecast_month (timestamp)
                 - forecast_trained_at_month (timestamp)
 
         Returns:
             pd.DataFrame: Filtered dataframe.  Will have less than or equal to
                 the number of rows of the input dataframe
         """
-        lookback_mindate = data_df["current_model_month"] - pd.DateOffset(
+        lookback_mindate = data_df["current_forecast_month"] - pd.DateOffset(
             months=self.intra_forecast_lookback_months
         )
         lookback_indicator = data_df["forecast_trained_at_month"] >= lookback_mindate
@@ -267,7 +267,7 @@ class ModelPerformanceAnalysis:
             from bigquery and return as a pandas dataframe
 
         Returns:
-            pd.DataFrame: model performance table as a pandas dataframe
+            pd.DataFrame: forecast performance table as a pandas dataframe
         """
         cte = self.query_ctes()
         month_level_df = self.client.query(
@@ -294,7 +294,7 @@ class ModelPerformanceAnalysis:
             "forecast_value_previous_month",
             "max",
         )
-        agg_dict["previous_model_month"] = ("previous_model_month", "max")
+        agg_dict["previous_forecast_month"] = ("previous_forecast_month", "max")
 
         month_level_lookback_applied = self._apply_lookback(
             month_level_df_with_most_recent
