@@ -206,6 +206,20 @@ jobs:
           command: docker build -t app:build jobs/experiments-monitoring-data-export/
 
 
+  build-job-fxci-taskcluster-export:
+    docker:
+      - image: << pipeline.parameters.git-image >>
+    steps:
+      - checkout
+      - compare-branch:
+          pattern: ^jobs/fxci-taskcluster-export/
+      - setup_remote_docker:
+          version: << pipeline.parameters.docker-version >>
+      - run:
+          name: Build Docker image
+          command: docker build -t app:build jobs/fxci-taskcluster-export/
+
+
   build-job-influxdb-to-bigquery:
     docker:
       - image: << pipeline.parameters.git-image >>
@@ -477,6 +491,22 @@ workflows:
           filters:
             branches:
               only: main
+
+
+  job-fxci-taskcluster-export:
+    jobs:
+      - build-job-fxci-taskcluster-export
+      - gcp-gcr/build-and-push-image:
+          context: data-eng-airflow-gcr
+          docker-context: jobs/fxci-taskcluster-export/
+          path: jobs/fxci-taskcluster-export/
+          image: fxci-taskcluster-export_docker_etl
+          requires:
+            - build-job-fxci-taskcluster-export
+          filters:
+            branches:
+              only: main
+
 
   job-influxdb-to-bigquery:
     jobs:
