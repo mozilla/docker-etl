@@ -32,10 +32,6 @@ class WorkerUptime(Record):
     interval_start_time: float
     interval_end_time: float
 
-    @classmethod
-    def table_name(cls):
-        return "worker_uptime"
-
     def __str__(self):
         return f"worker {self.instance_id}"
 
@@ -130,6 +126,7 @@ def export_metrics(config: Config, dry_run: bool = False) -> int:
 
             records.append(
                 WorkerUptime.from_dict(
+                    config.bigquery.tables.metrics,
                     {
                         "project": ts.resource.labels["project_id"],
                         "zone": ts.resource.labels["zone"],

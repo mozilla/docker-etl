@@ -16,10 +16,6 @@ class Run(Record):
     worker_group: str
     worker_id: str
 
-    @classmethod
-    def table_name(cls):
-        return "task_runs"
-
     def __str__(self):
         return f"{self.task_id} run {self.run_id}"
 
@@ -37,10 +33,6 @@ class Task(Record):
     task_id: str
     task_queue_id: str
     tags: list[Tag]
-
-    @classmethod
-    def table_name(cls):
-        return "tasks"
 
     def __str__(self):
         return self.task_id

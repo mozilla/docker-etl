@@ -111,7 +111,9 @@ class BigQueryHandler(PulseHandler):
         if "workerId" in run:
             run_record["worker_id"] = run["workerId"]
 
-        self.records.append(Run.from_dict(run_record))
+        self.records.append(
+            Run.from_dict(self.config.bigquery.tables.runs, run_record)
+        )
 
         if data["runId"] == 0:
             # Only insert the task record for run 0 to avoid duplicate records.
@@ -128,7 +130,9 @@ class BigQueryHandler(PulseHandler):
                     task_record["tags"] = [
                         {"key": k, "value": v} for k, v in data["task"]["tags"].items()
                     ]
-                self.records.append(Task.from_dict(task_record))
+                self.records.append(
+                    Task.from_dict(self.config.bigquery.tables.tasks, task_record)
+                )
             except Exception:
                 # Don't insert the run without its corresponding task.
                 self.records.pop()
