@@ -139,7 +139,7 @@ def iterate_thru_wd_users(wd_users, xm_users, xm_sites):
             )
             continue
         elif not re.search(
-            "(?:mozilla.com|mozillafoundation.org|getpocket.com)$",
+            "(?:mozilla.com|mozillafoundation.org)$",
             user["User_Email_Address"],
         ):
             logger.info(
