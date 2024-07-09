@@ -91,6 +91,12 @@ class BigQueryHandler(PulseHandler):
 
     def process_event(self, event):
         data = event.data
+
+        if data.get("runId") is None:
+            # This can happen if `deadline` was exceeded before a run could
+            # start. Ignore this case.
+            return
+
         status = data["status"]
         run = data["status"]["runs"][data["runId"]]
         run_record = {
