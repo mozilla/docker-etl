@@ -92,7 +92,7 @@ class BigQueryHandler(PulseHandler):
     def process_event(self, event):
         data = event.data
         status = data["status"]
-        run = data["status"]["runs"][-1]
+        run = data["status"]["runs"][data["runId"]]
         run_record = {
             "task_id": status["taskId"],
             "reason_created": run["reasonCreated"],
