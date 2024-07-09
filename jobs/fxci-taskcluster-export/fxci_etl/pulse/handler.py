@@ -91,8 +91,14 @@ class BigQueryHandler(PulseHandler):
 
     def process_event(self, event):
         data = event.data
+
+        if data.get("runId") is None:
+            # This can happen if `deadline` was exceeded before a run could
+            # start. Ignore this case.
+            return
+
         status = data["status"]
-        run = data["status"]["runs"][-1]
+        run = data["status"]["runs"][data["runId"]]
         run_record = {
             "task_id": status["taskId"],
             "reason_created": run["reasonCreated"],
@@ -111,7 +117,9 @@ class BigQueryHandler(PulseHandler):
         if "workerId" in run:
             run_record["worker_id"] = run["workerId"]
 
-        self.records.append(Run.from_dict(run_record))
+        self.records.append(
+            Run.from_dict(self.config.bigquery.tables.runs, run_record)
+        )
 
         if data["runId"] == 0:
             # Only insert the task record for run 0 to avoid duplicate records.
@@ -128,7 +136,9 @@ class BigQueryHandler(PulseHandler):
                     task_record["tags"] = [
                         {"key": k, "value": v} for k, v in data["task"]["tags"].items()
                     ]
-                self.records.append(Task.from_dict(task_record))
+                self.records.append(
+                    Task.from_dict(self.config.bigquery.tables.tasks, task_record)
+                )
             except Exception:
                 # Don't insert the run without its corresponding task.
                 self.records.pop()

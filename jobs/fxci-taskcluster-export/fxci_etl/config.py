@@ -36,9 +36,17 @@ class PulseConfig:
 
 
 @dataclass(frozen=True)
+class BigQueryTableConfig:
+    metrics: str = "worker_metrics_v1"
+    tasks: str = "tasks_v1"
+    runs: str = "task_runs_v1"
+
+
+@dataclass(frozen=True)
 class BigQueryConfig:
     project: str
     dataset: str
+    tables: BigQueryTableConfig = BigQueryTableConfig()
     credentials: Optional[str] = None
 
 
