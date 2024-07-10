@@ -145,57 +145,21 @@ class BaseForecast(abc.ABC):
         """Set random seed to ensure that fits and predictions are reproducible."""
         np.random.seed(42)
 
-<<<<<<< HEAD
-    def _validate_forecast_df(self) -> None:
-        """Validate that `self.forecast_df` has been generated correctly."""
-        df = self.forecast_df
-        columns = df.columns
-        expected_shape = (len(self.dates_to_predict), 1 + self.number_of_simulations)
-        numeric_columns = df.drop(columns="submission_date").columns
-
-        if "submission_date" not in columns:
-            raise ValueError("forecast_df must contain a 'submission_date' column.")
-
-        if df.shape != expected_shape:
-            raise ValueError(
-                f"Expected forecast_df to have shape {expected_shape}, but it has shape {df.shape}."
-            )
-
-        if not df["submission_date"].equals(self.dates_to_predict["submission_date"]):
-            raise ValueError(
-                "forecast_df['submission_date'] does not match dates_to_predict['submission_date']."
-            )
-
-        for i in numeric_columns:
-            if not pd_types.is_numeric_dtype(self.forecast_df[i]):
-                raise ValueError(
-                    "All forecast_df columns except 'submission_date' must be numeric,"
-                    f" but column {i} has type {df[i].dtypes}."
-                )
-
-    def fit(self, observed_df: pd.DataFrame = self.observed_df) -> None:
-=======
     def fit(self) -> None:
->>>>>>> 590d1ad (add test for fit)
         """Fit a model using historic metric data provided by `metric_hub`."""
         print(f"Fitting {self.model_type} model.", flush=True)
         self._set_seed()
         self.trained_at = datetime.now(timezone.utc)
-        self._fit(observed_df)
+        self._fit(self.observed_df)
 
-    def predict(self, dates_to_predict: pd.DataFrame = self.dates_to_predict) -> None:
+    def predict(self) -> None:
         """Generate a forecast from `start_date` to `end_date`.
         Result is set to `self.forecast_df`"""
         print(f"Forecasting from {self.start_date} to {self.end_date}.", flush=True)
         self._set_seed()
         self.predicted_at = datetime.now(timezone.utc)
-<<<<<<< HEAD
-        self.forecast_df = self._predict(dates_to_predict)
-        self._validate_forecast_df()
-=======
         self.forecast_df = self._predict(self.dates_to_predict)
         self._validate_forecast_df(self.forecast_df)
->>>>>>> 590d1ad (add test for fit)
 
     def summarize(
         self,
