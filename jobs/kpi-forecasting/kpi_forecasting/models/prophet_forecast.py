@@ -87,7 +87,9 @@ class ProphetForecast(BaseForecast):
         else:
             df["metric"] = self.metric_hub.alias
 
-        df["forecast_date"] = str(datetime.now(timezone.utc).date())
+        df["forecast_date"] = str(
+            datetime.now(timezone.utc).replace(tzinfo=None).date()
+        )
         df["forecast_parameters"] = str(
             json.dumps({**self.parameters, "holidays": self.use_holidays})
         )

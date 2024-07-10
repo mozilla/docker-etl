@@ -48,7 +48,7 @@ class BaseForecast(abc.ABC):
 
     def __post_init__(self) -> None:
         # fetch observed observed data
-        self.collected_at = datetime.now(timezone.utc)
+        self.collected_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self._get_observed_data()
 
         # use default start/end dates if the user doesn't specify them
@@ -139,7 +139,9 @@ class BaseForecast(abc.ABC):
     @property
     def _default_end_date(self) -> str:
         """78 weeks (18 months) ahead of the current UTC date."""
-        return (datetime.now(timezone.utc) + timedelta(weeks=78)).date()
+        return (
+            datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(weeks=78)
+        ).date()
 
     def _set_seed(self) -> None:
         """Set random seed to ensure that fits and predictions are reproducible."""
@@ -149,7 +151,7 @@ class BaseForecast(abc.ABC):
         """Fit a model using historic metric data provided by `metric_hub`."""
         print(f"Fitting {self.model_type} model.", flush=True)
         self._set_seed()
-        self.trained_at = datetime.now(timezone.utc)
+        self.trained_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self._fit(self.observed_df)
 
     def predict(self) -> None:
@@ -157,7 +159,7 @@ class BaseForecast(abc.ABC):
         Result is set to `self.forecast_df`"""
         print(f"Forecasting from {self.start_date} to {self.end_date}.", flush=True)
         self._set_seed()
-        self.predicted_at = datetime.now(timezone.utc)
+        self.predicted_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self.forecast_df = self._predict(self.dates_to_predict)
         self._validate_forecast_df(self.forecast_df)
 

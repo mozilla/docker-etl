@@ -12,7 +12,7 @@ def test_metrichub_for_dau_kpi():
         slug="mobile_daily_active_users_v1",
         start_date="2024-01-01",
     )
-    now = to_datetime(datetime.now(timezone.utc)).date()
+    now = to_datetime(datetime.now(timezone.utc).replace(tzinfo=None)).date()
 
     query = test_metric_hub.query()
     query_where = f"WHERE submission_date BETWEEN '2024-01-01' AND '{now}'\nGROUP BY"
@@ -76,7 +76,7 @@ def test_metrichub_no_end_date():
         slug="mobile_daily_active_users_v1",
         start_date="2024-01-01",
     )
-    now = to_datetime(datetime.now(timezone.utc)).date()
+    now = to_datetime(datetime.now(timezone.utc).replace(tzinfo=None)).date()
 
     assert test_metric_hub.end_date == now
 
@@ -88,7 +88,7 @@ def test_metrichub_last_complete_month():
         start_date="2024-01-01",
         end_date="last complete month",
     )
-    now = to_datetime(datetime.now(timezone.utc)).date()
+    now = to_datetime(datetime.now(timezone.utc).replace(tzinfo=None)).date()
     prev_date = previous_period_last_date("last complete month", now)
 
     assert test_metric_hub.end_date == to_datetime(prev_date).date()
