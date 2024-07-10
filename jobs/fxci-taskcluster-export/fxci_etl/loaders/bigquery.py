@@ -1,9 +1,9 @@
-from abc import ABC, abstractmethod
 import base64
+import json
+from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import InitVar, asdict, dataclass
-import json
-import os
+from datetime import datetime, timezone
 from pprint import pprint
 from typing import Any
 
@@ -17,6 +17,7 @@ from fxci_etl.config import Config
 
 @dataclass
 class Record(ABC):
+    submission_date: str
     table_name: InitVar[str]
 
     def __post_init__(self, table_name):
@@ -24,6 +25,8 @@ class Record(ABC):
 
     @classmethod
     def from_dict(cls, table_name: str, data: dict[str, Any]) -> "Record":
+        current_date = datetime.now(timezone.utc).date()
+        data["submission_date"] = current_date.strftime("%Y-%m-%d")
         data["table_name"] = table_name
         return dacite.from_dict(data_class=cls, data=data)
 
