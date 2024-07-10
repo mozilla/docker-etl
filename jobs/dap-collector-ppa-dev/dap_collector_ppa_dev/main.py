@@ -9,9 +9,7 @@ import requests
 
 LEADER = "https://dap-09-3.api.divviup.org"
 CMD = f"./collect --task-id {{task_id}} --leader {LEADER} --vdaf {{vdaf}} {{vdaf_args}} --authorization-bearer-token {{auth_token}} --batch-interval-start {{timestamp}} --batch-interval-duration {{duration}} --hpke-config {{hpke_config}} --hpke-private-key {{hpke_private_key}}"
-INTERVAL_LENGTH = 300
-JOB_INTERVAL = 15
-TASK_AD_SIZE = 5
+MINUTES_IN_DAY = 1440
 ADS_SCHEMA = [
     bigquery.SchemaField("collection_time", "TIMESTAMP", mode="REQUIRED"),
     bigquery.SchemaField("placement_id", "STRING", mode="REQUIRED"),
@@ -165,6 +163,22 @@ def build_base_report(task_id, timestamp, metric_type, collection_time):
     return row
 
 
+def build_error_result(task_id, timestamp, metric_type, error):
+    collection_time = str(datetime.datetime.now(datetime.timezone.utc).timestamp())
+
+    results = {}
+    results["counts"] = []
+    results["reports"] = []
+
+    rpt = build_base_report(task_id, timestamp, metric_type, collection_time)
+    rpt["collection_duration"] = 0
+    rpt["error"] = error
+
+    results["reports"].append(rpt)
+
+    return results
+
+
 def get_ad(task_id, index):
     global ads
     for ad in ads:
@@ -208,14 +222,55 @@ async def collect_many(
 
 
 async def collect_task(task, auth_token, hpke_private_key, date):
-    """Collects data for the given task and the given day."""
-    start = datetime.datetime.fromisoformat(date)
-    start = start.replace(tzinfo=datetime.timezone.utc)
-    end = start + datetime.timedelta(minutes=JOB_INTERVAL)
+    """Collects data for the given task through to the given day.
+        For tasks with time precision smaller than a day, will collect data for aggregations from the day prior to date.
+        For tasks with time precision a day or multiple of day, will collect data for the aggregation that ends on date.
+            If date does not align with the end of an aggregation, it will not collect anything.
+    """
+    until = datetime.datetime.fromisoformat(date)
+    until = until.replace(tzinfo=datetime.timezone.utc)
+    time_precision_minutes = task["time_precision_minutes"]
 
-    results = await collect_many(
-        task, start, end, INTERVAL_LENGTH, hpke_private_key, auth_token
-    )
+    until_seconds = int(until.timestamp())
+
+    if until.hour != 0 or until.minute != 0:
+        # collector should run at the beginning of each day
+        results = build_error_result(task["task_id"], until, task["metric_type"], f"Collector triggered not at the beginning of a day {date}")
+
+    elif time_precision_minutes is None:
+        # task is missing a time precision setting
+        results = build_error_result(task["task_id"], until, task["metric_type"], f"Task missing time time_precision_minutes value")
+
+    elif time_precision_minutes < MINUTES_IN_DAY and MINUTES_IN_DAY % time_precision_minutes > 0:
+        # time precision has to evenly divide a day in order for this collector code to query all aggregations
+        results = build_error_result(task["task_id"], until, task["metric_type"], f"Task has time precision that does not evenly divide a day")
+
+    elif time_precision_minutes < MINUTES_IN_DAY:
+        # time precision is shorter than daily and evenly divides a day
+        # query for the last day of aggregations
+        until_minus_one_day = until - datetime.timedelta(days=1)
+
+        results = await collect_many(
+            task, until_minus_one_day, until, time_precision_minutes * 60, hpke_private_key, auth_token
+        )
+
+    elif time_precision_minutes % MINUTES_IN_DAY != 0:
+        # time precision is a day or longer, but is not a multiple of a day
+        results = build_error_result(task["task_id"], until, task["metric_type"], f"Task has time precision that is not an even multiple of a day")
+
+    elif until_seconds % (time_precision_minutes*60) != 0:
+        # time precision is a multiple of day, but the end does not align with this task's buckets
+        results = build_error_result(task["task_id"], until, task["metric_type"], f"{date} does not align with task aggregation buckets")
+
+    else:
+        # time precision is a multiple of a day
+        # query for the aggregation that ends at until
+        aggregation_days = time_precision_minutes/MINUTES_IN_DAY
+        until_minus_interval = until - datetime.timedelta(days=aggregation_days)
+
+        results = await collect_many(
+            task, until_minus_interval, until, time_precision_minutes * 60, hpke_private_key, auth_token
+        )
 
     return results
 
