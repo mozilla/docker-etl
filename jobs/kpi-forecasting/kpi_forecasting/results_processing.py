@@ -44,7 +44,7 @@ class PerformanceAnalysis:
             If a forecast has no such columns, set to an empty list
         """
 
-        # table is so, so every time this runs it processes all the data
+        # table is small, so every time this runs it processes all the data
         # and overwrites the old table
 
         self._load_config_data()
@@ -151,7 +151,7 @@ class PerformanceAnalysis:
         """Adds the following columns to month_level_df:
                 - previous_forecast_month (timestamp):
                     Timestamp of the first day of the month corresponding to the current forecast
-                - forecast_value_previous_month (float): forecast value for the previous montb
+                - forecast_value_previous_month (float): forecast value for the previous month
         Args:
             month_level_df (pd.DataFrame): Dataframe to process. Must have the following columns
                 in addition to those listed in self.identifier_columns:
