@@ -161,20 +161,20 @@ class BaseForecast(abc.ABC):
                     f" but column {i} has type {df[i].dtypes}."
                 )
 
-    def fit(self) -> None:
+    def fit(self, observed_df: pd.DataFrame = self.observed_df) -> None:
         """Fit a model using historic metric data provided by `metric_hub`."""
         print(f"Fitting {self.model_type} model.", flush=True)
         self._set_seed()
         self.trained_at = datetime.now(timezone.utc)
-        self._fit(self.observed_df)
+        self._fit(observed_df)
 
-    def predict(self) -> None:
+    def predict(self, dates_to_predict: pd.DataFrame = self.dates_to_predict) -> None:
         """Generate a forecast from `start_date` to `end_date`.
         Result is set to `self.forecast_df`"""
         print(f"Forecasting from {self.start_date} to {self.end_date}.", flush=True)
         self._set_seed()
         self.predicted_at = datetime.now(timezone.utc)
-        self.forecast_df = self._predict(self.dates_to_predict)
+        self.forecast_df = self._predict(dates_to_predict)
         self._validate_forecast_df()
 
     def summarize(
