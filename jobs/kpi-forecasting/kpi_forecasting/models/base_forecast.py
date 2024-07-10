@@ -7,7 +7,6 @@ import abc
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from kpi_forecasting.metric_hub import MetricHub
-from pandas.api import types as pd_types
 from typing import Dict, List
 
 
@@ -43,10 +42,14 @@ class BaseForecast(abc.ABC):
     metric_hub: MetricHub
     number_of_simulations: int = 1000
 
+    def _get_observed_data(self):
+        if self.metric_hub:
+            self.observed_df = self.metric_hub.fetch()
+
     def __post_init__(self) -> None:
         # fetch observed observed data
         self.collected_at = datetime.now(timezone.utc)
-        self.observed_df = self.metric_hub.fetch()
+        self._get_observed_data()
 
         # use default start/end dates if the user doesn't specify them
         self.start_date = pd.to_datetime(self.start_date or self._default_start_date)
@@ -74,7 +77,7 @@ class BaseForecast(abc.ABC):
         """Fit a forecasting model using `observed_df.` This will typically
         be the data that was generated using
         Metric Hub in `__post_init__`.
-        This method should update `self.model`.
+        This method should update (and potentially set) `self.model`.
 
         Args:
             observed_df (pd.DataFrame): observed data used to fit the model
@@ -93,6 +96,14 @@ class BaseForecast(abc.ABC):
         Returns:
             pd.DataFrame: dataframe of predictions
         """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def _validate_forecast_df(self, forecast_df: pd.DataFrame) -> None:
+        """Method to validate reults produced by _predict
+
+        Args:
+            forecast_df (pd.DataFrame): dataframe produced by `_predict`"""
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -134,6 +145,7 @@ class BaseForecast(abc.ABC):
         """Set random seed to ensure that fits and predictions are reproducible."""
         np.random.seed(42)
 
+<<<<<<< HEAD
     def _validate_forecast_df(self) -> None:
         """Validate that `self.forecast_df` has been generated correctly."""
         df = self.forecast_df
@@ -162,6 +174,9 @@ class BaseForecast(abc.ABC):
                 )
 
     def fit(self, observed_df: pd.DataFrame = self.observed_df) -> None:
+=======
+    def fit(self) -> None:
+>>>>>>> 590d1ad (add test for fit)
         """Fit a model using historic metric data provided by `metric_hub`."""
         print(f"Fitting {self.model_type} model.", flush=True)
         self._set_seed()
@@ -174,8 +189,13 @@ class BaseForecast(abc.ABC):
         print(f"Forecasting from {self.start_date} to {self.end_date}.", flush=True)
         self._set_seed()
         self.predicted_at = datetime.now(timezone.utc)
+<<<<<<< HEAD
         self.forecast_df = self._predict(dates_to_predict)
         self._validate_forecast_df()
+=======
+        self.forecast_df = self._predict(self.dates_to_predict)
+        self._validate_forecast_df(self.forecast_df)
+>>>>>>> 590d1ad (add test for fit)
 
     def summarize(
         self,
