@@ -1,5 +1,6 @@
 import json
 import pandas as pd
+from pandas.api import types as pd_types
 import prophet
 import numpy as np
 from typing import Dict, List
@@ -41,6 +42,32 @@ class ProphetForecast(BaseForecast):
         df = pd.DataFrame(samples["yhat"])
         df["submission_date"] = dates_to_predict
         return df
+
+    def _validate_forecast_df(self, df) -> None:
+        """Validate that `self.forecast_df` has been generated correctly."""
+        columns = df.columns
+        expected_shape = (len(self.dates_to_predict), 1 + self.number_of_simulations)
+        numeric_columns = df.drop(columns="submission_date").columns
+
+        if "submission_date" not in columns:
+            raise ValueError("forecast_df must contain a 'submission_date' column.")
+
+        if df.shape != expected_shape:
+            raise ValueError(
+                f"Expected forecast_df to have shape {expected_shape}, but it has shape {df.shape}."
+            )
+
+        if not df["submission_date"].equals(self.dates_to_predict["submission_date"]):
+            raise ValueError(
+                "forecast_df['submission_date'] does not match dates_to_predict['submission_date']."
+            )
+
+        for i in numeric_columns:
+            if not pd_types.is_numeric_dtype(self.forecast_df[i]):
+                raise ValueError(
+                    "All forecast_df columns except 'submission_date' must be numeric,"
+                    f" but column {i} has type {df[i].dtypes}."
+                )
 
     def _predict_legacy(self) -> pd.DataFrame:
         """
