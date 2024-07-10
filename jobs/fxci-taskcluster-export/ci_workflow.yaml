@@ -1,0 +1,13 @@
+job-fxci-taskcluster-export:
+  jobs:
+    - build-job-fxci-taskcluster-export
+    - gcp-gcr/build-and-push-image:
+        context: data-eng-airflow-gcr
+        docker-context: jobs/fxci-taskcluster-export/
+        path: jobs/fxci-taskcluster-export/
+        image: fxci-taskcluster-export_docker_etl
+        requires:
+          - build-job-fxci-taskcluster-export
+        filters:
+          branches:
+            only: main
