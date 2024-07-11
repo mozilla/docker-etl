@@ -115,5 +115,4 @@ def parse_scalar_adjustments(
 
         applicable_adjustments.append(matched_adjustment)
 
-    # Parse the list of
     return applicable_adjustments
