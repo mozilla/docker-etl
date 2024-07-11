@@ -150,27 +150,26 @@ class ProphetForecast(BaseForecast):
 
         return df[columns]
 
-    def _summarize(
+    def _combine_forecast_observed(
         self,
         forecast_df,
         observed_df,
         period: str,
         numpy_aggregations: List[str],
         percentiles: List[int],
-    ) -> pd.DataFrame:
-        """
-        Calculate summary metrics for `self.forecast_df` over a given period, and
-        add metadata.
-        """
+    ):
         # build a list of all functions that we'll summarize the data by
         aggregations = [getattr(np, i) for i in numpy_aggregations]
         aggregations.extend([pdx.percentile(i) for i in percentiles])
 
         # aggregate metric to the correct date period (day, month, year)
         observed_summarized = pdx.aggregate_to_period(observed_df, period)
-        forecast_agg = pdx.aggregate_to_period(forecast_df, period)
+        forecast_agg = pdx.aggregate_to_period(forecast_df, period).sort_values(
+            "submission_date"
+        )
 
         # find periods of overlap between observed and forecasted data
+        # merge preserves key order so overlap will be sorted by submission_date
         overlap = forecast_agg.merge(
             observed_summarized,
             on="submission_date",
@@ -198,7 +197,24 @@ class ProphetForecast(BaseForecast):
 
         # create a single dataframe that contains observed and forecasted data
         df = pd.concat([observed_summarized, forecast_summarized])
+        return df
 
+    def _summarize(
+        self,
+        forecast_df,
+        observed_df,
+        period: str,
+        numpy_aggregations: List[str],
+        percentiles: List[int],
+    ) -> pd.DataFrame:
+        """
+        Calculate summary metrics for `self.forecast_df` over a given period, and
+        add metadata.
+        """
+
+        df = self._combine_forecast_observed(
+            forecast_df, observed_df, period, numpy_aggregations, percentiles
+        )
         # add summary metadata columns
         df["aggregation_period"] = period.lower()
 
