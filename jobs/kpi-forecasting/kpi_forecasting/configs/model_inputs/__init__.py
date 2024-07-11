@@ -49,6 +49,15 @@ class ProphetHoliday:
 class ScalarAdjustments:
     """
     Holds the names and dates where a scalar adjustment should be applied.
+
+    Args:
+        name (str): The name of the adjustment from the scalar_adjustments.yaml file.
+        forecast_start_date (datetime): The first forecast_start_date where this iteration of the
+            adjustment should be applied. This adjustment will apply to any subsequent forecast
+            until another update of this adjustment is made.
+        adjustments_dataframe (DataFrame): A DataFrame that contains the dimensions of the segments
+            being forecasted as columns, as well as the start dates and values for each scalar
+            adjustment.
     """
 
     name: str
@@ -107,7 +116,8 @@ def parse_scalar_adjustments(
             parsed_named_adjustments, key=lambda d: d.forecast_start_date
         )
 
-        # Iterate over the sorted list to end with any
+        # Iterate over the sorted list to find any adjustments that apply after the supplied forecast_start_date.
+        ## Returns `None` if no applicable value is found
         matched_adjustment = None
         for parsed_adjustment in sorted_parsed_named_adjustments:
             if forecast_start_date >= parsed_adjustment.forecast_start_date:
