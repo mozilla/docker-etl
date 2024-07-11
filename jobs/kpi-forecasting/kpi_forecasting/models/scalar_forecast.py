@@ -117,6 +117,10 @@ class ScalarForecast(BaseForecast):
                 self.forecast_df[f"scalar_{scalar_adjustment.name}"],
             )
 
+            # Fill scalar column with 1. Scalars are always multiplicative, so this removes the scalar effect
+            ## for dates/segments where it shouldn't apply
+            self.forecast_df[f"scalar_{scalar_adjustment.name}"].fillna(1, inplace=True)
+
             # Drop the start_date column that isn't needed for forecasting and can be reused for multiple
             ## metrics
             self.forecast_df.drop(columns=["start_date"], inplace=True)
