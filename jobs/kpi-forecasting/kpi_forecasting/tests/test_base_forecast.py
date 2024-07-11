@@ -46,7 +46,8 @@ def good_class():
 
         def _validate_forecast_df(self, forecast_df: np.array) -> None:
             # takes array as input to simplify tests
-            assert np.all(forecast_df // 0 == 0)
+            # check that all are even after _predict runs
+            assert np.all(forecast_df % 2 == 0)
 
         def _summarize(
             self,
