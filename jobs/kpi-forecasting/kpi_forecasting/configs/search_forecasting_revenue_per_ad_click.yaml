@@ -18,11 +18,11 @@ forecast_model:
   end_date: NULL
   use_holidays: False
   parameters:
-    adjustment_type: "YOY"
+    formula: "search_forecasting_revenue_per_ad_click:YOY * scalar"
 
 summarize:
-  periods: ["year"]
-  numpy_aggregations: ["mean"]
+  requires_summarization: False
+  periods: ["month"]
 
 write_results:
   project: "moz-fx-data-shared-prod"
