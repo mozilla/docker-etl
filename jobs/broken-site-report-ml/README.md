@@ -1,6 +1,13 @@
 # Python Template Job
 
-This is an example of a dockerized Python job.
+This job does the following:
+
+1. Translates incoming broken sites reports to English with ML.TRANSLATE.
+2. Classifies translated reports as valid/invalid using [bugbug](https://github.com/mozilla/bugbug).
+3. Stores translation and classification results in BQ.
+
+### Note: 
+If a job run fails, but the most recent run is successful, it does not need to be triaged.
 
 ## Usage
 
