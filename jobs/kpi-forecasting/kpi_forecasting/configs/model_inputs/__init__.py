@@ -15,9 +15,9 @@ HOLIDAY_PATH = PARENT_PATH / "holidays.yaml"
 REGRESSOR_PATH = PARENT_PATH / "regressors.yaml"
 SCALAR_PATH = PARENT_PATH / "scalar_adjustments.yaml"
 
-holiday_collection = YAML(HOLIDAY_PATH)
-regressor_collection = YAML(REGRESSOR_PATH)
-scalar_adjustments = YAML(SCALAR_PATH)
+HOLIDAY_COLLECTION = YAML(HOLIDAY_PATH)
+REGRESSOR_COLLECTION = YAML(REGRESSOR_PATH)
+SCALAR_ADJUSTMENTS = YAML(SCALAR_PATH)
 
 
 @attr.s(auto_attribs=True, frozen=False)
@@ -95,7 +95,7 @@ def parse_scalar_adjustments(
         List[ScalarAdjustments]: A list of ScalarAdjustments, where each ScalarAdjustments is a named scalar adjustment with the
             dates that the adjustment should be applied for each segment being modeled.
     """
-    metric_adjustments = getattr(scalar_adjustments.data, metric_hub_slug)
+    metric_adjustments = getattr(SCALAR_ADJUSTMENTS.data, metric_hub_slug)
     if not metric_adjustments:
         raise KeyError(f"No adjustments found for {metric_hub_slug} in {SCALAR_PATH}.")
 
@@ -119,6 +119,6 @@ def parse_scalar_adjustments(
             if forecast_start_date >= parsed_adjustment.forecast_start_date:
                 matched_adjustment = parsed_adjustment
 
-        applicable_adjustments.append(matched_adjustment)
+            applicable_adjustments.append(matched_adjustment)
 
     return applicable_adjustments
