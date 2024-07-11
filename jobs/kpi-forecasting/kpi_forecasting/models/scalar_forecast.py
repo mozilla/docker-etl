@@ -9,7 +9,6 @@ import pandas as pd
 
 from kpi_forecasting.configs.model_inputs import parse_scalar_adjustments
 from kpi_forecasting.models.base_forecast import BaseForecast
-from kpi_forecasting import pandas_extras as pdx
 
 
 @dataclass
@@ -126,7 +125,6 @@ class ScalarForecast(BaseForecast):
             self.forecast_df.drop(columns=["start_date"], inplace=True)
 
     def _fit(self) -> None:
-
         # Create period-over-period dict, which defines how observed data is carried forward in cases
         ## where the forecast is a scalar * previously observed data
         pop_dict = self._parse_formula_for_over_period_changes()
@@ -157,7 +155,6 @@ class ScalarForecast(BaseForecast):
         self._add_scalar_columns()
 
     def _predict(self) -> None:
-
         # Create final scalar as product of individual scalar effects
         self.forecast_df["scalar"] = self.forecast_df[
             [c for c in self.forecast_df.columns if "scalar_" in c]

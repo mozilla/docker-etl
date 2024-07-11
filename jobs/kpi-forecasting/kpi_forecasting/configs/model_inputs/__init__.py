@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from dotmap import DotMap
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import List, Optional, Union
 
 import pandas as pd
 
@@ -64,7 +64,6 @@ class ScalarAdjustments:
     name: str
 
     def __post_init__(self, adjustment_dotmap: DotMap):
-
         adj_list = []
         self.forecast_start_date = datetime.strptime(
             adjustment_dotmap.forecast_start_date, "%Y-%m-%d"
