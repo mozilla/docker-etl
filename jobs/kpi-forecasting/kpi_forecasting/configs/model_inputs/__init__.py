@@ -1,4 +1,5 @@
 import attr
+from dataclasses import dataclass
 from datetime import datetime
 from dotmap import DotMap
 from pathlib import Path
@@ -45,7 +46,7 @@ class ProphetHoliday:
     upper_window: int
 
 
-@attr.s(auto_attribs=True, frozen=False)
+@dataclass
 class ScalarAdjustments:
     """
     Holds the names and dates where a scalar adjustment should be applied.
@@ -61,14 +62,11 @@ class ScalarAdjustments:
     """
 
     name: str
-    forecast_start_date: datetime
-    adjustments_dataframe: pd.DataFrame
 
-    @classmethod
-    def from_dotmap(cls, name: str, adjustment_dotmap: DotMap):
+    def __post_init__(self, adjustment_dotmap: DotMap):
 
         adj_list = []
-        forecast_start_date = datetime.strptime(
+        self.forecast_start_date = datetime.strptime(
             adjustment_dotmap.forecast_start_date, "%Y-%m-%d"
         )
         for segment_dat in adjustment_dotmap.segments:
@@ -77,9 +75,7 @@ class ScalarAdjustments:
                 {**segment, **adj} for adj in segment_dat.adjustments
             ]
             adj_list.append(pd.DataFrame(segment_adjustment_dat))
-        adj_df = pd.concat(adj_list, ignore_index=True)
-
-        return cls(name, forecast_start_date, adj_df)
+        self.adjustments_dataframe = pd.concat(adj_list, ignore_index=True)
 
 
 def parse_scalar_adjustments(
@@ -107,7 +103,7 @@ def parse_scalar_adjustments(
     applicable_adjustments = []
     for named_adjustment in metric_adjustments:
         parsed_named_adjustments = [
-            ScalarAdjustments.from_dotmap(named_adjustment.name, adj_dotmap)
+            ScalarAdjustments(named_adjustment.name, adj_dotmap)
             for adj_dotmap in named_adjustment.adjustments
         ]
 
