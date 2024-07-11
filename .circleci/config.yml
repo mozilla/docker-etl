@@ -136,6 +136,19 @@ jobs:
           name: Build Docker image
           command: docker build -t app:build jobs/dap-collector-ppa-dev/
 
+  build-job-dap-collector-ppa-prod:
+    docker:
+      - image: << pipeline.parameters.git-image >>
+    steps:
+      - checkout
+      - compare-branch:
+          pattern: ^jobs/dap-collector-ppa-prod/
+      - setup_remote_docker:
+          version: << pipeline.parameters.docker-version >>
+      - run:
+          name: Build Docker image
+          command: docker build -t app:build jobs/dap-collector-ppa-prod/
+
   build-job-desktop-mobile-mau-2020:
     docker:
       - image: << pipeline.parameters.git-image >>
@@ -193,6 +206,20 @@ jobs:
           command: docker build -t app:build jobs/experiments-monitoring-data-export/
 
 
+  build-job-fxci-taskcluster-export:
+    docker:
+      - image: << pipeline.parameters.git-image >>
+    steps:
+      - checkout
+      - compare-branch:
+          pattern: ^jobs/fxci-taskcluster-export/
+      - setup_remote_docker:
+          version: << pipeline.parameters.docker-version >>
+      - run:
+          name: Build Docker image
+          command: docker build -t app:build jobs/fxci-taskcluster-export/
+
+
   build-job-influxdb-to-bigquery:
     docker:
       - image: << pipeline.parameters.git-image >>
@@ -221,7 +248,7 @@ jobs:
           command: docker build -t app:build jobs/kpi-forecasting/
       - run:
           name: Test Code
-          command: docker run app:build black .
+          command: docker run app:build pytest --ruff --ruff-format
 
 
   build-job-mozaggregator2bq:
@@ -322,6 +349,9 @@ jobs:
           name: Build Docker image
           command: docker build -t app:build jobs/webcompat-kb/
       - run:
+          name: Mypy
+          command: docker run app:build mypy -m webcompat_kb
+      - run:
           name: Test Code
           command: docker run app:build pytest --ruff --ruff-format
 
@@ -402,6 +432,20 @@ workflows:
             branches:
               only: main
 
+  job-dap-collector-ppa-prod:
+    jobs:
+      - build-job-dap-collector-ppa-prod
+      - gcp-gcr/build-and-push-image:
+          context: data-eng-airflow-gcr
+          docker-context: jobs/dap-collector-ppa-prod/
+          path: jobs/dap-collector-ppa-prod/
+          image: dap-collector-ppa-prod_docker_etl
+          requires:
+            - build-job-dap-collector-ppa-prod
+          filters:
+            branches:
+              only: main
+
   job-desktop-mobile-mau-2020:
     jobs:
       - build-job-desktop-mobile-mau-2020
@@ -447,6 +491,22 @@ workflows:
           filters:
             branches:
               only: main
+
+
+  job-fxci-taskcluster-export:
+    jobs:
+      - build-job-fxci-taskcluster-export
+      - gcp-gcr/build-and-push-image:
+          context: data-eng-airflow-gcr
+          docker-context: jobs/fxci-taskcluster-export/
+          path: jobs/fxci-taskcluster-export/
+          image: fxci-taskcluster-export_docker_etl
+          requires:
+            - build-job-fxci-taskcluster-export
+          filters:
+            branches:
+              only: main
+
 
   job-influxdb-to-bigquery:
     jobs:
