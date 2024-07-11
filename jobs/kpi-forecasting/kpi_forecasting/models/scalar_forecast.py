@@ -19,24 +19,6 @@ from kpi_forecasting import pandas_extras as pdx
 
 
 @dataclass
-class SegmentScalarSettings:
-    """
-    Holds the configuration and results for each segment
-    in a scalar forecasting model.
-
-    Args:
-        segment (Dict[str, str]): Dictionary holding the segment dimensions and values.
-
-    """
-
-    segment: Dict[str, str]
-    scalars: List[Dict[str, int | float]]
-
-    # Hold forecast results
-    forecast_df: pd.DataFrame = None
-
-
-@dataclass
 class ScalarForecast(BaseForecast):
     """
     ScalarForecast class for generating and managing forecast models where forecasts are
