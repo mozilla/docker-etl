@@ -1,10 +1,7 @@
-from typing import List
 
-import pytest
 import pandas as pd
 from dotmap import DotMap
 import numpy as np
-from datetime import datetime, timedelta, timezone
 
 
 from kpi_forecasting.models.prophet_forecast import ProphetForecast
