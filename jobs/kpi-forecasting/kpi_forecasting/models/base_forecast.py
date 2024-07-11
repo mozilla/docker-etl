@@ -44,6 +44,10 @@ class BaseForecast(abc.ABC):
 
     def _get_observed_data(self):
         if self.metric_hub:
+            # the columns in this dataframe
+            # are "value" for the metric, submission_date
+            # and any segments where the column name
+            # is the name of the segment
             self.observed_df = self.metric_hub.fetch()
 
     def __post_init__(self) -> None:
