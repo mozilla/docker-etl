@@ -1,0 +1,105 @@
+---
+search_forecasting_revenue_per_ad_click:
+  - name: "year_over_year_growth"
+    description: "Estimate of YoY growth in RPC, from input from stakeholders."
+    adjustments:
+      - forecast_start_date: "2024-01-01"
+        segments:
+          - segment:
+              {
+                partner: "Google",
+                country: "US",
+                device: "desktop",
+                channel: "all",
+              }
+            adjustments:
+              - start_date: "2024-01-01"
+                value: 1.03
+          - segment:
+              {
+                partner: "Google",
+                country: "ROW",
+                device: "desktop",
+                channel: "all",
+              }
+            adjustments:
+              - start_date: "2024-01-01"
+                value: 1.04
+          - segment:
+              {
+                partner: "Google",
+                country: "ROW",
+                device: "mobile",
+                channel: "all",
+              }
+            adjustments:
+              - start_date: "2024-01-01"
+                value: 1.04
+      - forecast_start_date: "2024-04-01"
+        segments:
+          - segment:
+              {
+                partner: "Google",
+                country: "US",
+                device: "desktop",
+                channel: "all",
+              }
+            adjustments:
+              - start_date: "2024-01-01"
+                value: 1.10
+          - segment:
+              {
+                partner: "Google",
+                country: "ROW",
+                device: "desktop",
+                channel: "all",
+              }
+            adjustments:
+              - start_date: "2024-01-01"
+                value: 1.10
+          - segment:
+              {
+                partner: "Google",
+                country: "ROW",
+                device: "mobile",
+                channel: "all",
+              }
+            adjustments:
+              - start_date: "2024-01-01"
+                value: 1.04
+      - forecast_start_date: "2024-05-01"
+        segments:
+          - segment:
+              {
+                partner: "Google",
+                country: "US",
+                device: "desktop",
+                channel: "all",
+              }
+            adjustments:
+              - start_date: "2024-01-01"
+                value: 1.10
+              - start_date: "2024-08-01"
+                value: 1.03
+          - segment:
+              {
+                partner: "Google",
+                country: "ROW",
+                device: "desktop",
+                channel: "all",
+              }
+            adjustments:
+              - start_date: "2024-01-01"
+                value: 1.10
+              - start_date: "2024-08-01"
+                value: 1.04
+          - segment:
+              {
+                partner: "Google",
+                country: "ROW",
+                device: "mobile",
+                channel: "all",
+              }
+            adjustments:
+              - start_date: "2024-01-01"
+                value: 1.04

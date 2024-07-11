@@ -1,7 +1,10 @@
 import attr
-from typing import List, Optional, Union
+from datetime import datetime
+from dotmap import DotMap
 from pathlib import Path
+from typing import Dict, List, Optional, Union
 
+import pandas as pd
 
 from kpi_forecasting.inputs import YAML
 
@@ -9,9 +12,11 @@ from kpi_forecasting.inputs import YAML
 PARENT_PATH = Path(__file__).parent
 HOLIDAY_PATH = PARENT_PATH / "holidays.yaml"
 REGRESSOR_PATH = PARENT_PATH / "regressors.yaml"
+SCALAR_PATH = PARENT_PATH / "scalar_adjustments.yaml"
 
 holiday_collection = YAML(HOLIDAY_PATH)
 regressor_collection = YAML(REGRESSOR_PATH)
+scalar_adjustments = YAML(SCALAR_PATH)
 
 
 @attr.s(auto_attribs=True, frozen=False)
@@ -38,3 +43,77 @@ class ProphetHoliday:
     ds: List
     lower_window: int
     upper_window: int
+
+
+@attr.s(auto_attribs=True, frozen=False)
+class ScalarAdjustments:
+    """
+    Holds the names and dates where a scalar adjustment should be applied.
+    """
+
+    name: str
+    forecast_start_date: datetime
+    adjustments_dataframe: pd.DataFrame
+
+    @classmethod
+    def from_dotmap(cls, name: str, adjustment_dotmap: DotMap):
+
+        adj_list = []
+        forecast_start_date = datetime.strptime(
+            adjustment_dotmap.forecast_start_date, "%Y-%m-%d"
+        )
+        for segment_dat in adjustment_dotmap.segments:
+            segment = {**segment_dat.segment}
+            segment_adjustment_dat = [
+                {**segment, **adj} for adj in segment_dat.adjustments
+            ]
+            adj_list.append(pd.DataFrame(segment_adjustment_dat))
+        adj_df = pd.concat(adj_list, ignore_index=True)
+
+        return cls(name, forecast_start_date, adj_df)
+
+
+def parse_scalar_adjustments(
+    metric_hub_slug: str, forecast_start_date: datetime
+) -> List[ScalarAdjustments]:
+    """
+    Parses the scalar_adjustments to find the applicable scalar adjustments for a given metric hub slug
+    and forecast start date.
+
+    Args:
+        metric_hub_slug (str): The metric hub slug being forecasted. It must be present by name in the
+            scalar_adjustments.yaml.
+        forecast_start_date (str): The first date being forecasted. Used here to map to the correct scalar
+            adjustments as the adjustments will be updated over time.
+
+    Returns:
+        List[ScalarAdjustments]: A list of ScalarAdjustments, where each ScalarAdjustments is a named scalar adjustment with the
+            dates that the adjustment should be applied for each segment being modeled.
+    """
+    metric_adjustments = getattr(scalar_adjustments.data, metric_hub_slug)
+    if not metric_adjustments:
+        raise KeyError(f"No adjustments found for {metric_hub_slug} in {SCALAR_PATH}.")
+
+    # Creates a list of ScalarAdjustments objects that apply for this metric and forecast_start_date
+    applicable_adjustments = []
+    for named_adjustment in metric_adjustments:
+        parsed_named_adjustments = [
+            ScalarAdjustments.from_dotmap(named_adjustment.name, adj_dotmap)
+            for adj_dotmap in named_adjustment.adjustments
+        ]
+
+        # Sort list of parsed adjustments by forecast_start_date
+        sorted_parsed_named_adjustments = sorted(
+            parsed_named_adjustments, key=lambda d: d.forecast_start_date
+        )
+
+        # Iterate over the sorted list to end with any
+        matched_adjustment = None
+        for parsed_adjustment in sorted_parsed_named_adjustments:
+            if forecast_start_date >= parsed_adjustment.forecast_start_date:
+                matched_adjustment = parsed_adjustment
+
+        applicable_adjustments.append(matched_adjustment)
+
+    # Parse the list of
+    return applicable_adjustments
