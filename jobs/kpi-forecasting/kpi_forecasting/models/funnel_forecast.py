@@ -15,8 +15,8 @@ from prophet.diagnostics import cross_validation
 from kpi_forecasting.configs.model_inputs import (
     ProphetHoliday,
     ProphetRegressor,
-    holiday_collection,
-    regressor_collection,
+    HOLIDAY_COLLECTION,
+    REGRESSOR_COLLECTION,
 )
 from kpi_forecasting.models.base_forecast import BaseForecast
 from kpi_forecasting import pandas_extras as pdx
@@ -99,12 +99,12 @@ class FunnelForecast(BaseForecast):
 
             if model_params["holidays"]:
                 holiday_list = [
-                    getattr(holiday_collection.data, h)
+                    getattr(HOLIDAY_COLLECTION.data, h)
                     for h in model_params["holidays"]
                 ]
             if model_params["regressors"]:
                 regressor_list = [
-                    getattr(regressor_collection.data, r)
+                    getattr(REGRESSOR_COLLECTION.data, r)
                     for r in model_params["regressors"]
                 ]
 
@@ -531,8 +531,7 @@ class FunnelForecast(BaseForecast):
             # forecast is generated in the middle of the month.
             .add(overlap[["value"]].values)
             # calculate summary values, aggregating by submission_date,
-            .agg(aggregations, axis=1)
-            .reset_index()
+            .agg(aggregations, axis=1).reset_index()
         ).rename(columns=self._percentile_name_map(percentiles))
 
         # add datasource-specific metadata columns
