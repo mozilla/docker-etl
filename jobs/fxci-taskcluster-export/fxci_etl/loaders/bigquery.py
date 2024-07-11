@@ -1,9 +1,9 @@
-from abc import ABC, abstractmethod
 import base64
-from collections import defaultdict
-from dataclasses import asdict, dataclass
 import json
-import os
+from abc import ABC, abstractmethod
+from collections import defaultdict
+from dataclasses import InitVar, asdict, dataclass
+from datetime import datetime, timezone
 from pprint import pprint
 from typing import Any
 
@@ -17,13 +17,18 @@ from fxci_etl.config import Config
 
 @dataclass
 class Record(ABC):
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Record":
-        return dacite.from_dict(data_class=cls, data=data)
+    submission_date: str
+    table_name: InitVar[str]
+
+    def __post_init__(self, table_name):
+        self.table = table_name
 
     @classmethod
-    @abstractmethod
-    def table_name(cls) -> str: ...
+    def from_dict(cls, table_name: str, data: dict[str, Any]) -> "Record":
+        current_date = datetime.now(timezone.utc).date()
+        data["submission_date"] = current_date.strftime("%Y-%m-%d")
+        data["table_name"] = table_name
+        return dacite.from_dict(data_class=cls, data=data)
 
     @abstractmethod
     def __str__(self) -> str: ...
@@ -72,7 +77,7 @@ class BigQueryLoader:
 
         tables = defaultdict(list)
         for record in records:
-            tables[record.table_name()].append(record)
+            tables[record.table].append(record)
 
         failed_records = []
         for name, rows in tables.items():
