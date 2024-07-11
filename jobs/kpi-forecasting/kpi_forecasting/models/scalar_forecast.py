@@ -1,17 +1,11 @@
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-import itertools
-import json
+from dataclasses import dataclass
 import re
-from typing import Dict, List, Union
+from typing import Dict, List
 
 from google.cloud import bigquery
 from google.cloud.bigquery.enums import SqlTypeNames as bq_types
 import numpy as np
 import pandas as pd
-from pandas.api import types as pd_types
-import prophet
-from prophet.diagnostics import cross_validation
 
 from kpi_forecasting.configs.model_inputs import parse_scalar_adjustments
 from kpi_forecasting.models.base_forecast import BaseForecast
