@@ -1,4 +1,4 @@
-import click
+import argparse
 import logging
 import requests
 import re
@@ -1106,16 +1106,19 @@ class BugzillaToBigQuery:
         )
 
 
-@click.command()
-@click.option("--bq_project_id", help="BigQuery project id", required=True)
-@click.option("--bq_dataset_id", help="BigQuery dataset id", required=True)
-@click.option(
-    "--bugzilla_api_key", help="Bugzilla API key", required=False, default=None
-)
-def main(bq_project_id: str, bq_dataset_id: str, bugzilla_api_key: str) -> None:
-    logging.getLogger().setLevel(logging.INFO)
+def get_parser():
+    parser = argparse.ArgumentsParser()
+    parser.add_argument("--bq_project_id", required=True, help="BigQuery project id")
+    parser.add_argument("--bq_dataset_id", required=True, help="BigQuery dataset id")
+    parser.add_argument("--bugzilla_api_key", help="Bugzilla API key")
+    return parser
 
-    bz_bq = BugzillaToBigQuery(bq_project_id, bq_dataset_id, bugzilla_api_key)
+
+def main() -> None:
+    logging.getLogger().setLevel(logging.INFO)
+    args = get_parser().parse_args()
+
+    bz_bq = BugzillaToBigQuery(args.bq_project_id, args.bq_dataset_id, args.bugzilla_api_key)
     bz_bq.run()
 
 
