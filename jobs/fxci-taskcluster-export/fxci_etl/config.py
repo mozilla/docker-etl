@@ -68,10 +68,12 @@ class StorageConfig:
 
 @dataclass(frozen=True)
 class Config:
-    pulse: PulseConfig
     bigquery: BigQueryConfig
-    monitoring: MonitoringConfig
     storage: StorageConfig
+    # Depending on the commands being run, the pulse or monitoring
+    # configs may not be necessary.
+    pulse: Optional[PulseConfig]
+    monitoring: Optional[MonitoringConfig]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Config":
