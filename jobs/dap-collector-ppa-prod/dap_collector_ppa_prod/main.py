@@ -221,58 +221,69 @@ async def collect_many(
     return results
 
 
+def check_collection_date(date):
+    # collector should collect through to the beginning of a day
+    if date.hour != 0 or date.minute != 0 or date.second != 0:
+        return f"Collection date is not at beginning of a day {date}"
+    else:
+        return None
+
+
+def check_time_precision(time_precision_minutes, end_collection_date):
+    """Check that a given time precision is valid for the collection date
+    """
+    end_collection_date_seconds = int(end_collection_date.timestamp())
+
+    if time_precision_minutes is None:
+        # task is missing a time precision setting
+        return f"Task missing time time_precision_minutes value"
+    elif time_precision_minutes < MINUTES_IN_DAY:
+        if MINUTES_IN_DAY % time_precision_minutes > 0:
+            # time precision has to evenly divide a day in order for this collector code to query all aggregations
+            return f"Task has time precision that does not evenly divide a day"
+    else:
+        if time_precision_minutes % MINUTES_IN_DAY != 0:
+            # time precision is a day or longer, but is not a multiple of a day
+            return f"Task has time precision that is not an even multiple of a day"
+        elif end_collection_date_seconds % (time_precision_minutes*60) != 0:
+            # time precision is a multiple of day, but the end does not align with this task's buckets
+            return f"{end_collection_date} does not align with task aggregation buckets"
+
+    return None
+
+
 async def collect_task(task, auth_token, hpke_private_key, date):
     """Collects data for the given task through to the given day.
         For tasks with time precision smaller than a day, will collect data for aggregations from the day prior to date.
         For tasks with time precision a day or multiple of day, will collect data for the aggregation that ends on date.
             If date does not align with the end of an aggregation, it will not collect anything.
     """
-    until = datetime.datetime.fromisoformat(date)
-    until = until.replace(tzinfo=datetime.timezone.utc)
+    end_collection_date = datetime.datetime.fromisoformat(date)
+    end_collection_date = end_collection_date.replace(tzinfo=datetime.timezone.utc)
     time_precision_minutes = task["time_precision_minutes"]
 
-    until_seconds = int(until.timestamp())
+    err = check_collection_date(end_collection_date)
+    if err is not None:
+        return build_error_result(task["task_id"], end_collection_date, task["metric_type"], err)
 
-    if until.hour != 0 or until.minute != 0:
-        # collector should run at the beginning of each day
-        results = build_error_result(task["task_id"], until, task["metric_type"], f"Collector triggered not at the beginning of a day {date}")
+    err = check_time_precision(time_precision_minutes, end_collection_date)
+    if err is not None:
+        return build_error_result(task["task_id"], end_collection_date, task["metric_type"], err)
 
-    elif time_precision_minutes is None:
-        # task is missing a time precision setting
-        results = build_error_result(task["task_id"], until, task["metric_type"], f"Task missing time time_precision_minutes value")
-
-    elif time_precision_minutes < MINUTES_IN_DAY and MINUTES_IN_DAY % time_precision_minutes > 0:
-        # time precision has to evenly divide a day in order for this collector code to query all aggregations
-        results = build_error_result(task["task_id"], until, task["metric_type"], f"Task has time precision that does not evenly divide a day")
-
-    elif time_precision_minutes < MINUTES_IN_DAY:
-        # time precision is shorter than daily and evenly divides a day
+    # task precision and date are valid
+    if time_precision_minutes < MINUTES_IN_DAY:
+        # time precision is shorter than daily
         # query for the last day of aggregations
-        until_minus_one_day = until - datetime.timedelta(days=1)
-
-        results = await collect_many(
-            task, until_minus_one_day, until, time_precision_minutes * 60, hpke_private_key, auth_token
-        )
-
-    elif time_precision_minutes % MINUTES_IN_DAY != 0:
-        # time precision is a day or longer, but is not a multiple of a day
-        results = build_error_result(task["task_id"], until, task["metric_type"], f"Task has time precision that is not an even multiple of a day")
-
-    elif until_seconds % (time_precision_minutes*60) != 0:
-        # time precision is a multiple of day, but the end does not align with this task's buckets
-        results = build_error_result(task["task_id"], until, task["metric_type"], f"{date} does not align with task aggregation buckets")
-
+        start_collection_date = end_collection_date - datetime.timedelta(days=1)
     else:
         # time precision is a multiple of a day
-        # query for the aggregation that ends at until
+        # query for the aggregation that ends at end_collection_date
         aggregation_days = time_precision_minutes/MINUTES_IN_DAY
-        until_minus_interval = until - datetime.timedelta(days=aggregation_days)
+        start_collection_date = end_collection_date - datetime.timedelta(days=aggregation_days)
 
-        results = await collect_many(
-            task, until_minus_interval, until, time_precision_minutes * 60, hpke_private_key, auth_token
-        )
-
-    return results
+    return await collect_many(
+        task, start_collection_date, end_collection_date, time_precision_minutes * 60, hpke_private_key, auth_token
+    )
 
 
 def ensure_table(bqclient, table_id, schema):
