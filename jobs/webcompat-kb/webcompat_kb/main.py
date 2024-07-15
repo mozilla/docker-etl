@@ -1106,8 +1106,14 @@ class BugzillaToBigQuery:
         )
 
 
-def get_parser():
-    parser = argparse.ArgumentsParser()
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--log_level",
+        choices=["debug", "info", "warn", "error"],
+        default="info",
+        help="Log level",
+    )
     parser.add_argument("--bq_project_id", required=True, help="BigQuery project id")
     parser.add_argument("--bq_dataset_id", required=True, help="BigQuery dataset id")
     parser.add_argument("--bugzilla_api_key", help="Bugzilla API key")
@@ -1115,10 +1121,13 @@ def get_parser():
 
 
 def main() -> None:
-    logging.getLogger().setLevel(logging.INFO)
     args = get_parser().parse_args()
+    logging.basicConfig()
+    logging.getLogger().setLevel(logging.getLevelNamesMapping()[args.log_level.upper()])
 
-    bz_bq = BugzillaToBigQuery(args.bq_project_id, args.bq_dataset_id, args.bugzilla_api_key)
+    bz_bq = BugzillaToBigQuery(
+        args.bq_project_id, args.bq_dataset_id, args.bugzilla_api_key
+    )
     bz_bq.run()
 
 
