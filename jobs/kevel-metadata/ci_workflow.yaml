@@ -1,0 +1,13 @@
+kevel-metadata:
+  jobs:
+    - build-kevel-metadata
+    - gcp-gcr/build-and-push-image:
+        context: data-eng-airflow-gcr
+        docker-context: jobs/kevel-metadata/
+        path: jobs/kevel-metadata/
+        image: kevel-metadata_docker_etl
+        requires:
+          - build-kevel-metadata
+        filters:
+          branches:
+            only: main
