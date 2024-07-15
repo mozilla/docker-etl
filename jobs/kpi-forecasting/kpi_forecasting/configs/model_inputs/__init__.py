@@ -62,13 +62,14 @@ class ScalarAdjustments:
     """
 
     name: str
+    adjustment_dotmap: DotMap
 
-    def __post_init__(self, adjustment_dotmap: DotMap):
+    def __post_init__(self):
         adj_list = []
         self.forecast_start_date = datetime.strptime(
-            adjustment_dotmap.forecast_start_date, "%Y-%m-%d"
+            self.adjustment_dotmap.forecast_start_date, "%Y-%m-%d"
         )
-        for segment_dat in adjustment_dotmap.segments:
+        for segment_dat in self.adjustment_dotmap.segments:
             segment = {**segment_dat.segment}
             segment_adjustment_dat = [
                 {**segment, **adj} for adj in segment_dat.adjustments
@@ -81,7 +82,7 @@ def parse_scalar_adjustments(
     metric_hub_slug: str, forecast_start_date: datetime
 ) -> List[ScalarAdjustments]:
     """
-    Parses the scalar_adjustments to find the applicable scalar adjustments for a given metric hub slug
+    Parses the SCALAR_ADJUSTMENTS to find the applicable scalar adjustments for a given metric hub slug
     and forecast start date.
 
     Args:
@@ -117,7 +118,10 @@ def parse_scalar_adjustments(
         for parsed_adjustment in sorted_parsed_named_adjustments:
             if forecast_start_date >= parsed_adjustment.forecast_start_date:
                 matched_adjustment = parsed_adjustment
-
+            else:
+                break
+        
+        if matched_adjustment:
             applicable_adjustments.append(matched_adjustment)
 
     return applicable_adjustments
