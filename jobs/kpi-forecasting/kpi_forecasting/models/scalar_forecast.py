@@ -51,7 +51,7 @@ class ScalarForecast(BaseForecast):
 
         # Rename the value column to the metric slug name, to enable supporting a formula with
         ## covariates in the future
-        self.observed_df.rename(columns={"value": self.metric_hub.slug}, inplace=True)
+        self.observed_df.rename(columns={"value": self.metric_hub.alias}, inplace=True)
 
         # Cross join to the dates_to_predict DataFrame to create a DataFrame that contains a row
         ## for each forecast date for each segment
@@ -151,6 +151,33 @@ class ScalarForecast(BaseForecast):
                 # Remove unneeded date column
                 self.forecast_df.drop(columns=[f"{metric_pop_name}_date"], inplace=True)
 
+        # For cases where period-over-period change isn't defined, copy over the observed_df values into
+        ## the forecast_df. Check for values in the forecast period and raise an error if it's filled with
+        ## nan.
+        else:
+            self.forecast_df.merge(
+                self.observed_df[[*self.join_columns, metric]],
+                how="left",
+                on="submission_date",
+                inplace=True,
+            )
+            # The forecast data should have no nan values
+            if (
+                self.forecast_df.loc[
+                    self.forecast_df["submission_date"].isin(
+                        pd.date_range(
+                            pd.to_datetime(self.start_date),
+                            pd.to_datetime(self.end_date),
+                        )
+                    ),
+                    self.metric_hub.alias,
+                ]
+                .isnull()
+                .sum()
+                > 0
+            ):
+                raise ValueError("Found nan values in forecast values.")
+
         # Update the forecast_df with scalar columns
         self._add_scalar_columns()
 
@@ -162,7 +189,7 @@ class ScalarForecast(BaseForecast):
 
         # Calculate forecast as product of scalar value and observed value
         self.forecast_df["value"] = (
-            self.forecast_df["scalar"] * self.forecast_df[self.metric_hub.slug]
+            self.forecast_df["scalar"] * self.forecast_df[self.metric_hub.alias]
         )
 
         # Record each scalar value in a dictionary to record in model records
