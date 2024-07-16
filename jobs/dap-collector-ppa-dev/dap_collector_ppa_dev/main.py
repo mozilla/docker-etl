@@ -241,13 +241,12 @@ def check_time_precision(time_precision_minutes, end_collection_date):
         if MINUTES_IN_DAY % time_precision_minutes > 0:
             # time precision has to evenly divide a day in order for this collector code to query all aggregations
             return f"Task has time precision that does not evenly divide a day"
-    else:
-        if time_precision_minutes % MINUTES_IN_DAY != 0:
-            # time precision is a day or longer, but is not a multiple of a day
-            return f"Task has time precision that is not an even multiple of a day"
-        elif end_collection_date_seconds % (time_precision_minutes*60) != 0:
-            # time precision is a multiple of day, but the end does not align with this task's buckets
-            return f"{end_collection_date} does not align with task aggregation buckets"
+    elif time_precision_minutes % MINUTES_IN_DAY != 0:
+        # time precision is a day or longer, but is not a multiple of a day
+        return f"Task has time precision that is not an even multiple of a day"
+    elif end_collection_date_seconds % (time_precision_minutes*60) != 0:
+        # time precision is a multiple of day, but the end does not align with this task's buckets
+        return f"{end_collection_date} does not align with task aggregation buckets"
 
     return None
 
