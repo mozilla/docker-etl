@@ -24,7 +24,7 @@ def main() -> None:
         raise KeyError("No metric_hub or forecast_data_pull key in config to pull data.")
 
     if model_type in MODELS:
-        model = MODELS[model_type](data_puller=data_puller, **config.forecast_model)
+        model = MODELS[model_type](metric_hub=data_puller, **config.forecast_model)
         model.fit()
         model.predict()
         model.summarize(**config.summarize)
