@@ -1,29 +1,81 @@
-from abc import ABC, abstractmethod
 import base64
-from collections import defaultdict
-from dataclasses import asdict, dataclass
 import json
-import os
+from abc import ABC, abstractmethod
+from dataclasses import InitVar, asdict, dataclass, fields, is_dataclass
+from datetime import datetime, timezone
 from pprint import pprint
-from typing import Any
+from typing import Any, Type, TypeAlias, Union, get_args, get_origin
 
 import dacite
+from aenum import Enum, NoAlias
+from dacite.config import Config as DaciteConfig
 from google.cloud import storage
 from google.cloud.exceptions import NotFound
-from google.cloud.bigquery import Client, Table
+from google.cloud.bigquery import (
+    Client,
+    SchemaField,
+    Table,
+    TimePartitioning,
+    TimePartitioningType,
+)
 
 from fxci_etl.config import Config
 
 
+class BigQueryTypes(Enum, settings=NoAlias):  # type: ignore
+    DATE: TypeAlias = str
+    FLOAT: TypeAlias = float
+    INTEGER: TypeAlias = int
+    STRING: TypeAlias = str
+    TIMESTAMP: TypeAlias = int
+
+
+def generate_schema(cls):
+    assert is_dataclass(cls)
+    schema = []
+    for field in fields(cls):
+        _type = field.type
+        origin = get_origin(_type)
+        args = get_args(_type)
+
+        if origin is Union and type(None) in args:
+            mode = "NULLABLE"
+            _type = [arg for arg in args if arg is not type(None)][0]
+
+        elif origin is list:
+            mode = "REPEATED"
+            _type = args[0]
+
+        else:
+            mode = "REQUIRED"
+
+        if is_dataclass(_type):
+            nested_schema = generate_schema(_type)
+            schema.append(
+                SchemaField(field.name, "RECORD", mode=mode, fields=nested_schema)
+            )
+        else:
+            schema.append(SchemaField(field.name, _type.name, mode=mode))
+    return schema
+
+
 @dataclass
 class Record(ABC):
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Record":
-        return dacite.from_dict(data_class=cls, data=data)
+    submission_date: BigQueryTypes.DATE
+    table_name: InitVar[str]
+
+    def __post_init__(self, table_name):
+        self.table = table_name
 
     @classmethod
-    @abstractmethod
-    def table_name(cls) -> str: ...
+    def from_dict(cls, table_name: str, data: dict[str, Any]) -> "Record":
+        current_date = datetime.now(timezone.utc).date()
+
+        data["submission_date"] = current_date.strftime("%Y-%m-%d")
+        data["table_name"] = table_name
+        return dacite.from_dict(
+            data_class=cls, data=data, config=DaciteConfig(check_types=False)
+        )
 
     @abstractmethod
     def __str__(self) -> str: ...
@@ -51,6 +103,24 @@ class BigQueryLoader:
         self.bucket = self.storage_client.bucket(config.storage.bucket)
         self._record_backup = self.bucket.blob("failed-bq-records.json")
 
+    def ensure_table(self, name: str, cls: Type[Record]):
+        """Checks if the table exists in BQ and creates it otherwise.
+
+        Fails if the table exists but has the wrong schema.
+        """
+        print(f"Ensuring table {name} exists.")
+        bq = self.config.bigquery
+        schema = generate_schema(cls)
+
+        partition = TimePartitioning(
+            type_=TimePartitioningType.DAY,
+            field="submission_date",
+            require_partition_filter=True,
+        )
+        table = Table(f"{bq.project}.{bq.dataset}.{name}", schema=schema)
+        table.time_partitioning = partition
+        self.client.create_table(table, exists_ok=True)
+
     def get_table(self, name: str) -> Table:
         if name not in self._tables:
             bq = self.config.bigquery
@@ -66,13 +136,17 @@ class BigQueryLoader:
         try:
             # Load previously failed records from storage, maybe the issue is fixed.
             for obj in json.loads(self._record_backup.download_as_string()):
-                records.append(Record.from_dict(obj))
+                table = obj.pop("table")
+                records.append(Record.from_dict(table, obj))
         except NotFound:
             pass
 
-        tables = defaultdict(list)
+        tables = {}
         for record in records:
-            tables[record.table_name()].append(record)
+            if record.table not in tables:
+                self.ensure_table(record.table, record.__class__)
+                tables[record.table] = []
+            tables[record.table].append(record)
 
         failed_records = []
         for name, rows in tables.items():

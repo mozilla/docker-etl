@@ -36,9 +36,17 @@ class PulseConfig:
 
 
 @dataclass(frozen=True)
+class BigQueryTableConfig:
+    metrics: str = "worker_metrics_v1"
+    tasks: str = "tasks_v1"
+    runs: str = "task_runs_v1"
+
+
+@dataclass(frozen=True)
 class BigQueryConfig:
     project: str
     dataset: str
+    tables: BigQueryTableConfig = BigQueryTableConfig()
     credentials: Optional[str] = None
 
 
@@ -60,10 +68,12 @@ class StorageConfig:
 
 @dataclass(frozen=True)
 class Config:
-    pulse: PulseConfig
     bigquery: BigQueryConfig
-    monitoring: MonitoringConfig
     storage: StorageConfig
+    # Depending on the commands being run, the pulse or monitoring
+    # configs may not be necessary.
+    pulse: Optional[PulseConfig]
+    monitoring: Optional[MonitoringConfig]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Config":

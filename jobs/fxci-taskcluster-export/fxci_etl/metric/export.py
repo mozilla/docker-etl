@@ -16,7 +16,7 @@ from google.protobuf.duration_pb2 import Duration
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from fxci_etl.config import Config
-from fxci_etl.loaders.bigquery import BigQueryLoader, Record
+from fxci_etl.loaders.bigquery import BigQueryLoader, BigQueryTypes as t, Record
 
 METRIC = "compute.googleapis.com/instance/uptime"
 DEFAULT_INTERVAL = 3600 * 6
@@ -25,16 +25,12 @@ MINIMUM_INTERVAL = 10
 
 @dataclass
 class WorkerUptime(Record):
-    instance_id: str
-    project: str
-    zone: str
-    uptime: float
-    interval_start_time: float
-    interval_end_time: float
-
-    @classmethod
-    def table_name(cls):
-        return "worker_uptime"
+    instance_id: t.STRING
+    project: t.STRING
+    zone: t.STRING
+    uptime: t.FLOAT
+    interval_start_time: t.TIMESTAMP
+    interval_end_time: t.TIMESTAMP
 
     def __str__(self):
         return f"worker {self.instance_id}"
@@ -130,6 +126,7 @@ def export_metrics(config: Config, dry_run: bool = False) -> int:
 
             records.append(
                 WorkerUptime.from_dict(
+                    config.bigquery.tables.metrics,
                     {
                         "project": ts.resource.labels["project_id"],
                         "zone": ts.resource.labels["zone"],
