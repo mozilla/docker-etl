@@ -169,8 +169,9 @@ def build_error_result(task_id, timestamp, metric_type, error):
     results = {}
     results["counts"] = []
     results["reports"] = []
+    slot_start = int(timestamp.timestamp())
 
-    rpt = build_base_report(task_id, timestamp, metric_type, collection_time)
+    rpt = build_base_report(task_id, slot_start, metric_type, collection_time)
     rpt["collection_duration"] = 0
     rpt["error"] = error
 
