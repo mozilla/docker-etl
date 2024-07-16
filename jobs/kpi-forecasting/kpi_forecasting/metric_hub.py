@@ -59,7 +59,7 @@ class BaseDataPull:
 class MetricHub(BaseDataPull):
     """
     Programatically get Metric Hub metrics from Big Query.
-    See https://mozilla.github.io/metric-hub/metrics/ for a list of metrics.
+    See https://mozilla.github.io/metric-hub/metrics/fenix/ for a list of metrics.
     """
 
     def __post_init__(self) -> None:
