@@ -2,7 +2,7 @@ from kpi_forecasting.inputs import CLI, YAML
 from kpi_forecasting.models.prophet_forecast import ProphetForecast
 from kpi_forecasting.models.funnel_forecast import FunnelForecast
 from kpi_forecasting.metric_hub import MetricHub
-
+from kpi_forecasting.metric_hub import ForecastDataPull
 
 # A dictionary of available models in the `models` directory.
 MODELS = {
@@ -16,10 +16,15 @@ def main() -> None:
     config = YAML(filepath=CLI().args.config).data
     model_type = config.forecast_model.model_type
 
-    if model_type in MODELS:
-        metric_hub = MetricHub(**config.metric_hub)
-        model = MODELS[model_type](metric_hub=metric_hub, **config.forecast_model)
+    if hasattr(config, "metric_hub"):
+        data_puller = MetricHub(**config.metric_hub)
+    elif hasattr(config, "forecast_data_pull"):
+        data_puller = ForecastDataPull(**config.forecast_data_pull)
+    else:
+        raise KeyError("No metric_hub or forecast_data_pull key in config to pull data.")
 
+    if model_type in MODELS:
+        model = MODELS[model_type](data_puller=data_puller, **config.forecast_model)
         model.fit()
         model.predict()
         model.summarize(**config.summarize)
