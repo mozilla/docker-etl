@@ -1,6 +1,6 @@
 # KPI and other Metric Forecasting
 
-This job forecasts [Metric Hub](https://mozilla.github.io/metric-hub/) metrics based on YAML configs defined in `.kpi-forecasting/configs`.
+This job forecasts [Metric Hub](https://mozilla.acryl.io/glossaryNode/urn:li:glossaryNode:Metric%20Hub/Contents?is_lineage_mode=false) metrics based on YAML configs defined in `.kpi-forecasting/configs`.
 
 # Usage
 
@@ -71,12 +71,12 @@ A metric can be forecasted by using a command line argument that passes the rele
 For example, the following command forecasts Desktop DAU numbers:
 
 ```sh
-python ~/kpi_forecasting.py -c ~/kpi_forecasting/configs/dau_desktop.yaml
+python ./kpi_forecasting.py -c ./kpi_forecasting/configs/dau_desktop.yaml
 ```
 
 Similarly, the model performance for the KPI forecast can be done by executing:
 ```sh
-python ~/model_performance_analysis.py.py -c ~/kpi_forecasting/configs/kpi_model_validation.yaml   
+python ./performance_analysis.py -c ./kpi_forecasting/configs/kpi_model_performance.yaml
 ```
 
 Note that, without write permissions to `moz-fx-data-shared-prod` this will generate a permissions error.
@@ -90,8 +90,8 @@ Definitions should be documented in the code.
 
 # Development
 
-- `./kpi_forecasting/kpi_forecasting.py` is the main control script for KPI and Search Forecasting.
-- `./result_processing.py` is the control script for running validation on the tables crated by `kpi_forecasting.py`
+- `./kpi_forecasting.py` is the main control script for KPI and Search Forecasting.
+- `./kpi_forecasting/results_processing.py` is the control script for running validation on the tables crated by `kpi_forecasting.py`
 - `./kpi_forecasting/configs` contains configuration YAML files.
 - `./kpi_forecasting/models` contains the forecasting models.
 
