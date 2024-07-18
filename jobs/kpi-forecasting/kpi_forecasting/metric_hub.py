@@ -33,6 +33,8 @@ class BaseDataPull:
             'daily_active_users'.
         project (str): The Big Query project to use when establishing a connection
             to the Big Query client.
+        forecast_start_date (str): The forecast_start_date to use as the key to pull
+            forecast data.
         forecast_project (str): BigQuery project where forecast table to be accessed is
             located.
         forecast_dataset (str): For pulling forecast data, the dataset where the forecast
@@ -40,6 +42,7 @@ class BaseDataPull:
         forecast_table (str): The table name where data is stored in BigQuery for pulling
             past forecast data.
     """
+
     app_name: str
     slug: str
     start_date: str
@@ -48,12 +51,14 @@ class BaseDataPull:
     end_date: str = None
     alias: str = None
     project: str = "mozdata"
+    forecast_start_date: str = None
     forecast_project: str = None
     forecast_dataset: str = None
     forecast_table: str = None
 
     def fetch(self) -> pd.DataFrame:
         raise NotImplementedError
+
 
 @dataclass
 class MetricHub(BaseDataPull):
@@ -122,14 +127,12 @@ class MetricHub(BaseDataPull):
         df = bigquery.Client(project=self.project).query(self.query()).to_dataframe()
 
         # ensure submission_date has type 'date'
-        df[self.submission_date_column] = pd.to_datetime(
-            df[self.submission_date_column]
-        ).dt.date
+        df["submission_date"] = pd.to_datetime(df["submission_date"]).dt.date
 
         # Track the min and max dates in the data, which may differ from the
         # start/end dates
-        self.min_date = str(df[self.submission_date_column].min())
-        self.max_date = str(df[self.submission_date_column].max())
+        self.min_date = str(df["submission_date"].min())
+        self.max_date = str(df["submission_date"].max())
 
         return df
 
@@ -150,7 +153,9 @@ class ForecastDataPull(BaseDataPull):
         else:
             # Default forecast horizon is 18 months. End date here is extended to 36 months,
             ## to cover all current usecases
-            self.end_date = pd.to_datetime(date.today() + timedelta(days = 365 * 3)).date()
+            self.end_date = pd.to_datetime(
+                date.today() + timedelta(days=365 * 3)
+            ).date()
 
         self.alias = self.alias or (self.slug + "_adjusted")
 
@@ -158,10 +163,13 @@ class ForecastDataPull(BaseDataPull):
         ## an input, but there is no current need
         self.submission_date_column = "submission_date"
 
-        self.from_expression = f"{self.project}.{self.forecast_dataset}.{self.forecast_table}"
+        self.from_expression = (
+            f"{self.project}.{self.forecast_dataset}.{self.forecast_table}"
+        )
 
         # Add query snippets for segments
         self.segment_select_query = ""
+        self.segment_groupby_query = ""
 
         if self.segments:
             segment_select_query = []
@@ -171,39 +179,57 @@ class ForecastDataPull(BaseDataPull):
             self.segment_select_query = "," + "\n              ".join(
                 segment_select_query
             )
+            self.segment_groupby_query = "," + "\n             ,".join(
+                self.segments.keys()
+            )
 
         self.where = f"AND {self.where}" if self.where else ""
+
+        # Check if forecast_start_date was supplied. If not, create strting to grab the most recent forecast.
+        if not self.forecast_start_date:
+            self.forecast_start_date_snippet = f"""(
+            SELECT 
+                MAX(forecast_start_date) 
+            FROM {self.from_expression} 
+            WHERE metric_slug = '{self.slug}')"""
+        else:
+            self.forecast_start_date_snippet = f"'{self.forecast_start_date}'"
 
     def query(self) -> str:
         """Build a string to query the relevant metric values from Big Query."""
         return dedent(
             f"""
-            SELECT {self.submission_date_column} AS submission_date,
-                value
+            WITH cte AS (
+            SELECT
+                {self.submission_date_column} AS submission_date,
+                forecast_start_date,
+                ANY_VALUE(value HAVING MAX forecast_trained_at) AS value
                 {self.segment_select_query}
             FROM {self.from_expression}
             WHERE {self.submission_date_column} BETWEEN '{self.start_date}' AND '{self.end_date}'
-                AND metric_slug = '{self.slug}'
+                AND metric_alias = '{self.slug}' AND forecast_start_date = {self.forecast_start_date_snippet}
                 {self.where}
+            GROUP BY {self.submission_date_column}, forecast_start_date
+                    {self.segment_groupby_query}
+            )
+            SELECT * EXCEPT (forecast_start_date) FROM cte
         """
         )
 
     def fetch(self) -> pd.DataFrame:
         """Fetch the relevant metric values from Big Query."""
         print(
-            f"\nQuerying for '{self.app_name}.{self.slug}' aliased as '{self.alias}':"
+            f"\nQuerying for the '{self.app_name}.{self.slug}' forecast':"
             f"\n{self.query()}"
         )
         df = bigquery.Client(project=self.project).query(self.query()).to_dataframe()
 
         # ensure submission_date has type 'date'
-        df[self.submission_date_column] = pd.to_datetime(
-            df[self.submission_date_column]
-        ).dt.date
+        df["submission_date"] = pd.to_datetime(df["submission_date"]).dt.date
 
         # Track the min and max dates in the data, which may differ from the
         # start/end dates
-        self.min_date = str(df[self.submission_date_column].min())
-        self.max_date = str(df[self.submission_date_column].max())
+        self.min_date = str(df["submission_date"].min())
+        self.max_date = str(df["submission_date"].max())
 
         return df
