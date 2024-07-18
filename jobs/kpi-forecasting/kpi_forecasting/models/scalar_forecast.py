@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 import re
 from typing import Dict, List
 
@@ -7,8 +8,10 @@ from google.cloud.bigquery.enums import SqlTypeNames as bq_types
 import numpy as np
 import pandas as pd
 
+from kpi_forecasting import pandas_extras as pdx
 from kpi_forecasting.configs.model_inputs import parse_scalar_adjustments
 from kpi_forecasting.models.base_forecast import BaseForecast
+from kpi_forecasting.metric_hub import ForecastDataPull
 
 
 @dataclass
@@ -33,6 +36,15 @@ class ScalarForecast(BaseForecast):
         """
         super().__post_init__()
 
+        # For forecast data, we need to overwrite the start and end date based on the dates
+        ## of the forecast data we've pulled in __post_init
+        if isinstance(self.metric_hub, ForecastDataPull):
+            self.start_date = pd.to_datetime(self.metric_hub.forecast_start_date)
+            self.end_date = pd.to_datetime(self.observed_df["submission_date"].max())
+            self.dates_to_predict = pd.DataFrame(
+                {"submission_date": pd.date_range(self.start_date, self.end_date).date}
+            )
+
         # Get the list of adjustments for the metric slug being forecasted. That
         ## slug must be a key in scalar_adjustments.yaml; otherwise, this will raise a KeyError
         self.scalar_adjustments = parse_scalar_adjustments(
@@ -47,9 +59,9 @@ class ScalarForecast(BaseForecast):
 
         # Set up the columns to be used to join the observed_df to the forecast_df in subsequent
         ## methods
-        self.join_columns = self.combination_df.columns.to_list() + ["submission_date"]
+        self.join_columns = self.combination_df.columns.to_list()
 
-        # Rename the value column to the metric slug name, to enable supporting a formula with
+        # Rename the value column to the metric alias name, to enable supporting a formula with
         ## covariates in the future
         self.observed_df.rename(columns={"value": self.metric_hub.alias}, inplace=True)
 
@@ -96,12 +108,15 @@ class ScalarForecast(BaseForecast):
             adj_df = scalar_adjustment.adjustments_dataframe.rename(
                 columns={"value": f"scalar_{scalar_adjustment.name}"}
             )
-
+            self.forecast_df["submission_date"] = pd.to_datetime(
+                self.forecast_df["submission_date"]
+            )
+            adj_df["start_date"] = pd.to_datetime(adj_df["start_date"])
             # Merge asof to align values based on start dates and dimensions
             self.forecast_df = pd.merge_asof(
                 self.forecast_df.sort_values("submission_date"),
                 adj_df.sort_values("start_date"),
-                by=[self.combination_df.columns],
+                by=self.join_columns,
                 left_on="submission_date",
                 right_on="start_date",
                 direction="backward",
@@ -129,37 +144,48 @@ class ScalarForecast(BaseForecast):
         ## where the forecast is a scalar * previously observed data
         pop_dict = self._parse_formula_for_over_period_changes()
         if pop_dict:
-            for metric, period in pop_dict:
+            for metric, period in pop_dict.items():
                 metric_pop_name = f"{metric}_{period}"
 
                 # Create date column in the forecast_df with the specified date offset
                 ## in order to merge in observed data from that period
                 offset = self.period_names_map[period]
-                self.forecast_df[f"{metric_pop_name}_date"] = pd.to_datetime(
+                self.forecast_df[f"{metric_pop_name}_date"] = (
                     self.forecast_df["submission_date"] - offset
                 )
 
+                self.forecast_df[f"{metric_pop_name}_date"] = pd.to_datetime(
+                    self.forecast_df[f"{metric_pop_name}_date"]
+                )
+                self.observed_df["submission_date"] = pd.to_datetime(
+                    self.observed_df["submission_date"]
+                )
+
                 # Merge observed data to be used in adjustments
-                self.forecast_df.merge(
-                    self.observed_df[[*self.join_columns, metric]],
+                self.forecast_df = self.forecast_df.merge(
+                    self.observed_df[
+                        [*self.join_columns, "submission_date", metric]
+                    ].rename(columns={"submission_date": "join_date"}),
                     how="left",
-                    left_on=f"{metric_pop_name}_date",
-                    right_on="submission_date",
-                    inplace=True,
+                    left_on=[*self.join_columns, f"{metric_pop_name}_date"],
+                    right_on=[*self.join_columns, "join_date"],
                 )
 
                 # Remove unneeded date column
-                self.forecast_df.drop(columns=[f"{metric_pop_name}_date"], inplace=True)
+                self.forecast_df.drop(
+                    columns=[f"{metric_pop_name}_date", "join_date"], inplace=True
+                )
 
         # For cases where period-over-period change isn't defined, copy over the observed_df values into
         ## the forecast_df. Check for values in the forecast period and raise an error if it's filled with
         ## nan.
         else:
-            self.forecast_df.merge(
-                self.observed_df[[*self.join_columns, metric]],
+            self.forecast_df = self.forecast_df.merge(
+                self.observed_df[
+                    [*self.join_columns, self.metric_hub.alias, "submission_date"]
+                ],
                 how="left",
-                on="submission_date",
-                inplace=True,
+                on=[*self.join_columns, "submission_date"],
             )
             # The forecast data should have no nan values
             if (
@@ -197,20 +223,130 @@ class ScalarForecast(BaseForecast):
             [c for c in self.forecast_df.columns if "scalar" in c]
         ].to_dict(orient="records")
 
-    def _summarize(self, period: str) -> pd.DataFrame:
+        self.observed_df.rename(columns={self.metric_hub.alias: "value"}, inplace=True)
+
+    def _summarize(
+        self,
+        period: str,
+    ) -> pd.DataFrame:
         """
-        In cases where no summarization is required, adds the expected columns to a summary DataFrame.
+        Calculate summary metrics for `forecast_df` over a given period, and add metadata.
 
         Args:
-            period (str): Aggregation period that should be consistent with the aggregation period of
-                the observed data.
+            period (str): The period for aggregation.
+            numpy_aggregations (List[str]): List of numpy aggregation functions.
+            percentiles (List[int]): List of percentiles.
+
+        Returns:
+            pd.DataFrame: The summarized dataframe.
         """
-        if isinstance(period, list):
-            if len(period) > 1:
+
+        df_list = []
+        for _, segment_row in self.combination_df.iterrows():
+            # find indices in observed_df for rows that exactly match segment dict
+            segment_historical_indices = (
+                self.observed_df[segment_row.index.to_list()] == segment_row
+            ).all(axis=1)
+
+            segment_forecast_indices = (
+                self.forecast_df[segment_row.index.to_list()] == segment_row
+            ).all(axis=1)
+
+            # aggregate metric to the correct date period (day, month, year)
+            observed_summarized = pdx.aggregate_to_period(
+                (
+                    self.observed_df.loc[
+                        (segment_historical_indices)
+                        & (
+                            pd.to_datetime(self.observed_df["submission_date"])
+                            < self.start_date
+                        ),
+                        ["submission_date", "value"],
+                    ].copy()
+                ),
+                period,
+            )
+            forecast_agg = pdx.aggregate_to_period(
+                (
+                    self.forecast_df.loc[
+                        (segment_forecast_indices),
+                        ["submission_date", "value"],
+                    ].copy()
+                ),
+                period,
+            )
+
+            # find periods of overlap between observed and forecasted data
+            forecast_with_overlap = forecast_agg.merge(
+                observed_summarized,
+                on="submission_date",
+                how="left",
+                suffixes=("_forecast", "_observed"),
+            ).fillna(0)
+            forecast_with_overlap["value"] = forecast_with_overlap[
+                ["value_forecast", "value_observed"]
+            ].sum(axis=1)
+
+            # add datasource-specific metadata columns
+            forecast_with_overlap["source"] = "forecast"
+            observed_summarized["source"] = "historical"
+
+            # create a single dataframe that contains observed and forecasted data
+            df = pd.concat([observed_summarized, forecast_with_overlap])
+
+            # add summary metadata columns
+            df["aggregation_period"] = period.lower()
+
+            # add the expected percentile fields to the df
+            df["value_low"] = df["value"]
+            df["value_mid"] = df["value"]
+            df["value_high"] = df["value"]
+
+            # reorder columns to make interpretation easier
+            df = df[
+                [
+                    "submission_date",
+                    "aggregation_period",
+                    "source",
+                    "value",
+                    "value_low",
+                    "value_mid",
+                    "value_high",
+                ]
+            ]
+
+            # add segment columns to  table
+            for dim, value in zip(segment_row.index, segment_row.values):
+                df[dim] = value
+
+            # add Metric Hub metadata columns
+            df["metric_alias"] = self.metric_hub.alias.lower()
+            df["metric_hub_app_name"] = self.metric_hub.app_name.lower()
+            df["metric_hub_slug"] = self.metric_hub.slug.lower()
+            df["metric_start_date"] = pd.to_datetime(self.metric_hub.min_date)
+            df["metric_end_date"] = pd.to_datetime(self.metric_hub.max_date)
+            df["metric_collected_at"] = self.collected_at
+
+            # add forecast model metadata columns
+            df["forecast_start_date"] = self.start_date
+            df["forecast_end_date"] = self.end_date
+            df["forecast_trained_at"] = self.trained_at
+            df["forecast_predicted_at"] = self.predicted_at
+
+            df_list.append(df.copy())
+
+        return pd.concat(df_list)
+
+    def _add_summary_metadata(self, periods: List[str] | str):
+        """
+        In cases where no summarization is required, adds the expected columns to a summary DataFrame.
+        """
+        if isinstance(periods, list):
+            if len(periods) > 1:
                 raise ValueError(
                     "Can only supply one aggregation period when not summarizing results."
                 )
-            period = period[0]
+            period = periods[0]
 
         df = self.forecast_df.copy()
         df["source"] = np.where(
@@ -228,7 +364,7 @@ class ScalarForecast(BaseForecast):
         # add Metric Hub metadata columns
         df["metric_alias"] = self.metric_hub.alias.lower()
         df["metric_hub_app_name"] = self.metric_hub.app_name.lower()
-        df["metric_hub_slug"] = self.metric_hub.slug.lower()
+        df["metric_hub_slug"] = self.metric_hub.alias.lower()
         df["metric_start_date"] = pd.to_datetime(self.metric_hub.min_date)
         df["metric_end_date"] = pd.to_datetime(self.metric_hub.max_date)
         df["metric_collected_at"] = self.collected_at
@@ -239,25 +375,37 @@ class ScalarForecast(BaseForecast):
         df["forecast_trained_at"] = self.trained_at
         df["forecast_predicted_at"] = self.predicted_at
 
+        # add other value percentile columns expected from Prophet-based forecasts. Include just the
+        ## value as these percentiles. Coule be replaced in the future with the option to pass multiple
+        ## scenarios to scalar forecasts.
+        df["value_low"] = df["value"]
+        df["value_mid"] = df["value"]
+        df["value_high"] = df["value"]
+
+        self.summary_df = df
+
+    def predict(self) -> None:
+        """Generate a forecast from `start_date` to `end_date`."""
+        print(f"Forecasting from {self.start_date} to {self.end_date}.", flush=True)
+        self._set_seed()
+        self.predicted_at = datetime.utcnow()
+        self._predict()
+
     def summarize(
         self,
         requires_summarization: bool = True,
         periods: List[str] | str = ["day", "month"],
-        numpy_aggregations: List[str] = ["mean"],
-        percentiles: List[int] = [10, 50, 90],
     ) -> None:
         """
         There are cases where forecasts created by this class do not require summarization (e.g. the
         scalar adjustment was made to a prior forecast)
         """
         if not requires_summarization:
-            self._summarize(periods)
+            self._add_summary_metadata(self, periods)
 
         else:
-            # If summarization is required, use the summarization method in the BaseForecast class
-            self.summary_df = pd.concat(
-                [self._summarize(i, numpy_aggregations, percentiles) for i in periods]
-            )
+            # If summarization is required, use the summarization method
+            self.summary_df = pd.concat([self._summarize(i) for i in periods])
 
     def write_results(
         self,
@@ -265,8 +413,6 @@ class ScalarForecast(BaseForecast):
         dataset: str,
         table: str,
         write_disposition: str = "WRITE_APPEND",
-        components_table: str = "",
-        components_dataset: str = "",
     ) -> None:
         """
         Write `self.summary_df` to Big Query.
@@ -287,13 +433,13 @@ class ScalarForecast(BaseForecast):
         client = bigquery.Client(project=project)
         schema = [
             bigquery.SchemaField("submission_date", bq_types.DATE),
-            *[
-                bigquery.SchemaField(k, bq_types.STRING)
-                for k in self.metric_hub.segments.keys()
-            ],
+            *[bigquery.SchemaField(k, bq_types.STRING) for k in self.join_columns],
             bigquery.SchemaField("aggregation_period", bq_types.STRING),
             bigquery.SchemaField("source", bq_types.STRING),
             bigquery.SchemaField("value", bq_types.FLOAT),
+            bigquery.SchemaField("value_low", bq_types.FLOAT),
+            bigquery.SchemaField("value_mid", bq_types.FLOAT),
+            bigquery.SchemaField("value_high", bq_types.FLOAT),
             bigquery.SchemaField("metric_alias", bq_types.STRING),
             bigquery.SchemaField("metric_hub_app_name", bq_types.STRING),
             bigquery.SchemaField("metric_hub_slug", bq_types.STRING),
@@ -304,7 +450,6 @@ class ScalarForecast(BaseForecast):
             bigquery.SchemaField("forecast_end_date", bq_types.DATE),
             bigquery.SchemaField("forecast_trained_at", bq_types.TIMESTAMP),
             bigquery.SchemaField("forecast_predicted_at", bq_types.TIMESTAMP),
-            bigquery.SchemaField("forecast_parameters", bq_types.STRING),
         ]
         job = client.load_table_from_dataframe(
             dataframe=self.summary_df,
