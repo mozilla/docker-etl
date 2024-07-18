@@ -401,7 +401,7 @@ class ScalarForecast(BaseForecast):
         scalar adjustment was made to a prior forecast)
         """
         if not requires_summarization:
-            self._add_summary_metadata(self, periods)
+            self._add_summary_metadata(periods)
 
         else:
             # If summarization is required, use the summarization method
