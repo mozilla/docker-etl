@@ -45,6 +45,9 @@ class ScalarForecast(BaseForecast):
                 {"submission_date": pd.date_range(self.start_date, self.end_date).date}
             )
 
+        elif all(pd.to_datetime(self.observed_df["submission_date"]).dt.day == 1):
+            self.start_date = self._default_start_date_monthly
+
         # Get the list of adjustments for the metric slug being forecasted. That
         ## slug must be a key in scalar_adjustments.yaml; otherwise, this will raise a KeyError
         self.scalar_adjustments = parse_scalar_adjustments(
@@ -78,6 +81,12 @@ class ScalarForecast(BaseForecast):
             Dict[str, str]: Mapping of column names.
         """
         return {"YOY": pd.DateOffset(years=1), "MOM": pd.DateOffset(months=1)}
+
+    @property
+    def _default_start_date_monthly(self) -> str:
+        """The first day after the last date in the observed dataset."""
+        return self.observed_df["submission_date"].max() + pd.DateOffset(months=1)
+
 
     def _parse_formula_for_over_period_changes(self) -> Dict | None:
         """
@@ -348,7 +357,13 @@ class ScalarForecast(BaseForecast):
                 )
             period = periods[0]
 
-        df = self.forecast_df.copy()
+        union_cols = [
+            "submission_date",
+            *self.join_columns,
+            "value",
+        ]
+        df = pd.concat([self.forecast_df[union_cols], self.observed_df[union_cols]])
+
         df["source"] = np.where(
             df["submission_date"] < self.start_date,
             "historical",
@@ -360,6 +375,7 @@ class ScalarForecast(BaseForecast):
             "forecast",
         )
 
+        df["submission_date"] = pd.to_datetime(df["submission_date"])
         df["aggregation_period"] = period
         # add Metric Hub metadata columns
         df["metric_alias"] = self.metric_hub.alias.lower()
@@ -370,7 +386,7 @@ class ScalarForecast(BaseForecast):
         df["metric_collected_at"] = self.collected_at
 
         # add forecast model metadata columns
-        df["forecast_start_date"] = self.start_date
+        df["forecast_start_date"] = pd.to_datetime(self.start_date)
         df["forecast_end_date"] = self.end_date
         df["forecast_trained_at"] = self.trained_at
         df["forecast_predicted_at"] = self.predicted_at
@@ -382,7 +398,7 @@ class ScalarForecast(BaseForecast):
         df["value_mid"] = df["value"]
         df["value_high"] = df["value"]
 
-        self.summary_df = df
+        self.summary_df = df.dropna(subset=["value"])
 
     def predict(self) -> None:
         """Generate a forecast from `start_date` to `end_date`."""
