@@ -75,6 +75,9 @@ class ScalarAdjustments:
                 {**segment, **adj} for adj in segment_dat.adjustments
             ]
             adj_list.append(pd.DataFrame(segment_adjustment_dat))
+
+        # Create a DataFrame with each dimension in the segments, the start date of
+        ## each scalar adjustment, and the value of that adjustment
         self.adjustments_dataframe = pd.concat(adj_list, ignore_index=True)
 
 
@@ -118,9 +121,7 @@ def parse_scalar_adjustments(
         for parsed_adjustment in sorted_parsed_named_adjustments:
             if forecast_start_date >= parsed_adjustment.forecast_start_date:
                 matched_adjustment = parsed_adjustment
-            else:
-                break
-        
+
         if matched_adjustment:
             applicable_adjustments.append(matched_adjustment)
 
