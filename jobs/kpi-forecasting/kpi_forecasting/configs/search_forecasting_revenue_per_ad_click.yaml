@@ -9,8 +9,8 @@ metric_hub:
     device: "device"
     channel: "'all'"
     country: "CASE WHEN country = 'US' THEN 'US' ELSE 'ROW' END"
-    partner: "partner"
-  where: "partner = 'Google'"
+    partner: "partner_name"
+  where: "partner_name = 'Google'"
 
 forecast_model:
   model_type: "scalar"
@@ -28,4 +28,3 @@ write_results:
   project: "moz-fx-data-shared-prod"
   dataset: "revenue_derived"
   table: "search_revenue_forecasts_v1"
-  components_table: "search_revenue_model_components_v1"
