@@ -103,3 +103,34 @@ search_forecasting_revenue_per_ad_click:
             adjustments:
               - start_date: "2024-01-01"
                 value: 1.04
+
+search_forecasting_ad_clicks:
+  - name: "project_denali"
+    description: "Estimate of ad click impact from Project Denali on mobile in May 2024."
+    adjustments:
+      - forecast_start_date: "2024-05-01"
+        segments:
+          - segment:
+              {
+                partner: "Google",
+                country: "US",
+                device: "mobile",
+                channel: "all",
+              }
+            adjustments:
+              - start_date: "2024-05-01"
+                value: 1.15
+              - start_date: "2024-06-01"
+                value: 1.0
+          - segment:
+              {
+                partner: "Google",
+                country: "ROW",
+                device: "mobile",
+                channel: "all",
+              }
+            adjustments:
+              - start_date: "2024-05-01"
+                value: 1.45
+              - start_date: "2024-06-01"
+                value: 1.0
