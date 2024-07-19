@@ -1,0 +1,9 @@
+[run]
+omit =
+  tests/*
+  .venv/*
+
+[report]
+exclude_also =
+  if __name__ == "__main__":
+  # pragma: no cover

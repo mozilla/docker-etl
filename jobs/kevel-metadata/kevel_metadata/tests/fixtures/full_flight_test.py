@@ -43,9 +43,9 @@ all_flights_1 = {
             "CustomFieldsJson": "",
             "CanPassback": False,
             "StartDateISO": "2019-03-26T00:00:00.0000000",
-            "EndDateISO": "2019-07-25T15:50:00.0000000"
+            "EndDateISO": "2019-07-25T15:50:00.0000000",
         },
-    ]
+    ],
 }
 
 flight_1 = {
@@ -57,15 +57,15 @@ flight_1 = {
             "FlightId": 8144015,
             "SiteId": 1082659,
             "ZoneId": 204604,
-            "IsExclude": False
+            "IsExclude": False,
         },
         {
             "Id": 188027550,
             "FlightId": 8144015,
             "SiteId": 10826560,
             "ZoneId": 204605,
-            "IsExclude": False
-        }
+            "IsExclude": False,
+        },
     ],
     "IsCompanion": False,
     "UserAgentKeywords": None,
@@ -99,7 +99,7 @@ flight_1 = {
                 "Url": "https://getpocket.com/explore/item/if-you-re-just-not-a-morning-person-science-says-you-may-never-be",
                 "IsIdOnly": False,
                 "IsNoTrack": False,
-                "TemplateValues": "{\"ctUrl\":\"https://getpocket.com/explore/item/if-you-re-just-not-a-morning-person-science-says-you-may-never-be\",\"ctDomain_affinities\":\"technology\",\"ctMin_score\":\"0\",\"ctDomain\":\"vox.com\",\"ctItem_score\":\"1\",\"ctTitle\":\"If you're just not a morning person, science says you may never be\",\"ctExcerpt\":\"If Cassidy Sokolis ever needed to wake up before 11 am, she scatters three alarm clocks throught her bedroom. Even then, she still often sleeps through the\",\"ctFullimagepath\":\"{{contentUrl}}/{{creativeContent.data.fileName}}\",\"ctSponsor\":\"VOX.COM\",\"ctImage\":\"3a4d472f993a4c9584486db68c7ce9c2.jpg\"}",
+                "TemplateValues": '{"ctUrl":"https://getpocket.com/explore/item/if-you-re-just-not-a-morning-person-science-says-you-may-never-be","ctDomain_affinities":"technology","ctMin_score":"0","ctDomain":"vox.com","ctItem_score":"1","ctTitle":"If you\'re just not a morning person, science says you may never be","ctExcerpt":"If Cassidy Sokolis ever needed to wake up before 11 am, she scatters three alarm clocks throught her bedroom. Even then, she still often sleeps through the","ctFullimagepath":"{{contentUrl}}/{{creativeContent.data.fileName}}","ctSponsor":"VOX.COM","ctImage":"3a4d472f993a4c9584486db68c7ce9c2.jpg"}',
                 "TemplateId": 1819,
                 "ImageLink": "https://img-getpocket.cdn.mozilla.net/direct?url=https%3A%2F%2Fpocket-image-cache.com%2Fdirect%3Fresize%3Dw2000%26url%3Dhttps%253A%252F%252Fcdn.vox-cdn.com%252Fthumbor%252FrCPKo668H8zBxDRox200JykSzgc%253D%252F0x0%253A3447x2462%252F1200x800%252Ffilters%253Afocal%25281449x956%253A1999x1506%2529%252Fcdn.vox-cdn.com%252Fuploads%252Fchorus_image%252Fimage%252F49107609%252F14118666380_65c49a82d2_o.0.jpg&resize=w450",
                 "ScriptBody": None,
@@ -107,7 +107,7 @@ flight_1 = {
                 "Metadata": None,
                 "AdTypeId": 557,
                 "IsHTMLJS": False,
-                "Id": 7150015
+                "Id": 7150015,
             },
             "EndDate": None,
             "Iframe": None,
@@ -129,7 +129,7 @@ flight_1 = {
             "Id": 10108517,
             "IsGoalOverride": None,
             "StartDate": None,
-            "StartDateISO": None
+            "StartDateISO": None,
         },
         {
             "IsActive": False,
@@ -147,7 +147,7 @@ flight_1 = {
                 "Url": "https://getpocket.com/explore/item/if-you-re-just-not-a-morning-person-science-says-you-may-never-be",
                 "IsIdOnly": False,
                 "IsNoTrack": False,
-                "TemplateValues": "{\"ctUrl\":\"https://getpocket.com/explore/item/if-you-re-just-not-a-morning-person-science-says-you-may-never-be\",\"ctDomain_affinities\":\"technology\",\"ctMin_score\":\"0\",\"ctDomain\":\"vox.com\",\"ctItem_score\":\"1\",\"ctTitle\":\"Kittens up for adoption in the Pacific Northwest!\",\"ctExcerpt\":\"They are super cute.\",\"ctFullimagepath\":\"{{contentUrl}}/{{creativeContent.data.fileName}}\",\"ctSponsor\":\"VOX.COM\",\"ctImage\":\"3a4d472f993a4c9584486db68c7ce9c2.jpg\"}",
+                "TemplateValues": '{"ctUrl":"https://getpocket.com/explore/item/if-you-re-just-not-a-morning-person-science-says-you-may-never-be","ctDomain_affinities":"technology","ctMin_score":"0","ctDomain":"vox.com","ctItem_score":"1","ctTitle":"Kittens up for adoption in the Pacific Northwest!","ctExcerpt":"They are super cute.","ctFullimagepath":"{{contentUrl}}/{{creativeContent.data.fileName}}","ctSponsor":"VOX.COM","ctImage":"3a4d472f993a4c9584486db68c7ce9c2.jpg"}',
                 "TemplateId": 1819,
                 "ImageLink": "https://static.adzerk.net/Advertisers/3a4d472f993a4c9584486db68c7ce9c2.jpg",
                 "ScriptBody": None,
@@ -155,14 +155,14 @@ flight_1 = {
                 "Metadata": None,
                 "AdTypeId": 2401,
                 "IsHTMLJS": False,
-                "Id": 9068407
+                "Id": 9068407,
             },
             "EndDate": None,
             "Iframe": None,
             "PublisherAccountId": 0,
             "DistributionType": 3,
             "IsDeleted": False,
-            "CustomTargeting": "country = \"US\" and region = \"WA\"",
+            "CustomTargeting": 'country = "US" and region = "WA"',
             "EndDateISO": None,
             "RtbCustomFields": None,
             "Impressions": 1000,
@@ -177,7 +177,7 @@ flight_1 = {
             "Id": 12010338,
             "IsGoalOverride": None,
             "StartDate": None,
-            "StartDateISO": None
+            "StartDateISO": None,
         },
     ],
     "IsMonday": None,
@@ -223,7 +223,7 @@ flight_1 = {
             "CountryCode": "US",
             "Region": None,
             "MetroCode": None,
-            "IsExclude": False
+            "IsExclude": False,
         }
     ],
     "DefaultECPM": None,
@@ -239,7 +239,7 @@ flight_1 = {
     "PassbackSortOrder": None,
     "CustomFieldsJson": "",
     "StartDateISO": "2019-07-01T00:00:00.0000000",
-    "DatePartingEndTime": None
+    "DatePartingEndTime": None,
 }
 
 campaign_1 = {
@@ -260,9 +260,9 @@ campaign_1 = {
             "IsArchived": False,
             "IsActive": False,
             "IsDeleted": False,
-            "StartDateISO": "2019-04-02T00:00:00.0000000"
+            "StartDateISO": "2019-04-02T00:00:00.0000000",
         },
-    ]
+    ],
 }
 
 zone_1 = {
@@ -271,22 +271,10 @@ zone_1 = {
     "totalPages": 1,
     "totalItems": 43,
     "items": [
-        {
-            "Id": 204604,
-            "Name": "BestZone",
-            "IsDeleted": False
-        },
-        {
-            "Id": 204605,
-            "Name": "SecondBestZone",
-            "IsDeleted": False
-        },
-        {
-            "Id": 204606,
-            "Name": "DeletedZone",
-            "IsDeleted": True
-        },
-    ]
+        {"Id": 204604, "Name": "BestZone", "IsDeleted": False},
+        {"Id": 204605, "Name": "SecondBestZone", "IsDeleted": False},
+        {"Id": 204606, "Name": "DeletedZone", "IsDeleted": True},
+    ],
 }
 
 
@@ -301,21 +289,21 @@ site_1 = {
             "Title": "Unit test production",
             "Url": "https://adzerk.com",
             "PublisherAccountId": 54199,
-            "IsDeleted": False
+            "IsDeleted": False,
         },
         {
             "Id": 10826560,
             "Title": "Unit test staging",
             "Url": "https://adzerk.com",
             "PublisherAccountId": 54199,
-            "IsDeleted": False
+            "IsDeleted": False,
         },
         {
             "Id": 10826561,
             "Title": "Unit test deleted site",
             "Url": "https://adzerk.com",
             "PublisherAccountId": 54199,
-            "IsDeleted": True
+            "IsDeleted": True,
         },
-    ]
+    ],
 }
