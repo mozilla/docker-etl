@@ -31,7 +31,7 @@ basic_flight = {
     "DeliveryStatus": 0,
     "CustomFieldsJson": "",
     "CanPassback": False,
-    "StartDateISO": "2019-04-02T00:00:00.0000000"
+    "StartDateISO": "2019-04-02T00:00:00.0000000",
 }
 
 flight_list_11322212 = basic_flight.copy()
@@ -62,7 +62,7 @@ flights = {
         flight_list_8002,
         flight_list_8003,
         flight_list_8004,
-    ]
+    ],
 }
 
 flight_11322212 = {
@@ -74,15 +74,15 @@ flight_11322212 = {
             "FlightId": 11322212,
             "SiteId": 1070098,
             "ZoneId": 217995,
-            "IsExclude": False
+            "IsExclude": False,
         },
         {
             "Id": 264654512,
             "FlightId": 11322212,
             "SiteId": 1116390,
             "ZoneId": 217758,
-            "IsExclude": False
-        }
+            "IsExclude": False,
+        },
     ],
     "IsCompanion": False,
     "UserAgentKeywords": None,
@@ -116,7 +116,7 @@ flight_11322212 = {
                 "Url": "",
                 "IsIdOnly": False,
                 "IsNoTrack": False,
-                "TemplateValues": "{\"ctUrl\":\"https://ad.doubleclick.net/ddm/trackclk/N320202.452584BUYSELLADS.COM/B23615680.264685772;dc_trk_aid=460032532;dc_trk_cid=103135774;dc_lat=;dc_rdid=;tag_for_child_directed_treatment=;tfua=\",\"ctMin_score\":\"0.1\",\"ctDomain\":\"atlassian.com\",\"ctItem_score\":\"0.2\",\"ctTitle\":\"Go Ahead and Close Those Jira Tabs\",\"ctExcerpt\":\"The new Jira plugin for VS Code lets you update tickets and delivers new features inside your team's editor.\",\"ctParameter_set\":\"default\",\"ctFullimagepath\":\"{{contentUrl}}/{{creativeContent.data.fileName}}\",\"ctSponsor\":\"Atlassian Jira\",\"ctImage\":\"4be8fe22be364e1285245f59682ba772.jpg\"}",
+                "TemplateValues": '{"ctUrl":"https://ad.doubleclick.net/ddm/trackclk/N320202.452584BUYSELLADS.COM/B23615680.264685772;dc_trk_aid=460032532;dc_trk_cid=103135774;dc_lat=;dc_rdid=;tag_for_child_directed_treatment=;tfua=","ctMin_score":"0.1","ctDomain":"atlassian.com","ctItem_score":"0.2","ctTitle":"Go Ahead and Close Those Jira Tabs","ctExcerpt":"The new Jira plugin for VS Code lets you update tickets and delivers new features inside your team\'s editor.","ctParameter_set":"default","ctFullimagepath":"{{contentUrl}}/{{creativeContent.data.fileName}}","ctSponsor":"Atlassian Jira","ctImage":"4be8fe22be364e1285245f59682ba772.jpg"}',
                 "TemplateId": 1819,
                 "ImageLink": "https://static.adzerk.net/Advertisers/4be8fe22be364e1285245f59682ba772.jpg",
                 "ScriptBody": None,
@@ -124,7 +124,7 @@ flight_11322212 = {
                 "Metadata": None,
                 "AdTypeId": 3617,
                 "IsHTMLJS": False,
-                "Id": 16748057
+                "Id": 16748057,
             },
             "FreqCapType": None,
             "EndDate": None,
@@ -149,7 +149,7 @@ flight_11322212 = {
             "Id": 19422526,
             "IsGoalOverride": None,
             "StartDate": None,
-            "StartDateISO": None
+            "StartDateISO": None,
         },
         {
             "IsActive": True,
@@ -167,7 +167,7 @@ flight_11322212 = {
                 "Url": "",
                 "IsIdOnly": False,
                 "IsNoTrack": False,
-                "TemplateValues": "{\"ctUrl\":\"https://ad.doubleclick.net/ddm/trackclk/N320202.452584BUYSELLADS.COM/B23615680.264685772;dc_trk_aid=460032532;dc_trk_cid=103135774;dc_lat=;dc_rdid=;tag_for_child_directed_treatment=;tfua=\",\"ctMin_score\":\"0.1\",\"ctDomain\":\"atlassian.com\",\"ctItem_score\":\"0.2\",\"ctTitle\":\"Update Jira Tickets Right in Your Editor\",\"ctExcerpt\":\"The new Jira plugin for VS Code lets you update tickets and delivers new features inside your team's editor.\",\"ctParameter_set\":\"default\",\"ctFullimagepath\":\"{{contentUrl}}/{{creativeContent.data.fileName}}\",\"ctSponsor\":\"Atlassian Jira\",\"ctImage\":\"dc1b372d603f404f9594a5bac4d5b7a7.jpg\"}",
+                "TemplateValues": '{"ctUrl":"https://ad.doubleclick.net/ddm/trackclk/N320202.452584BUYSELLADS.COM/B23615680.264685772;dc_trk_aid=460032532;dc_trk_cid=103135774;dc_lat=;dc_rdid=;tag_for_child_directed_treatment=;tfua=","ctMin_score":"0.1","ctDomain":"atlassian.com","ctItem_score":"0.2","ctTitle":"Update Jira Tickets Right in Your Editor","ctExcerpt":"The new Jira plugin for VS Code lets you update tickets and delivers new features inside your team\'s editor.","ctParameter_set":"default","ctFullimagepath":"{{contentUrl}}/{{creativeContent.data.fileName}}","ctSponsor":"Atlassian Jira","ctImage":"dc1b372d603f404f9594a5bac4d5b7a7.jpg"}',
                 "TemplateId": 1819,
                 "ImageLink": "https://static.adzerk.net/Advertisers/dc1b372d603f404f9594a5bac4d5b7a7.jpg",
                 "ScriptBody": None,
@@ -175,7 +175,7 @@ flight_11322212 = {
                 "Metadata": None,
                 "AdTypeId": 3617,
                 "IsHTMLJS": False,
-                "Id": 16748058
+                "Id": 16748058,
             },
             "FreqCapType": None,
             "EndDate": None,
@@ -200,7 +200,7 @@ flight_11322212 = {
             "Id": 19422527,
             "IsGoalOverride": None,
             "StartDate": None,
-            "StartDateISO": None
+            "StartDateISO": None,
         },
         {
             "IsActive": True,
@@ -218,7 +218,7 @@ flight_11322212 = {
                 "Url": "",
                 "IsIdOnly": False,
                 "IsNoTrack": False,
-                "TemplateValues": "{\"ctUrl\":\"https://ad.doubleclick.net/ddm/trackclk/N320202.452584BUYSELLADS.COM/B23615680.264685775;dc_trk_aid=460032535;dc_trk_cid=103135774;dc_lat=;dc_rdid=;tag_for_child_directed_treatment=;tfua=\",\"ctMin_score\":\"0.1\",\"ctDomain\":\"atlassian.com\",\"ctItem_score\":\"0.2\",\"ctTitle\":\"Faster, Simpler, and Now With Dark Mode\",\"ctExcerpt\":\"Jira is now native on MacOS, eliminating load time, introducing push notifications, and more.\",\"ctParameter_set\":\"default\",\"ctFullimagepath\":\"{{contentUrl}}/{{creativeContent.data.fileName}}\",\"ctSponsor\":\"Atlassian Jira\",\"ctImage\":\"4abfe169905742f4990d122b0efc3516.jpg\"}",
+                "TemplateValues": '{"ctUrl":"https://ad.doubleclick.net/ddm/trackclk/N320202.452584BUYSELLADS.COM/B23615680.264685775;dc_trk_aid=460032535;dc_trk_cid=103135774;dc_lat=;dc_rdid=;tag_for_child_directed_treatment=;tfua=","ctMin_score":"0.1","ctDomain":"atlassian.com","ctItem_score":"0.2","ctTitle":"Faster, Simpler, and Now With Dark Mode","ctExcerpt":"Jira is now native on MacOS, eliminating load time, introducing push notifications, and more.","ctParameter_set":"default","ctFullimagepath":"{{contentUrl}}/{{creativeContent.data.fileName}}","ctSponsor":"Atlassian Jira","ctImage":"4abfe169905742f4990d122b0efc3516.jpg"}',
                 "TemplateId": 1819,
                 "ImageLink": "https://static.adzerk.net/Advertisers/4abfe169905742f4990d122b0efc3516.jpg",
                 "ScriptBody": None,
@@ -226,7 +226,7 @@ flight_11322212 = {
                 "Metadata": None,
                 "AdTypeId": 3617,
                 "IsHTMLJS": False,
-                "Id": 16748059
+                "Id": 16748059,
             },
             "FreqCapType": None,
             "EndDate": None,
@@ -251,7 +251,7 @@ flight_11322212 = {
             "Id": 19422528,
             "IsGoalOverride": None,
             "StartDate": None,
-            "StartDateISO": None
+            "StartDateISO": None,
         },
     ],
     "IsMonday": None,
@@ -304,7 +304,7 @@ flight_11322212 = {
     "PassbackSortOrder": None,
     "CustomFieldsJson": "",
     "StartDateISO": "2020-04-13T00:00:00.0000000",
-    "DatePartingEndTime": None
+    "DatePartingEndTime": None,
 }
 
 flight_11158378 = {
@@ -316,7 +316,7 @@ flight_11158378 = {
             "FlightId": 11158378,
             "SiteId": 1116390,
             "ZoneId": 217759,
-            "IsExclude": False
+            "IsExclude": False,
         }
     ],
     "IsCompanion": False,
@@ -351,7 +351,7 @@ flight_11158378 = {
                 "Url": "",
                 "IsIdOnly": False,
                 "IsNoTrack": False,
-                "TemplateValues": "{\"ctUrl\":\"https://blog.mozilla.org/firefox/how-to-create-strong-passwords/?utm_source=pocket&utm_medium=new-tab&utm_campaign=test\",\"ctCollectionTitle\":\"Privacy & Security Tips\",\"ctMin_score\":\".1\",\"ctDomain\":\"mozilla.org\",\"ctItem_score\":\".2\",\"ctTitle\":\"How to Create Strong Passwords\",\"ctExcerpt\":\"Passwords are your first line of defense against hackers. Here's how to make them work better.\",\"ctParameter_set\":\"default\",\"ctFullimagepath\":\"{{contentUrl}}/{{creativeContent.data.fileName}}\",\"ctSponsor\":\"Firefox\",\"ctImage\":\"ac1d3e2dc8c041089e144ce83e9c68eb.png\"}",
+                "TemplateValues": '{"ctUrl":"https://blog.mozilla.org/firefox/how-to-create-strong-passwords/?utm_source=pocket&utm_medium=new-tab&utm_campaign=test","ctCollectionTitle":"Privacy & Security Tips","ctMin_score":".1","ctDomain":"mozilla.org","ctItem_score":".2","ctTitle":"How to Create Strong Passwords","ctExcerpt":"Passwords are your first line of defense against hackers. Here\'s how to make them work better.","ctParameter_set":"default","ctFullimagepath":"{{contentUrl}}/{{creativeContent.data.fileName}}","ctSponsor":"Firefox","ctImage":"ac1d3e2dc8c041089e144ce83e9c68eb.png"}',
                 "TemplateId": 1819,
                 "ImageLink": "https://static.adzerk.net/Advertisers/ac1d3e2dc8c041089e144ce83e9c68eb.png",
                 "ScriptBody": None,
@@ -359,7 +359,7 @@ flight_11158378 = {
                 "Metadata": None,
                 "AdTypeId": 3617,
                 "IsHTMLJS": False,
-                "Id": 16545738
+                "Id": 16545738,
             },
             "FreqCapType": None,
             "EndDate": None,
@@ -384,7 +384,7 @@ flight_11158378 = {
             "Id": 19218445,
             "IsGoalOverride": None,
             "StartDate": None,
-            "StartDateISO": None
+            "StartDateISO": None,
         },
         {
             "IsActive": False,
@@ -402,7 +402,7 @@ flight_11158378 = {
                 "Url": "",
                 "IsIdOnly": False,
                 "IsNoTrack": False,
-                "TemplateValues": "{\"ctUrl\":\"https://blog.mozilla.org/firefox/data-detox-phone/?utm_source=pocket&utm_medium=new-tab&utm_campaign=test\",\"ctCollectionTitle\":\"Privacy & Security Tips\",\"ctMin_score\":\".1\",\"ctDomain\":\"mozilla.org\",\"ctItem_score\":\".2\",\"ctTitle\":\"Five Ways to Reset Your Relationship With Your Phone\",\"ctExcerpt\":\"Does your phone really need to know your location, last meal or secret wine subscription?\",\"ctParameter_set\":\"default\",\"ctFullimagepath\":\"{{contentUrl}}/{{creativeContent.data.fileName}}\",\"ctSponsor\":\"Firefox\",\"ctImage\":\"740b814b21bf49c6a1a071f65ce035dd.png\"}",
+                "TemplateValues": '{"ctUrl":"https://blog.mozilla.org/firefox/data-detox-phone/?utm_source=pocket&utm_medium=new-tab&utm_campaign=test","ctCollectionTitle":"Privacy & Security Tips","ctMin_score":".1","ctDomain":"mozilla.org","ctItem_score":".2","ctTitle":"Five Ways to Reset Your Relationship With Your Phone","ctExcerpt":"Does your phone really need to know your location, last meal or secret wine subscription?","ctParameter_set":"default","ctFullimagepath":"{{contentUrl}}/{{creativeContent.data.fileName}}","ctSponsor":"Firefox","ctImage":"740b814b21bf49c6a1a071f65ce035dd.png"}',
                 "TemplateId": 1819,
                 "ImageLink": "https://static.adzerk.net/Advertisers/740b814b21bf49c6a1a071f65ce035dd.png",
                 "ScriptBody": None,
@@ -410,7 +410,7 @@ flight_11158378 = {
                 "Metadata": None,
                 "AdTypeId": 3617,
                 "IsHTMLJS": False,
-                "Id": 16545739
+                "Id": 16545739,
             },
             "FreqCapType": None,
             "EndDate": None,
@@ -435,7 +435,7 @@ flight_11158378 = {
             "Id": 19218446,
             "IsGoalOverride": None,
             "StartDate": None,
-            "StartDateISO": None
+            "StartDateISO": None,
         },
         {
             "IsActive": False,
@@ -453,7 +453,7 @@ flight_11158378 = {
                 "Url": "",
                 "IsIdOnly": False,
                 "IsNoTrack": False,
-                "TemplateValues": "{\"ctUrl\":\"https://blog.mozilla.org/firefox/disney-password/?utm_source=pocket&utm_medium=new-tab&utm_campaign=test\",\"ctCollectionTitle\":\"Privacy & Security Tips\",\"ctMin_score\":\".1\",\"ctDomain\":\"mozilla.org\",\"ctItem_score\":\".2\",\"ctTitle\":\"Princesses Make Terrible Passwords for Disney+ and Every Other Account\",\"ctExcerpt\":\"Thousands of poor unfortunate souls had their Disney+ accounts hacked. Or did they?\",\"ctParameter_set\":\"default\",\"ctFullimagepath\":\"{{contentUrl}}/{{creativeContent.data.fileName}}\",\"ctSponsor\":\"Firefox\",\"ctImage\":\"6622c3ae45d642b9ad38b6b8799a370c.png\"}",
+                "TemplateValues": '{"ctUrl":"https://blog.mozilla.org/firefox/disney-password/?utm_source=pocket&utm_medium=new-tab&utm_campaign=test","ctCollectionTitle":"Privacy & Security Tips","ctMin_score":".1","ctDomain":"mozilla.org","ctItem_score":".2","ctTitle":"Princesses Make Terrible Passwords for Disney+ and Every Other Account","ctExcerpt":"Thousands of poor unfortunate souls had their Disney+ accounts hacked. Or did they?","ctParameter_set":"default","ctFullimagepath":"{{contentUrl}}/{{creativeContent.data.fileName}}","ctSponsor":"Firefox","ctImage":"6622c3ae45d642b9ad38b6b8799a370c.png"}',
                 "TemplateId": 1819,
                 "ImageLink": "https://static.adzerk.net/Advertisers/6622c3ae45d642b9ad38b6b8799a370c.png",
                 "ScriptBody": None,
@@ -461,7 +461,7 @@ flight_11158378 = {
                 "Metadata": None,
                 "AdTypeId": 3617,
                 "IsHTMLJS": False,
-                "Id": 16545740
+                "Id": 16545740,
             },
             "FreqCapType": None,
             "EndDate": None,
@@ -486,8 +486,8 @@ flight_11158378 = {
             "Id": 19218447,
             "IsGoalOverride": None,
             "StartDate": None,
-            "StartDateISO": None
-        }
+            "StartDateISO": None,
+        },
     ],
     "IsMonday": None,
     "CapType": None,
@@ -539,7 +539,7 @@ flight_11158378 = {
     "PassbackSortOrder": None,
     "CustomFieldsJson": "",
     "StartDateISO": "2020-03-01T00:00:00.0000000",
-    "DatePartingEndTime": None
+    "DatePartingEndTime": None,
 }
 
 flight_8000_active_no_creatives = copy.deepcopy(flight_11158378)
@@ -554,7 +554,7 @@ flight_8001_active_no_site_targeting["SiteZoneTargeting"] = [
         "FlightId": 8001,
         "SiteId": None,
         "ZoneId": 217759,
-        "IsExclude": False
+        "IsExclude": False,
     }
 ]
 flight_8001_active_no_site_targeting["CreativeMaps"][0]["FlightId"] = 8001
@@ -569,7 +569,7 @@ flight_8002_active_no_zone_targeting["SiteZoneTargeting"] = [
         "FlightId": 8002,
         "SiteId": 1116390,
         "ZoneId": None,
-        "IsExclude": False
+        "IsExclude": False,
     }
 ]
 flight_8002_active_no_zone_targeting["CreativeMaps"][0]["FlightId"] = 8002
@@ -602,7 +602,7 @@ flight_8004_active_non_standard_creative_template["CreativeMaps"] = [
             "Url": "",
             "IsIdOnly": False,
             "IsNoTrack": False,
-            "TemplateValues": "{\"var1\":\"val1\",\"var2\":\"val2\"}",
+            "TemplateValues": '{"var1":"val1","var2":"val2"}',
             "TemplateId": 1820,
             "ImageLink": "https://static.adzerk.net/Advertisers/ac1d3e2dc8c041089e144ce83e9c68eb.png",
             "ScriptBody": None,
@@ -610,7 +610,7 @@ flight_8004_active_non_standard_creative_template["CreativeMaps"] = [
             "Metadata": None,
             "AdTypeId": 3617,
             "IsHTMLJS": False,
-            "Id": 16545738
+            "Id": 16545738,
         },
         "FreqCapType": None,
         "EndDate": None,
@@ -635,6 +635,6 @@ flight_8004_active_non_standard_creative_template["CreativeMaps"] = [
         "Id": 19218445,
         "IsGoalOverride": None,
         "StartDate": None,
-        "StartDateISO": None
+        "StartDateISO": None,
     },
 ]
