@@ -59,7 +59,7 @@ def _get_site_mapping():
                 if not s["IsDeleted"]:
                     site_mapping[s["Id"]] = s["Title"]
         return site_mapping
-    else: # pragma: no cover
+    else:  # pragma: no cover
         logger.error(
             f"Failed request, status {resp.status_code} while obtaining site information"
         )
@@ -75,7 +75,7 @@ def _get_zone_mapping():
                 if not z["IsDeleted"]:
                     zone_mapping[z["Id"]] = z["Name"]
         return zone_mapping
-    else: # pragma: no cover
+    else:  # pragma: no cover
         logger.error(
             f"Failed request, status {resp.status_code} while obtaining zone information"
         )
@@ -96,7 +96,7 @@ def get_all_active_creative_maps():
             flights = resp.json()["items"]
             for flight in flights:
                 all_flight_ads.extend(get_single_flight(flight))
-    else: # pragma: no cover
+    else:  # pragma: no cover
         raise Exception(
             "Error calling Kevel for all active flights: {0}".format(
                 json.dumps(resp.json())
@@ -133,18 +133,18 @@ def get_single_flight(flight):
                 flight_ads, RATE_TYPE, "rate_type", "rate_type"
             )
             return flight_ads
-        except Exception as err: # pragma: no cover
+        except Exception as err:  # pragma: no cover
             logger.error(
                 "Error calling for flight {0}, data: {1}, error: ${2}".format(
                     flight_id, resp.json(), err
                 )
             )
 
-    else: # pragma: no cover
+    else:  # pragma: no cover
         logger.error(
             "Error calling for flight {0}, error: {1}".format(flight_id, resp.json())
         )
-    return [] # pragma: no cover
+    return []  # pragma: no cover
 
 
 def get_campaign_name_map():
@@ -156,7 +156,7 @@ def get_campaign_name_map():
             campaign_map[item["Id"]] = item["Name"]
 
         return campaign_map
-    else: # pragma: no cover
+    else:  # pragma: no cover
         logger.error("Error calling for campaigns: {0}".format(resp.json()))
         return {}
 
@@ -236,7 +236,7 @@ def decorate_with_info(
         getter_ = ad[value] if ad_value else value
         try:
             ad_[key] = info_map[getter_]
-        except KeyError: # pragma: no cover
+        except KeyError:  # pragma: no cover
             if not suppress_warning:
                 logger.warning(
                     "Value for {} does not exist in info map for key {}".format(
@@ -272,7 +272,7 @@ def upload_to_storage(obj_list, project, bucket, env):
 
     # else return last response
     if records_inserted_total != to_insert:
-        raise Exception( # pragma: no cover
+        raise Exception(  # pragma: no cover
             f"inserted {records_inserted_total} but there were {to_insert} in total"
         )
     else:
@@ -438,10 +438,10 @@ def main(project, bucket, api_key, env):
     prod_bucket = "moz-fx-data-prod-external-data"
     prod_project = "moz-fx-data-shared-prod"
 
-    if env == "production": # pragma: no cover
+    if env == "production":  # pragma: no cover
         project = prod_project
         bucket = prod_bucket
-    elif env == "dev": # pragma: no cover
+    elif env == "dev":  # pragma: no cover
         if None in [project, bucket]:
             raise Exception("project and bucket values are required in dev!")
 
