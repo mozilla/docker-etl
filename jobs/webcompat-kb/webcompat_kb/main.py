@@ -1,4 +1,5 @@
 import argparse
+import google.auth
 import logging
 import requests
 import re
@@ -212,7 +213,15 @@ class BugzillaToBigQuery:
     def __init__(
         self, bq_project_id: str, bq_dataset_id: str, bugzilla_api_key: Optional[str]
     ):
-        self.client = bigquery.Client(project=bq_project_id)
+        credentials, _ = google.auth.default(
+            scopes=[
+                "https://www.googleapis.com/auth/cloud-platform",
+                "https://www.googleapis.com/auth/drive",
+                "https://www.googleapis.com/auth/bigquery",
+            ]
+        )
+
+        self.client = bigquery.Client(credentials=credentials, project=bq_project_id)
         self.bq_dataset_id = bq_dataset_id
         self.bugzilla_api_key = bugzilla_api_key
         self.history_fetch_completed = True
