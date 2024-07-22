@@ -1,4 +1,4 @@
-import click
+import argparse
 import logging
 import requests
 import re
@@ -16,7 +16,7 @@ from typing import (
 
 
 from google.cloud import bigquery
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 Bug = Mapping[str, Any]
 BugsById = Mapping[int, Bug]
@@ -1024,6 +1024,60 @@ class BugzillaToBigQuery:
 
         return []
 
+    def update_metric_history(self) -> None:
+        metrics_table = f"{self.bq_dataset_id}.webcompat_topline_metric"
+        history_table = f"{self.bq_dataset_id}.webcompat_topline_metric_history"
+
+        history_schema = [
+            bigquery.SchemaField("recorded_date", "DATE", mode="REQUIRED"),
+            bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
+            bigquery.SchemaField("bug_count", "INTEGER", mode="REQUIRED"),
+            bigquery.SchemaField("needs_diagnosis_score", "NUMERIC", mode="REQUIRED"),
+            bigquery.SchemaField("platform_score", "NUMERIC", mode="REQUIRED"),
+            bigquery.SchemaField("not_supported_score", "NUMERIC", mode="REQUIRED"),
+            bigquery.SchemaField("total_score", "NUMERIC", mode="REQUIRED"),
+        ]
+
+        self.client.create_table(
+            bigquery.Table(f"{self.client.project}.{history_table}", history_schema),
+            exists_ok=True,
+        )
+
+        query = f"""
+                SELECT recorded_date
+                FROM `{history_table}`
+                ORDER BY recorded_date DESC
+                LIMIT 1
+            """
+
+        rows = list(self.client.query(query).result())
+
+        today = date.today()
+
+        if rows and rows[0]["recorded_date"] >= today:
+            # We've already recorded historic data today
+            logging.info("Already recorded historic data today, skipping")
+            return
+
+        query = f"""
+                SELECT *
+                FROM `{metrics_table}`
+            """
+        rows = list(dict(row.items()) for row in self.client.query(query).result())
+        for row in rows:
+            row["recorded_date"] = today
+
+        logging.info(f"Writing to {history_table} table")
+
+        table = self.client.get_table(history_table)
+        errors = self.client.insert_rows(table, rows)
+
+        if errors:
+            logging.error(errors)
+        else:
+            logging.info("Metrics history recorded")
+            logging.info(f"Loaded {len(rows)} rows into {table}")
+
     def record_import_run(
         self,
         start_time: float,
@@ -1105,17 +1159,31 @@ class BugzillaToBigQuery:
             last_change_time_max,
         )
 
+        self.update_metric_history()
 
-@click.command()
-@click.option("--bq_project_id", help="BigQuery project id", required=True)
-@click.option("--bq_dataset_id", help="BigQuery dataset id", required=True)
-@click.option(
-    "--bugzilla_api_key", help="Bugzilla API key", required=False, default=None
-)
-def main(bq_project_id: str, bq_dataset_id: str, bugzilla_api_key: str) -> None:
-    logging.getLogger().setLevel(logging.INFO)
 
-    bz_bq = BugzillaToBigQuery(bq_project_id, bq_dataset_id, bugzilla_api_key)
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--log_level",
+        choices=["debug", "info", "warn", "error"],
+        default="info",
+        help="Log level",
+    )
+    parser.add_argument("--bq_project_id", required=True, help="BigQuery project id")
+    parser.add_argument("--bq_dataset_id", required=True, help="BigQuery dataset id")
+    parser.add_argument("--bugzilla_api_key", help="Bugzilla API key")
+    return parser
+
+
+def main() -> None:
+    args = get_parser().parse_args()
+    logging.basicConfig()
+    logging.getLogger().setLevel(logging.getLevelNamesMapping()[args.log_level.upper()])
+
+    bz_bq = BugzillaToBigQuery(
+        args.bq_project_id, args.bq_dataset_id, args.bugzilla_api_key
+    )
     bz_bq.run()
 
 
