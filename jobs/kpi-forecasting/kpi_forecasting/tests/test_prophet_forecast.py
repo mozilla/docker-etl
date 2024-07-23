@@ -7,11 +7,12 @@ from kpi_forecasting.models.prophet_forecast import ProphetForecast
 
 
 def test_summarize_non_overlapping_day():
-    observed_start_date = "2124-01-01"
-    observed_end_date = "2124-02-01"
+    # choose arbitary dates in the far future
+    observed_start_date = "2100-01-01"
+    observed_end_date = "2100-02-01"
 
-    predict_start_date = "2124-02-02"
-    predict_end_date = "2124-03-01"
+    predict_start_date = "2100-02-02"
+    predict_end_date = "2100-03-01"
 
     forecast = ProphetForecast(
         model_type="test",
@@ -110,11 +111,12 @@ def test_summarize_non_overlapping_day():
 
 
 def test_summarize_non_overlapping_month():
-    observed_start_date = "2124-01-01"
-    observed_end_date = "2124-02-28"
+    # choose arbitary dates in the far future
+    observed_start_date = "2100-01-01"
+    observed_end_date = "2100-02-28"
 
-    predict_start_date = "2124-04-01"
-    predict_end_date = "2124-05-31"
+    predict_start_date = "2100-04-01"
+    predict_end_date = "2100-05-31"
 
     forecast = ProphetForecast(
         model_type="test",
@@ -229,11 +231,12 @@ def test_summarize_non_overlapping_month():
 
 
 def test_summarize_overlapping_day():
-    observed_start_date = "2124-01-01"
-    observed_end_date = "2124-02-01"
+    # choose arbitrary dates in the far future
+    observed_start_date = "2100-01-01"
+    observed_end_date = "2100-02-01"
 
-    predict_start_date = "2124-01-01"
-    predict_end_date = "2124-02-01"
+    predict_start_date = "2100-01-01"
+    predict_end_date = "2100-02-01"
 
     forecast = ProphetForecast(
         model_type="test",
@@ -334,11 +337,13 @@ def test_summarize_overlapping_day():
 
 
 def test_summarize_overlapping_month():
-    observed_start_date = "2124-01-01"
-    observed_end_date = "2124-02-28"
+    # choose arbitary dates in the far future
 
-    predict_start_date = "2124-01-01"
-    predict_end_date = "2124-02-28"
+    observed_start_date = "2100-01-01"
+    observed_end_date = "2100-02-28"
+
+    predict_start_date = "2100-01-01"
+    predict_end_date = "2100-02-28"
 
     forecast = ProphetForecast(
         model_type="test",
