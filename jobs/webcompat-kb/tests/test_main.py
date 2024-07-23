@@ -732,14 +732,20 @@ KEYWORDS_AND_STATUS = [
 
 
 @pytest.fixture(scope="module")
-def bz():
-    with patch("webcompat_kb.main.bigquery.Client") as mock_bq:
-        mock_bq.return_value = Mock()
-        return BugzillaToBigQuery(
-            bq_project_id="placeholder_id",
-            bq_dataset_id="placeholder_dataset",
-            bugzilla_api_key="placeholder_key",
-        )
+@patch("webcompat_kb.main.google.auth.default")
+@patch("webcompat_kb.main.bigquery.Client")
+def bz(mock_bq, mock_auth_default):
+    mock_credentials = Mock()
+    mock_project_id = "placeholder_id"
+    mock_auth_default.return_value = (mock_credentials, mock_project_id)
+    mock_bq.return_value = Mock()
+
+    mock_bq.return_value = Mock()
+    return BugzillaToBigQuery(
+        bq_project_id=mock_project_id,
+        bq_dataset_id="placeholder_dataset",
+        bugzilla_api_key="placeholder_key",
+    )
 
 
 def test_extract_int_from_field():
