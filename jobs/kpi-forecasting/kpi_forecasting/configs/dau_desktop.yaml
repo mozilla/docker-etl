@@ -24,7 +24,5 @@ summarize:
 
 write_results:
   project: "moz-fx-data-shared-prod"
-  project_legacy: "moz-fx-data-shared-prod"
   dataset: "telemetry_derived"
-  dataset_legacy: "telemetry_derived"
   table: "kpi_forecasts_v0"
