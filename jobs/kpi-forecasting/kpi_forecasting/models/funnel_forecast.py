@@ -64,6 +64,10 @@ class FunnelForecast(BaseForecast):
         """
         super().__post_init__()
 
+        if self.metric_hub is None:
+            # this is used to avoid the code below for testing purposes
+            return
+
         # Overwrite dates_to_predict to provide historical date forecasts
         self.dates_to_predict = pd.DataFrame(
             {
@@ -155,6 +159,11 @@ class FunnelForecast(BaseForecast):
                 setattr(regressor, date, getattr(self, date))
             elif isinstance(getattr(regressor, date), str):
                 setattr(regressor, date, pd.to_datetime(getattr(regressor, date)))
+
+        if regressor.end_date < regressor.start_date:
+            raise Exception(
+                f"Regressor {regressor.name} start date comes after end date"
+            )
         return regressor
 
     def _build_model(
@@ -252,7 +261,7 @@ class FunnelForecast(BaseForecast):
                 df["floor"] = segment_settings.trained_parameters["floor"]
                 df["cap"] = segment_settings.trained_parameters["cap"]
         else:
-            raise ValueError("task not in ['train','predict']")
+            raise ValueError(f"task set to {task}, must be train or predict")
 
         if segment_settings.regressors:
             df = self._add_regressors(df, segment_settings.regressors)
@@ -333,26 +342,24 @@ class FunnelForecast(BaseForecast):
 
         return param_grid[min_abs_bias_index]
 
-    def _add_regressors(self, dat: pd.DataFrame, regressors: List[ProphetRegressor]):
+    def _add_regressors(self, df: pd.DataFrame, regressors: List[ProphetRegressor]):
         """
         Add regressor columns to the dataframe for training or prediction.
 
         Args:
-            dat (pd.DataFrame): The input dataframe.
+            df (pd.DataFrame): The input dataframe.
             regressors (List[ProphetRegressor]): The list of regressors to add.
 
         Returns:
             pd.DataFrame: The dataframe with regressors added.
         """
-        df = dat.copy().rename(columns=self.column_names_map)
-        df["ds"] = pd.to_datetime(df["ds"])
         for regressor in regressors:
             regressor = self._fill_regressor_dates(regressor)
             # finds rows where date is in regressor date ranges and sets that regressor
             ## value to 1, else 0
             df[regressor.name] = np.where(
-                (df["ds"] >= pd.to_datetime(regressor.start_date))
-                & (df["ds"] <= pd.to_datetime(regressor.end_date)),
+                (df["ds"] >= pd.to_datetime(regressor.start_date).date())
+                & (df["ds"] <= pd.to_datetime(regressor.end_date).date()),
                 0,
                 1,
             )
@@ -693,10 +700,10 @@ class FunnelForecast(BaseForecast):
 
         if components_table:
             numeric_cols = self.components_df.dtypes[
-                self.components_df.dtypes == float
+                self.components_df.dtypes is float
             ].index.tolist()
             string_cols = self.components_df.dtypes[
-                self.components_df.dtypes == object
+                self.components_df.dtypes is object
             ].index.tolist()
             self.components_df["metric_slug"] = self.metric_hub.slug
             self.components_df["forecast_trained_at"] = self.trained_at
