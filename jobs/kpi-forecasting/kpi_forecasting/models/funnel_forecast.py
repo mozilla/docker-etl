@@ -353,8 +353,8 @@ class FunnelForecast(BaseForecast):
             df[regressor.name] = np.where(
                 (df["ds"] >= pd.to_datetime(regressor.start_date))
                 & (df["ds"] <= pd.to_datetime(regressor.end_date)),
-                0,
                 1,
+                0,
             )
         return df
 
