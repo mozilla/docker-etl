@@ -57,11 +57,16 @@ class APIAdaptor:
 
         try:
             if response_json:
-                data_out = response.json()
+                if response.text != '':                
+                    data_out = response.json()
+                else:
+                    data_out = ''
             else:
                 data_out = response.text
         except (ValueError, json.JSONDecodeError) as e:
-            raise APIAdaptorException("Bad JSON in response") from e
+            raise APIAdaptorException(f"Bad JSON in response." +
+                f"Response.text = {response.text} " +
+                f"Response.status_code = {response.status_code}") from e
 
         is_success = 299 >= response.status_code >= 200     # 200 to 299 is OK
         if is_success:
@@ -80,9 +85,5 @@ class APIAdaptor:
     def patch(self, endpoint: str, params: Dict = None, headers: str = None, data: Dict = None):
         return self._request(http_method="PATCH", endpoint=endpoint, params=params,  data=data, headers=headers)
 
-    def delete(
-        self, endpoint: str, params: Dict = None, data: Dict = None
-    ):
-        return self._request(
-            http_method="DELETE", endpoint=endpoint, params=params, data=data
-        )
+    def delete(self, endpoint: str, params: Dict = None, headers: str = None, data: Dict = None):
+        return self._request(http_method="DELETE", endpoint=endpoint, params=params, data=data, headers=headers)
