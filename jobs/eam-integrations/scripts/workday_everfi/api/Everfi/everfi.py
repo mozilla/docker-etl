@@ -1,4 +1,4 @@
-from api.util import APIAdaptor, cache_pickle
+from api.util import APIAdaptor
 import logging
 import requests
 from .secrets_everfi import config
@@ -38,7 +38,7 @@ class EverfiAPI():
         for rec in result.data.get('data',[]):
             if rec['attributes']['name'] == category_name:
                 cat_id = rec['id']
-                break        
+                break
         if not cat_id:
             raise EverfiAPIExceptionNoCategory(f"Category {category_name} not found.")
         
@@ -48,6 +48,35 @@ class EverfiAPI():
                     
         return result
     
+    def get_category_label_user_id(self, id):
+        endpoint = 'v1/admin/category_label_users/'
+        param = {'filter[user_id]':id}
+        result = self.api_adapter.get(endpoint=endpoint, headers=self.headers,
+                                      params=param)
+        return result
+
+    def delete_category_label_user(self, id):
+        endpoint = f'v1/admin/category_label_users/{id}'
+        result = self.api_adapter.delete(endpoint=endpoint, headers=self.headers)
+        return result
+        
+    def bulk_clear_category_id(self,ids, category_id, category_label):
+        endpoint = 'v1/admin/bulk_actions/category'
+        json_data = {
+                    'data': {
+                        'type': 'bulk_action_categories',
+                        'attributes': {
+                            'user_ids': ids,
+                            'category_label': category_label,
+                            'category_id': category_id,
+                        },
+                    },
+                }     
+        result = self.api_adapter.post(endpoint=endpoint, headers=self.headers,
+                                       data=json_data)
+        return result
+        
+        
     # =============================================================
     # Hire Dates Category
     # =============================================================     
@@ -75,36 +104,63 @@ class EverfiAPI():
             },
         }
         return self.api_adapter.post(endpoint=endpoint, headers=self.headers,data=json_data)
-        
+
 
     # =============================================================
     # USERS
     # =============================================================
-    
-    def get_users(self, fields,filter, locs, loc_map_table):
+
+    def search_user(self, fields, filter):
+        params = {'page[per_page]': 300,
+                  **filter,
+                  **fields}                      
+        users_dict = {}        
+        curr_page = 1
+        while True:
+            params['page[page]'] = curr_page
+            result = self.api_adapter.get(endpoint='v1/admin/users', params=params,headers=self.headers)
+            if len(result.data.get('data', [])) == 0:
+                return users_dict
+            
+            for rec in result.data.get('data',[]):
+                email = rec.get('attributes',{}).get('email','')                                          
+                users_dict[email] = rec                
+
+            curr_page += 1
+        
+    def get_users(self, fields,filter, locs, loc_map_table,hire_dates_inv):
         def fix_none(x):
             return '' if not x else x
-        def build_comparison_string(rec, locs, loc_map_table):
+        def build_comparison_string(rec, locs, loc_map_table, hire_dates):
             cc_learner = [x for x in rec.get('attributes',{}).get('user_rule_set_roles','[]')if x.get('rule_set','')=='cc_learner']            
             
             if not cc_learner:
                 is_manager ='non_supervisor'
             else:
                 is_manager = fix_none(cc_learner[0].get('role',''))
-                
+            
+            if rec.get('relationships','').get('category_labels',''):
+                if len(rec.get('relationships','').get('category_labels','').get('data',''))>0:
+                    hire_date_id = rec.get('relationships','').get('category_labels','').get('data','')[0].get('id')
+                    hire_date = hire_dates_inv[hire_date_id]
+                else:
+                    hire_date = ''
+                    
             return fix_none(rec.get('attributes',{}).get('email','')) + "|"+\
                    fix_none(rec.get('attributes',{}).get('first_name','')) + "|"+\
                    fix_none(rec.get('attributes',{}).get('last_name','')) + "|"+\
                    fix_none(rec.get('attributes',{}).get('employee_id','')) + "|"+\
                    fix_none(str(rec.get('attributes',{}).get('location_id',''))) + "|"+\
-                   is_manager 
+                   is_manager  + "|"+\
+                   hire_date
         
         users_dict = {}
+        hire_dates_inv = {v: k for k, v in hire_dates_inv.items()}
         comp = {}
         curr_page = 1
-        params = {'page[per_page]': 100,
-                  'filter[active]': 'true',
-                  'fields[users]': 'email,first_name,last_name,sso_id,employee_id,student_id,location_id,active,user_rule_set_roles,category_labels'}                                   
+        params = {'page[per_page]': 300,
+                  **filter,
+                  **fields}                      
         while True:
             params['page[page]'] = curr_page
             result = self.api_adapter.get(endpoint='v1/admin/users', params=params,headers=self.headers)
@@ -114,32 +170,38 @@ class EverfiAPI():
             for rec in result.data.get('data',[]):
                 email = rec.get('attributes',{}).get('email','')                                          
                 users_dict[email] = rec
-                comp[email] = build_comparison_string(rec, locs, loc_map_table)
+                comp[email] = build_comparison_string(rec, locs, loc_map_table,hire_dates_inv)
 
             curr_page += 1
-            
-    def deactivate_users(self, del_list,everfi_users):
+    
+    def set_active(self, id, active: bool):
+        endpoint = f'v1/admin/registration_sets/{id}'  
+        json_data = {
+                    'data': {
+                        'type': 'registration_sets',
+                        'id': id,
+                        'attributes': {
+                            'registrations': [
+                                {
+                                    "rule_set": "user_rule_set",
+                                    'active': active,
+                                }
+                            ],
+                        },
+                    },
+                }
+
+        r = self.api_adapter.patch(endpoint=endpoint,
+                                   headers=self.headers,
+                                   data=json_data)
+
+    def deactivate_user(self, id):
+        self.set_active(id, False)
         
+    def deactivate_users(self, del_list,everfi_users):
         for email in del_list:    
             id = everfi_users[email].get('id')
-            endpoint = f'v1/admin/registration_sets/{id}'  
-            json_data = {
-                'data': {
-                    'type': 'registration_sets',
-                    'id': id,
-                    'attributes': {
-                        'registrations': [
-                            {
-                                "rule_set": "user_rule_set",
-                                'active': False,
-                            }
-                        ],
-                    },
-                },
-            }
-        
-            r = self.api_adapter.patch(endpoint=endpoint, headers=self.headers, data= json_data)
-        
+            self.set_active(id, False)
         
     def upd_user(self, id, json_data):
         endpoint = f'v1/admin/registration_sets/{id}'
@@ -149,7 +211,7 @@ class EverfiAPI():
     def add_user(self, json_data):
         endpoint = 'v1/admin/registration_sets'
         return self.api_adapter.post(endpoint=endpoint, headers=self.headers, data= json_data)
-    
+    #def delete_label_user(self,)
     def assign_label_user(self, user_id, category_label_id):
         endpoint = 'v1/admin/category_label_users'
         json_data = {
@@ -168,15 +230,20 @@ class EverfiAPI():
     # LOCATIONS
     # =============================================================
     def get_locations_mapping_table(self):
-        # Get all categories and find loc_map_table category        
-        result = self.get_category('Locations Mapping Table')
+        # Get all categories and find loc_map_table category    
+        try:    
+            result = self.get_category('Locations Mapping Table')
+        except Exception as e:
+            raise Exception(e)
         map = {}
         for rec in result.data.get('included'):
             fields = rec.get('attributes').get('name').split("|")
             if len(fields)!=2:
                 continue
             map[fields[0]] = fields[1]
-
+        if len(map) == 0:
+            raise Exception("Mapping table is empty")
+        
         return map
 
     def get_locations(self, page_size=10000):
