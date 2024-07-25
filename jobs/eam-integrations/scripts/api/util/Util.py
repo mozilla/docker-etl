@@ -28,9 +28,10 @@ def set_up_logging(level):
     elif re.match("^crit", level, flags=re.IGNORECASE):
         log_level = logging.CRITICAL
     logging.basicConfig(
-        format='%(asctime)s:\t%(name)s.%(funcName)s()[%(filename)s:%(lineno)s]:\t%(levelname)s: %(message)s',
-        level=log_level,encoding='utf-8'
-        #format="[%(asctime)s] %(name)s [%(levelname)s]: %(message)s", level=log_level
+        format="%(asctime)s:\t%(name)s.%(funcName)s()[%(filename)s:%(lineno)s]:\t%(levelname)s: %(message)s",
+        level=log_level,
+        encoding="utf-8",
+        # format="[%(asctime)s] %(name)s [%(levelname)s]: %(message)s", level=log_level
     )
 
 
