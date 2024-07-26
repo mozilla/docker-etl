@@ -20,6 +20,8 @@ There are two main commands that can be run within this image:
 
 ## Usage
 
+### Building the Image
+
 This script is intended to be run in a docker container.
 Build the docker image with:
 
@@ -52,16 +54,20 @@ fxci-etl pulse drain
 
 ### Configuration
 
-The `fxci-etl` binary looks for configuration in the environment. The following
-configuration variables are supported:
+Configuration can live in a toml file under the standard XDG configuration
+directory for your system. E.g, on Linux this would be
+`~/.config/fxci-etl/config.toml`. Alternatively, it can be configured via
+environment variables prefixed with `FXCI_ETL` and with subsections separated
+by an underscore. E.g, to define the config `pulse.user`, you could set the
+`FXCI_ETL_PULSE_USER` environment variable.
 
 #### bigquery
 
 This configuration is always required.
 
-* `FXCI_ETL_BIGQUERY_PROJECT` (str): Name of the GCP project where the dataset resides (required).
-* `FXCI_ETL_BIGQUERY_DATASET` (str): Name of the dataset where the tables will be created (required).
-* `FXCI_ETL_BIGQUERY_CREDENTIALS` (str): Base64 encoded contents of a service account credentials
+* `bigquery.project` (str): Name of the GCP project where the dataset resides (required).
+* `bigquery.dataset` (str): Name of the dataset where the tables will be created (required).
+* `bigquery.credentials` (str): Base64 encoded contents of a service account credentials
     file. The credentials require the DataWriter role for the configured dataset
     (default: uses credentials from environment).
 
@@ -69,9 +75,9 @@ This configuration is always required.
 
 This configuration is always required.
 
-* `FXCI_ETL_STORAGE_PROJECT` (str): Name of the GCP project where the storage bucket resides (required).
-* `FXCI_ETL_STORAGE_BUCKET` (str): Name of the GCS bucket to store state between ETL invocations (required).
-* `FXCI_ETL_STROAGE_CREDENTIALS` (str): Base64 encoded contents of a service
+* `storage.project` (str): Name of the GCP project where the storage bucket resides (required).
+* `storage.bucket` (str): Name of the GCS bucket to store state between ETL invocations (required).
+* `storage.credentials` (str): Base64 encoded contents of a service
     account credentials file. The credentials require Read/Write access to the
     configured bucket (default: uses credentials from environment).
 
@@ -79,16 +85,16 @@ This configuration is always required.
 
 This configuraiton is required for the `fxci-etl pulse` command.
 
-* `FXCI_ETL_PULSE_USER` (str): Name of the pulse user which owns the queues (required).
-* `FXCI_ETL_PULSE_PASSWORD` (str): Password of the pulse user which owns the queues (required).
-* `FXCI_ETL_PULSE_HOST` (str): Host name for the pulse instance (default: "pulse.mozilla.org").
-* `FXCI_ETL_PULSE_PORT` (int): Port for the pulse instance (default: 5671)
+* `pulse.user` (str): Name of the pulse user which owns the queues (required).
+* `pulse.password` (str): Password of the pulse user which owns the queues (required).
+* `pulse.host` (str): Host name for the pulse instance (default: "pulse.mozilla.org").
+* `pulse.port` (int): Port for the pulse instance (default: 5671)
 
 #### monitoring
 
 This configuraiton is required for the `fxci-etl metric` command.
 
-* `FXCI_ETL_MONITORING_CREDENTIALS` (str): Base64 encoded contents of a service
+* `monitoring.credentials` (str): Base64 encoded contents of a service
     account credentials file. The credentials require the `MonitoringViewer` on
     the Firefox-CI worker projects defined in config.py (default: uses
     credentials from environment).
