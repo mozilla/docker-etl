@@ -36,16 +36,11 @@ class ScalarForecast(BaseForecast):
         """
         super().__post_init__()
 
-        # For forecast data, we need to overwrite the start and end date based on the dates
-        ## of the forecast data we've pulled in __post_init
-        if isinstance(self.metric_hub, ForecastDataPull):
-            self.start_date = pd.to_datetime(self.metric_hub.forecast_start_date)
-            self.end_date = pd.to_datetime(self.observed_df["submission_date"].max())
-            self.dates_to_predict = pd.DataFrame(
-                {"submission_date": pd.date_range(self.start_date, self.end_date).date}
-            )
+        # For monthly-level data, must adjust the start date to the first full month after the
+        ## observed df's last date. Otherwise, the first forecast date will be the first day after
+        ## rather than the first month after the historical data
 
-        elif all(pd.to_datetime(self.observed_df["submission_date"]).dt.day == 1):
+        if all(pd.to_datetime(self.observed_df["submission_date"]).dt.day == 1):
             self.start_date = self._default_start_date_monthly
 
         # Get the list of adjustments for the metric slug being forecasted. That
@@ -54,8 +49,7 @@ class ScalarForecast(BaseForecast):
             self.metric_hub.slug, self.start_date
         )
 
-        # Construct a DataFrame containing all combination of segment values
-        ## in the observed_df
+        # Construct a DataFrame containing all combination of segment values in the observed_df
         self.combination_df = self.observed_df[
             self.metric_hub.segments.keys()
         ].drop_duplicates()
