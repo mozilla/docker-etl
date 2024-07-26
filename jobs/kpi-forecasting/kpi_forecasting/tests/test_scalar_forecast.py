@@ -13,9 +13,7 @@ def setup_forecast():
             "segment": ["A", "A", "A", "B", "B", "B"],
         }
     )
-    dates_to_predict = pd.DataFrame(
-        {"submission_date": pd.date_range(start="2020-07-01", periods=6, freq="M")}
-    )
+
     metric_hub = MagicMock()
     metric_hub.slug = "metric_slug"
     metric_hub.segments = {"segment": ["A", "B"]}
@@ -36,7 +34,7 @@ def setup_forecast():
         use_holidays=False,
         start_date=start_date,
         end_date=end_date,
-        metric_hub=metric_hub
+        metric_hub=metric_hub,
     )
 
     forecast.observed_df = observed_df
@@ -69,9 +67,7 @@ def test_parse_formula_for_over_period_changes(setup_forecast):
 def test_add_scalar_columns(setup_forecast):
     forecast = setup_forecast
     forecast.forecast
-    _df = forecast.dates_to_predict.merge(
-        forecast.combination_df, how="cross"
-    )
+    _df = forecast.dates_to_predict.merge(forecast.combination_df, how="cross")
     forecast._add_scalar_columns()
     assert "scalar_mock" in forecast.forecast_df.columns
 
