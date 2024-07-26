@@ -31,14 +31,16 @@ def setup_forecast():
     parameters.formula = "metric:YOY + metric2:MOM"
 
     forecast = ScalarForecast(
-        observed_df=observed_df,
-        dates_to_predict=dates_to_predict,
-        metric_hub=metric_hub,
+        model_type="scalar",
+        parameters=parameters,
+        use_holidays=False,
         start_date=start_date,
         end_date=end_date,
-        scalar_adjustments=scalar_adjustments,
-        parameters=parameters,
+        metric_hub=metric_hub
     )
+
+    forecast.observed_df = observed_df
+    forecast.scalar_adjustments = scalar_adjustments
 
     return forecast
 
