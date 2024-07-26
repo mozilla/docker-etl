@@ -18,9 +18,9 @@ def main() -> None:
     config = YAML(filepath=CLI().args.config).data
     model_type = config.forecast_model.model_type
 
-    if hasattr(config, "metric_hub"):
+    if "metric_hub" in dir(config):
         data_puller = MetricHub(**config.metric_hub)
-    elif hasattr(config, "forecast_data_pull"):
+    elif "forecast_data_pull" in dir(config):
         data_puller = ForecastDataPull(**config.forecast_data_pull)
     else:
         raise KeyError("No metric_hub or forecast_data_pull key in config to pull data.")
