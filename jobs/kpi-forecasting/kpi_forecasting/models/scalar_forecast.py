@@ -11,7 +11,6 @@ import pandas as pd
 from kpi_forecasting import pandas_extras as pdx
 from kpi_forecasting.configs.model_inputs import parse_scalar_adjustments
 from kpi_forecasting.models.base_forecast import BaseForecast
-from kpi_forecasting.metric_hub import ForecastDataPull
 
 
 @dataclass
@@ -80,7 +79,6 @@ class ScalarForecast(BaseForecast):
     def _default_start_date_monthly(self) -> str:
         """The first day after the last date in the observed dataset."""
         return self.observed_df["submission_date"].max() + pd.DateOffset(months=1)
-
 
     def _parse_formula_for_over_period_changes(self) -> Dict | None:
         """
