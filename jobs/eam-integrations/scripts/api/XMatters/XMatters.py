@@ -496,7 +496,7 @@ def delete_sites(xm_sites, xm_sites_in_wd):
     logger.info("\n")
     logger.info("Deleting empty sites from XMatters")
     for site in xm_sites:
-        if site not in xm_sites_in_wd and site != "Mountain View Office":
+        if site not in xm_sites_in_wd and site not in ["Default Site", "Mountain View Office"]:
             logger.info(
                 "Site %s not in WorkDay. INACTIVATING %s from XMatters"
                 % (site, xm_sites[site])
