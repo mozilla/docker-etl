@@ -2,27 +2,9 @@ import logging
 from .secrets_workday import config as wd_config
 from api.util import APIAdaptor
 
-import functools
+
 
 logger = logging.getLogger(__name__)
-
-
-def cache_pickle(func):
-    @functools.wraps(func)
-    def wrapper_cache_pickle(*args, **kwargs):
-        import pickle
-        import os.path
-        if os.path.isfile(func.__name__):
-            file_pi = open(func.__name__, 'rb')
-            return pickle.load(file_pi)
-        else:
-            value = func(*args, **kwargs)
-            file_pi = open(func.__name__, 'wb')
-            pickle.dump(value, file_pi)
-            return value
-
-    return wrapper_cache_pickle
-
 
 class LocalConfig(object):
     def __getattr__(self, attr):
@@ -36,7 +18,7 @@ class WorkdayAPI:
 
         self.api_adapter = APIAdaptor(host=everfi_integration["host"])
 
-    @cache_pickle
+    
     def get_datawarehouse_workers_csv(self):
         everfi_integration = getattr(self._config, "everfi_integration")
 
