@@ -115,11 +115,21 @@ def get_users():
             proxies=_config.proxies,
         )
         results = json.loads(r.text)
-        return [user for user in results["Report_Entry"]
+        users = [user for user in results["Report_Entry"]
                 if not (user.get("User_Home_Country", "") == "" and
                         user.get("User_Home_Postal_Code", "") == "")]
+        for user in users:
+            user['User_Cost_Center'] = ''
+            user['User_Manager_Email_Address'] = ''
+            user['User_Functional_Group'] = ''
+            user['User_Work_Location'] = ''
+            user['User_Manager_Preferred_First_Name'] = ''
+            user['User_Manager_Preferred_Last_Name'] = ''
+            user["Worker_s_Manager"][0]["User_Manager_Preferred_First_Name"] = ''
+            user["Worker_s_Manager"][0]["User_Manager_Preferred_Last_Name"] = ''
 
-        # return results["Report_Entry"]
+        return users
+        
     except Exception:
         logger.critical(sys.exc_info()[0])
         raise
