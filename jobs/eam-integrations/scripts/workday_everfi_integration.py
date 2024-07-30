@@ -341,7 +341,7 @@ class WorkdayEverfiIntegration:
         except (APIAdaptorException, Exception) as e:
             self.logger.error(str(e))
             self.logger.critical("Failed while Getting Workday users...")           
-            
+            sys.exit(1)
 
         # ========================================================
         # Getting Everfi users...
@@ -353,7 +353,8 @@ class WorkdayEverfiIntegration:
         except (APIAdaptorException, Exception) as e:
             self.logger.error(str(e))
             self.logger.critical("Failed while Getting Everfi users...")
-
+            sys.exit(1)
+            
         # ========================================================
         # Comparing users...
         # ========================================================
@@ -369,7 +370,8 @@ class WorkdayEverfiIntegration:
         except (Exception) as e:
             self.logger.error(str(e))
             self.logger.critical("Failed while Comparing users...")
-
+            sys.exit(1)
+            
         # ========================================================
         # Deleting Everfi users ...
         # ========================================================
@@ -380,6 +382,7 @@ class WorkdayEverfiIntegration:
         except (APIAdaptorException, Exception) as e:
             self.logger.error(str(e))
             self.logger.critical("Faile while Deleting Everfi users ...")
+            sys.exit(1)
             
         # ========================================================
         # Adding Everfi users ...
@@ -393,7 +396,7 @@ class WorkdayEverfiIntegration:
         except (APIAdaptorException, Exception) as e:
             self.logger.error(str(e))
             self.logger.critical("Failed while Adding Everfi users ...")
-        
+            sys.exit(1)
         # ========================================================
         # Updating Everfi users ...
         # ========================================================
@@ -413,6 +416,7 @@ class WorkdayEverfiIntegration:
         except (APIAdaptorException, Exception) as e:
             self.logger.error(str(e))
             self.logger.critical("Failed while Updating Everfi users ...")
+            sys.exit(1)
         
         self.logger.info("End of integration")
 
