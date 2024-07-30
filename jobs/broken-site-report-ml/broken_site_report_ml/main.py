@@ -331,7 +331,11 @@ def main(bq_project_id, bq_dataset_id):
                 row["uuid"]: {
                     "uuid": row["uuid"],
                     "title": row["title"],
-                    "body": row.get("translated_text", row["body"]),
+                    "body": (
+                        row["translated_text"]
+                        if row.get("translated_text")
+                        else row["body"]
+                    ),
                 }
                 for row in chunk
             }
