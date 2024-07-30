@@ -399,7 +399,7 @@ class FunnelForecast(ProphetForecast):
             m.fit(test_dat)
 
             crossval_metric = self._get_crossvalidation_metric(
-                m, **segment_settings.cv_settings
+                m, segment_settings.cv_settings
             )
             bias.append(crossval_metric)
 
