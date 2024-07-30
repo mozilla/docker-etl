@@ -6,6 +6,7 @@ from cleo.commands.command import Command
 from cleo.helpers import option
 
 from fxci_etl.config import Config
+from fxci_etl.loaders.bigquery import BigQueryLoader
 from fxci_etl.metric.export import export_metrics
 from fxci_etl.pulse.consume import drain
 
@@ -30,9 +31,10 @@ class PulseDrainCommand(ConfigCommand):
     def handle(self):
         config = self.parse_config(self.option("config"))
 
+        callbacks = [BigQueryLoader(config)]
         for queue in config.pulse.queues:
             self.line(f"Draining queue {queue}")
-            drain(config, queue)
+            drain(config, queue, callbacks)
         return 0
 
 
