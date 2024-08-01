@@ -370,13 +370,9 @@ pytest-mock==3.14.0 \
 python-dateutil==2.9.0.post0 \
     --hash=sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3 \
     --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
-<<<<<<< HEAD
     # via
     #   freezegun
     #   google-cloud-bigquery
-=======
-    # via google-cloud-bigquery
->>>>>>> 35ecd79 (chore(fxci): create separate lockfile for test requirements)
 rapidfuzz==3.9.5 \
     --hash=sha256:031806eb035a6f09f4ff23b9d971d50b30b5e93aa3ee620c920bee1dc32827e7 \
     --hash=sha256:0d34b0e8e29f80cb2ac8afe8fb7b01a542b136ffbf7e2b9983d11bce49398f68 \
