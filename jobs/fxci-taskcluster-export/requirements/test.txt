@@ -124,6 +124,10 @@ crashtest==0.4.1 \
 dacite==1.8.1 \
     --hash=sha256:cc31ad6fdea1f49962ea42db9421772afe01ac5442380d9a99fcf3d188c61afe
     # via -r base.in
+freezegun==1.5.1 \
+    --hash=sha256:b29dedfcda6d5e8e083ce71b2b542753ad48cfec44037b3fc79702e2980a89e9 \
+    --hash=sha256:bf111d7138a8abe55ab48a71755673dbaa4ab87f4cff5634a4442dfec34c15f1
+    # via -r test.in
 google-api-core==2.19.1 \
     --hash=sha256:f12a9b8309b5e21d92483bbd47ce2c445861ec7d269ef6784ecc0ea8c1fa6125 \
     --hash=sha256:f4695f1e3650b316a795108a76a1c416e6afb036199d1c1f1f110916df479ffd
@@ -366,7 +370,9 @@ pytest-mock==3.14.0 \
 python-dateutil==2.9.0.post0 \
     --hash=sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3 \
     --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
-    # via google-cloud-bigquery
+    # via
+    #   freezegun
+    #   google-cloud-bigquery
 rapidfuzz==3.9.5 \
     --hash=sha256:031806eb035a6f09f4ff23b9d971d50b30b5e93aa3ee620c920bee1dc32827e7 \
     --hash=sha256:0d34b0e8e29f80cb2ac8afe8fb7b01a542b136ffbf7e2b9983d11bce49398f68 \
