@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pprint import pprint
 
+import pytz
 from google.cloud import storage
 from google.cloud.exceptions import NotFound
 from google.cloud.monitoring_v3 import (
@@ -20,7 +21,7 @@ from fxci_etl.loaders.bigquery import BigQueryLoader, BigQueryTypes as t, Record
 
 METRIC = "compute.googleapis.com/instance/uptime"
 DEFAULT_INTERVAL = 3600 * 6
-MINIMUM_INTERVAL = 10
+MIN_BUFFER_TIME = 10  # minutes
 
 
 @dataclass
@@ -87,21 +88,32 @@ class MetricExporter:
         return results
 
     def get_time_interval(self) -> TimeInterval:
+        """Return the time interval to query metrics over.
 
-        # Set end time to ten minutes in the past to ensure Google Cloud Monitoring
-        # has finished computing all of its metrics.
-        end_time = datetime.now() - timedelta(minutes=10)
+        This will grab metrics all metrics from the last end time, up until
+        11:59:59 of yesterday. Ideally the metric export runs in a daily cron
+        task, such that it exports a days worth of data at a time.
+        """
+        utc = pytz.UTC
+        now = datetime.now(utc)
+        yesterday = now.date() - timedelta(days=1)
+        end_time = utc.localize(datetime.combine(yesterday, datetime.max.time()))
+
+        # Ensure end_time is at least 10 minutes in the past to ensure Cloud
+        # Monitoring has finished adding metrics for the prior day.
+        if now <= end_time + timedelta(minutes=MIN_BUFFER_TIME):
+            raise Exception(f"Abort: metric export ran too close to {end_time}! "
+                            f"It must run at least {MIN_BUFFER_TIME} minutes after this time.")
+
         try:
             start_time = json.loads(self.last_export.download_as_string())["end_time"]
         except NotFound:
-            start_time = int(
-                (end_time - timedelta(seconds=MINIMUM_INTERVAL)).timestamp()
-            )
+            start_time = int(utc.localize(datetime.combine(yesterday, datetime.min.time())).timestamp())
 
         end_time = int(end_time.timestamp())
 
-        if start_time + MINIMUM_INTERVAL > end_time:
-            raise Exception("Abort: metric export ran too recently!")
+        if start_time >= end_time:
+            raise Exception(f"Abort: metric export already ran for {yesterday}!")
 
         return TimeInterval(
             end_time=Timestamp(seconds=end_time),
