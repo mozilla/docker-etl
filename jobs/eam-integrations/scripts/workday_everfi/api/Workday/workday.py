@@ -1,7 +1,7 @@
 import logging
 from .secrets_workday import config as wd_config
 from api.util import APIAdaptor
-
+#from api.util import cache_pickle
 
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ class WorkdayAPI:
 
         self.api_adapter = APIAdaptor(host=everfi_integration["host"])
 
-    
+    #@cache_pickle
     def get_datawarehouse_workers_csv(self):
         everfi_integration = getattr(self._config, "everfi_integration")
 
