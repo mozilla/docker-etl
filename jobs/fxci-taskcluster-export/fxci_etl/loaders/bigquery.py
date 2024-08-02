@@ -150,6 +150,7 @@ class BigQueryLoader:
 
         failed_records = []
         for name, rows in tables.items():
+            print(f"Attempting to insert {len(rows)} records into table '{name}'")
             table = self.get_table(name, rows[0].__class__)
             errors = self.client.insert_rows(table, [asdict(row) for row in rows])
 

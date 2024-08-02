@@ -15,7 +15,7 @@ APP_NAME = "fxci-etl"
 
 class ConfigCommand(Command):
     options = [
-        option("--config", description="Path to config file to use.", default=None)
+        option("--config", description="Path to config file to use.", flag=False, default=None)
     ]
 
     def parse_config(self, config_path: str | Path | None) -> Config:

@@ -146,8 +146,8 @@ def export_metrics(config: Config, dry_run: bool = False) -> int:
                         "uptime": round(ts.points[0].value.double_value, 2),
                         "interval_start_time": ts.points[
                             0
-                        ].interval.start_time.timestamp(),
-                        "interval_end_time": ts.points[0].interval.end_time.timestamp(),
+                        ].interval.start_time.timestamp(),  # type: ignore
+                        "interval_end_time": ts.points[0].interval.end_time.timestamp(),  # type: ignore
                     }
                 )
             )
@@ -158,8 +158,8 @@ def export_metrics(config: Config, dry_run: bool = False) -> int:
     if not records:
         raise Exception("Abort: No records retrieved!")
 
-    exporter.set_last_end_time(int(interval.end_time.timestamp()))
-
     loader = BigQueryLoader(config)
     loader.insert(records)
+
+    exporter.set_last_end_time(int(interval.end_time.timestamp()))  # type: ignore
     return 0
