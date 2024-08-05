@@ -142,7 +142,7 @@ class EverfiAPI():
             if rec.get('relationships','').get('category_labels',''):
                 if len(rec.get('relationships','').get('category_labels','').get('data',''))>0:
                     hire_date_id = rec.get('relationships','').get('category_labels','').get('data','')[0].get('id')
-                    hire_date = hire_dates_inv[hire_date_id]
+                    hire_date = hire_dates_inv.get(hire_date_id, '')
                 else:
                     hire_date = ''
                     
