@@ -769,12 +769,8 @@ class FunnelForecast(ProphetForecast):
         job.result()
 
         if components_table:
-            numeric_cols = self.components_df.dtypes[
-                self.components_df.dtypes is float
-            ].index.tolist()
-            string_cols = self.components_df.dtypes[
-                self.components_df.dtypes is object
-            ].index.tolist()
+            numeric_cols = list(self.components_df.select_dtypes(include=float).columns)
+            string_cols = list(self.components_df.select_dtypes(include=object).columns)
             self.components_df["metric_slug"] = self.metric_hub.slug
             self.components_df["forecast_trained_at"] = self.trained_at
 
