@@ -100,7 +100,7 @@ class Everfi:
                                 "last_name": wd_user.get("preferred_last_name", ""),
                                 "location_id": loc_id,
                                 "employee_id": wd_user.get("employee_id", ""),
-                                "sso_id": wd_user.get("employee_id", ""),
+                                "sso_id": email,
                             },
                             {
                                 "rule_set": "cc_learner",
@@ -194,7 +194,7 @@ class Everfi:
                                 "first_name": wd_user.get("preferred_first_name", ""),
                                 "last_name": wd_user.get("preferred_last_name", ""),
                                 "email": wd_user.get("primary_work_email", ""),
-                                "sso_id": wd_user.get("employee_id", ""),
+                                "sso_id": email,
                                 "employee_id": wd_user.get("employee_id", ""),
                                 "location_id": loc_id,
                             },
@@ -287,6 +287,8 @@ class Workday:
             + is_manager
             + "|"
             + hire_date[1] + "-" + hire_date[0]
+            + "|"
+            + wd_row["primary_work_email"]
         )
 
     def get_wd_users(self, locs, loc_map_table):
@@ -476,7 +478,7 @@ if __name__ == "__main__":
         action="store",
         type=int,
         help="limit the number of changes in Everfi",        
-        default=40
+        default=10
     )
     args = None
     args = parser.parse_args()
