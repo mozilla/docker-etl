@@ -62,8 +62,8 @@ class MetricExporter:
 
         aggregation = Aggregation(
             alignment_period=Duration(
-                seconds=int(interval.end_time.timestamp())
-                - int(interval.start_time.timestamp())
+                seconds=int(interval.end_time.timestamp())  # type: ignore
+                - int(interval.start_time.timestamp())  # type: ignore
             ),
             per_series_aligner=Aggregation.Aligner.ALIGN_SUM,
             cross_series_reducer=Aggregation.Reducer.REDUCE_SUM,
