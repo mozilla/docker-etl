@@ -218,6 +218,9 @@ jobs:
       - run:
           name: Build Docker image
           command: docker build -t app:build jobs/fxci-taskcluster-export/
+      - run:
+          name: Test Code
+          command: docker run app:build pytest -vv
 
 
   build-job-influxdb-to-bigquery:
