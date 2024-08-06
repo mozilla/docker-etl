@@ -259,7 +259,7 @@ class FunnelForecast(BaseForecast):
 
         return df
 
-    def _fit(self) -> None:
+    def _fit(self, _) -> None:
         """
         Fit and save a Prophet model for each segment combination.
         """
