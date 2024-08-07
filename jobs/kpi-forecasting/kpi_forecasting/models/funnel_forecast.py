@@ -405,8 +405,18 @@ class FunnelForecast(BaseForecast):
         # error rates and how components resulted in those predictions. The `fillna`
         # call will fill the missing y values for forecasted dates, where only yhat
         # is available.
+
+        segment_historical_indices = (
+            self.observed_df[list(segment_settings.segment)]
+            == pd.Series(segment_settings.segment)
+        ).all(axis=1)
+
+        observed_y = self.observed_df.loc[(segment_historical_indices)].rename(
+            columns=self.column_names_map
+        )[["ds", "y"]]
+        observed_y["ds"] = pd.to_datetime(observed_y["ds"])
         components_df = components_df.merge(
-            segment_settings.segment_model.history[["ds", "y"]],
+            observed_y,
             on="ds",
             how="left",
         ).fillna(0)
