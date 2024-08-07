@@ -478,7 +478,7 @@ if __name__ == "__main__":
         action="store",
         type=int,
         help="limit the number of changes in Everfi",        
-        default=10
+        default=40
     )
     args = None
     args = parser.parse_args()
