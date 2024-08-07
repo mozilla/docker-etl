@@ -3,6 +3,7 @@ import json
 from dataclasses import asdict
 from itertools import batched
 from pprint import pprint
+from textwrap import dedent
 
 from google.cloud import storage
 from google.cloud.exceptions import NotFound
@@ -22,8 +23,6 @@ class BigQueryLoader:
 
     def __init__(self, config: Config, table_type: str):
         self.config = config
-        self.table_type = table_type
-        self.table = self.ensure_table(table_type)
 
         if config.bigquery.credentials:
             self.client = Client.from_service_account_info(
@@ -39,6 +38,7 @@ class BigQueryLoader:
         else:
             self.storage_client = storage.Client(project=config.storage.project)
 
+        self.table = self.ensure_table(table_type)
         self.bucket = self.storage_client.bucket(config.storage.bucket)
         self._record_backup = self.bucket.blob(f"failed-bq-records.{table_type}.json")
 
@@ -55,9 +55,9 @@ class BigQueryLoader:
             Table: A BigQuery Table instance for the specified table type.
         """
         bq = self.config.bigquery
-        table_name = getattr(bq.tables, table_type)
+        self.table_name = f"{bq.project}.{bq.dataset}.{getattr(bq.tables, table_type)}"
 
-        print(f"Ensuring table {table_name} exists.")
+        print(f"Ensuring table {self.table_name} exists.")
 
         schema_cls = get_record_cls(table_type)
         schema = generate_schema(schema_cls)
@@ -67,12 +67,40 @@ class BigQueryLoader:
             field="submission_date",
             require_partition_filter=True,
         )
-        table = Table(f"{bq.project}.{bq.dataset}.{table_name}", schema=schema)
+        table = Table(self.table_name, schema=schema)
         table.time_partitioning = partition
         self.client.create_table(table, exists_ok=True)
         return table
 
-    def insert(self, records: list[Record] | Record):
+    def replace(self, submission_date: str, records: list[Record] | Record):
+        """Replace all records in the partition designated by 'submission_date' with these new ones.
+
+        Args:
+            submission_date (str): The date partition to replace.
+            records (list[Record]): The records to overwrite existing records with.
+        """
+        if not records:
+            return
+
+        print(f"Deleting records in '{self.table_name}' for partition '{submission_date}'")
+        job = self.client.query(
+            dedent(
+                f"""
+                DELETE FROM `{self.table_name}`
+                WHERE submission_date = "{submission_date}"
+                """
+            )
+        )
+        job.result()
+
+        if isinstance(records, Record):
+            records = [records]
+
+        for record in records:
+            record.submission_date = submission_date
+        self.insert(records, use_backup=False)
+
+    def insert(self, records: list[Record] | Record, use_backup=True):
         """Insert records into the table.
 
         Args:
@@ -81,14 +109,17 @@ class BigQueryLoader:
         if isinstance(records, Record):
             records = [records]
 
-        try:
-            # Load previously failed records from storage, maybe the issue is fixed.
-            for obj in json.loads(self._record_backup.download_as_string()):
-                records.append(Record.from_dict(obj))
-        except NotFound:
-            pass
+        if use_backup:
+            try:
+                # Load previously failed records from storage, maybe the issue is fixed.
+                for obj in json.loads(self._record_backup.download_as_string()):
+                    records.append(Record.from_dict(obj))
+            except NotFound:
+                pass
 
-        print(f"Attempting to insert {len(records)} records into table '{self.table_type}'")
+        print(
+            f"Attempting to insert {len(records)} records into table '{self.table_name}'"
+        )
 
         # There's a 10MB limit on the `insert_rows` request, submit rows in
         # batches to avoid exceeding it.
@@ -105,6 +136,7 @@ class BigQueryLoader:
             pprint(errors)
 
         num_inserted = len(records) - len(errors)
-        print(f"Inserted {num_inserted} records in table '{self.table_type}'")
+        print(f"Inserted {num_inserted} records in table '{self.table_name}'")
 
-        self._record_backup.upload_from_string(json.dumps(errors))
+        if use_backup:
+            self._record_backup.upload_from_string(json.dumps(errors))
