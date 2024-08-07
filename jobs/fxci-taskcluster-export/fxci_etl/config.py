@@ -73,7 +73,7 @@ class Config:
     # Depending on the commands being run, the pulse or monitoring
     # configs may not be necessary.
     pulse: Optional[PulseConfig]
-    monitoring: Optional[MonitoringConfig]
+    monitoring: MonitoringConfig = MonitoringConfig()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Config":
