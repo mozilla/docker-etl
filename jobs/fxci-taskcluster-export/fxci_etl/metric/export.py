@@ -35,9 +35,6 @@ class MetricExporter:
         else:
             self.storage_client = storage.Client()
 
-        bucket = self.storage_client.bucket(config.storage.bucket)
-        self.last_export = bucket.blob("last_uptime_export_interval.json")
-
         if config.monitoring.credentials:
             self.metric_client = MetricServiceClient.from_service_account_info(
                 json.loads(base64.b64decode(config.monitoring.credentials).decode("utf8"))
@@ -74,17 +71,13 @@ class MetricExporter:
 
         return results
 
-    def get_time_interval(self) -> TimeInterval:
-        """Return the time interval to query metrics over.
-
-        This will grab metrics all metrics from the last end time, up until
-        11:59:59 of yesterday. Ideally the metric export runs in a daily cron
-        task, such that it exports a days worth of data at a time.
-        """
+    def get_time_interval(self, date: str) -> TimeInterval:
+        """Return the time interval for the specified date."""
         utc = pytz.UTC
         now = datetime.now(utc)
-        yesterday = now.date() - timedelta(days=1)
-        end_time = utc.localize(datetime.combine(yesterday, datetime.max.time()))
+        date_obj = datetime.strptime(date, "%Y-%m-%d")
+        start_time = utc.localize(datetime.combine(date_obj, datetime.min.time()))
+        end_time = utc.localize(datetime.combine(date_obj, datetime.max.time()))
 
         # Ensure end_time is at least 10 minutes in the past to ensure Cloud
         # Monitoring has finished adding metrics for the prior day.
@@ -92,29 +85,17 @@ class MetricExporter:
             raise Exception(f"Abort: metric export ran too close to {end_time}! "
                             f"It must run at least {MIN_BUFFER_TIME} minutes after this time.")
 
-        try:
-            start_time = json.loads(self.last_export.download_as_string())["end_time"]
-        except NotFound:
-            start_time = int(utc.localize(datetime.combine(yesterday, datetime.min.time())).timestamp())
-
-        end_time = int(end_time.timestamp())
-
-        if start_time >= end_time:
-            raise Exception(f"Abort: metric export already ran for {yesterday}!")
-
         return TimeInterval(
-            end_time=Timestamp(seconds=end_time),
-            start_time=Timestamp(seconds=start_time),
+            end_time=Timestamp(seconds=int(end_time.timestamp())),
+            start_time=Timestamp(seconds=int(start_time.timestamp())),
         )
 
-    def set_last_end_time(self, end_time: int):
-        self.last_export.upload_from_string(json.dumps({"end_time": end_time}))
 
 
-def export_metrics(config: Config, dry_run: bool = False) -> int:
+def export_metrics(config: Config, date: str, dry_run: bool = False) -> int:
     exporter = MetricExporter(config)
 
-    interval = exporter.get_time_interval()
+    interval = exporter.get_time_interval(date)
 
     records = []
     for project in config.monitoring.projects:
@@ -145,7 +126,5 @@ def export_metrics(config: Config, dry_run: bool = False) -> int:
         raise Exception("Abort: No records retrieved!")
 
     loader = BigQueryLoader(config, "metrics")
-    loader.insert(records)
-
-    exporter.set_last_end_time(int(interval.end_time.timestamp()))  # type: ignore
+    loader.replace(date, records)
     return 0
