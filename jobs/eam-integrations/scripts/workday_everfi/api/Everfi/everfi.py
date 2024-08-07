@@ -142,7 +142,7 @@ class EverfiAPI():
             if rec.get('relationships','').get('category_labels',''):
                 if len(rec.get('relationships','').get('category_labels','').get('data',''))>0:
                     hire_date_id = rec.get('relationships','').get('category_labels','').get('data','')[0].get('id')
-                    hire_date = hire_dates_inv[hire_date_id]
+                    hire_date = hire_dates_inv.get(hire_date_id, '')
                 else:
                     hire_date = ''
                     
@@ -152,7 +152,8 @@ class EverfiAPI():
                    fix_none(rec.get('attributes',{}).get('employee_id','')) + "|"+\
                    fix_none(str(rec.get('attributes',{}).get('location_id',''))) + "|"+\
                    is_manager  + "|"+\
-                   hire_date
+                   hire_date   + "|"+\
+                   rec.get('attributes',{}).get('sso_id','')
         
         users_dict = {}
         hire_dates_inv = {v: k for k, v in hire_dates_inv.items()}

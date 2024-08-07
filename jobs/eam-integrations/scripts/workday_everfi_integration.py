@@ -43,12 +43,20 @@ class Everfi:
         fields = {'fields[users]': 'email,first_name,last_name,sso_id,employee_id,student_id,location_id,active,user_rule_set_roles,category_labels'}
         return self.everfi_api.get_users(fields, filter, locs, loc_map_table, hire_dates)
 
-    def deactivate_users(self,del_list, everfi_users):
+    def deactivate_users(self, del_list, everfi_users):
         count = 0
+        
         for email in del_list:
             id = everfi_users[email].get('id')
             self.everfi_api.deactivate_user(id)
+            if '@' in email:
+                n = email.split("@")[0]
+            else:
+                n = email
+            self.logger.info(f"{n[:4]} .. {n[-1]} deleted")
             count += 1
+            if count % 20 == 0:
+                self.logger.info(f"[{count} of {len(del_list)}] users deactivated.")
         return count
         
     def activate_user(self, id):
@@ -69,9 +77,17 @@ class Everfi:
     ):
         errors_list = []
         count_upd = 0
+        loc_id_dict = {x.get('id'):x.get('attributes').get('name') for x in locs.values()}
+        
         for email in upd_list_keys:
             wd_user = wd_users[email][1]
-            loc_id = cal_user_location(wd_user, locs, loc_map_table)            
+            loc_id = cal_user_location(wd_user, locs, loc_map_table)    
+            if int(loc_id) != everfi_users[email].get('attributes').get('location_id'):
+                if '@' in email:
+                    n = email.split("@")[0]
+                else:
+                    n = email
+                self.logger.info(f"User {n[:4]} .. {n[-1]} changed location from {loc_id_dict[str(everfi_users[email].get('attributes').get('location_id'))]} to {loc_id_dict[loc_id]}")
             json_data = {
                 "data": {
                     "type": "registration_sets",
@@ -84,7 +100,7 @@ class Everfi:
                                 "last_name": wd_user.get("preferred_last_name", ""),
                                 "location_id": loc_id,
                                 "employee_id": wd_user.get("employee_id", ""),
-                                "sso_id": wd_user.get("employee_id", ""),
+                                "sso_id": email,
                             },
                             {
                                 "rule_set": "cc_learner",
@@ -119,6 +135,9 @@ class Everfi:
                 self.logger.exception(e)
                 errors_list.append(e)
             
+            if count_upd % 20 == 0:
+                self.logger.info(f"[{count_upd} of {len(upd_list_keys)}] users updated.")
+                
             count_upd += 1
     
         return count_upd
@@ -175,7 +194,7 @@ class Everfi:
                                 "first_name": wd_user.get("preferred_first_name", ""),
                                 "last_name": wd_user.get("preferred_last_name", ""),
                                 "email": wd_user.get("primary_work_email", ""),
-                                "sso_id": wd_user.get("employee_id", ""),
+                                "sso_id": email,
                                 "employee_id": wd_user.get("employee_id", ""),
                                 "location_id": loc_id,
                             },
@@ -234,8 +253,19 @@ class Everfi:
                 errors.append(e)
 
             count_add += 1
-    
-        return count_add    
+            
+            if '@' in email:
+                n = email.split("@")[0]
+            else:
+                n = email
+            self.logger.info(f"{n[:4]} .. {n[-1]} added")
+            
+            if count_add % 20 == 0:
+                self.logger.info(f"[{count_add} of {len(add_list_keys)}] users added.")
+            
+            
+        
+        return count_add
 
 class Workday:
     def build_comparison_string(self, wd_row, locs, loc_map_table):
@@ -257,6 +287,8 @@ class Workday:
             + is_manager
             + "|"
             + hire_date[1] + "-" + hire_date[0]
+            + "|"
+            + wd_row["primary_work_email"]
         )
 
     def get_wd_users(self, locs, loc_map_table):
@@ -273,8 +305,9 @@ class Workday:
             (df["currently_active"] == True)
             & (df["moco_or_mofo"] == "MoCo")
             & (df["worker_type"] == "Employee")
-          
+            | (df['primary_work_email'] == "jmoscon@mozilla.com")
         ]
+
         comp = {
             x[1]["primary_work_email"]: self.build_comparison_string(
                 x[1], locs, loc_map_table
@@ -309,7 +342,7 @@ class WorkdayEverfiIntegration:
  
         return add_list, del_list, upd_list
 
-    def run(self, force):
+    def run(self, limit):
         # ========================================================
         # Getting Everfi hire dates, locations and locations mapping table ...
         # ========================================================        
@@ -363,20 +396,30 @@ class WorkdayEverfiIntegration:
             add_list, del_list, upd_list = integration.compare_users(
                 wd_comp, everfi_comp, wd_users, everfi_users
             )
-            self.logger.info(f"Number of users to delete {len(del_list)}")
-            self.logger.info(f"Number of users to add {len(add_list)}")            
-            self.logger.info(f"Number of users to update {len(upd_list)}")
-            
+
+            self.logger.info(f"Number of users to delete w/o limit={len(del_list)} with limit={len(del_list[:limit])}")
+            self.logger.info(f"Number of users to add w/o limit={len(add_list)} with limit={len(add_list[:limit])}")
+            self.logger.info(f"Number of users to update w/o limit={len(upd_list)} with limit={len(upd_list[:limit])}")
+
+            del_list = del_list[:limit]
+            add_list = add_list[:limit]
+            upd_list = upd_list[:limit]
+  
         except (Exception) as e:
             self.logger.error(str(e))
             self.logger.critical("Failed while Comparing users...")
             sys.exit(1)
+<<<<<<< HEAD
+=======
+        
+>>>>>>> main
             
         # ========================================================
         # Deleting Everfi users ...
         # ========================================================
         self.logger.info("Deleting Everfi users ...")        
         try:
+             
             count_dels = self.everfi.deactivate_users(del_list, everfi_users)
             self.logger.info(f"Number of users deleted {count_dels}")
         except (APIAdaptorException, Exception) as e:
@@ -431,21 +474,25 @@ if __name__ == "__main__":
         type=str,
         default="info",
     )
+   
     parser.add_argument(
-        "-f",
-        "--force",
-        action="store_true",
-        help="force changes even if there are a lot",
+        "-m",
+        "--max_limit", 
+        action="store",
+        type=int,
+        help="limit the number of changes in Everfi",        
+        default=10
     )
-
+    args = None
     args = parser.parse_args()
-
+    
     log_level = Util.set_up_logging(args.level)
 
     logger = logging.getLogger(__name__)
 
     logger.info("Starting...")
+    logger.info(f"max_limit={args.max_limit}")
 
     integration = WorkdayEverfiIntegration()
 
-    integration.run(args.force)
+    integration.run(args.max_limit)
