@@ -35,6 +35,10 @@ class HistoryRow(NamedTuple):
     removed: list[str]
 
 
+class BugFetchError(Exception):
+    pass
+
+
 BUGZILLA_API = "https://bugzilla.mozilla.org/rest"
 
 OTHER_BROWSER = ["bugs.chromium.org", "bugs.webkit.org", "crbug.com"]
@@ -300,6 +304,27 @@ class BugzillaToBigQuery:
 
         return filtered
 
+    def chunked_list(self, data: list[int], size: int):
+        for i in range(0, len(data), size):
+            yield data[i : i + size]
+
+    def fetch_blocking_bugs(self, bug_ids: set[int]) -> tuple[bool, MutBugsById]:
+        chunk_size = 400
+        all_bugs: dict[int, Bug] = {}
+        all_completed = True
+
+        for chunk in self.chunked_list(list(bug_ids), chunk_size):
+            logging.info(f"Fetching {len(chunk)} bugs")
+
+            completed, bugs = self.fetch_bugs({"id": ",".join(map(str, chunk))})
+            if completed:
+                all_bugs.update(bugs)
+            else:
+                all_completed = False
+                break
+
+        return all_completed, all_bugs
+
     def fetch_all_bugs(
         self,
     ) -> Optional[tuple[MutBugsById, MutBugsById, MutBugsById, MutBugsById]]:
@@ -332,10 +357,11 @@ class BugzillaToBigQuery:
             kb_depends_on_ids |= set(bug["depends_on"])
 
         logging.info("Fetching blocking bugs for KB bugs")
-        completed, core_bugs = self.fetch_bugs(
-            {"id": ",".join(map(str, kb_depends_on_ids))}
-        )
+
+        completed, core_bugs = self.fetch_blocking_bugs(kb_depends_on_ids)
+
         if not completed:
+            logging.error("Failed to fetch blocking bugs")
             return None
 
         all_bugs: dict[int, Bug] = {}
@@ -1121,8 +1147,10 @@ class BugzillaToBigQuery:
         fetch_all_result = self.fetch_all_bugs()
 
         if fetch_all_result is None:
-            logging.info("Fetching bugs from Bugzilla was not completed, aborting")
-            return
+            raise BugFetchError(
+                "Fetching bugs from Bugzilla was not completed due to an error, aborting."
+            )
+
         all_bugs, site_reports, kb_bugs, core_bugs = fetch_all_result
 
         # Process KB bugs fields and get their dependant core/breakage bugs ids.
@@ -1131,8 +1159,10 @@ class BugzillaToBigQuery:
 
         fetch_missing_result = self.fetch_missing_deps(all_bugs, kb_dep_ids)
         if fetch_missing_result is None:
-            logging.info("Fetching bugs from Bugzilla was not completed, aborting")
-            return
+            raise BugFetchError(
+                "Fetching missing dependencies from Bugzilla was not completed due to an error, aborting."
+            )
+
         missing_bugs, core_missing = fetch_missing_result
 
         core_bugs.update(core_missing)
