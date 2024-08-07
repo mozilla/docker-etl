@@ -103,14 +103,14 @@ class BigQueryLoader:
         self.bucket = self.storage_client.bucket(config.storage.bucket)
         self._record_backup = self.bucket.blob("failed-bq-records.json")
 
-    def ensure_table(self, name: str, cls: Type[Record]):
+    def ensure_table(self, name: str, cls_: Type[Record]):
         """Checks if the table exists in BQ and creates it otherwise.
 
         Fails if the table exists but has the wrong schema.
         """
         print(f"Ensuring table {name} exists.")
         bq = self.config.bigquery
-        schema = generate_schema(cls)
+        schema = generate_schema(cls_)
 
         partition = TimePartitioning(
             type_=TimePartitioningType.DAY,
@@ -121,8 +121,9 @@ class BigQueryLoader:
         table.time_partitioning = partition
         self.client.create_table(table, exists_ok=True)
 
-    def get_table(self, name: str) -> Table:
+    def get_table(self, name: str, cls_: Type[Record]) -> Table:
         if name not in self._tables:
+            self.ensure_table(name, cls_)
             bq = self.config.bigquery
             self._tables[name] = self.client.get_table(
                 f"{bq.project}.{bq.dataset}.{name}"
@@ -144,13 +145,13 @@ class BigQueryLoader:
         tables = {}
         for record in records:
             if record.table not in tables:
-                self.ensure_table(record.table, record.__class__)
                 tables[record.table] = []
             tables[record.table].append(record)
 
         failed_records = []
         for name, rows in tables.items():
-            table = self.get_table(name)
+            print(f"Attempting to insert {len(rows)} records into table '{name}'")
+            table = self.get_table(name, rows[0].__class__)
             errors = self.client.insert_rows(table, [asdict(row) for row in rows])
 
             for error in errors:

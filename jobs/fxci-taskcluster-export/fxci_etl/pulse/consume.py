@@ -40,9 +40,7 @@ def get_consumer(
     return consumer
 
 
-def drain(config: Config, name: str):
-    callbacks = [BigQueryHandler(config)]
-
+def drain(config: Config, name: str, callbacks: list[PulseHandler]):
     with get_connection(config) as connection:
         with get_consumer(config, connection, name, callbacks) as consumer:
             while True:
