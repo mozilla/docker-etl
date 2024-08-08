@@ -56,6 +56,7 @@ pyasn1-modules==0.3.0
 PyMeeus==0.5.12
 pyparsing==3.0.9
 pytest==7.3.2
+pytest-mock==3.14.0
 pytest-ruff==0.3.2
 python-dateutil==2.8.2
 pytz==2023.3
