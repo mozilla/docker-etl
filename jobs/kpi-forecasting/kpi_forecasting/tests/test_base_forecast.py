@@ -1,4 +1,5 @@
 from typing import List
+import collections
 
 import pytest
 import pandas as pd
@@ -160,6 +161,18 @@ def test_summarize(good_class):
     )
     good_class.forecast_df = np.array([1, 2])
     good_class.observed_df = np.array([3, 4])
+    MetricHub = collections.namedtuple(
+        "MetricHub",
+        ["alias", "app_name", "slug", "min_date", "max_date"],
+    )
+
+    dummy_metric_hub = MetricHub("", "", "", "2124-01-01", "2124-01-01")
+
+    # add it here rather than in __init__ so it doesn't try to load data
+    good_class.metric_hub = dummy_metric_hub
+    good_class.trained_at = ""
+    good_class.predicted_at = ""
+
     number_val = 10
     output = good_class.summarize(
         periods=["a", "b", "c"], numpy_aggregations=["sum"], percentiles=["percentiles"]
@@ -170,5 +183,27 @@ def test_summarize(good_class):
             for el in ["a", "b", "c"]
         ]
     )
-    assert output.reset_index(drop=True).equals(expected_output)
-    assert good_class.summary_df.reset_index(drop=True).equals(expected_output)
+    # not going to check all the metadata columns
+    # in assert_frame_equal.  Just make sure they're there
+    metadata_columns = {
+        "metric_alias",
+        "metric_hub_app_name",
+        "metric_hub_slug",
+        "metric_start_date",
+        "metric_end_date",
+        "metric_collected_at",
+        "forecast_start_date",
+        "forecast_end_date",
+        "forecast_trained_at",
+        "forecast_predicted_at",
+        "forecast_parameters",
+    }
+    assert set(expected_output.columns) | metadata_columns == set(output.columns)
+
+    pd.testing.assert_frame_equal(
+        output[expected_output.columns].reset_index(drop=True), expected_output
+    )
+    pd.testing.assert_frame_equal(
+        good_class.summary_df[expected_output.columns].reset_index(drop=True),
+        expected_output,
+    )

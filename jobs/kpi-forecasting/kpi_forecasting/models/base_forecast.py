@@ -189,7 +189,7 @@ class BaseForecast(abc.ABC):
         Returns:
             pd.DataFrame: metric dataframe for all metrics and aggregations
         """
-        self.summary_df = pd.concat(
+        summary_df = pd.concat(
             [
                 self._summarize(
                     self.forecast_df,
@@ -201,5 +201,23 @@ class BaseForecast(abc.ABC):
                 for i in periods
             ]
         )
+
+        # add Metric Hub metadata columns
+        summary_df["metric_alias"] = self.metric_hub.alias.lower()
+        summary_df["metric_hub_app_name"] = self.metric_hub.app_name.lower()
+        summary_df["metric_hub_slug"] = self.metric_hub.slug.lower()
+        summary_df["metric_start_date"] = pd.to_datetime(self.metric_hub.min_date)
+        summary_df["metric_end_date"] = pd.to_datetime(self.metric_hub.max_date)
+        summary_df["metric_collected_at"] = self.collected_at
+
+        # add forecast model metadata columns
+        summary_df["forecast_start_date"] = self.start_date
+        summary_df["forecast_end_date"] = self.end_date
+        summary_df["forecast_trained_at"] = self.trained_at
+        summary_df["forecast_predicted_at"] = self.predicted_at
+
+        summary_df["forecast_parameters"] = self.metadata_params
+
+        self.summary_df = summary_df
 
         return self.summary_df
