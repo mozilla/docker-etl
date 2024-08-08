@@ -1,0 +1,33 @@
+---
+forecast_data_pull:
+  app_name: "multi_product"
+  slug: "search_forecasting_ad_clicks"
+  alias: "search_forecasting_ad_clicks_adjusted"
+  start_date: "2020-01-01"
+  forecast_start_date: "2024-05-01"
+  forecast_project: "mozdata"
+  forecast_dataset: "revenue_cat3_analysis"
+  forecast_table: "search_revenue_forecast_stage"
+  segments:
+    device: "device"
+    channel: "channel"
+    country: "country"
+    partner: "partner"
+  where: "aggregation_period = 'day'"
+
+forecast_model:
+  model_type: "scalar"
+  start_date: NULL
+  end_date: NULL
+  use_holidays: False
+  parameters:
+    formula: "search_forecasting_ad_clicks * scalar"
+
+summarize:
+  requires_summarization: True
+  periods: ["day", "month", "year"]
+
+write_results:
+  project: "moz-fx-data-shared-prod"
+  dataset: "revenue_derived"
+  table: "search_revenue_forecasts_v1"

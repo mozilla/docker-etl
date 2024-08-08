@@ -15,8 +15,8 @@ from prophet.diagnostics import cross_validation
 from kpi_forecasting.configs.model_inputs import (
     ProphetHoliday,
     ProphetRegressor,
-    holiday_collection,
-    regressor_collection,
+    HOLIDAY_COLLECTION,
+    REGRESSOR_COLLECTION,
 )
 from kpi_forecasting.models.base_forecast import BaseForecast
 from kpi_forecasting import pandas_extras as pdx
@@ -99,12 +99,12 @@ class FunnelForecast(BaseForecast):
 
             if model_params["holidays"]:
                 holiday_list = [
-                    getattr(holiday_collection.data, h)
+                    getattr(HOLIDAY_COLLECTION.data, h)
                     for h in model_params["holidays"]
                 ]
             if model_params["regressors"]:
                 regressor_list = [
-                    getattr(regressor_collection.data, r)
+                    getattr(REGRESSOR_COLLECTION.data, r)
                     for r in model_params["regressors"]
                 ]
 
