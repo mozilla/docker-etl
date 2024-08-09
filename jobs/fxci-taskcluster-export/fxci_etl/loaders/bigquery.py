@@ -3,6 +3,7 @@ import json
 from abc import ABC, abstractmethod
 from dataclasses import InitVar, asdict, dataclass, fields, is_dataclass
 from datetime import datetime, timezone
+from itertools import batched
 from pprint import pprint
 from typing import Any, Type, TypeAlias, Union, get_args, get_origin
 
@@ -82,6 +83,8 @@ class Record(ABC):
 
 
 class BigQueryLoader:
+    CHUNK_SIZE = 25000
+
     def __init__(self, config: Config):
         self.config = config
         self._tables = {}
@@ -152,11 +155,18 @@ class BigQueryLoader:
         for name, rows in tables.items():
             print(f"Attempting to insert {len(rows)} records into table '{name}'")
             table = self.get_table(name, rows[0].__class__)
-            errors = self.client.insert_rows(table, [asdict(row) for row in rows])
 
-            for error in errors:
-                pprint(error, indent=2)
-                failed_records.append(rows[error["index"]])
+            # There's a 10MB limit on the `insert_rows` request, submit rows in
+            # batches to avoid exceeding it.
+            errors = []
+            for batch in batched(rows, self.CHUNK_SIZE):
+                errors.extend(self.client.insert_rows(table, [asdict(row) for row in batch], retry=False))
+
+            if errors:
+                print("The following records failed:")
+                for error in errors:
+                    pprint(error)
+                    failed_records.append(rows[error["index"]])
 
             num_inserted = len(rows) - len(errors)
             print(f"Inserted {num_inserted} records in table '{table}'")
