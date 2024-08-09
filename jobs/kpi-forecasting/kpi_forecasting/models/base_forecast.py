@@ -215,7 +215,6 @@ class BaseForecast(abc.ABC):
         summary_df["forecast_end_date"] = self.end_date
         summary_df["forecast_trained_at"] = self.trained_at
         summary_df["forecast_predicted_at"] = self.predicted_at
-
         summary_df["forecast_parameters"] = self.metadata_params
 
         self.summary_df = summary_df
