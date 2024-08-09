@@ -11,6 +11,8 @@ forecast_model:
   start_date: NULL
   end_date: NULL
   use_holidays: False
+  predict_historical_dates: False
+  number_of_simulations: 1000
   parameters:
     seasonality_prior_scale: 0.00825
     changepoint_prior_scale: 0.15983

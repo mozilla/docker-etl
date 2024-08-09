@@ -85,8 +85,87 @@ The tests can be run locally with `python -m pytest` in the root directory of th
 
 # YAML Configs
 
-Each of the sections in the YAML files contains a list of arguments that are passed to their relevant objects or methods.
-Definitions should be documented in the code.
+Configuration for each forecast is found in the `configs` folder.  Below is an example config file with sample values and a description of what the field means as a comment whe it is not self-evident
+
+```
+metric_hub:  # this configures the observed data fed to the model which is obtained via metrichub
+  app_name: "multi_product"  # metric-hub app name
+  slug: "search_forecasting_ad_clicks"  # metric-hub slug
+  alias: "search_forecasting_ad_clicks"  # metric-hub alias
+  start_date: "2018-01-01"  # date at which the observed data should start
+  end_date: "last complete month"
+    # date at which the observed data will end, can be a date or "last complete month" 
+    # which uses `utils.parse_end_date` to determine the last complete month  
+  segments:  
+        # this section is optional and currently only used in funnel forecast, 
+        # specifies which segments are used to partition the data, 
+        # enabling separate models to be fit for each partition.  
+        # Values underneath are a map of column names to be output by the 
+        # metric-hub call and the SQL queries to populate those columns 
+    device: "device"
+    channel: "'all'"
+    country: "CASE WHEN country = 'US' THEN 'US' ELSE 'ROW' END"
+    partner: "partner"
+  where: "partner = 'Google'"  # filter to apply to the metric hub pull
+
+forecast_model:  # this section configures the model 
+  model_type: "funnel"  
+    # type of model object to use, current options are "funnel" for FunnelForecast and "prophet" for ProphetForecast
+  start_date: NULL  
+    # starting date for the predicted data (unless predict_historical_dates is set), 
+    # if unset, value depends on predict_historical_dates.
+  end_date: NULL
+    # final date for the predicted data
+  use_holidays: False
+    For prophet-based models, when true, call `model.add_country_holidays(country_name="US")` on model
+  predict_historical_dates: True
+    # if predict_historical_dates is True, set to first date of the observed data
+    # if predict_historical_dates is False, defaults to the day after the last day in the observed data
+  number_of_simulations: 1000
+    # for prophet-based models,number of simulations to run
+  parameters:
+    # this section can be a map or a list.  
+    # If it's a map, these parameters are used for all models
+    # (recall multiple models are train if there is a metric_hub.segments)
+    # If it's a list, it will set different parameters
+    # for different subsets of the parition specified in `metric_hub.segments`. 
+    - segment: 
+        # specifies which subset of the partitions this applies to
+        # key is a column specified in metric_hub.segments
+        # value is a value that column can take to which the configuration is applied
+        device: desktop
+      start_date: "2018-01-01"  # only applies to FunnelForecast, allows one to set start date for each sub-model
+      end_date: NULL # only applies to FunnelForecast, allows one to set end date for each sub-model
+      holidays: ["easter", "covid_sip11"]  # holidays specified in `configs.model_inputs.holidays` to use.
+      regressors: ["post_esr_migration", "in_covid", "ad_click_bug"] # regressors specified in `configs.model_inputs.regressors`
+      grid_parameters:
+        # sets grid for hyperparameter tuning
+        changepoint_prior_scale: [0.001, 0.01, 0.1, 0.2, 0.5]
+        changepoint_range: [0.8, 0.9]
+        n_changepoints: [25, 50]
+        weekly_seasonality: True
+        yearly_seasonality: True
+      cv_settings:
+        # sets parameters for prophet cross-validation used in FunnelForecast
+        initial: "1296 days"
+        period: "30 days"
+        horizon: "30 days"
+        parallel: "processes"
+    ...
+
+summarize:
+    # parameters used to summarize and aggregate the predictions
+  periods: ["day", "month"]  # periods to aggregate up to
+  numpy_aggregations: ["mean"] # numpy aggregation functions to use when aggregating predictions
+  percentiles: [10, 50, 90] # precentiles to calculate on aggregation
+
+write_results:
+    # set the project, dataset and table for output data
+  project: "moz-fx-data-shared-prod"
+  dataset: "search_derived"
+  table: "search_funnel_forecasts_v1"
+  components_table: "search_forecast_model_components_v1"
+```
 
 # Development
 

@@ -16,6 +16,16 @@ from google.cloud.bigquery.enums import SqlTypeNames as bq_types
 
 @dataclass
 class ProphetForecast(BaseForecast):
+    """Forecast object specifically for prophet forecast models
+
+    Additional attributes:
+    number_of_simulations (int): The number of simulated timeseries that the forecast
+            should generate. Since many forecast models are probablistic, this enables the
+            measurement of variation across a range of possible outcomes.
+    """
+
+    number_of_simulations: int = 1000
+
     @property
     def column_names_map(self) -> Dict[str, str]:
         return {"submission_date": "ds", "value": "y"}
