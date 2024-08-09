@@ -1,6 +1,7 @@
 import argparse
 import google.auth
 import logging
+import os
 import requests
 import re
 import time
@@ -1211,7 +1212,11 @@ def get_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--bq_project_id", required=True, help="BigQuery project id")
     parser.add_argument("--bq_dataset_id", required=True, help="BigQuery dataset id")
-    parser.add_argument("--bugzilla_api_key", help="Bugzilla API key")
+    parser.add_argument(
+        "--bugzilla_api_key",
+        help="Bugzilla API key",
+        default=os.environ.get("BUGZILLA_API_KEY"),
+    )
     return parser
 
 
