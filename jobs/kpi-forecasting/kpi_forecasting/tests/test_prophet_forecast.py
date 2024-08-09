@@ -227,8 +227,6 @@ def test_combine_forecast_observed(mocker, forecast):
     assert set(expected.columns) == set(output_df.columns)
     # force value columns to be floats in both cases to make check easier
     numeric_cols = ["value", "value_low", "value_mid", "value_high"]
-    # expected[numeric_cols] = expected[numeric_cols].astype(float)
-    # output_df[numeric_cols] = output_df[numeric_cols].astype(float)
     pd.testing.assert_frame_equal(
         output_df.sort_values(["submission_date", "measure"]).reset_index(drop=True),
         expected[output_df.columns].reset_index(drop=True),
@@ -320,8 +318,6 @@ def test_under_summarize(mocker, forecast):
     assert set(expected.columns) == set(output_df.columns)
     # force value columns to be floats in both cases to make check easier
     numeric_cols = ["value", "value_low", "value_mid", "value_high"]
-    # expected[numeric_cols] = expected[numeric_cols].astype(float)
-    # output_df[numeric_cols] = output_df[numeric_cols].astype(float)
     pd.testing.assert_frame_equal(
         output_df.sort_values(["submission_date", "measure"]).reset_index(drop=True),
         expected[output_df.columns].reset_index(drop=True),
@@ -343,7 +339,7 @@ def test_summarize(mocker, forecast):
 
     dummy_metric_hub = MetricHub("", "", "", "2124-01-01", "2124-01-01")
 
-    # 2024-01-01 is chosen as an arbitrary date to center the tests around
+    # 2124-01-01 is chosen as an arbitrary date to center the tests around
 
     # forecast predictions are set with the
     # mock_aggregate_forecast_observed function so they
