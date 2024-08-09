@@ -117,22 +117,16 @@ class FunnelForecast(ProphetForecast):
         ## file. Parse the holidays and regressors specified in the config file.
         segment_models = []
         for segment in segment_combinations:
-            model_params = getattr(
-                self.parameters["segment_settings"], segment[split_dim]
-            )
+            model_params = self.parameters["segment_settings"][segment[split_dim]]
 
             holiday_list = []
             regressor_list = []
 
             if model_params["holidays"]:
-                holiday_list = [
-                    getattr(holiday_collection.data, h)
-                    for h in model_params["holidays"]
-                ]
+                holiday_list = [holiday_collection[h] for h in model_params["holidays"]]
             if model_params["regressors"]:
                 regressor_list = [
-                    getattr(regressor_collection.data, r)
-                    for r in model_params["regressors"]
+                    regressor_collection[r] for r in model_params["regressors"]
                 ]
 
             # Create a SegmentModelSettings object for each segment combination

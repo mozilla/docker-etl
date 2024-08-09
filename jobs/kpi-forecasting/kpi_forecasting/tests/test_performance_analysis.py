@@ -58,6 +58,7 @@ def directory_of_configs(tmp_path_factory):
             "dataset": "y",
             "table": "z",
         },
+        "metric_hub": {},
     }
     f4 = tmpdir / "config_nosegments1_1.yaml"
     f5 = tmpdir / "config_nosegments1_2.yaml"
@@ -73,6 +74,7 @@ def directory_of_configs(tmp_path_factory):
             "dataset": "q",
             "table": "z",
         },
+        "metric_hub": {},
     }
     f6 = tmpdir / "config_nosegments2_1.yaml"
 
@@ -91,6 +93,7 @@ def get_forecast_performance_config(tmp_path_factory):
             "dataset": "",
             "table": "",
         },
+        "metric_hub": {},
     }
     f1 = tmpdir / "config.yaml"
     with open(f1, "w") as outfile:

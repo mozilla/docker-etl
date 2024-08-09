@@ -3,7 +3,6 @@ import collections
 
 import pytest
 import pandas as pd
-from dotmap import DotMap
 import numpy as np
 from datetime import datetime, timedelta, timezone
 
@@ -81,7 +80,7 @@ def test_post_init(good_class):
     end_date = "2124-02-02"
     good_class = good_class(
         model_type="test",
-        parameters=DotMap(),
+        parameters={},
         use_holidays=None,
         start_date=start_date,
         end_date=end_date,
@@ -101,7 +100,7 @@ def test_post_init_default_dates(good_class):
     # check default start and end time
     good_class = good_class(
         model_type="test",
-        parameters=DotMap(),
+        parameters={},
         use_holidays=None,
         start_date="",
         end_date="",
@@ -122,7 +121,7 @@ def test_post_init_default_dates(good_class):
 def test_fit(good_class):
     good_class = good_class(
         model_type="test",
-        parameters=DotMap(),
+        parameters={},
         use_holidays=None,
         start_date="2124-01-01",
         end_date="2124-02-02",
@@ -138,7 +137,7 @@ def test_fit(good_class):
 def test_predict_and_validate(good_class):
     good_class = good_class(
         model_type="test",
-        parameters=DotMap(),
+        parameters={},
         use_holidays=None,
         start_date="2124-01-01",
         end_date="2124-02-02",
@@ -153,7 +152,7 @@ def test_predict_and_validate(good_class):
 def test_summarize(good_class):
     good_class = good_class(
         model_type="test",
-        parameters=DotMap(),
+        parameters={},
         use_holidays=None,
         start_date="2124-01-01",
         end_date="2124-02-02",
