@@ -17,42 +17,44 @@ forecast_model:
   start_date: NULL
   end_date: NULL
   use_holidays: False
+  predict_historical_dates: True
+  number_of_simulations: 1000
   parameters:
-    model_setting_split_dim: "device"
-    segment_settings:
-      desktop:
-        start_date: "2018-01-01"
-        end_date: NULL
-        holidays: ["easter", "covid_sip11"]
-        regressors: ["post_esr_migration", "in_covid", "ad_click_bug"]
-        grid_parameters:
-          changepoint_prior_scale: [0.001, 0.01, 0.1, 0.2, 0.5]
-          changepoint_range: [0.8, 0.9]
-          n_changepoints: [25, 50]
-          weekly_seasonality: True
-          yearly_seasonality: True
-        cv_settings:
-          initial: "1296 days"
-          period: "30 days"
-          horizon: "30 days"
-          parallel: "processes"
-      mobile:
-        start_date: "2022-01-01"
-        end_date: NULL
-        holidays: ["easter"]
-        regressors: ["after_fenix", "in_covid"]
-        grid_parameters:
-          changepoint_prior_scale: [.01, .1, .15, .2]
-          changepoint_range: [0.8, 0.9, 1]
-          n_changepoints: [30]
-          weekly_seasonality: True
-          yearly_seasonality: True
-          growth: "logistic"
-        cv_settings:
-          initial: "366 days"
-          period: "30 days"
-          horizon: "30 days"
-          parallel: "processes"
+    - segment: 
+        device: desktop
+      start_date: "2018-01-01"
+      end_date: NULL
+      holidays: ["easter", "covid_sip11"]
+      regressors: ["post_esr_migration", "in_covid", "ad_click_bug"]
+      grid_parameters:
+        changepoint_prior_scale: [0.001, 0.01, 0.1, 0.2, 0.5]
+        changepoint_range: [0.8, 0.9]
+        n_changepoints: [25, 50]
+        weekly_seasonality: True
+        yearly_seasonality: True
+      cv_settings:
+        initial: "1296 days"
+        period: "30 days"
+        horizon: "30 days"
+        parallel: "processes"
+    - segment:
+        device: mobile
+      start_date: "2022-01-01"
+      end_date: NULL
+      holidays: ["easter"]
+      regressors: ["after_fenix", "in_covid"]
+      grid_parameters:
+        changepoint_prior_scale: [.01, .1, .15, .2]
+        changepoint_range: [0.8, 0.9, 1]
+        n_changepoints: [30]
+        weekly_seasonality: True
+        yearly_seasonality: True
+        growth: "logistic"
+      cv_settings:
+        initial: "366 days"
+        period: "30 days"
+        horizon: "30 days"
+        parallel: "processes"
 
 summarize:
   periods: ["day", "month"]

@@ -69,34 +69,33 @@ def funnel_forecast_for_fit_tests(segment_info_fit_tests, mocker):
     """This method creates a forecast object from the segment dict
     created in the segment_info_fit_tests fixture.  It also
     mocks some of the object methods to enable easier testing"""
-    parameter_dict = {
-        "model_setting_split_dim": "a",
-        "segment_settings": {
-            "A1": {
-                "start_date": segment_info_fit_tests["A1"]["start_date"],
-                "end_date": None,
-                "holidays": [],
-                "regressors": [],
-                "grid_parameters": segment_info_fit_tests["A1"]["grid_parameters"],
-                "cv_settings": {},
-            },
-            "A2": {
-                "start_date": segment_info_fit_tests["A2"]["start_date"],
-                "end_date": None,
-                "holidays": [],
-                "regressors": [],
-                "grid_parameters": segment_info_fit_tests["A2"]["grid_parameters"],
-                "cv_settings": {},
-            },
+    parameter_list = [
+        {
+            "segment": {"a": "A1"},
+            "start_date": segment_info_fit_tests["A1"]["start_date"],
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": segment_info_fit_tests["A1"]["grid_parameters"],
+            "cv_settings": {},
         },
-    }
+        {
+            "segment": {"a": "A2"},
+            "start_date": segment_info_fit_tests["A2"]["start_date"],
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": segment_info_fit_tests["A2"]["grid_parameters"],
+            "cv_settings": {},
+        },
+    ]
 
     predict_start_date = TEST_DATE_STR
     predict_end_date = TEST_DATE_NEXT_DAY_STR
 
     forecast = FunnelForecast(
         model_type="test",
-        parameters=parameter_dict,
+        parameters=parameter_list,
         use_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
@@ -501,26 +500,24 @@ def test_under_predict(mocker):
     # set segment models
 
     A1_start_date = TEST_DATE_STR
-    parameter_dict = {
-        "model_setting_split_dim": "a",
-        "segment_settings": {
-            "A1": {
-                "start_date": A1_start_date,
-                "end_date": None,
-                "holidays": [],
-                "regressors": [],
-                "grid_parameters": {"param1": [1, 2], "param2": [20, 10]},
-                "cv_settings": {},
-            },
-        },
-    }
+    parameter_list = [
+        {
+            "segment": {"a": "A1"},
+            "start_date": A1_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {"param1": [1, 2], "param2": [20, 10]},
+            "cv_settings": {},
+        }
+    ]
 
     predict_start_date = TEST_DATE_NEXT_DAY_STR
     predict_end_date = TEST_PREDICT_END_STR
 
     forecast = FunnelForecast(
         model_type="test",
-        parameters=parameter_dict,
+        parameters=parameter_list,
         use_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
@@ -856,34 +853,33 @@ def test_set_segment_models():
     """test the set_segment_models method"""
     A1_start_date = "2018-01-01"
     A2_start_date = "2020-02-02"
-    parameter_dict = {
-        "model_setting_split_dim": "a",
-        "segment_settings": {
-            "A1": {
-                "start_date": A1_start_date,
-                "end_date": None,
-                "holidays": [],
-                "regressors": [],
-                "grid_parameters": {},
-                "cv_settings": {},
-            },
-            "A2": {
-                "start_date": A2_start_date,
-                "end_date": None,
-                "holidays": [],
-                "regressors": [],
-                "grid_parameters": {},
-                "cv_settings": {},
-            },
+    parameter_list = [
+        {
+            "segment": {"a": "A1"},
+            "start_date": A1_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
         },
-    }
+        {
+            "segment": {"a": "A2"},
+            "start_date": A2_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
+        },
+    ]
 
     predict_start_date = TEST_DATE_STR
     predict_end_date = TEST_PREDICT_END_STR
 
     forecast = FunnelForecast(
         model_type="test",
-        parameters=parameter_dict,
+        parameters=parameter_list,
         use_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
@@ -934,34 +930,33 @@ def test_set_segment_models_exception():
     is specified that isn't in the data"""
     A1_start_date = "2018-01-01"
     A2_start_date = "2020-02-02"
-    parameter_dict = {
-        "model_setting_split_dim": "c",  # not in data
-        "segment_settings": {
-            "A1": {
-                "start_date": A1_start_date,
-                "end_date": None,
-                "holidays": [],
-                "regressors": [],
-                "grid_parameters": {},
-                "cv_settings": {},
-            },
-            "A2": {
-                "start_date": A2_start_date,
-                "end_date": None,
-                "holidays": [],
-                "regressors": [],
-                "grid_parameters": {},
-                "cv_settings": {},
-            },
+    parameter_list = [
+        {
+            "segment": {"c": "A1"},
+            "start_date": A1_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
         },
-    }
+        {
+            "segment": {"c": "A2"},
+            "start_date": A2_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
+        },
+    ]
 
     predict_start_date = TEST_DATE_STR
     predict_end_date = TEST_PREDICT_END_STR
 
     forecast = FunnelForecast(
         model_type="test",
-        parameters=parameter_dict,
+        parameters=parameter_list,
         use_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
@@ -976,7 +971,7 @@ def test_set_segment_models_exception():
 
     with pytest.raises(
         ValueError,
-        match="model_setting_split_dim set to c which is not among segment columns: a,b",
+        match="Segment keys missing from metric hub segments: c",
     ):
         forecast._set_segment_models(
             observed_df=observed_data, segment_column_list=segment_list
