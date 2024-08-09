@@ -5,7 +5,6 @@ from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
 
 import pandas as pd
-from dotmap import DotMap
 import pytest
 import numpy as np
 
@@ -31,7 +30,7 @@ def forecast():
 
     forecast = FunnelForecast(
         model_type="test",
-        parameters=DotMap(),
+        parameters={},
         use_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
@@ -92,12 +91,12 @@ def funnel_forecast_for_fit_tests(segment_info_fit_tests, mocker):
         },
     }
 
-    parameter_dotmap = DotMap(parameter_dict)
     predict_start_date = TEST_DATE_STR
     predict_end_date = TEST_DATE_NEXT_DAY_STR
+
     forecast = FunnelForecast(
         model_type="test",
-        parameters=parameter_dotmap,
+        parameters=parameter_dict,
         use_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
@@ -516,13 +515,12 @@ def test_under_predict(mocker):
         },
     }
 
-    parameter_dotmap = DotMap(parameter_dict)
     predict_start_date = TEST_DATE_NEXT_DAY_STR
     predict_end_date = TEST_PREDICT_END_STR
 
     forecast = FunnelForecast(
         model_type="test",
-        parameters=parameter_dotmap,
+        parameters=parameter_dict,
         use_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
@@ -880,13 +878,12 @@ def test_set_segment_models():
         },
     }
 
-    parameter_dotmap = DotMap(parameter_dict)
     predict_start_date = TEST_DATE_STR
     predict_end_date = TEST_PREDICT_END_STR
 
     forecast = FunnelForecast(
         model_type="test",
-        parameters=parameter_dotmap,
+        parameters=parameter_dict,
         use_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
@@ -959,13 +956,12 @@ def test_set_segment_models_exception():
         },
     }
 
-    parameter_dotmap = DotMap(parameter_dict)
     predict_start_date = TEST_DATE_STR
     predict_end_date = TEST_PREDICT_END_STR
 
     forecast = FunnelForecast(
         model_type="test",
-        parameters=parameter_dotmap,
+        parameters=parameter_dict,
         use_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,

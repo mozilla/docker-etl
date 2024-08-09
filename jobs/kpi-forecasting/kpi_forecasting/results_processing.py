@@ -4,7 +4,7 @@ from functools import partial
 from google.cloud import bigquery
 from google.cloud.bigquery.enums import SqlTypeNames as bq_types
 
-from kpi_forecasting.inputs import YAML
+from kpi_forecasting.inputs import load_yaml
 import pandas as pd
 import numpy as np
 
@@ -74,12 +74,13 @@ class PerformanceAnalysis:
 
     def _load_config_data(self):
         """Extracts data from the list of config files passed to the class and stores it in the
-        config_data attribute. The filename is the key, and the contents (represnted as a DotMap)
+        config_data attribute. The filename is the key, and the contents
         are the values"""
         self.config_data = {}
         for config_file in self.input_config_list:
             full_path = f"{self.input_config_path}/{config_file}"
-            config_data = YAML(full_path).data
+            config_data = load_yaml(full_path)
+            print(config_data)
             self.config_data[config_file] = config_data
 
     def _extract_config_data(self):
@@ -99,7 +100,7 @@ class PerformanceAnalysis:
         config_file_list = list(self.config_data.keys())
         for config_data in self.config_data.values():
             # get segment data
-            metric_hub_data = config_data.metric_hub.toDict()
+            metric_hub_data = config_data["metric_hub"]
             if "segments" in metric_hub_data:
                 segment_data = metric_hub_data["segments"]
                 segment_data_list.append(segment_data)
@@ -107,7 +108,7 @@ class PerformanceAnalysis:
                 segment_data_list.append(None)
 
             # get input table info
-            input_table_list.append(config_data.write_results.toDict())
+            input_table_list.append(config_data["write_results"])
 
         input_table_data = input_table_list.pop(0)
         input_table_matches_first = [input_table_data == el for el in input_table_list]

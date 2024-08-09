@@ -2,7 +2,6 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 
 import pandas as pd
-from dotmap import DotMap
 import numpy as np
 import pytest
 import collections
@@ -34,13 +33,12 @@ def forecast():
         },
     }
 
-    parameter_dotmap = DotMap(parameter_dict)
     predict_start_date = TEST_DATE_NEXT_DAY_STR
     # arbitarily set it a couple months in the future
     predict_end_date = (TEST_DATE + relativedelta(months=2)).strftime("%Y-%m-%d")
     return ProphetForecast(
         model_type="test",
-        parameters=parameter_dotmap,
+        parameters=parameter_dict,
         use_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
@@ -550,7 +548,7 @@ def test_summarize_non_overlapping_day():
 
     forecast = ProphetForecast(
         model_type="test",
-        parameters=DotMap(),
+        parameters={},
         use_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
@@ -668,7 +666,7 @@ def test_summarize_non_overlapping_month():
 
     forecast = ProphetForecast(
         model_type="test",
-        parameters=DotMap(),
+        parameters={},
         use_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
@@ -787,7 +785,7 @@ def test_summarize_overlapping_day():
 
     forecast = ProphetForecast(
         model_type="test",
-        parameters=DotMap(),
+        parameters={},
         use_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
@@ -901,7 +899,7 @@ def test_summarize_overlapping_month():
 
     forecast = ProphetForecast(
         model_type="test",
-        parameters=DotMap(),
+        parameters={},
         use_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,

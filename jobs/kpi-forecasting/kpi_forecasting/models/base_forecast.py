@@ -71,7 +71,7 @@ class BaseForecast(abc.ABC):
         self.metadata_params = json.dumps(
             {
                 "model_type": self.model_type.lower(),
-                "model_params": self.parameters.toDict(),
+                "model_params": self.parameters,
                 "use_holidays": self.use_holidays,
             }
         )
