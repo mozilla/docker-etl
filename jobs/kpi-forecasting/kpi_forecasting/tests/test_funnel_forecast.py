@@ -924,6 +924,104 @@ def test_set_segment_models():
         assert checkval == expectedval
 
 
+def test_set_segment_models_multiple():
+    """test the set_segment_models method
+    with segments on multiple columns"""
+    # set arbitrary dates
+    # they're only used to make sure segments are set correctly
+    A1B1_start_date = "2018-01-01"
+    A1B2_start_date = "2019-01-01"
+    A2B1_start_date = "2020-02-02"
+    A2B2_start_date = "2021-02-02"
+    parameter_list = [
+        {
+            "segment": {"a": "A1", "b": "B1"},
+            "start_date": A1B1_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
+        },
+        {
+            "segment": {"a": "A1", "b": "B2"},
+            "start_date": A1B2_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
+        },
+        {
+            "segment": {"a": "A2", "b": "B1"},
+            "start_date": A2B1_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
+        },
+        {
+            "segment": {"a": "A2", "b": "B2"},
+            "start_date": A2B2_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
+        },
+    ]
+
+    predict_start_date = TEST_DATE_STR
+    predict_end_date = TEST_PREDICT_END_STR
+
+    forecast = FunnelForecast(
+        model_type="test",
+        parameters=parameter_list,
+        use_holidays=None,
+        start_date=predict_start_date,
+        end_date=predict_end_date,
+        metric_hub=None,
+    )
+
+    observed_data = pd.DataFrame(
+        {"a": ["A1", "A1", "A2", "A2", "A2"], "b": ["B1", "B2", "B1", "B2", "B2"]}
+    )
+
+    segment_list = ["a", "b"]
+
+    forecast._set_segment_models(
+        observed_df=observed_data, segment_column_list=segment_list
+    )
+
+    # put the segments and the start date in the same dictionary to make
+    # comparison easier
+    # the important things to check is that all possible combinations
+    # of segments are present and that each has the parameters set properly
+    # start_date is a stand-in for these parameters and
+    # is determined by the value of a as specified in parameter_dict
+    check_segment_models = [
+        dict(**el.segment, **{"start_date": el.start_date})
+        for el in forecast.segment_models
+    ]
+    expected = [
+        {"a": "A1", "b": "B1", "start_date": A1B1_start_date},
+        {"a": "A1", "b": "B2", "start_date": A1B2_start_date},
+        {"a": "A2", "b": "B1", "start_date": A2B1_start_date},
+        {"a": "A2", "b": "B2", "start_date": A2B2_start_date},
+    ]
+
+    # can't make a set of dicts for comparison
+    # so sort the lists and compare each element
+    compare_sorted = zip(
+        sorted(check_segment_models, key=lambda x: (x["a"], x["b"])),
+        sorted(expected, key=lambda x: (x["a"], x["b"])),
+    )
+
+    for checkval, expectedval in compare_sorted:
+        assert checkval == expectedval
+
+
 def test_set_segment_models_exception():
     """test the exception for segment_models where
     and exception is raised if a model_setting_split_dim
