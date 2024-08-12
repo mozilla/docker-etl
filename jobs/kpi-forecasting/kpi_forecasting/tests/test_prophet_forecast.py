@@ -1,3 +1,6 @@
+from datetime import date
+from dateutil.relativedelta import relativedelta
+
 import pandas as pd
 from dotmap import DotMap
 import numpy as np
@@ -7,10 +10,16 @@ import collections
 
 from kpi_forecasting.models.prophet_forecast import ProphetForecast
 
+# Arbitrarily choose some date to use for the tests
+TEST_DATE = date(2024, 1, 1)
+TEST_DATE_STR = TEST_DATE.strftime("%Y-%m-%d")
+TEST_DATE_NEXT_DAY = date(2024, 1, 1)
+TEST_DATE_NEXT_DAY_STR = TEST_DATE_NEXT_DAY.strftime("%Y-%m-%d")
+
 
 @pytest.fixture
 def forecast():
-    A1_start_date = "2124-01-01"
+    A1_start_date = TEST_DATE_STR
     parameter_dict = {
         "model_setting_split_dim": "a",
         "segment_settings": {
@@ -26,8 +35,9 @@ def forecast():
     }
 
     parameter_dotmap = DotMap(parameter_dict)
-    predict_start_date = "2124-01-02"
-    predict_end_date = "2124-03-01"
+    predict_start_date = TEST_DATE_NEXT_DAY_STR
+    # arbitarily set it a couple months in the future
+    predict_end_date = (TEST_DATE + relativedelta(months=2)).strftime("%Y-%m-%d")
     return ProphetForecast(
         model_type="test",
         parameters=parameter_dotmap,
@@ -104,10 +114,10 @@ def test_under_fit(forecast, mocker):
     observed_data = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -128,10 +138,10 @@ def test_fit(forecast, mocker):
     observed_data = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -150,16 +160,14 @@ def test_fit(forecast, mocker):
 
 def test_combine_forecast_observed(mocker, forecast):
     """tests the _combine_forecast_observed method"""
-    # 2024-01-01 is chosen as an arbitrary date to center the tests around
-
     # forecast predictions are set with the
     # mock_aggregate_forecast_observed function so they
     # can be ommited here
     forecast_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -169,8 +177,8 @@ def test_combine_forecast_observed(mocker, forecast):
     observed_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "value": [10, 20],
         }
@@ -192,8 +200,8 @@ def test_combine_forecast_observed(mocker, forecast):
     observed_expected_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "value": [10, 20],
             "measure": ["observed", "observed"],
@@ -205,14 +213,14 @@ def test_combine_forecast_observed(mocker, forecast):
     forecast_expected_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "measure": ["mean", "mean", "p10", "p10", "p50", "p50", "p90", "p90"],
             "value": [0] * 8,
@@ -239,16 +247,14 @@ def test_combine_forecast_observed(mocker, forecast):
 
 def test_under_summarize(mocker, forecast):
     """testing _summarize"""
-    # 2024-01-01 is chosen as an arbitrary date to center the tests around
-
     # forecast predictions are set with the
     # mock_aggregate_forecast_observed function so they
     # can be ommited here
     forecast_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -258,8 +264,8 @@ def test_under_summarize(mocker, forecast):
     observed_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "value": [10, 20],
         }
@@ -281,8 +287,8 @@ def test_under_summarize(mocker, forecast):
     observed_expected_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "value": [10, 20],
             "measure": ["observed", "observed"],
@@ -294,14 +300,14 @@ def test_under_summarize(mocker, forecast):
     forecast_expected_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "measure": ["mean", "mean", "p10", "p10", "p50", "p50", "p90", "p90"],
             "value": [0] * 8,
@@ -337,9 +343,7 @@ def test_summarize(mocker, forecast):
         ["alias", "app_name", "slug", "min_date", "max_date"],
     )
 
-    dummy_metric_hub = MetricHub("", "", "", "2124-01-01", "2124-01-01")
-
-    # 2124-01-01 is chosen as an arbitrary date to center the tests around
+    dummy_metric_hub = MetricHub("", "", "", TEST_DATE_STR, TEST_DATE_STR)
 
     # forecast predictions are set with the
     # mock_aggregate_forecast_observed function so they
@@ -347,8 +351,8 @@ def test_summarize(mocker, forecast):
     forecast_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -358,8 +362,8 @@ def test_summarize(mocker, forecast):
     observed_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "value": [10, 20],
         }
@@ -396,8 +400,8 @@ def test_summarize(mocker, forecast):
     observed_expected_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "value": [10, 20],
             "measure": ["observed", "observed"],
@@ -409,14 +413,14 @@ def test_summarize(mocker, forecast):
     forecast_expected_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "measure": ["mean", "mean", "p10", "p10", "p50", "p50", "p90", "p90"],
             "value": [0] * 8,
@@ -476,8 +480,8 @@ def test_under_predict(mocker, forecast):
         {
             "y": [0, 1],
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -485,8 +489,8 @@ def test_under_predict(mocker, forecast):
     dates_to_predict = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ]
         }
     )
@@ -502,8 +506,8 @@ def test_under_predict(mocker, forecast):
         {
             0: [0, 2],
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -525,8 +529,8 @@ def test_under_predict(mocker, forecast):
         {
             0: [0, 2],
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -536,11 +540,13 @@ def test_under_predict(mocker, forecast):
 
 
 def test_summarize_non_overlapping_day():
-    observed_start_date = "2124-01-01"
-    observed_end_date = "2124-02-01"
+    observed_start_date = TEST_DATE_STR
+    observed_end_date = (TEST_DATE + relativedelta(months=1)).strftime("%Y-%m-%d")
 
-    predict_start_date = "2124-02-02"
-    predict_end_date = "2124-03-01"
+    predict_start_date = (TEST_DATE + relativedelta(months=1, days=1)).strftime(
+        "%Y-%m-%d"
+    )
+    predict_end_date = (TEST_DATE + relativedelta(months=2)).strftime("%Y-%m-%d")
 
     forecast = ProphetForecast(
         model_type="test",
@@ -562,10 +568,15 @@ def test_summarize_non_overlapping_day():
         }
     )
 
+    # there are the samples generated
+    # the mean and median are the aggregates used
     test_samples = np.array([1, 1, 2, 3, 5, 8, 13])
     test_mean = np.mean(test_samples)
     test_median = np.median(test_samples)
 
+    # mean and median scale with a factor
+    # so a factor is multiplied on to make sure the aggregation is working
+    # across rows properly
     forecast_array = np.stack(
         [test_samples * i for i in range(1, 1 + len(predict_submission_dates))],
         axis=0,
@@ -639,11 +650,21 @@ def test_summarize_non_overlapping_day():
 
 
 def test_summarize_non_overlapping_month():
+    # choose arbitrary year for the start and end dates
+    # two full months (Jan and Feb )
+    # are in the observed data, the number of days (31 and 28 days respectively)
+    # in each month is used in the checks
     observed_start_date = "2124-01-01"
     observed_end_date = "2124-02-28"
 
+    # two full months (April and May )
+    # are in the observed data, the number of days (28 and 31 days respectively)
+    # in each month is used in the checks
     predict_start_date = "2124-04-01"
     predict_end_date = "2124-05-31"
+
+    print(observed_start_date, observed_end_date)
+    print(predict_start_date, predict_end_date)
 
     forecast = ProphetForecast(
         model_type="test",
@@ -758,11 +779,11 @@ def test_summarize_non_overlapping_month():
 
 
 def test_summarize_overlapping_day():
-    observed_start_date = "2124-01-01"
-    observed_end_date = "2124-02-01"
+    observed_start_date = TEST_DATE_STR
+    observed_end_date = (TEST_DATE + relativedelta(months=1)).strftime("%Y-%m-%d")
 
-    predict_start_date = "2124-01-01"
-    predict_end_date = "2124-02-01"
+    predict_start_date = TEST_DATE_STR
+    predict_end_date = (TEST_DATE + relativedelta(months=1)).strftime("%Y-%m-%d")
 
     forecast = ProphetForecast(
         model_type="test",
@@ -784,10 +805,15 @@ def test_summarize_overlapping_day():
         }
     )
 
+    # there are the samples generated
+    # the mean and median are the aggregates used
     test_samples = np.array([1, 1, 2, 3, 5, 8, 13])
     test_mean = np.mean(test_samples)
     test_median = np.median(test_samples)
 
+    # mean and median scale with a factor
+    # so a factor is multiplied on to make sure the aggregation is working
+    # across rows properly
     forecast_array = np.stack(
         [test_samples * i for i in range(1, 1 + len(predict_submission_dates))],
         axis=0,
@@ -863,6 +889,10 @@ def test_summarize_overlapping_day():
 
 
 def test_summarize_overlapping_month():
+    # choose arbitrary year for the start and end dates
+    # two full months (Jan and Feb )
+    # are in the observed data, the number of days (31 and 28 days respectively)
+    # in each month is used in the checks
     observed_start_date = "2124-01-01"
     observed_end_date = "2124-02-28"
 
@@ -889,10 +919,15 @@ def test_summarize_overlapping_month():
         }
     )
 
+    # there are the samples generated
+    # the mean and median are the aggregates used
     test_samples = np.array([1, 1, 2, 3, 5, 8, 13])
     test_mean = np.mean(test_samples)
     test_median = np.median(test_samples)
 
+    # mean and median scale with a factor
+    # so a factor is multiplied on to make sure the aggregation is working
+    # across rows properly
     forecast_array = np.stack(
         [test_samples] * len(predict_submission_dates),
         axis=0,

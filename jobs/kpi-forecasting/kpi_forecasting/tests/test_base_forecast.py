@@ -1,14 +1,24 @@
 from typing import List
 import collections
+from datetime import date, datetime
+from dateutil.relativedelta import relativedelta
 
 import pytest
 import pandas as pd
 from dotmap import DotMap
 import numpy as np
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 
 
 from kpi_forecasting.models.base_forecast import BaseForecast
+
+# Arbitrarily choose some date to use for the tests
+TEST_DATE = date(2024, 1, 1)
+TEST_DATE_STR = TEST_DATE.strftime("%Y-%m-%d")
+TEST_DATE_NEXT_DAY = date(2024, 1, 2)
+TEST_DATE_NEXT_DAY_STR = TEST_DATE_NEXT_DAY.strftime("%Y-%m-%d")
+TEST_PREDICT_END = TEST_DATE + relativedelta(months=2)
+TEST_PREDICT_END_STR = TEST_PREDICT_END.strftime("%Y-%m-%d")
 
 
 class BadClass(BaseForecast):
@@ -30,8 +40,9 @@ def good_class():
             self.observed_df = pd.DataFrame(
                 {
                     "submission_date": [
-                        pd.to_datetime("2020-01-01"),
-                        pd.to_datetime("1990-01-01"),
+                        TEST_DATE,
+                        TEST_DATE
+                        - relativedelta(years=1),  # just an arbitrary date in the past
                     ]
                 }
             )
@@ -77,8 +88,8 @@ def test_not_implemented():
 
 
 def test_post_init(good_class):
-    start_date = "2124-01-01"
-    end_date = "2124-02-02"
+    start_date = TEST_DATE_STR
+    end_date = TEST_PREDICT_END_STR
     good_class = good_class(
         model_type="test",
         parameters=DotMap(),
@@ -109,7 +120,7 @@ def test_post_init_default_dates(good_class):
     )
     # this is the max date of the self.observed_data['submission_date'] plus one day
     # from the object definion
-    start_date = pd.to_datetime("2020-01-02")
+    start_date = TEST_DATE_NEXT_DAY
     end_date = (
         datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(weeks=78)
     ).date()
@@ -124,15 +135,15 @@ def test_fit(good_class):
         model_type="test",
         parameters=DotMap(),
         use_holidays=None,
-        start_date="2124-01-01",
-        end_date="2124-02-02",
+        start_date=TEST_DATE_STR,
+        end_date=TEST_PREDICT_END_STR,
         metric_hub=None,
     )
     good_class.fit()
     assert good_class.model
 
-    #
-    assert good_class.model.is_fit == pd.to_datetime("2020-01-01")
+    # model sets is_fit to the largest day in the observed data
+    assert good_class.model.is_fit == TEST_DATE
 
 
 def test_predict_and_validate(good_class):
@@ -140,8 +151,8 @@ def test_predict_and_validate(good_class):
         model_type="test",
         parameters=DotMap(),
         use_holidays=None,
-        start_date="2124-01-01",
-        end_date="2124-02-02",
+        start_date=TEST_DATE_STR,
+        end_date=TEST_PREDICT_END_STR,
         metric_hub=None,
     )
     # overwrite date range set in __post_init__
@@ -155,8 +166,8 @@ def test_summarize(good_class):
         model_type="test",
         parameters=DotMap(),
         use_holidays=None,
-        start_date="2124-01-01",
-        end_date="2124-02-02",
+        start_date=TEST_DATE_STR,
+        end_date=TEST_PREDICT_END_STR,
         metric_hub=None,
     )
     good_class.forecast_df = np.array([1, 2])
@@ -166,7 +177,7 @@ def test_summarize(good_class):
         ["alias", "app_name", "slug", "min_date", "max_date"],
     )
 
-    dummy_metric_hub = MetricHub("", "", "", "2124-01-01", "2124-01-01")
+    dummy_metric_hub = MetricHub("", "", "", TEST_DATE_STR, TEST_DATE_STR)
 
     # add it here rather than in __init__ so it doesn't try to load data
     good_class.metric_hub = dummy_metric_hub
