@@ -542,7 +542,7 @@ class FunnelForecast(ProphetForecast):
         percentiles,
         segment: dict,
     ) -> pd.DataFrame:
-        """Calculate aggregates over the forecase and observed data
+        """Calculate aggregates over the forecast and observed data
             and concatenate the two dataframes
         Args:
             forecast_df (pd.DataFrame): forecast dataframe
