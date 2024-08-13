@@ -10,7 +10,10 @@ import numpy as np
 
 
 from kpi_forecasting.configs.model_inputs import ProphetRegressor, ProphetHoliday
-from kpi_forecasting.models.funnel_forecast import SegmentModelSettings, FunnelForecast
+from kpi_forecasting.models.funnel_forecast import (
+    FunnelSegmentModelSettings,
+    FunnelForecast,
+)
 
 # Arbitrarily choose some date to use for the tests
 TEST_DATE = date(2024, 1, 1)
@@ -712,7 +715,7 @@ def test_auto_tuning(forecast, mocker):
     """test the auto_tuning function"""
 
     # set one segment with two sets of grid parameters
-    segment_settings = SegmentModelSettings(
+    segment_settings = FunnelSegmentModelSettings(
         segment={"a": "A1"},
         start_date=TEST_DATE_STR,
         end_date=TEST_PREDICT_END_STR,
@@ -905,6 +908,9 @@ def test_set_segment_models():
         {"a": "A2", "b": "B1", "start_date": A2_start_date},
         {"a": "A2", "b": "B2", "start_date": A2_start_date},
     ]
+
+    print(expected)
+    print(check_segment_models)
 
     # can't make a set of dicts for comparison
     # so sort the lists and compare each element
@@ -1229,12 +1235,12 @@ def test_build_train_dataframe_no_regressors(forecast):
         "horizon": "30 days",
         "parallel": "processes",
     }
-    segment_settings = SegmentModelSettings(
+    segment_settings = FunnelSegmentModelSettings(
         segment={"a": 1, "b": 2},
         start_date=TEST_DATE_STR,
         end_date=TEST_PREDICT_END_STR,
         holidays=[],
-        regressors=[ProphetRegressor(**r) for r in regressor_list],
+        regressors=regressor_list,
         grid_parameters=grid_parameters,
         cv_settings=cv_settings,
     )
@@ -1339,12 +1345,12 @@ def test_build_train_dataframe(forecast):
         "horizon": "30 days",
         "parallel": "processes",
     }
-    segment_settings = SegmentModelSettings(
+    segment_settings = FunnelSegmentModelSettings(
         segment={"a": 1, "b": 2},
         start_date=TEST_DATE_STR,
         end_date=(TEST_DATE + relativedelta(months=1)).strftime("%Y-%m-%d"),
         holidays=[],
-        regressors=[ProphetRegressor(**r) for r in regressor_list],
+        regressors=regressor_list,
         grid_parameters=grid_parameters,
         cv_settings=cv_settings,
     )
@@ -1433,12 +1439,12 @@ def test_build_predict_dataframe_no_regressors(forecast):
         "horizon": "30 days",
         "parallel": "processes",
     }
-    segment_settings = SegmentModelSettings(
+    segment_settings = FunnelSegmentModelSettings(
         segment={"a": 1, "b": 2},
         start_date=TEST_DATE_STR,
         end_date=TEST_PREDICT_END_STR,
         holidays=[],
-        regressors=[ProphetRegressor(**r) for r in regressor_list],
+        regressors=regressor_list,
         grid_parameters=grid_parameters,
         cv_settings=cv_settings,
     )
@@ -1547,12 +1553,12 @@ def test_build_predict_dataframe(forecast):
         "horizon": "30 days",
         "parallel": "processes",
     }
-    segment_settings = SegmentModelSettings(
+    segment_settings = FunnelSegmentModelSettings(
         segment={"a": 1, "b": 2},
         start_date=TEST_DATE_STR,
         end_date=TEST_PREDICT_END_STR,
         holidays=[],
-        regressors=[ProphetRegressor(**r) for r in regressor_list],
+        regressors=regressor_list,
         grid_parameters=grid_parameters,
         cv_settings=cv_settings,
     )
@@ -1681,12 +1687,12 @@ def test_build_model(forecast):
         "horizon": "30 days",
         "parallel": "processes",
     }
-    segment_settings = SegmentModelSettings(
+    segment_settings = FunnelSegmentModelSettings(
         segment={"a": 1, "b": 2},
         start_date=TEST_DATE_STR,
         end_date=TEST_PREDICT_END_STR,
-        holidays=[ProphetHoliday(**h) for h in holiday_list.values()],
-        regressors=[ProphetRegressor(**r) for r in regressor_list],
+        holidays=holiday_list.values(),
+        regressors=regressor_list,
         grid_parameters=grid_parameters,
         cv_settings=cv_settings,
     )

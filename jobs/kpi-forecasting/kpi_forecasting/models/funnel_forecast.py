@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 import itertools
 import json
@@ -12,35 +12,33 @@ from pandas.api import types as pd_types
 import prophet
 from prophet.diagnostics import cross_validation
 
-from kpi_forecasting.configs.model_inputs import (
-    ProphetHoliday,
-    ProphetRegressor,
-    holiday_collection,
-    regressor_collection,
+from kpi_forecasting.configs.model_inputs import ProphetHoliday, ProphetRegressor
+from kpi_forecasting.models.prophet_forecast import (
+    ProphetForecast,
+    ProphetSegmentModelSettings,
 )
-from kpi_forecasting.models.prophet_forecast import ProphetForecast
 
 
 @dataclass
-class SegmentModelSettings:
+class FunnelSegmentModelSettings(ProphetSegmentModelSettings):
     """
     Holds the configuration and results for each segment
     in a funnel forecasting model.
     """
 
-    segment: Dict[str, str]
-    start_date: str
-    end_date: str
-    grid_parameters: Dict[str, Union[List[float], float]]
-    cv_settings: Dict[str, str]
-    holidays: list = field(default_factory=list[ProphetHoliday])
-    regressors: list = field(default_factory=list[ProphetRegressor])
+    grid_parameters: Dict[str, Union[List[float], float]] = None
+    cv_settings: Dict[str, str] = None
 
-    # Hold results as models are trained and forecasts made
-    segment_model: prophet.Prophet = None
-    trained_parameters: dict = field(default_factory=dict[str, str])
-    forecast_df: pd.DataFrame = None
-    components_df: pd.DataFrame = None
+    def __post_init__(self):
+        holiday_list = []
+        regressor_list = []
+
+        if self.holidays:
+            holiday_list = [ProphetHoliday(**h) for h in self.holidays]
+            self.holidays = holiday_list
+        if self.regressors:
+            regressor_list = [ProphetRegressor(**r) for r in self.regressors]
+            self.regressors = regressor_list
 
 
 @dataclass
@@ -121,36 +119,20 @@ class FunnelForecast(ProphetForecast):
             # find the correct configuration
             for partition in self.parameters:
                 partition_segment = partition["segment"]
+                selected_partition = None
                 # get subset of segment that is used to partition
                 subset_segment = {
                     key: val for key, val in segment.items() if key in split_dims
                 }
                 if partition_segment == subset_segment:
-                    # parition is set to the desired value
-                    # break out of loop
+                    selected_partition = partition.copy()
                     break
-            holiday_list = []
-            regressor_list = []
+            if selected_partition is None:
+                raise ValueError("Partition not Found")
+            selected_partition["segment"] = segment
 
-            if "holidays" in partition:
-                holiday_list = [holiday_collection[h] for h in partition["holidays"]]
-            if "regressors" in partition:
-                regressor_list = [
-                    regressor_collection[r] for r in partition["regressors"]
-                ]
-
-            # Create a SegmentModelSettings object for each segment combination
-            segment_models.append(
-                SegmentModelSettings(
-                    segment=segment,
-                    start_date=partition["start_date"],
-                    end_date=self.end_date,
-                    holidays=[ProphetHoliday(**h) for h in holiday_list],
-                    regressors=[ProphetRegressor(**r) for r in regressor_list],
-                    grid_parameters=dict(partition["grid_parameters"]),
-                    cv_settings=dict(partition["cv_settings"]),
-                )
-            )
+            # Create a FunnelSegmentModelSettings object for each segment combination
+            segment_models.append(FunnelSegmentModelSettings(**selected_partition))
         self.segment_models = segment_models
 
     @property
@@ -163,82 +145,10 @@ class FunnelForecast(ProphetForecast):
         """
         return {"submission_date": "ds", "value": "y"}
 
-    def _fill_regressor_dates(self, regressor: ProphetRegressor) -> ProphetRegressor:
-        """
-        Fill missing start and end dates for a regressor. A ProphetRegressor can be created
-        without a 'start_date' or 'end_date' being supplied, so this checks for either date attr
-        being missing and fills in with the appropriate date: if 'start_date' is missing, it assumes
-        that the regressor starts at the beginning of the observed data; if 'end_date' is missing,
-        it assumes that the regressor should be filled until the end of the forecast period.
-
-        Args:
-            regressor (ProphetRegressor): The regressor to fill dates for.
-
-        Returns:
-            ProphetRegressor: The regressor with filled dates.
-        """
-
-        for date in ["start_date", "end_date"]:
-            if getattr(regressor, date) is None:
-                setattr(regressor, date, getattr(self, date))
-            elif isinstance(getattr(regressor, date), str):
-                setattr(regressor, date, pd.to_datetime(getattr(regressor, date)))
-
-        if regressor.end_date < regressor.start_date:
-            raise Exception(
-                f"Regressor {regressor.name} start date comes after end date"
-            )
-        return regressor
-
-    def _build_model(
-        self,
-        segment_settings: SegmentModelSettings,
-        parameters: Dict[str, Union[float, str, bool]],
-    ) -> prophet.Prophet:
-        """
-        Build a Prophet model from parameters.
-
-        Args:
-            segment_settings (SegmentModelSettings): The settings for the segment.
-            parameters (Dict[str, Union[float, str, bool]]): The parameters for the model.
-
-        Returns:
-            prophet.Prophet: The Prophet model.
-        """
-        if segment_settings.holidays:
-            parameters["holidays"] = pd.concat(
-                [
-                    pd.DataFrame(
-                        {
-                            "holiday": h.name,
-                            "ds": pd.to_datetime(h.ds),
-                            "lower_window": h.lower_window,
-                            "upper_window": h.upper_window,
-                        }
-                    )
-                    for h in segment_settings.holidays
-                ],
-                ignore_index=True,
-            )
-
-        m = prophet.Prophet(
-            **parameters,
-            uncertainty_samples=self.number_of_simulations,
-            mcmc_samples=0,
-        )
-        for regressor in segment_settings.regressors:
-            m.add_regressor(
-                regressor.name,
-                prior_scale=regressor.prior_scale,
-                mode=regressor.mode,
-            )
-
-        return m
-
     def _build_train_dataframe(
         self,
         observed_df,
-        segment_settings: SegmentModelSettings,
+        segment_settings: FunnelSegmentModelSettings,
         add_logistic_growth_cols: bool = False,
     ) -> pd.DataFrame:
         """
@@ -246,7 +156,7 @@ class FunnelForecast(ProphetForecast):
 
         Args:
             observed_df: dataframe of observed data
-            segment_settings (SegmentModelSettings): The settings for the segment.
+            segment_settings (FunnelSegmentModelSettings): The settings for the segment.
             add_logistic_growth_cols (bool, optional): Whether to add logistic growth columns. Defaults to False.
 
         Returns:
@@ -281,14 +191,14 @@ class FunnelForecast(ProphetForecast):
     def _build_predict_dataframe(
         self,
         dates_to_predict: pd.DataFrame,
-        segment_settings: SegmentModelSettings,
+        segment_settings: FunnelSegmentModelSettings,
         add_logistic_growth_cols: bool = False,
     ) -> pd.DataFrame:
         """creates dataframe used for prediction
 
         Args:
             dates_to_predict (pd.DataFrame): dataframe of dates to predict
-            segment_settings (SegmentModelSettings): settings related to the segment
+            segment_settings (FunnelSegmentModelSettings): settings related to the segment
             add_logistic_growth_cols (bool):  Whether to add logistic growth columns. Defaults to False.
 
 
@@ -363,7 +273,7 @@ class FunnelForecast(ProphetForecast):
         return df_bias.tail(3)["pcnt_bias"].mean()
 
     def _auto_tuning(
-        self, observed_df, segment_settings: SegmentModelSettings
+        self, observed_df, segment_settings: FunnelSegmentModelSettings
     ) -> Dict[str, float]:
         """
         Perform automatic tuning of model parameters.
@@ -374,7 +284,7 @@ class FunnelForecast(ProphetForecast):
                 specified in the segments section of the config,
                 submission_date column with unique dates corresponding to each observation and
                 y column containing values of observations
-            segment_settings (SegmentModelSettings): The settings for the segment.
+            segment_settings (FunnelSegmentModelSettings): The settings for the segment.
 
         Returns:
             Dict[str, float]: The tuned parameters.
@@ -435,14 +345,16 @@ class FunnelForecast(ProphetForecast):
         return df
 
     def _predict(
-        self, dates_to_predict_raw: pd.DataFrame, segment_settings: SegmentModelSettings
+        self,
+        dates_to_predict_raw: pd.DataFrame,
+        segment_settings: FunnelSegmentModelSettings,
     ) -> pd.DataFrame:
         """
         Generate forecast samples for a segment.
 
         Args:
             dates_to_predict (pd.DataFrame): dataframe of dates to predict
-            segment_settings (SegmentModelSettings): The settings for the segment.
+            segment_settings (FunnelSegmentModelSettings): The settings for the segment.
 
         Returns:
             pd.DataFrame: The forecasted values.
@@ -593,7 +505,7 @@ class FunnelForecast(ProphetForecast):
 
     def _summarize(
         self,
-        segment_settings: SegmentModelSettings,
+        segment_settings: FunnelSegmentModelSettings,
         period: str,
         numpy_aggregations: List[str],
         percentiles: List[int] = [10, 50, 90],
@@ -603,7 +515,7 @@ class FunnelForecast(ProphetForecast):
         for `forecast_df` over a given period, and add metadata.
 
         Args:
-            segment_settings (SegmentModelSettings): The settings for the segment.
+            segment_settings (FunnelSegmentModelSettings): The settings for the segment.
             period (str): The period for aggregation.
             numpy_aggregations (List[str]): List of numpy aggregation functions.
             percentiles (List[int]): List of percentiles.

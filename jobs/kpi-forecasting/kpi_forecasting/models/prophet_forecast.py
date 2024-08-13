@@ -3,15 +3,28 @@ import pandas as pd
 from pandas.api import types as pd_types
 import prophet
 import numpy as np
-from typing import Dict, List
+from dataclasses import dataclass, field
+from typing import Dict, List, Union
 
 
 from datetime import datetime, timezone
-from dataclasses import dataclass
-from kpi_forecasting.models.base_forecast import BaseForecast
+from kpi_forecasting.models.base_forecast import BaseForecast, SegmentModelSettings
 from kpi_forecasting import pandas_extras as pdx
 from google.cloud import bigquery
 from google.cloud.bigquery.enums import SqlTypeNames as bq_types
+
+from kpi_forecasting.configs.model_inputs import ProphetHoliday, ProphetRegressor
+
+
+@dataclass
+class ProphetSegmentModelSettings(SegmentModelSettings):
+    """
+    Holds the configuration and results for each segment
+    in a funnel forecasting model.
+    """
+
+    holidays: list = field(default_factory=list[ProphetHoliday])
+    regressors: list = field(default_factory=list[ProphetRegressor])
 
 
 @dataclass
@@ -30,17 +43,101 @@ class ProphetForecast(BaseForecast):
     def column_names_map(self) -> Dict[str, str]:
         return {"submission_date": "ds", "value": "y"}
 
-    def _build_model(self, parameter_dict):
+    def _build_model(
+        self,
+        segment_settings: ProphetSegmentModelSettings,
+        parameters: Dict[str, Union[float, str, bool]],
+    ) -> prophet.Prophet:
+        """
+        Build a Prophet model from parameters.
+
+        Args:
+            segment_settings (FunnelSegmentModelSettings): The settings for the segment.
+            parameters (Dict[str, Union[float, str, bool]]): The parameters for the model.
+
+        Returns:
+            prophet.Prophet: The Prophet model.
+        """
+        if segment_settings.holidays:
+            parameters["holidays"] = pd.concat(
+                [
+                    pd.DataFrame(
+                        {
+                            "holiday": h.name,
+                            "ds": pd.to_datetime(h.ds),
+                            "lower_window": h.lower_window,
+                            "upper_window": h.upper_window,
+                        }
+                    )
+                    for h in segment_settings.holidays
+                ],
+                ignore_index=True,
+            )
+
         model = prophet.Prophet(
-            **parameter_dict,
+            **parameters,
             uncertainty_samples=self.number_of_simulations,
             mcmc_samples=0,
         )
+        for regressor in segment_settings.regressors:
+            model.add_regressor(
+                regressor.name,
+                prior_scale=regressor.prior_scale,
+                mode=regressor.mode,
+            )
 
         if self.use_all_us_holidays:
             model.add_country_holidays(country_name="US")
 
         return model
+
+    def _fill_regressor_dates(self, regressor: ProphetRegressor) -> ProphetRegressor:
+        """
+        Fill missing start and end dates for a regressor. A ProphetRegressor can be created
+        without a 'start_date' or 'end_date' being supplied, so this checks for either date attr
+        being missing and fills in with the appropriate date: if 'start_date' is missing, it assumes
+        that the regressor starts at the beginning of the observed data; if 'end_date' is missing,
+        it assumes that the regressor should be filled until the end of the forecast period.
+
+        Args:
+            regressor (ProphetRegressor): The regressor to fill dates for.
+
+        Returns:
+            ProphetRegressor: The regressor with filled dates.
+        """
+
+        for date in ["start_date", "end_date"]:
+            if getattr(regressor, date) is None:
+                setattr(regressor, date, getattr(self, date))
+            elif isinstance(getattr(regressor, date), str):
+                setattr(regressor, date, pd.to_datetime(getattr(regressor, date)))
+
+        if regressor.end_date < regressor.start_date:
+            raise Exception(
+                f"Regressor {regressor.name} start date comes after end date"
+            )
+        return regressor
+
+    def _add_regressors(self, df: pd.DataFrame, regressors: List[ProphetRegressor]):
+        """
+        Add regressor columns to the dataframe for training or prediction.
+
+        Args:
+            df (pd.DataFrame): The input dataframe.
+            regressors (List[ProphetRegressor]): The list of regressors to add.
+
+        Returns:
+            pd.DataFrame: The dataframe with regressors added.
+        """
+        for regressor in regressors:
+            regressor = self._fill_regressor_dates(regressor)
+            # finds rows where date is in regressor date ranges and sets that regressor
+            ## value to 1, else 0
+            df[regressor.name] = (
+                (df["ds"] >= pd.to_datetime(regressor.start_date).date())
+                & (df["ds"] <= pd.to_datetime(regressor.end_date).date())
+            ).astype(int)
+        return df
 
     def _fit(self, observed_df) -> None:
         self.model = self._build_model(self.parameters)

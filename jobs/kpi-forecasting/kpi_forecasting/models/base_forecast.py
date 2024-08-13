@@ -2,12 +2,28 @@ import json
 import numpy as np
 import pandas as pd
 import abc
+from dataclasses import dataclass, field
+from typing import Dict, List
 
-
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from kpi_forecasting.metric_hub import MetricHub
-from typing import Dict, List
+
+
+@dataclass
+class SegmentModelSettings:
+    """
+    Holds the configuration and results for each segment
+    in a funnel forecasting model.
+    """
+
+    segment: Dict[str, str]
+    start_date: str
+    end_date: str
+    segment_model: object = None
+    trained_parameters: dict = field(default_factory=dict[str, str])
+
+    forecast_df: pd.DataFrame = None
+    components_df: pd.DataFrame = None
 
 
 @dataclass
