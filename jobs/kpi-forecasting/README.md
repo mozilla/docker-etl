@@ -85,7 +85,7 @@ The tests can be run locally with `python -m pytest` in the root directory of th
 
 # YAML Configs
 
-Configuration for each forecast is found in the `configs` folder.  Below is an example config file with sample values and a description of what the field means as a comment whe it is not self-evident
+Configuration for each forecast is found in the `configs` folder.  Below is an example config file with sample values and a description of what the field means as a comment when it is not self-evident
 
 ```
 metric_hub:  # this configures the observed data fed to the model which is obtained via metrichub
