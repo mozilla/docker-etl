@@ -1,4 +1,3 @@
-import json
 import pandas as pd
 from pandas.api import types as pd_types
 import prophet
@@ -6,7 +5,6 @@ import numpy as np
 from typing import Dict, List
 
 
-from datetime import datetime, timezone
 from dataclasses import dataclass
 from kpi_forecasting.models.base_forecast import BaseForecast
 from kpi_forecasting import pandas_extras as pdx
