@@ -10,7 +10,7 @@ forecast_model:
   model_type: "prophet"
   start_date: NULL
   end_date: NULL
-  use_holidays: True
+  use_all_us_holidays: True
   predict_historical_dates: False
   number_of_simulations: 1000
   parameters:

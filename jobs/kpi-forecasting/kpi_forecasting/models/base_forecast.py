@@ -20,7 +20,7 @@ class BaseForecast(abc.ABC):
     Args:
         model_type (str): The name of the forecasting model that's being used.
         parameters (Dict): Parameters that should be passed to the forecasting model.
-        use_holidays (bool): Whether or not the forecasting model should use holidays.
+        use_all_us_holidays (bool): Whether or not the forecasting model should use holidays.
             The base model does not apply holiday logic; that logic needs to be built
             in the child class.
         start_date (str): A 'YYYY-MM-DD' formatted-string that specifies the first
@@ -33,7 +33,7 @@ class BaseForecast(abc.ABC):
 
     model_type: str
     parameters: Dict
-    use_holidays: bool
+    use_all_us_holidays: bool
     start_date: str
     end_date: str
     metric_hub: MetricHub
@@ -78,7 +78,7 @@ class BaseForecast(abc.ABC):
             {
                 "model_type": self.model_type.lower(),
                 "model_params": self.parameters,
-                "use_holidays": self.use_holidays,
+                "use_all_us_holidays": self.use_all_us_holidays,
             }
         )
 

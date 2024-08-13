@@ -39,7 +39,7 @@ def forecast():
     return ProphetForecast(
         model_type="test",
         parameters=parameter_dict,
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
@@ -549,7 +549,7 @@ def test_summarize_non_overlapping_day():
     forecast = ProphetForecast(
         model_type="test",
         parameters={},
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
@@ -667,7 +667,7 @@ def test_summarize_non_overlapping_month():
     forecast = ProphetForecast(
         model_type="test",
         parameters={},
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
@@ -786,7 +786,7 @@ def test_summarize_overlapping_day():
     forecast = ProphetForecast(
         model_type="test",
         parameters={},
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
@@ -900,7 +900,7 @@ def test_summarize_overlapping_month():
     forecast = ProphetForecast(
         model_type="test",
         parameters={},
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,

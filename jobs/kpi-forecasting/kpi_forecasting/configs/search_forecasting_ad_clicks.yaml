@@ -16,7 +16,7 @@ forecast_model:
   model_type: "funnel"
   start_date: NULL
   end_date: NULL
-  use_holidays: False
+  use_all_us_holidays: False
   predict_historical_dates: True
   number_of_simulations: 1000
   parameters:

@@ -116,7 +116,7 @@ forecast_model:  # this section configures the model
     # if unset, value depends on predict_historical_dates.
   end_date: NULL
     # final date for the predicted data
-  use_holidays: False
+  use_all_us_holidays: False
     For prophet-based models, when true, call `model.add_country_holidays(country_name="US")` on model
   predict_historical_dates: True
     # if predict_historical_dates is True, set to first date of the observed data

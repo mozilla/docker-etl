@@ -37,7 +37,7 @@ class ProphetForecast(BaseForecast):
             mcmc_samples=0,
         )
 
-        if self.use_holidays:
+        if self.use_all_us_holidays:
             model.add_country_holidays(country_name="US")
 
         return model
@@ -106,7 +106,7 @@ class ProphetForecast(BaseForecast):
             datetime.now(timezone.utc).replace(tzinfo=None).date()
         )
         df["forecast_parameters"] = str(
-            json.dumps({**self.parameters, "holidays": self.use_holidays})
+            json.dumps({**self.parameters, "holidays": self.use_all_us_holidays})
         )
 
         alias = self.metric_hub.alias.lower()

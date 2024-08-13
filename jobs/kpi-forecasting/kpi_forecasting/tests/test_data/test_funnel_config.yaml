@@ -15,7 +15,7 @@ forecast_model:
   model_type: "funnel"
   start_date: NULL
   end_date: NULL
-  use_holidays: False
+  use_all_us_holidays: False
   parameters:
     model_setting_split_dim: "device"
     segment_settings:

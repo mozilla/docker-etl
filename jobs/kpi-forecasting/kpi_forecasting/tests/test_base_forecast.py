@@ -92,7 +92,7 @@ def test_post_init(good_class):
     good_class = good_class(
         model_type="test",
         parameters={},
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date=start_date,
         end_date=end_date,
         metric_hub=None,
@@ -112,7 +112,7 @@ def test_post_init_default_dates(good_class):
     good_class = good_class(
         model_type="test",
         parameters={},
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date="",
         end_date="",
         metric_hub=None,
@@ -133,7 +133,7 @@ def test_fit(good_class):
     good_class = good_class(
         model_type="test",
         parameters={},
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date=TEST_DATE_STR,
         end_date=TEST_PREDICT_END_STR,
         metric_hub=None,
@@ -149,7 +149,7 @@ def test_predict_and_validate(good_class):
     good_class = good_class(
         model_type="test",
         parameters={},
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date=TEST_DATE_STR,
         end_date=TEST_PREDICT_END_STR,
         metric_hub=None,
@@ -164,7 +164,7 @@ def test_summarize(good_class):
     good_class = good_class(
         model_type="test",
         parameters={},
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date=TEST_DATE_STR,
         end_date=TEST_PREDICT_END_STR,
         metric_hub=None,

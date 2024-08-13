@@ -31,7 +31,7 @@ def forecast():
     forecast = FunnelForecast(
         model_type="test",
         parameters={},
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
@@ -96,7 +96,7 @@ def funnel_forecast_for_fit_tests(segment_info_fit_tests, mocker):
     forecast = FunnelForecast(
         model_type="test",
         parameters=parameter_list,
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
@@ -518,7 +518,7 @@ def test_under_predict(mocker):
     forecast = FunnelForecast(
         model_type="test",
         parameters=parameter_list,
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
@@ -880,7 +880,7 @@ def test_set_segment_models():
     forecast = FunnelForecast(
         model_type="test",
         parameters=parameter_list,
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
@@ -978,7 +978,7 @@ def test_set_segment_models_multiple():
     forecast = FunnelForecast(
         model_type="test",
         parameters=parameter_list,
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
@@ -1055,7 +1055,7 @@ def test_set_segment_models_exception():
     forecast = FunnelForecast(
         model_type="test",
         parameters=parameter_list,
-        use_holidays=None,
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
