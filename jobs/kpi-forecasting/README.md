@@ -140,17 +140,17 @@ forecast_model:  # this section configures the model
       regressors: ["post_esr_migration", "in_covid", "ad_click_bug"] # regressors specified in `configs.model_inputs.regressors`
       grid_parameters:
         # sets grid for hyperparameter tuning
-        changepoint_prior_scale: [0.001, 0.01, 0.1, 0.2, 0.5]
-        changepoint_range: [0.8, 0.9]
-        n_changepoints: [25, 50]
-        weekly_seasonality: True
-        yearly_seasonality: True
+        changepoint_prior_scale: [0.001, 0.01, 0.1, 0.2, 0.5] # parameter of prior distribution controlling how much the trend fluctuates at changepoints
+        changepoint_range: [0.8, 0.9] # the proportion of the time series over which the changepoints are distributed
+        n_changepoints: [25, 50] # number of trend changepoints, equally spaced over the time series
+        weekly_seasonality: True # if weekly seasonality is included in the model
+        yearly_seasonality: True # if yearly seasonality is included in the model
       cv_settings:
         # sets parameters for prophet cross-validation used in FunnelForecast
-        initial: "1296 days"
-        period: "30 days"
-        horizon: "30 days"
-        parallel: "processes"
+        initial: "1296 days" # the initial training period, used to train the first iteration of the model for CV
+        period: "30 days" # spacing between cutoff dates, the sliding window over which each round of cross validation is performed
+        horizon: "30 days" # forecast horizon used to make predictions and calculate model fit metrics for optimization
+        parallel: "processes" # how parallelization is performed by Prophet, or None if no paralellization is used
     ...
 
 summarize:
