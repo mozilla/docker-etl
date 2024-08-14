@@ -118,6 +118,11 @@ def get_users():
         users = [user for user in results["Report_Entry"]
                 if not (user.get("User_Home_Country", "") == "" and
                         user.get("User_Home_Postal_Code", "") == "")]
+        
+        # TODO: Avaliate if the code below makes sense after the go-live        
+        # The fields below are no longer wanted to go to XMatters.
+        # Setting them to empty string will force an update on all the user records
+        # We may want to delete this code after the go-live
         for user in users:
             user['User_Cost_Center'] = ''
             user['User_Manager_Email_Address'] = ''
