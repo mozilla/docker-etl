@@ -42,11 +42,10 @@ class ScalarForecast(BaseForecast):
         if all(pd.to_datetime(self.observed_df["submission_date"]).dt.day == 1):
             self.start_date = self._default_start_date_monthly
 
-
         if self.metric_hub is None:
             # this is used to avoid the code below for testing purposes
             return
-        
+
         # Get the list of adjustments for the metric slug being forecasted. That
         ## slug must be a key in scalar_adjustments.yaml; otherwise, this will raise a KeyError
         self.scalar_adjustments = parse_scalar_adjustments(
@@ -78,7 +77,9 @@ class ScalarForecast(BaseForecast):
         """The first day after the last date in the observed dataset."""
         return self.observed_df["submission_date"].max() + pd.DateOffset(months=1)
 
-    def _prep_class_dataframes(self, observed_df: pd.DataFrame, segment_column_list: List) -> None:
+    def _prep_class_dataframes(
+        self, observed_df: pd.DataFrame, segment_column_list: List
+    ) -> None:
         """
         Prepares the dataframes necessary to identify segment combinations and hold results
         of scalar forecasting.
@@ -90,9 +91,7 @@ class ScalarForecast(BaseForecast):
         """
 
         # Construct a DataFrame containing all combination of segment values in the observed_df
-        self.combination_df = observed_df[
-            segment_column_list
-        ].drop_duplicates()
+        self.combination_df = observed_df[segment_column_list].drop_duplicates()
 
         # Cross join to the dates_to_predict DataFrame to create a DataFrame that contains a row
         ## for each forecast date for each segment
