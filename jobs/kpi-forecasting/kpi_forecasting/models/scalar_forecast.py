@@ -42,16 +42,18 @@ class ScalarForecast(BaseForecast):
         if all(pd.to_datetime(self.observed_df["submission_date"]).dt.day == 1):
             self.start_date = self._default_start_date_monthly
 
+
+        if self.metric_hub is None:
+            # this is used to avoid the code below for testing purposes
+            return
+        
         # Get the list of adjustments for the metric slug being forecasted. That
         ## slug must be a key in scalar_adjustments.yaml; otherwise, this will raise a KeyError
         self.scalar_adjustments = parse_scalar_adjustments(
             self.metric_hub.slug, self.start_date
         )
 
-        # Construct a DataFrame containing all combination of segment values in the observed_df
-        self.combination_df = self.observed_df[
-            self.metric_hub.segments.keys()
-        ].drop_duplicates()
+        self._prep_class_dataframes(self.observed_df, self.metric_hub.segments.keys())
 
         # Set up the columns to be used to join the observed_df to the forecast_df in subsequent
         ## methods
@@ -60,10 +62,6 @@ class ScalarForecast(BaseForecast):
         # Rename the value column to the metric alias name, to enable supporting a formula with
         ## covariates in the future
         self.observed_df.rename(columns={"value": self.metric_hub.alias}, inplace=True)
-
-        # Cross join to the dates_to_predict DataFrame to create a DataFrame that contains a row
-        ## for each forecast date for each segment
-        self.forecast_df = self.dates_to_predict.merge(self.combination_df, how="cross")
 
     @property
     def period_names_map(self) -> Dict[str, pd.DateOffset]:
@@ -79,6 +77,26 @@ class ScalarForecast(BaseForecast):
     def _default_start_date_monthly(self) -> str:
         """The first day after the last date in the observed dataset."""
         return self.observed_df["submission_date"].max() + pd.DateOffset(months=1)
+
+    def _prep_class_dataframes(self, observed_df: pd.DataFrame, segment_column_list: List) -> None:
+        """
+        Prepares the dataframes necessary to identify segment combinations and hold results
+        of scalar forecasting.
+
+        Args:
+            observed_df (pd.DataFrame): dataframe containing observed data used to model
+                must contain columns specified in the keys of the segments section of the config
+            segment_column_list (list): list of columns of observed_df to use to determine segments
+        """
+
+        # Construct a DataFrame containing all combination of segment values in the observed_df
+        self.combination_df = observed_df[
+            segment_column_list
+        ].drop_duplicates()
+
+        # Cross join to the dates_to_predict DataFrame to create a DataFrame that contains a row
+        ## for each forecast date for each segment
+        self.forecast_df = self.dates_to_predict.merge(self.combination_df, how="cross")
 
     def _parse_formula_for_over_period_changes(self) -> Dict | None:
         """
