@@ -15,8 +15,8 @@ from prophet.diagnostics import cross_validation
 from kpi_forecasting.configs.model_inputs import (
     ProphetHoliday,
     ProphetRegressor,
-    holiday_collection,
-    regressor_collection,
+    HOLIDAY_COLLECTION,
+    REGRESSOR_COLLECTION,
 )
 from kpi_forecasting.models.prophet_forecast import ProphetForecast
 
@@ -126,12 +126,12 @@ class FunnelForecast(ProphetForecast):
 
             if model_params["holidays"]:
                 holiday_list = [
-                    getattr(holiday_collection.data, h)
+                    getattr(HOLIDAY_COLLECTION.data, h)
                     for h in model_params["holidays"]
                 ]
             if model_params["regressors"]:
                 regressor_list = [
-                    getattr(regressor_collection.data, r)
+                    getattr(REGRESSOR_COLLECTION.data, r)
                     for r in model_params["regressors"]
                 ]
 
@@ -480,8 +480,18 @@ class FunnelForecast(ProphetForecast):
         # error rates and how components resulted in those predictions. The `fillna`
         # call will fill the missing y values for forecasted dates, where only yhat
         # is available.
+
+        segment_historical_indices = (
+            self.observed_df[list(segment_settings.segment)]
+            == pd.Series(segment_settings.segment)
+        ).all(axis=1)
+
+        observed_y = self.observed_df.loc[(segment_historical_indices)].rename(
+            columns=self.column_names_map
+        )[["ds", "y"]]
+        observed_y["ds"] = pd.to_datetime(observed_y["ds"])
         components_df = components_df.merge(
-            segment_settings.segment_model.history[["ds", "y"]],
+            observed_y,
             on="ds",
             how="left",
         ).fillna(0)
