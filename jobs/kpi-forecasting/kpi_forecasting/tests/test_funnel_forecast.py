@@ -1089,10 +1089,10 @@ def test_add_regressors(forecast):
                 pd.to_datetime("2124-01-03").date(),
                 pd.to_datetime("2124-01-04").date(),
             ],
-            "all_in": [1, 1, 1, 1],
-            "all_out": [0, 0, 0, 0],
-            "just_end": [0, 0, 1, 1],
-            "just_middle": [0, 1, 1, 0],
+            "all_in": [0, 0, 0, 0],
+            "all_out": [1, 1, 1, 1],
+            "just_end": [1, 1, 0, 0],
+            "just_middle": [1, 0, 0, 1],
         }
     )
 
@@ -1261,9 +1261,12 @@ def test_build_train_dataframe(forecast):
                 pd.to_datetime("2124-01-01").date(),
                 pd.to_datetime("2124-01-02").date(),
             ],
-            "all_in": [1, 1],
-            "all_out": [0, 0],
-            "just_end": [0, 1],
+            "all_in": [0, 0],
+            "all_out": [
+                1,
+                1,
+            ],
+            "just_end": [1, 0],
         }
     )
     pd.testing.assert_frame_equal(
@@ -1282,9 +1285,9 @@ def test_build_train_dataframe(forecast):
                 pd.to_datetime("2124-01-01").date(),
                 pd.to_datetime("2124-01-02").date(),
             ],
-            "all_in": [1, 1],
-            "all_out": [0, 0],
-            "just_end": [0, 1],
+            "all_in": [0, 0],
+            "all_out": [1, 1],
+            "just_end": [1, 0],
             "floor": [1.5, 1.5],
             "cap": [6.0, 6.0],
         }
@@ -1457,9 +1460,9 @@ def test_build_predict_dataframe(forecast):
                 pd.to_datetime("2124-01-01").date(),
                 pd.to_datetime("2124-01-02").date(),
             ],
-            "all_in": [1, 1],
-            "all_out": [0, 0],
-            "just_end": [0, 1],
+            "all_in": [0, 0],
+            "all_out": [1, 1],
+            "just_end": [1, 0],
         }
     )
     pd.testing.assert_frame_equal(
@@ -1478,9 +1481,9 @@ def test_build_predict_dataframe(forecast):
                 pd.to_datetime("2124-01-01").date(),
                 pd.to_datetime("2124-01-02").date(),
             ],
-            "all_in": [1, 1],
-            "all_out": [0, 0],
-            "just_end": [0, 1],
+            "all_in": [0, 0],
+            "all_out": [1, 1],
+            "just_end": [1, 0],
             "floor": [-1.0, -1.0],
             "cap": [10.0, 10.0],
         }
