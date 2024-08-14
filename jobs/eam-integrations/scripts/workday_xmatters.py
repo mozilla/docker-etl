@@ -152,12 +152,13 @@ def iterate_thru_wd_users(wd_users, xm_users, xm_sites, limit):
         wd_users_seen[user["User_Email_Address"]] = 1
         if user["User_Email_Address"] in xm_users:
             logger.debug("User %s found in XM" % user["User_Email_Address"])
-            if not user_data_matches(user, xm_users[user["User_Email_Address"]]):
-                logger.debug("USER DATA NO MATCHES!")
-                XMatters.update_user(
-                    user, xm_users[user["User_Email_Address"]], xm_sites
-                )
-                num_changes +=1
+            if not user_data_matches(user, xm_users[user["User_Email_Address"]]):                
+                if num_changes < limit:
+                    logger.debug("USER DATA NO MATCHES!")
+                    XMatters.update_user(
+                        user, xm_users[user["User_Email_Address"]], xm_sites
+                    )
+                    num_changes +=1
             else:
                 logger.debug("%s good" % user["User_Email_Address"])
         else:
@@ -166,10 +167,7 @@ def iterate_thru_wd_users(wd_users, xm_users, xm_sites, limit):
             xm_add_users.append(user)
             # time.sleep(5)
          
-        if num_changes >= limit:
-            logger.info(f"Number of updated users:{num_changes}")
-            return wd_users_seen, xm_add_users
-    
+   
     logger.info(f"Number of updated users:{num_changes}")
     return wd_users_seen, xm_add_users
 
@@ -240,11 +238,11 @@ if __name__ == "__main__":
 
     # get the new style (zipcodes) sites from the user list
     wd_sites = get_wd_sites_from_users(wd_users)
-    
+
     logger.info(f"Number of XMatters sites: {len(xm_sites)}")
     logger.info(f"Number of Workday sites: {len(wd_sites)}")
     logger.info(f"Number of Workday users: {len(wd_users)}")
-                
+
     #  # get list of sites from workday users
     #  wd_sites = Workday.get_sites()
 
@@ -292,9 +290,10 @@ if __name__ == "__main__":
 
     # iterate through xmatters users who aren't marked-as-seen
     #   remove from xmatters
-    XMatters.delete_users(xm_users, users_seen_in_workday,args.max_limit)
+    XMatters.delete_users(xm_users, users_seen_in_workday, args.max_limit)
 
     for user in xm_add_users[:args.max_limit]:
+        logger.info(f"Adding user: {user['User_Email_Address']}")
         XMatters.add_user(user, xm_sites)
 
     logger.info(f"Number of users added:{len(xm_add_users[:args.max_limit])}")
