@@ -494,10 +494,6 @@ def add_new_sites(wd_sites, xm_sites, xm_sites_inactive, limit):
                 add_site(wd_sites[wd_site])
                 num_changes += 1
                 
-        # if num_changes >= limit:
-        #     logger.info(f"Number of added or activated sites:{num_changes}")
-        #     return xm_sites_in_wd
-
     logger.info(f"Number of added or activated sites:{num_changes}")
     return xm_sites_in_wd
 
@@ -515,11 +511,7 @@ def delete_sites(xm_sites, xm_sites_in_wd, limit):
                 )                
                 set_site_inactive(xm_sites[site])
                 num_changes +=1
-        
-        # if num_changes >= limit:
-        #     logger.info(f"Number of sites that were inactivated:{num_changes}")
-        #     return True
-    
+  
     logger.info(f"Number of sites that were inactivated:{num_changes}")
     return True
 
@@ -753,9 +745,5 @@ def delete_users(xm_users, users_seen_in_wd, limit):
             else:
                 logger.info("User %s not seen in workday" % user)
             
-        # if num_changes >= limit:
-        #     logger.info(f"Number of updated users:{num_changes}")
-        #     return True
-
     logger.info(f"Number of deleted users:{num_changes}")
     return True

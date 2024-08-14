@@ -167,10 +167,7 @@ def iterate_thru_wd_users(wd_users, xm_users, xm_sites, limit):
             xm_add_users.append(user)
             # time.sleep(5)
          
-        # if num_changes >= limit:
-        #     logger.info(f"Number of updated users:{num_changes}")
-        #     return wd_users_seen, xm_add_users
-    
+   
     logger.info(f"Number of updated users:{num_changes}")
     return wd_users_seen, xm_add_users
 
