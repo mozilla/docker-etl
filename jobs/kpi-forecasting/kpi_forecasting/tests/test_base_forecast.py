@@ -107,6 +107,24 @@ def test_post_init(good_class):
     assert good_class.dates_to_predict.equals(dates_to_predict_expected)
 
 
+def test_post_init_exception(good_class):
+    start_date = TEST_DATE_STR
+    end_date = TEST_PREDICT_END_STR
+    with pytest.raises(
+        ValueError,
+        match="forecast start_date set while predict_historical_dates is True",
+    ):
+        _ = good_class(
+            model_type="test",
+            parameters={},
+            use_all_us_holidays=None,
+            start_date=start_date,
+            end_date=end_date,
+            metric_hub=None,
+            predict_historical_dates=True,
+        )
+
+
 def test_post_init_default_dates(good_class):
     # check default start and end time
     good_class = good_class(
@@ -120,6 +138,28 @@ def test_post_init_default_dates(good_class):
     # this is the max date of the self.observed_data['submission_date'] plus one day
     # from the object definion
     start_date = TEST_DATE_NEXT_DAY
+    end_date = (
+        datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(weeks=78)
+    ).date()
+    dates_to_predict_expected = pd.DataFrame(
+        {"submission_date": pd.date_range(start_date, end_date).date}
+    )
+    assert good_class.dates_to_predict.equals(dates_to_predict_expected)
+
+
+def test_post_init_default_dates_historical(good_class):
+    # check default start and end time
+    good_class = good_class(
+        model_type="test",
+        parameters={},
+        use_all_us_holidays=None,
+        start_date="",
+        end_date="",
+        metric_hub=None,
+        predict_historical_dates=True,
+    )
+    # this is the min date of the observed data
+    start_date = TEST_DATE - relativedelta(years=1)
     end_date = (
         datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(weeks=78)
     ).date()

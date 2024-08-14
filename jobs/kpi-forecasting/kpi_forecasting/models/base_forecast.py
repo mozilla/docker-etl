@@ -29,6 +29,9 @@ class BaseForecast(abc.ABC):
             date the metric should be queried.
         metric_hub (MetricHub): A MetricHub object that provides details about the
             metric to be forecasted.
+        predict_historical_dates (bool):  If True, forecast starts at the first
+            date in the observed data.  If False, it uses the value of start_date it set
+            and the first day after the observed data ends otherwise
     """
 
     model_type: str
@@ -52,21 +55,17 @@ class BaseForecast(abc.ABC):
         self.collected_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self._get_observed_data()
 
+        # raise an error is predict_historical_dates is True and start_date is set
+        if self.start_date and self.predict_historical_dates:
+            raise ValueError(
+                "forecast start_date set while predict_historical_dates is True"
+            )
         # use default start/end dates if the user doesn't specify them
         self.start_date = pd.to_datetime(self.start_date or self._default_start_date)
         self.end_date = pd.to_datetime(self.end_date or self._default_end_date)
-        if self.predict_historical_dates:
-            self.dates_to_predict = pd.DataFrame(
-                {
-                    "submission_date": pd.date_range(
-                        self.metric_hub.start_date, self.end_date
-                    ).date
-                }
-            )
-        else:
-            self.dates_to_predict = pd.DataFrame(
-                {"submission_date": pd.date_range(self.start_date, self.end_date).date}
-            )
+        self.dates_to_predict = pd.DataFrame(
+            {"submission_date": pd.date_range(self.start_date, self.end_date).date}
+        )
 
         # initialize unset attributes
         self.model = None
@@ -144,7 +143,10 @@ class BaseForecast(abc.ABC):
     @property
     def _default_start_date(self) -> str:
         """The first day after the last date in the observed dataset."""
-        return self.observed_df["submission_date"].max() + timedelta(days=1)
+        if self.predict_historical_dates:
+            return self.observed_df["submission_date"].min()
+        else:
+            return self.observed_df["submission_date"].max() + timedelta(days=1)
 
     @property
     def _default_end_date(self) -> str:
