@@ -482,18 +482,21 @@ def add_new_sites(wd_sites, xm_sites, xm_sites_inactive, limit):
             logger.debug("WD site %s found in XMatters! No action." % wd_site)
             xm_sites_in_wd[wd_site] = 1
         elif wd_site in xm_sites_inactive:
-            logger.info("WD site %s INACTIVE in XMatters! Reactivating." % wd_site)
-            set_site_active(xm_sites_inactive[wd_site])
-            num_changes +=1
+            if num_changes < limit:
+                logger.info("WD site %s INACTIVE in XMatters! Reactivating." % wd_site)
+                set_site_active(xm_sites_inactive[wd_site])
+                num_changes += 1
         else:
-            logger.info(
-                "WD site %s NOT found in XMatters! Adding to XMatters." % wd_site
-            )
-            add_site(wd_sites[wd_site])
-            num_changes += 1
-        if num_changes >= limit:
-            logger.info(f"Number of added or activated sites:{num_changes}")
-            return xm_sites_in_wd
+            if num_changes < limit:
+                logger.info(
+                    "WD site %s NOT found in XMatters! Adding to XMatters." % wd_site
+                )
+                add_site(wd_sites[wd_site])
+                num_changes += 1
+                
+        # if num_changes >= limit:
+        #     logger.info(f"Number of added or activated sites:{num_changes}")
+        #     return xm_sites_in_wd
 
     logger.info(f"Number of added or activated sites:{num_changes}")
     return xm_sites_in_wd
@@ -505,16 +508,17 @@ def delete_sites(xm_sites, xm_sites_in_wd, limit):
     num_changes = 0
     for site in xm_sites:
         if site not in xm_sites_in_wd and site not in ["Default Site", "Mountain View Office"]:
-            logger.info(
-                "Site %s not in WorkDay. INACTIVATING %s from XMatters"
-                % (site, xm_sites[site])
-            )
-            set_site_inactive(xm_sites[site])
-            num_changes +=1
+            if num_changes < limit:
+                logger.info(
+                    "Site %s not in WorkDay. INACTIVATING %s from XMatters"
+                    % (site, xm_sites[site])
+                )                
+                set_site_inactive(xm_sites[site])
+                num_changes +=1
         
-        if num_changes >= limit:
-            logger.info(f"Number of sites that were inactivated:{num_changes}")
-            return True
+        # if num_changes >= limit:
+        #     logger.info(f"Number of sites that were inactivated:{num_changes}")
+        #     return True
     
     logger.info(f"Number of sites that were inactivated:{num_changes}")
     return True
@@ -741,13 +745,17 @@ def delete_users(xm_users, users_seen_in_wd, limit):
             # let's just skip any usernames that don't look like emails
             continue
         if user not in users_seen_in_wd:
-            logger.info("User %s not seen in workday, will delete from xmatters" % user)
-            actual_person_delete(user)
-            num_changes +=1
             
-        if num_changes >= limit:
-            logger.info(f"Number of updated users:{num_changes}")
-            return True
+            if num_changes < limit:
+                logger.info("User %s not seen in workday, will delete from xmatters" % user)
+                actual_person_delete(user)
+                num_changes +=1
+            else:
+                logger.info("User %s not seen in workday" % user)
+            
+        # if num_changes >= limit:
+        #     logger.info(f"Number of updated users:{num_changes}")
+        #     return True
 
-    logger.info(f"Number of updated users:{num_changes}")
+    logger.info(f"Number of deleted users:{num_changes}")
     return True
