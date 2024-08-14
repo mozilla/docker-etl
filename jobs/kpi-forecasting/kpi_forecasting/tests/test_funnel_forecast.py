@@ -194,8 +194,8 @@ def test_combine_forecast_observed(mocker, forecast):
     observed_df = pd.DataFrame(
         {
             "submission_date": [
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
             ],
             "a": ["A1", "A1"],
             "value": [5, 6],
@@ -257,10 +257,10 @@ def test_under_summarize(mocker, forecast):
         {
             "submission_date": [
                 TEST_DATE - relativedelta(months=1),
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
             ],
             "a": ["A1", "A1", "A1", "A2", "A2"],
             "value": [10, 20, 30, 40, 50],
@@ -272,7 +272,7 @@ def test_under_summarize(mocker, forecast):
         ["start_date", "forecast_df", "segment", "trained_parameters"],
     )
     dummy_segment_settings = SegmentSettings(
-        start_date=TEST_DATE_STR,
+        start_date=(TEST_DATE - relativedelta(days=2)).strftime("%Y-%m-%d"),
         forecast_df=forecast_df.copy(),
         segment={"a": "A1"},
         trained_parameters={"trained_parameters": "yes"},
@@ -295,8 +295,8 @@ def test_under_summarize(mocker, forecast):
     observed_expected_df = pd.DataFrame(
         {
             "submission_date": [
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
             ],
             "a": ["A1", "A1"],
             "value": [20, 30],
@@ -361,10 +361,10 @@ def test_summarize(mocker, forecast):
         {
             "submission_date": [
                 TEST_DATE - relativedelta(months=1),
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
             ],
             "a": ["A1", "A1", "A1", "A2", "A2"],
             "value": [10, 20, 30, 40, 50],
@@ -380,7 +380,7 @@ def test_summarize(mocker, forecast):
     # we're only testing that it is concatenated properly
     # with the segment data added
     dummy_segment_settings_A1 = SegmentSettings(
-        start_date=TEST_DATE_STR,
+        start_date=(TEST_DATE - relativedelta(days=2)).strftime("%Y-%m-%d"),
         forecast_df=forecast_df.copy(),
         segment={"a": "A1"},
         trained_parameters={"trained_parameters": "yes"},
@@ -388,7 +388,7 @@ def test_summarize(mocker, forecast):
     )
 
     dummy_segment_settings_A2 = SegmentSettings(
-        start_date=TEST_DATE_STR,
+        start_date=(TEST_DATE - relativedelta(days=2)).strftime("%Y-%m-%d"),
         forecast_df=forecast_df.copy(),
         segment={"a": "A2"},
         trained_parameters={"trained_parameters": "yes"},
@@ -425,10 +425,10 @@ def test_summarize(mocker, forecast):
     observed_expected_df = pd.DataFrame(
         {
             "submission_date": [
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
             ],
             "a": ["A1", "A1", "A2", "A2"],
             "value": [20, 30, 40, 50],
@@ -583,13 +583,6 @@ def test_under_predict(mocker):
             ],
         }
     )
-
-    # time filter corresponds to the start time of the object
-    # as opposed to the segment
-    expected_time_filter = (
-        expected["submission_date"] >= pd.to_datetime(forecast.start_date).date()
-    )
-    expected = expected[expected_time_filter].reset_index(drop=True)
 
     pd.testing.assert_frame_equal(out, expected)
 

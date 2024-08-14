@@ -493,9 +493,7 @@ class FunnelForecast(ProphetForecast):
 
         segment_settings.components_df = components_df.copy()
 
-        return df.loc[
-            pd.to_datetime(df["submission_date"]) >= pd.to_datetime(self.start_date)
-        ]
+        return df
 
     def _validate_forecast_df(self, df: pd.DataFrame) -> None:
         """
@@ -565,6 +563,12 @@ class FunnelForecast(ProphetForecast):
         Returns:
             pd.DataFrame: combined dataframe containing aggregated values from observed and forecast
         """
+        # filter the forecast data to just the data in the future
+        last_historic_date = observed_df["submission_date"].max()
+        forecast_df = forecast_df.loc[
+            forecast_df["submission_date"] > last_historic_date
+        ]
+
         forecast_summarized, observed_summarized = self._aggregate_forecast_observed(
             forecast_df, observed_df, period, numpy_aggregations, percentiles
         )
