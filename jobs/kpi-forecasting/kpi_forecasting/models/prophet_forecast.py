@@ -150,7 +150,7 @@ class ProphetForecast(BaseForecast):
 
         return df[columns]
 
-    def _combine_forecast_observed(
+    def _aggregate_forecast_observed(
         self,
         forecast_df,
         observed_df,
@@ -186,17 +186,34 @@ class ProphetForecast(BaseForecast):
             # calculate summary values, aggregating by submission_date,
             .agg(aggregations, axis=1)
             .reset_index()
-            # "melt" the df from wide-format to long-format.
-            .melt(id_vars="submission_date", var_name="measure")
         )
+
+        return forecast_summarized, observed_summarized
+
+    def _combine_forecast_observed(
+        self,
+        forecast_df,
+        observed_df,
+        period: str,
+        numpy_aggregations: List[str],
+        percentiles: List[int],
+    ):
+        forecast_summarized, observed_summarized = self._aggregate_forecast_observed(
+            forecast_df, observed_df, period, numpy_aggregations, percentiles
+        )
+
+        # remaining column of metric values get the column name 'value'
+        forecast_summarized = forecast_summarized.melt(
+            id_vars="submission_date", var_name="measure"
+        )
+        observed_summarized["measure"] = "observed"
 
         # add datasource-specific metadata columns
         forecast_summarized["source"] = "forecast"
         observed_summarized["source"] = "historical"
-        observed_summarized["measure"] = "observed"
 
-        # create a single dataframe that contains observed and forecasted data
-        df = pd.concat([observed_summarized, forecast_summarized])
+        df = pd.concat([forecast_summarized, observed_summarized])
+
         return df
 
     def _summarize(
