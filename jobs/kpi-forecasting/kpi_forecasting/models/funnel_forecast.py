@@ -425,10 +425,12 @@ class FunnelForecast(ProphetForecast):
         for regressor in regressors:
             regressor = self._fill_regressor_dates(regressor)
             # finds rows where date is in regressor date ranges and sets that regressor
-            ## value to 1, else 0
+            ## value to 0, else 1
             df[regressor.name] = (
-                (df["ds"] >= pd.to_datetime(regressor.start_date).date())
-                & (df["ds"] <= pd.to_datetime(regressor.end_date).date())
+                ~(
+                    (df["ds"] >= pd.to_datetime(regressor.start_date).date())
+                    & (df["ds"] <= pd.to_datetime(regressor.end_date).date())
+                )
             ).astype(int)
         return df
 
@@ -546,7 +548,7 @@ class FunnelForecast(ProphetForecast):
         percentiles,
         segment: dict,
     ) -> pd.DataFrame:
-        """Calculate aggregates over the forecase and observed data
+        """Calculate aggregates over the forecast and observed data
             and concatenate the two dataframes
         Args:
             forecast_df (pd.DataFrame): forecast dataframe

@@ -3,6 +3,7 @@ import json
 from abc import ABC, abstractmethod
 from dataclasses import InitVar, asdict, dataclass, fields, is_dataclass
 from datetime import datetime, timezone
+from itertools import batched
 from pprint import pprint
 from typing import Any, Type, TypeAlias, Union, get_args, get_origin
 
@@ -82,6 +83,8 @@ class Record(ABC):
 
 
 class BigQueryLoader:
+    CHUNK_SIZE = 25000
+
     def __init__(self, config: Config):
         self.config = config
         self._tables = {}
@@ -103,14 +106,14 @@ class BigQueryLoader:
         self.bucket = self.storage_client.bucket(config.storage.bucket)
         self._record_backup = self.bucket.blob("failed-bq-records.json")
 
-    def ensure_table(self, name: str, cls: Type[Record]):
+    def ensure_table(self, name: str, cls_: Type[Record]):
         """Checks if the table exists in BQ and creates it otherwise.
 
         Fails if the table exists but has the wrong schema.
         """
         print(f"Ensuring table {name} exists.")
         bq = self.config.bigquery
-        schema = generate_schema(cls)
+        schema = generate_schema(cls_)
 
         partition = TimePartitioning(
             type_=TimePartitioningType.DAY,
@@ -121,8 +124,9 @@ class BigQueryLoader:
         table.time_partitioning = partition
         self.client.create_table(table, exists_ok=True)
 
-    def get_table(self, name: str) -> Table:
+    def get_table(self, name: str, cls_: Type[Record]) -> Table:
         if name not in self._tables:
+            self.ensure_table(name, cls_)
             bq = self.config.bigquery
             self._tables[name] = self.client.get_table(
                 f"{bq.project}.{bq.dataset}.{name}"
@@ -144,18 +148,25 @@ class BigQueryLoader:
         tables = {}
         for record in records:
             if record.table not in tables:
-                self.ensure_table(record.table, record.__class__)
                 tables[record.table] = []
             tables[record.table].append(record)
 
         failed_records = []
         for name, rows in tables.items():
-            table = self.get_table(name)
-            errors = self.client.insert_rows(table, [asdict(row) for row in rows])
+            print(f"Attempting to insert {len(rows)} records into table '{name}'")
+            table = self.get_table(name, rows[0].__class__)
 
-            for error in errors:
-                pprint(error, indent=2)
-                failed_records.append(rows[error["index"]])
+            # There's a 10MB limit on the `insert_rows` request, submit rows in
+            # batches to avoid exceeding it.
+            errors = []
+            for batch in batched(rows, self.CHUNK_SIZE):
+                errors.extend(self.client.insert_rows(table, [asdict(row) for row in batch], retry=False))
+
+            if errors:
+                print("The following records failed:")
+                for error in errors:
+                    pprint(error)
+                    failed_records.append(rows[error["index"]])
 
             num_inserted = len(rows) - len(errors)
             print(f"Inserted {num_inserted} records in table '{table}'")
