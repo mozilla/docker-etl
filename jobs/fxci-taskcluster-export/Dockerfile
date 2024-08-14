@@ -1,4 +1,4 @@
-FROM python:3.11
+FROM python:3.12
 LABEL maintainer="Andrew Halberstadt <ahal@mozilla.com>"
 
 ARG USER_ID="10001"
