@@ -80,7 +80,6 @@ class PerformanceAnalysis:
         for config_file in self.input_config_list:
             full_path = f"{self.input_config_path}/{config_file}"
             config_data = load_yaml(full_path)
-            print(config_data)
             self.config_data[config_file] = config_data
 
     def _extract_config_data(self):
