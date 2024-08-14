@@ -321,29 +321,6 @@ class FunnelForecast(ProphetForecast):
 
         return param_grid[min_abs_bias_index]
 
-    def _add_regressors(self, df: pd.DataFrame, regressors: List[ProphetRegressor]):
-        """
-        Add regressor columns to the dataframe for training or prediction.
-
-        Args:
-            df (pd.DataFrame): The input dataframe.
-            regressors (List[ProphetRegressor]): The list of regressors to add.
-
-        Returns:
-            pd.DataFrame: The dataframe with regressors added.
-        """
-        for regressor in regressors:
-            regressor = self._fill_regressor_dates(regressor)
-            # finds rows where date is in regressor date ranges and sets that regressor
-            ## value to 0, else 1
-            df[regressor.name] = (
-                ~(
-                    (df["ds"] >= pd.to_datetime(regressor.start_date).date())
-                    & (df["ds"] <= pd.to_datetime(regressor.end_date).date())
-                )
-            ).astype(int)
-        return df
-
     def _predict(
         self,
         dates_to_predict_raw: pd.DataFrame,
