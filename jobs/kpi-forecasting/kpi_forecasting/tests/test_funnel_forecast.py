@@ -1,6 +1,8 @@
 """tests for the funnel forecast module"""
 
 import collections
+from datetime import date, datetime
+from dateutil.relativedelta import relativedelta
 
 import pandas as pd
 from dotmap import DotMap
@@ -11,13 +13,21 @@ import numpy as np
 from kpi_forecasting.configs.model_inputs import ProphetRegressor, ProphetHoliday
 from kpi_forecasting.models.funnel_forecast import SegmentModelSettings, FunnelForecast
 
+# Arbitrarily choose some date to use for the tests
+TEST_DATE = date(2024, 1, 1)
+TEST_DATE_STR = TEST_DATE.strftime("%Y-%m-%d")
+TEST_DATE_NEXT_DAY = date(2024, 1, 2)
+TEST_DATE_NEXT_DAY_STR = TEST_DATE_NEXT_DAY.strftime("%Y-%m-%d")
+TEST_PREDICT_END = TEST_DATE + relativedelta(months=2)
+TEST_PREDICT_END_STR = TEST_PREDICT_END.strftime("%Y-%m-%d")
+
 
 @pytest.fixture()
 def forecast():
     """This mocks a generic forecast object"""
     # 2024-01-01 is arbitarily chosen as a future date
-    predict_start_date = "2124-01-01"
-    predict_end_date = "2124-03-01"
+    predict_start_date = TEST_DATE_STR
+    predict_end_date = TEST_PREDICT_END_STR
 
     forecast = FunnelForecast(
         model_type="test",
@@ -37,8 +47,8 @@ def segment_info_fit_tests():
     in the functions that test fit methods"""
 
     # 2024-01-01 is arbitarily chosen as a future date
-    A1_start_date = "2124-01-01"
-    A2_start_date = "2124-01-02"
+    A1_start_date = TEST_DATE_STR
+    A2_start_date = TEST_DATE_NEXT_DAY_STR
 
     segment_info_dict = {
         "A1": {
@@ -83,9 +93,8 @@ def funnel_forecast_for_fit_tests(segment_info_fit_tests, mocker):
     }
 
     parameter_dotmap = DotMap(parameter_dict)
-    predict_start_date = "2124-01-01"
-    predict_end_date = "2124-01-02"
-
+    predict_start_date = TEST_DATE_STR
+    predict_end_date = TEST_DATE_NEXT_DAY_STR
     forecast = FunnelForecast(
         model_type="test",
         parameters=parameter_dotmap,
@@ -178,8 +187,8 @@ def test_combine_forecast_observed(mocker, forecast):
     forecast_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -187,8 +196,8 @@ def test_combine_forecast_observed(mocker, forecast):
     observed_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "a": ["A1", "A1"],
             "value": [5, 6],
@@ -238,8 +247,8 @@ def test_under_summarize(mocker, forecast):
     forecast_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -249,11 +258,11 @@ def test_under_summarize(mocker, forecast):
     observed_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2123-01-01").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE - relativedelta(months=1),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "a": ["A1", "A1", "A1", "A2", "A2"],
             "value": [10, 20, 30, 40, 50],
@@ -265,7 +274,7 @@ def test_under_summarize(mocker, forecast):
         ["start_date", "forecast_df", "segment", "trained_parameters"],
     )
     dummy_segment_settings = SegmentSettings(
-        start_date="2124-01-01",
+        start_date=TEST_DATE_STR,
         forecast_df=forecast_df.copy(),
         segment={"a": "A1"},
         trained_parameters={"trained_parameters": "yes"},
@@ -288,8 +297,8 @@ def test_under_summarize(mocker, forecast):
     observed_expected_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "a": ["A1", "A1"],
             "value": [20, 30],
@@ -334,7 +343,7 @@ def test_summarize(mocker, forecast):
         ["alias", "app_name", "slug", "min_date", "max_date"],
     )
 
-    dummy_metric_hub = MetricHub("", "", "", "2124-01-01", "2124-01-01")
+    dummy_metric_hub = MetricHub("", "", "", TEST_DATE_STR, TEST_DATE_STR)
 
     # forecast predictions are set with the
     # mock_aggregate_forecast_observed function so they
@@ -342,8 +351,8 @@ def test_summarize(mocker, forecast):
     forecast_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -353,11 +362,11 @@ def test_summarize(mocker, forecast):
     observed_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2123-01-01").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE - relativedelta(months=1),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "a": ["A1", "A1", "A1", "A2", "A2"],
             "value": [10, 20, 30, 40, 50],
@@ -373,7 +382,7 @@ def test_summarize(mocker, forecast):
     # we're only testing that it is concatenated properly
     # with the segment data added
     dummy_segment_settings_A1 = SegmentSettings(
-        start_date="2124-01-01",
+        start_date=TEST_DATE_STR,
         forecast_df=forecast_df.copy(),
         segment={"a": "A1"},
         trained_parameters={"trained_parameters": "yes"},
@@ -381,7 +390,7 @@ def test_summarize(mocker, forecast):
     )
 
     dummy_segment_settings_A2 = SegmentSettings(
-        start_date="2124-01-01",
+        start_date=TEST_DATE_STR,
         forecast_df=forecast_df.copy(),
         segment={"a": "A2"},
         trained_parameters={"trained_parameters": "yes"},
@@ -418,10 +427,10 @@ def test_summarize(mocker, forecast):
     observed_expected_df = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "a": ["A1", "A1", "A2", "A2"],
             "value": [20, 30, 40, 50],
@@ -491,8 +500,8 @@ def test_summarize(mocker, forecast):
 def test_under_predict(mocker):
     """testing _predict"""
     # set segment models
-    # 2124-01-01 chosen as a artibrary date to center tests on
-    A1_start_date = "2124-01-01"
+
+    A1_start_date = TEST_DATE_STR
     parameter_dict = {
         "model_setting_split_dim": "a",
         "segment_settings": {
@@ -508,8 +517,8 @@ def test_under_predict(mocker):
     }
 
     parameter_dotmap = DotMap(parameter_dict)
-    predict_start_date = "2124-01-02"
-    predict_end_date = "2124-03-01"
+    predict_start_date = TEST_DATE_NEXT_DAY_STR
+    predict_end_date = TEST_PREDICT_END_STR
 
     forecast = FunnelForecast(
         model_type="test",
@@ -535,8 +544,8 @@ def test_under_predict(mocker):
             "b": ["B1", "B2"],
             "y": [0, 1],
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -557,8 +566,8 @@ def test_under_predict(mocker):
     dates_to_predict = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ]
         }
     )
@@ -574,8 +583,8 @@ def test_under_predict(mocker):
         {
             0: [0, model_value],
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -623,10 +632,10 @@ def test_predict(funnel_forecast_for_fit_tests, segment_info_fit_tests):
             "b": ["B1", "B2", "B1", "B2"],
             "y": [-1, 1, -1, 1],
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -652,8 +661,8 @@ def test_predict(funnel_forecast_for_fit_tests, segment_info_fit_tests):
             {
                 0: [0, model_value],
                 "submission_date": [
-                    pd.to_datetime("2124-01-01").date(),
-                    pd.to_datetime("2124-01-02").date(),
+                    TEST_DATE,
+                    TEST_DATE_NEXT_DAY,
                 ],
             }
         )
@@ -664,7 +673,7 @@ def test_predict(funnel_forecast_for_fit_tests, segment_info_fit_tests):
             expected_raw["submission_date"]
             >= pd.to_datetime(funnel_forecast_for_fit_tests.start_date).date()
         )
-        expected = expected_raw[expected_time_filter]
+        expected = expected_raw[expected_time_filter].reset_index(drop=True)
 
         forecast_df = segment.forecast_df
         pd.testing.assert_frame_equal(forecast_df, expected)
@@ -717,8 +726,8 @@ def test_auto_tuning(forecast, mocker):
     # set one segment with two sets of grid parameters
     segment_settings = SegmentModelSettings(
         segment={"a": "A1"},
-        start_date="2124-01-01",
-        end_date="2124-03-01",
+        start_date=TEST_DATE_STR,
+        end_date=TEST_PREDICT_END_STR,
         holidays=[],
         regressors=[],
         grid_parameters={"param1": [1, 2], "param2": [20, 10]},
@@ -738,8 +747,8 @@ def test_auto_tuning(forecast, mocker):
             "a": ["A1", "A1"],
             "b": ["B1", "B2"],
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-01").date(),
+                TEST_DATE,
+                TEST_DATE,
             ],
         }
     )
@@ -760,10 +769,10 @@ def test_under_fit(funnel_forecast_for_fit_tests, segment_info_fit_tests):
             "a": ["A1", "A1", "A2", "A2"],
             "b": ["B1", "B2", "B1", "B2"],
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -807,10 +816,10 @@ def test_fit(funnel_forecast_for_fit_tests, segment_info_fit_tests):
             "a": ["A1", "A1", "A2", "A2"],
             "b": ["B1", "B2", "B1", "B2"],
             "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -872,8 +881,8 @@ def test_set_segment_models():
     }
 
     parameter_dotmap = DotMap(parameter_dict)
-    predict_start_date = "2124-01-01"
-    predict_end_date = "2124-03-01"
+    predict_start_date = TEST_DATE_STR
+    predict_end_date = TEST_PREDICT_END_STR
 
     forecast = FunnelForecast(
         model_type="test",
@@ -951,8 +960,8 @@ def test_set_segment_models_exception():
     }
 
     parameter_dotmap = DotMap(parameter_dict)
-    predict_start_date = "2124-01-01"
-    predict_end_date = "2124-03-01"
+    predict_start_date = TEST_DATE_STR
+    predict_end_date = TEST_PREDICT_END_STR
 
     forecast = FunnelForecast(
         model_type="test",
@@ -982,6 +991,14 @@ def test_fill_regressor_dates(forecast):
     """test _fill_regressor_dates
     the name in the regressor info indicates which case is being tested
     Dates are chosen arbitrarily"""
+    # get the set start and end dates for the forecast fixture
+    # as datetime objects
+    default_start_datetime = datetime(TEST_DATE.year, TEST_DATE.month, TEST_DATE.day)
+    default_end_datetime = datetime(
+        TEST_PREDICT_END.year, TEST_PREDICT_END.month, TEST_PREDICT_END.day
+    )
+
+    # set the start date with an arbitrary date
     regressor_info = {
         "name": "only_start",
         "description": "only has a start",
@@ -990,8 +1007,11 @@ def test_fill_regressor_dates(forecast):
     regressor = ProphetRegressor(**regressor_info)
     forecast._fill_regressor_dates(regressor)
     assert regressor.start_date == pd.to_datetime("2020-08-15")
-    assert regressor.end_date == pd.to_datetime("2124-03-01")
 
+    # this is the end dat for the forecast fixture
+    assert regressor.end_date == default_end_datetime
+
+    # set the end date with an arbitrary date
     regressor_info = {
         "name": "only_end",
         "description": "only has a end",
@@ -999,9 +1019,11 @@ def test_fill_regressor_dates(forecast):
     }
     regressor = ProphetRegressor(**regressor_info)
     forecast._fill_regressor_dates(regressor)
-    assert regressor.start_date == pd.to_datetime("2124-01-01")
+    # the start date for the forecast fixture is TEST_DATE
+    assert regressor.start_date == default_start_datetime
     assert regressor.end_date == pd.to_datetime("2125-08-15")
 
+    # set both the start and end dates to arbitrary dates
     regressor_info = {
         "name": "both",
         "description": "only has a start",
@@ -1013,15 +1035,17 @@ def test_fill_regressor_dates(forecast):
     assert regressor.start_date == pd.to_datetime("2020-08-15")
     assert regressor.end_date == pd.to_datetime("2020-09-15")
 
+    # use the defaults for both
     regressor_info = {
         "name": "neither",
         "description": "nothin to see here",
     }
     regressor = ProphetRegressor(**regressor_info)
     forecast._fill_regressor_dates(regressor)
-    assert regressor.start_date == pd.to_datetime("2124-01-01")
-    assert regressor.end_date == pd.to_datetime("2124-03-01")
+    assert regressor.start_date == default_start_datetime
+    assert regressor.end_date == default_end_datetime
 
+    # use arbitrary out of order dates to set
     regressor_info = {
         "name": "out_of_order",
         "description": "best better break",
@@ -1039,6 +1063,11 @@ def test_fill_regressor_dates(forecast):
 def test_add_regressors(forecast):
     """test add regressors
     test case for each element of regressor_list_raw is indicated in name"""
+
+    # choose arbitrary dates for dates
+    # name indicates the relationship of the window
+    # to the timeframe of the data as defined in the ds
+    # column of df below
     regressor_list_raw = [
         {
             "name": "all_in",
@@ -1120,8 +1149,8 @@ def test_build_train_dataframe_no_regressors(forecast):
     }
     segment_settings = SegmentModelSettings(
         segment={"a": 1, "b": 2},
-        start_date="2124-01-01",
-        end_date="2124-02-01",
+        start_date=TEST_DATE_STR,
+        end_date=TEST_PREDICT_END_STR,
         holidays=[],
         regressors=[ProphetRegressor(**r) for r in regressor_list],
         grid_parameters=grid_parameters,
@@ -1134,12 +1163,12 @@ def test_build_train_dataframe_no_regressors(forecast):
             "b": [1, 1, 2, 2, 2, 2],
             "y": [1, 2, 3, 4, 5, 6],
             "submission_date": [
-                pd.to_datetime("2124-12-01").date(),
-                pd.to_datetime("2124-12-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2123-01-01").date(),
-                pd.to_datetime("2123-01-02").date(),
+                TEST_DATE - relativedelta(months=1),
+                TEST_DATE_NEXT_DAY - relativedelta(months=1),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE + relativedelta(months=1),
+                TEST_DATE_NEXT_DAY + relativedelta(months=1),
             ],
         }
     )
@@ -1153,8 +1182,8 @@ def test_build_train_dataframe_no_regressors(forecast):
             "b": [2, 2],
             "y": [3, 4],
             "ds": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -1172,8 +1201,8 @@ def test_build_train_dataframe_no_regressors(forecast):
             "b": [2, 2],
             "y": [3, 4],
             "ds": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "floor": [1.5, 1.5],
             "cap": [6.0, 6.0],
@@ -1193,20 +1222,24 @@ def test_build_train_dataframe(forecast):
         {
             "name": "all_in",
             "description": "it's all in",
-            "start_date": "2124-01-01",
-            "end_date": "2124-01-06",
+            "start_date": TEST_DATE_STR,
+            "end_date": (TEST_DATE + relativedelta(days=6)).strftime("%Y-%m-%d"),
         },
         {
             "name": "all_out",
             "description": "it's all in",
-            "start_date": "2124-02-01",
-            "end_date": "2124-02-06",
+            "start_date": (TEST_DATE + relativedelta(months=1)).strftime("%Y-%m-%d"),
+            "end_date": (TEST_DATE + relativedelta(months=1, days=6)).strftime(
+                "%Y-%m-%d"
+            ),
         },
         {
             "name": "just_end",
             "description": "just the second one",
-            "start_date": "2124-01-02",
-            "end_date": "2124-02-06",
+            "start_date": (TEST_DATE + relativedelta(days=1)).strftime("%Y-%m-%d"),
+            "end_date": (TEST_DATE + relativedelta(months=1, days=6)).strftime(
+                "%Y-%m-%d"
+            ),
         },
     ]
 
@@ -1226,8 +1259,8 @@ def test_build_train_dataframe(forecast):
     }
     segment_settings = SegmentModelSettings(
         segment={"a": 1, "b": 2},
-        start_date="2124-01-01",
-        end_date="2124-02-01",
+        start_date=TEST_DATE_STR,
+        end_date=(TEST_DATE + relativedelta(months=1)).strftime("%Y-%m-%d"),
         holidays=[],
         regressors=[ProphetRegressor(**r) for r in regressor_list],
         grid_parameters=grid_parameters,
@@ -1240,12 +1273,12 @@ def test_build_train_dataframe(forecast):
             "b": [1, 1, 2, 2, 2, 2],
             "y": [1, 2, 3, 4, 5, 6],
             "submission_date": [
-                pd.to_datetime("2124-12-01").date(),
-                pd.to_datetime("2124-12-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2123-01-01").date(),
-                pd.to_datetime("2123-01-02").date(),
+                TEST_DATE - relativedelta(months=1),
+                TEST_DATE_NEXT_DAY - relativedelta(months=1),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE + relativedelta(months=1),
+                TEST_DATE_NEXT_DAY + relativedelta(months=1),
             ],
         }
     )
@@ -1258,8 +1291,8 @@ def test_build_train_dataframe(forecast):
             "b": [2, 2],
             "y": [3, 4],
             "ds": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "all_in": [0, 0],
             "all_out": [
@@ -1282,8 +1315,8 @@ def test_build_train_dataframe(forecast):
             "b": [2, 2],
             "y": [3, 4],
             "ds": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "all_in": [0, 0],
             "all_out": [1, 1],
@@ -1320,8 +1353,8 @@ def test_build_predict_dataframe_no_regressors(forecast):
     }
     segment_settings = SegmentModelSettings(
         segment={"a": 1, "b": 2},
-        start_date="2124-01-01",
-        end_date="2124-02-01",
+        start_date=TEST_DATE_STR,
+        end_date=TEST_PREDICT_END_STR,
         holidays=[],
         regressors=[ProphetRegressor(**r) for r in regressor_list],
         grid_parameters=grid_parameters,
@@ -1334,12 +1367,12 @@ def test_build_predict_dataframe_no_regressors(forecast):
     dates_to_predict = pd.DataFrame(
         {
             "submission_date": [
-                pd.to_datetime("2124-12-01").date(),
-                pd.to_datetime("2124-12-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2123-01-01").date(),
-                pd.to_datetime("2123-01-02").date(),
+                TEST_DATE - relativedelta(months=1),
+                TEST_DATE_NEXT_DAY - relativedelta(months=1),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -1350,12 +1383,12 @@ def test_build_predict_dataframe_no_regressors(forecast):
     expected_predict_df = pd.DataFrame(
         {
             "ds": [
-                pd.to_datetime("2124-12-01").date(),
-                pd.to_datetime("2124-12-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2123-01-01").date(),
-                pd.to_datetime("2123-01-02").date(),
+                TEST_DATE - relativedelta(months=1),
+                TEST_DATE_NEXT_DAY - relativedelta(months=1),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
         }
     )
@@ -1372,12 +1405,12 @@ def test_build_predict_dataframe_no_regressors(forecast):
     expected_predict_wlog_df = pd.DataFrame(
         {
             "ds": [
-                pd.to_datetime("2124-12-01").date(),
-                pd.to_datetime("2124-12-02").date(),
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2123-01-01").date(),
-                pd.to_datetime("2123-01-02").date(),
+                TEST_DATE - relativedelta(months=1),
+                TEST_DATE_NEXT_DAY - relativedelta(months=1),
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
             ],
             "floor": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
             "cap": [10.0, 10.0, 10.0, 10.0, 10.0, 10.0],
@@ -1397,20 +1430,24 @@ def test_build_predict_dataframe(forecast):
         {
             "name": "all_in",
             "description": "it's all in",
-            "start_date": "2124-01-01",
-            "end_date": "2124-01-06",
+            "start_date": TEST_DATE_STR,
+            "end_date": (TEST_DATE + relativedelta(days=6)).strftime("%Y-%m-%d"),
         },
         {
             "name": "all_out",
             "description": "it's all in",
-            "start_date": "2124-02-01",
-            "end_date": "2124-02-06",
+            "start_date": (TEST_DATE + relativedelta(months=1)).strftime("%Y-%m-%d"),
+            "end_date": (TEST_DATE + relativedelta(months=1, days=6)).strftime(
+                "%Y-%m-%d"
+            ),
         },
         {
             "name": "just_end",
             "description": "just the second one",
-            "start_date": "2124-01-02",
-            "end_date": "2124-02-06",
+            "start_date": (TEST_DATE + relativedelta(days=1)).strftime("%Y-%m-%d"),
+            "end_date": (TEST_DATE + relativedelta(months=1, days=6)).strftime(
+                "%Y-%m-%d"
+            ),
         },
     ]
 
@@ -1430,8 +1467,8 @@ def test_build_predict_dataframe(forecast):
     }
     segment_settings = SegmentModelSettings(
         segment={"a": 1, "b": 2},
-        start_date="2124-01-01",
-        end_date="2124-02-01",
+        start_date=TEST_DATE_STR,
+        end_date=TEST_PREDICT_END_STR,
         holidays=[],
         regressors=[ProphetRegressor(**r) for r in regressor_list],
         grid_parameters=grid_parameters,
@@ -1443,10 +1480,7 @@ def test_build_predict_dataframe(forecast):
 
     dates_to_predict = pd.DataFrame(
         {
-            "submission_date": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-            ],
+            "submission_date": [TEST_DATE, TEST_DATE_NEXT_DAY],
         }
     )
 
@@ -1456,10 +1490,7 @@ def test_build_predict_dataframe(forecast):
     )
     expected_train_df = pd.DataFrame(
         {
-            "ds": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-            ],
+            "ds": [TEST_DATE, TEST_DATE_NEXT_DAY],
             "all_in": [0, 0],
             "all_out": [1, 1],
             "just_end": [1, 0],
@@ -1477,10 +1508,7 @@ def test_build_predict_dataframe(forecast):
     )
     expected_train_wlog_df = pd.DataFrame(
         {
-            "ds": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-            ],
+            "ds": [TEST_DATE, TEST_DATE_NEXT_DAY],
             "all_in": [0, 0],
             "all_out": [1, 1],
             "just_end": [1, 0],
@@ -1503,23 +1531,28 @@ def test_build_model(forecast):
         {
             "name": "all_in",
             "description": "it's all in",
-            "start_date": "2124-01-01",
-            "end_date": "2124-01-06",
+            "start_date": TEST_DATE_STR,
+            "end_date": (TEST_DATE + relativedelta(days=6)).strftime("%Y-%m-%d"),
         },
         {
             "name": "all_out",
             "description": "it's all in",
-            "start_date": "2124-02-01",
-            "end_date": "2124-02-06",
+            "start_date": (TEST_DATE + relativedelta(months=1)).strftime("%Y-%m-%d"),
+            "end_date": (TEST_DATE + relativedelta(months=1, days=6)).strftime(
+                "%Y-%m-%d"
+            ),
         },
         {
             "name": "just_end",
             "description": "just the second one",
-            "start_date": "2124-01-02",
-            "end_date": "2124-02-06",
+            "start_date": (TEST_DATE + relativedelta(days=1)).strftime("%Y-%m-%d"),
+            "end_date": (TEST_DATE + relativedelta(months=1, days=6)).strftime(
+                "%Y-%m-%d"
+            ),
         },
     ]
 
+    # use holidays from holiday config file
     holiday_list = {
         "easter": {
             "name": "easter",
@@ -1568,8 +1601,8 @@ def test_build_model(forecast):
     }
     segment_settings = SegmentModelSettings(
         segment={"a": 1, "b": 2},
-        start_date="2124-01-01",
-        end_date="2124-02-01",
+        start_date=TEST_DATE_STR,
+        end_date=TEST_PREDICT_END_STR,
         holidays=[ProphetHoliday(**h) for h in holiday_list.values()],
         regressors=[ProphetRegressor(**r) for r in regressor_list],
         grid_parameters=grid_parameters,

@@ -20,15 +20,20 @@ class ProphetForecast(BaseForecast):
     def column_names_map(self) -> Dict[str, str]:
         return {"submission_date": "ds", "value": "y"}
 
-    def _fit(self, observed_df) -> None:
-        self.model = prophet.Prophet(
-            **self.parameters,
+    def _build_model(self, parameter_dict):
+        model = prophet.Prophet(
+            **parameter_dict,
             uncertainty_samples=self.number_of_simulations,
             mcmc_samples=0,
         )
 
         if self.use_holidays:
-            self.model.add_country_holidays(country_name="US")
+            model.add_country_holidays(country_name="US")
+
+        return model
+
+    def _fit(self, observed_df) -> None:
+        self.model = self._build_model(self.parameters)
 
         # Modify observed data to have column names that Prophet expects, and fit
         # the model
@@ -234,24 +239,6 @@ class ProphetForecast(BaseForecast):
         )
         # add summary metadata columns
         df["aggregation_period"] = period.lower()
-
-        # reorder columns to make interpretation easier
-        df = df[["submission_date", "aggregation_period", "source", "measure", "value"]]
-
-        # add Metric Hub metadata columns
-        df["metric_alias"] = self.metric_hub.alias.lower()
-        df["metric_hub_app_name"] = self.metric_hub.app_name.lower()
-        df["metric_hub_slug"] = self.metric_hub.slug.lower()
-        df["metric_start_date"] = pd.to_datetime(self.metric_hub.min_date)
-        df["metric_end_date"] = pd.to_datetime(self.metric_hub.max_date)
-        df["metric_collected_at"] = self.collected_at
-
-        # add forecast model metadata columns
-        df["forecast_start_date"] = self.start_date
-        df["forecast_end_date"] = self.end_date
-        df["forecast_trained_at"] = self.trained_at
-        df["forecast_predicted_at"] = self.predicted_at
-        df["forecast_parameters"] = self.metadata_params
 
         return df
 
