@@ -3,15 +3,15 @@ from typing import List, Optional, Union
 from pathlib import Path
 
 
-from kpi_forecasting.inputs import YAML
+from kpi_forecasting.inputs import load_yaml
 
 
 PARENT_PATH = Path(__file__).parent
 HOLIDAY_PATH = PARENT_PATH / "holidays.yaml"
 REGRESSOR_PATH = PARENT_PATH / "regressors.yaml"
 
-holiday_collection = YAML(HOLIDAY_PATH)
-regressor_collection = YAML(REGRESSOR_PATH)
+holiday_collection = load_yaml(HOLIDAY_PATH)
+regressor_collection = load_yaml(REGRESSOR_PATH)
 
 
 @attr.s(auto_attribs=True, frozen=False)

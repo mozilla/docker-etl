@@ -16,6 +16,16 @@ from google.cloud.bigquery.enums import SqlTypeNames as bq_types
 
 @dataclass
 class ProphetForecast(BaseForecast):
+    """Forecast object specifically for prophet forecast models
+
+    Additional attributes:
+    number_of_simulations (int): The number of simulated timeseries that the forecast
+            should generate. Since many forecast models are probablistic, this enables the
+            measurement of variation across a range of possible outcomes.
+    """
+
+    number_of_simulations: int = 1000
+
     @property
     def column_names_map(self) -> Dict[str, str]:
         return {"submission_date": "ds", "value": "y"}
@@ -27,7 +37,7 @@ class ProphetForecast(BaseForecast):
             mcmc_samples=0,
         )
 
-        if self.use_holidays:
+        if self.use_all_us_holidays:
             model.add_country_holidays(country_name="US")
 
         return model
@@ -96,7 +106,7 @@ class ProphetForecast(BaseForecast):
             datetime.now(timezone.utc).replace(tzinfo=None).date()
         )
         df["forecast_parameters"] = str(
-            json.dumps({**self.parameters, "holidays": self.use_holidays})
+            json.dumps({**self.parameters, "holidays": self.use_all_us_holidays})
         )
 
         alias = self.metric_hub.alias.lower()
@@ -352,8 +362,8 @@ class ProphetForecast(BaseForecast):
         project_legacy: str,
         dataset_legacy: str,
         write_disposition: str = "WRITE_APPEND",
-        forecast_table_legacy: str = "kpi_automated_forecast_v1",
-        confidences_table_legacy: str = "kpi_automated_forecast_confidences_v1",
+        forecast_table_legacy: str = "kpi_automated_forecast_v1_branch",
+        confidences_table_legacy: str = "kpi_automated_forecast_confidences_v1_branch",
     ) -> None:
         """
         Write `self.summary_df` to Big Query.

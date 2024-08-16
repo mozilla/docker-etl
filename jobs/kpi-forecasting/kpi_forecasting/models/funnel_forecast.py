@@ -67,15 +67,6 @@ class FunnelForecast(ProphetForecast):
             # this is used to avoid the code below for testing purposes
             return
 
-        # Overwrite dates_to_predict to provide historical date forecasts
-        self.dates_to_predict = pd.DataFrame(
-            {
-                "submission_date": pd.date_range(
-                    self.metric_hub.start_date, self.end_date
-                ).date
-            }
-        )
-
         self._set_segment_models(self.observed_df, self.metric_hub.segments.keys())
 
         # initialize unset attributes
@@ -85,10 +76,10 @@ class FunnelForecast(ProphetForecast):
         self, observed_df: pd.DataFrame, segment_column_list: list
     ) -> None:
         """Creates a SegmentSettings object for each segment specified in the
-            metric_hub.segments section of the config.  These objects are stored in a list
-            in the segment_models attribute
-            Parameters can be specified independently for at most one dimension column
-            set using model_setting_split_dim in self.parameters
+            metric_hub.segments section of the config.  It is populated from the list of
+            parameters in the forecast_model.parameters section of the configuration file.
+            The segements section of each element of the list specifies which values within which
+            segments the parameters are associated with.
 
         Args:
             observed_df (pd.DataFrame): dataframe containing observed data used to model
@@ -100,51 +91,64 @@ class FunnelForecast(ProphetForecast):
         combination_df = observed_df[segment_column_list].drop_duplicates()
 
         # Construct dictionaries from those combinations
+        # this will be used to check that the config actually partitions the data
         segment_combinations = combination_df.to_dict("records")
 
-        # initialize a list to hold models for each segment
-        ## populate the list with segments and parameters for the segment
-        split_dim = self.parameters["model_setting_split_dim"]
-
-        # check to make sure split_dim is one of the columns set in segment_column_list
-        if split_dim not in segment_column_list:
-            columns_str = ",".join(segment_column_list)
+        # get subset of segment that is used in partitioning
+        split_dims = None
+        for partition in self.parameters:
+            partition_dim = set(partition["segment"].keys())
+            if split_dims and partition_dim != split_dims:
+                raise ValueError(
+                    "Segment keys are not the same across different elements of parameters in the config file"
+                )
+            elif split_dims is None:
+                split_dims = partition_dim
+            else:
+                # this is case where split_dim is set and matches paritition_dim
+                continue
+        if not split_dims <= set(combination_df.keys()):
+            missing_dims = split_dims - set(combination_df.keys())
+            missing_dims_str = ",".join(missing_dims)
             raise ValueError(
-                f"model_setting_split_dim set to {split_dim} which is not among segment columns: {columns_str}"
+                f"Segment keys missing from metric hub segments: {missing_dims_str}"
             )
 
         # For each segment combinination, get the model parameters from the config
         ## file. Parse the holidays and regressors specified in the config file.
         segment_models = []
         for segment in segment_combinations:
-            model_params = getattr(
-                self.parameters["segment_settings"], segment[split_dim]
-            )
-
+            # find the correct configuration
+            for partition in self.parameters:
+                partition_segment = partition["segment"]
+                # get subset of segment that is used to partition
+                subset_segment = {
+                    key: val for key, val in segment.items() if key in split_dims
+                }
+                if partition_segment == subset_segment:
+                    # parition is set to the desired value
+                    # break out of loop
+                    break
             holiday_list = []
             regressor_list = []
 
-            if model_params["holidays"]:
-                holiday_list = [
-                    getattr(holiday_collection.data, h)
-                    for h in model_params["holidays"]
-                ]
-            if model_params["regressors"]:
+            if "holidays" in partition:
+                holiday_list = [holiday_collection[h] for h in partition["holidays"]]
+            if "regressors" in partition:
                 regressor_list = [
-                    getattr(regressor_collection.data, r)
-                    for r in model_params["regressors"]
+                    regressor_collection[r] for r in partition["regressors"]
                 ]
 
             # Create a SegmentModelSettings object for each segment combination
             segment_models.append(
                 SegmentModelSettings(
                     segment=segment,
-                    start_date=model_params["start_date"],
+                    start_date=partition["start_date"],
                     end_date=self.end_date,
                     holidays=[ProphetHoliday(**h) for h in holiday_list],
                     regressors=[ProphetRegressor(**r) for r in regressor_list],
-                    grid_parameters=dict(model_params["grid_parameters"]),
-                    cv_settings=dict(model_params["cv_settings"]),
+                    grid_parameters=dict(partition["grid_parameters"]),
+                    cv_settings=dict(partition["cv_settings"]),
                 )
             )
         self.segment_models = segment_models
@@ -489,9 +493,7 @@ class FunnelForecast(ProphetForecast):
 
         segment_settings.components_df = components_df.copy()
 
-        return df.loc[
-            pd.to_datetime(df["submission_date"]) >= pd.to_datetime(self.start_date)
-        ]
+        return df
 
     def _validate_forecast_df(self, df: pd.DataFrame) -> None:
         """
@@ -561,6 +563,12 @@ class FunnelForecast(ProphetForecast):
         Returns:
             pd.DataFrame: combined dataframe containing aggregated values from observed and forecast
         """
+        # filter the forecast data to just the data in the future
+        last_historic_date = observed_df["submission_date"].max()
+        forecast_df = forecast_df.loc[
+            forecast_df["submission_date"] > last_historic_date
+        ]
+
         forecast_summarized, observed_summarized = self._aggregate_forecast_observed(
             forecast_df, observed_df, period, numpy_aggregations, percentiles
         )

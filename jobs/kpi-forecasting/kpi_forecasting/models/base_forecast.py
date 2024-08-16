@@ -20,7 +20,7 @@ class BaseForecast(abc.ABC):
     Args:
         model_type (str): The name of the forecasting model that's being used.
         parameters (Dict): Parameters that should be passed to the forecasting model.
-        use_holidays (bool): Whether or not the forecasting model should use holidays.
+        use_all_us_holidays (bool): Whether or not the forecasting model should use holidays.
             The base model does not apply holiday logic; that logic needs to be built
             in the child class.
         start_date (str): A 'YYYY-MM-DD' formatted-string that specifies the first
@@ -29,18 +29,18 @@ class BaseForecast(abc.ABC):
             date the metric should be queried.
         metric_hub (MetricHub): A MetricHub object that provides details about the
             metric to be forecasted.
-        number_of_simulations (int): The number of simulated timeseries that the forecast
-            should generate. Since many forecast models are probablistic, this enables the
-            measurement of variation across a range of possible outcomes.
+        predict_historical_dates (bool):  If True, forecast starts at the first
+            date in the observed data.  If False, it uses the value of start_date it set
+            and the first day after the observed data ends otherwise
     """
 
     model_type: str
     parameters: Dict
-    use_holidays: bool
+    use_all_us_holidays: bool
     start_date: str
     end_date: str
     metric_hub: MetricHub
-    number_of_simulations: int = 1000
+    predict_historical_dates: bool = False
 
     def _get_observed_data(self):
         if self.metric_hub:
@@ -55,6 +55,11 @@ class BaseForecast(abc.ABC):
         self.collected_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self._get_observed_data()
 
+        # raise an error is predict_historical_dates is True and start_date is set
+        if self.start_date and self.predict_historical_dates:
+            raise ValueError(
+                "forecast start_date set while predict_historical_dates is True"
+            )
         # use default start/end dates if the user doesn't specify them
         self.start_date = pd.to_datetime(self.start_date or self._default_start_date)
         self.end_date = pd.to_datetime(self.end_date or self._default_end_date)
@@ -71,8 +76,8 @@ class BaseForecast(abc.ABC):
         self.metadata_params = json.dumps(
             {
                 "model_type": self.model_type.lower(),
-                "model_params": self.parameters.toDict(),
-                "use_holidays": self.use_holidays,
+                "model_params": self.parameters,
+                "use_all_us_holidays": self.use_all_us_holidays,
             }
         )
 
@@ -138,7 +143,10 @@ class BaseForecast(abc.ABC):
     @property
     def _default_start_date(self) -> str:
         """The first day after the last date in the observed dataset."""
-        return self.observed_df["submission_date"].max() + timedelta(days=1)
+        if self.predict_historical_dates:
+            return self.observed_df["submission_date"].min()
+        else:
+            return self.observed_df["submission_date"].max() + timedelta(days=1)
 
     @property
     def _default_end_date(self) -> str:

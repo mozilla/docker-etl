@@ -5,7 +5,6 @@ from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
 
 import pandas as pd
-from dotmap import DotMap
 import pytest
 import numpy as np
 
@@ -31,8 +30,8 @@ def forecast():
 
     forecast = FunnelForecast(
         model_type="test",
-        parameters=DotMap(),
-        use_holidays=None,
+        parameters={},
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
@@ -70,35 +69,34 @@ def funnel_forecast_for_fit_tests(segment_info_fit_tests, mocker):
     """This method creates a forecast object from the segment dict
     created in the segment_info_fit_tests fixture.  It also
     mocks some of the object methods to enable easier testing"""
-    parameter_dict = {
-        "model_setting_split_dim": "a",
-        "segment_settings": {
-            "A1": {
-                "start_date": segment_info_fit_tests["A1"]["start_date"],
-                "end_date": None,
-                "holidays": [],
-                "regressors": [],
-                "grid_parameters": segment_info_fit_tests["A1"]["grid_parameters"],
-                "cv_settings": {},
-            },
-            "A2": {
-                "start_date": segment_info_fit_tests["A2"]["start_date"],
-                "end_date": None,
-                "holidays": [],
-                "regressors": [],
-                "grid_parameters": segment_info_fit_tests["A2"]["grid_parameters"],
-                "cv_settings": {},
-            },
+    parameter_list = [
+        {
+            "segment": {"a": "A1"},
+            "start_date": segment_info_fit_tests["A1"]["start_date"],
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": segment_info_fit_tests["A1"]["grid_parameters"],
+            "cv_settings": {},
         },
-    }
+        {
+            "segment": {"a": "A2"},
+            "start_date": segment_info_fit_tests["A2"]["start_date"],
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": segment_info_fit_tests["A2"]["grid_parameters"],
+            "cv_settings": {},
+        },
+    ]
 
-    parameter_dotmap = DotMap(parameter_dict)
     predict_start_date = TEST_DATE_STR
     predict_end_date = TEST_DATE_NEXT_DAY_STR
+
     forecast = FunnelForecast(
         model_type="test",
-        parameters=parameter_dotmap,
-        use_holidays=None,
+        parameters=parameter_list,
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
@@ -196,8 +194,8 @@ def test_combine_forecast_observed(mocker, forecast):
     observed_df = pd.DataFrame(
         {
             "submission_date": [
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
             ],
             "a": ["A1", "A1"],
             "value": [5, 6],
@@ -259,10 +257,10 @@ def test_under_summarize(mocker, forecast):
         {
             "submission_date": [
                 TEST_DATE - relativedelta(months=1),
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
             ],
             "a": ["A1", "A1", "A1", "A2", "A2"],
             "value": [10, 20, 30, 40, 50],
@@ -274,7 +272,7 @@ def test_under_summarize(mocker, forecast):
         ["start_date", "forecast_df", "segment", "trained_parameters"],
     )
     dummy_segment_settings = SegmentSettings(
-        start_date=TEST_DATE_STR,
+        start_date=(TEST_DATE - relativedelta(days=2)).strftime("%Y-%m-%d"),
         forecast_df=forecast_df.copy(),
         segment={"a": "A1"},
         trained_parameters={"trained_parameters": "yes"},
@@ -297,8 +295,8 @@ def test_under_summarize(mocker, forecast):
     observed_expected_df = pd.DataFrame(
         {
             "submission_date": [
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
             ],
             "a": ["A1", "A1"],
             "value": [20, 30],
@@ -363,10 +361,10 @@ def test_summarize(mocker, forecast):
         {
             "submission_date": [
                 TEST_DATE - relativedelta(months=1),
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
             ],
             "a": ["A1", "A1", "A1", "A2", "A2"],
             "value": [10, 20, 30, 40, 50],
@@ -382,7 +380,7 @@ def test_summarize(mocker, forecast):
     # we're only testing that it is concatenated properly
     # with the segment data added
     dummy_segment_settings_A1 = SegmentSettings(
-        start_date=TEST_DATE_STR,
+        start_date=(TEST_DATE - relativedelta(days=2)).strftime("%Y-%m-%d"),
         forecast_df=forecast_df.copy(),
         segment={"a": "A1"},
         trained_parameters={"trained_parameters": "yes"},
@@ -390,7 +388,7 @@ def test_summarize(mocker, forecast):
     )
 
     dummy_segment_settings_A2 = SegmentSettings(
-        start_date=TEST_DATE_STR,
+        start_date=(TEST_DATE - relativedelta(days=2)).strftime("%Y-%m-%d"),
         forecast_df=forecast_df.copy(),
         segment={"a": "A2"},
         trained_parameters={"trained_parameters": "yes"},
@@ -427,10 +425,10 @@ def test_summarize(mocker, forecast):
     observed_expected_df = pd.DataFrame(
         {
             "submission_date": [
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
             ],
             "a": ["A1", "A1", "A2", "A2"],
             "value": [20, 30, 40, 50],
@@ -502,28 +500,25 @@ def test_under_predict(mocker):
     # set segment models
 
     A1_start_date = TEST_DATE_STR
-    parameter_dict = {
-        "model_setting_split_dim": "a",
-        "segment_settings": {
-            "A1": {
-                "start_date": A1_start_date,
-                "end_date": None,
-                "holidays": [],
-                "regressors": [],
-                "grid_parameters": {"param1": [1, 2], "param2": [20, 10]},
-                "cv_settings": {},
-            },
-        },
-    }
+    parameter_list = [
+        {
+            "segment": {"a": "A1"},
+            "start_date": A1_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {"param1": [1, 2], "param2": [20, 10]},
+            "cv_settings": {},
+        }
+    ]
 
-    parameter_dotmap = DotMap(parameter_dict)
     predict_start_date = TEST_DATE_NEXT_DAY_STR
     predict_end_date = TEST_PREDICT_END_STR
 
     forecast = FunnelForecast(
         model_type="test",
-        parameters=parameter_dotmap,
-        use_holidays=None,
+        parameters=parameter_list,
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
@@ -588,13 +583,6 @@ def test_under_predict(mocker):
             ],
         }
     )
-
-    # time filter corresponds to the start time of the object
-    # as opposed to the segment
-    expected_time_filter = (
-        expected["submission_date"] >= pd.to_datetime(forecast.start_date).date()
-    )
-    expected = expected[expected_time_filter].reset_index(drop=True)
 
     pd.testing.assert_frame_equal(out, expected)
 
@@ -858,36 +846,34 @@ def test_set_segment_models():
     """test the set_segment_models method"""
     A1_start_date = "2018-01-01"
     A2_start_date = "2020-02-02"
-    parameter_dict = {
-        "model_setting_split_dim": "a",
-        "segment_settings": {
-            "A1": {
-                "start_date": A1_start_date,
-                "end_date": None,
-                "holidays": [],
-                "regressors": [],
-                "grid_parameters": {},
-                "cv_settings": {},
-            },
-            "A2": {
-                "start_date": A2_start_date,
-                "end_date": None,
-                "holidays": [],
-                "regressors": [],
-                "grid_parameters": {},
-                "cv_settings": {},
-            },
+    parameter_list = [
+        {
+            "segment": {"a": "A1"},
+            "start_date": A1_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
         },
-    }
+        {
+            "segment": {"a": "A2"},
+            "start_date": A2_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
+        },
+    ]
 
-    parameter_dotmap = DotMap(parameter_dict)
     predict_start_date = TEST_DATE_STR
     predict_end_date = TEST_PREDICT_END_STR
 
     forecast = FunnelForecast(
         model_type="test",
-        parameters=parameter_dotmap,
-        use_holidays=None,
+        parameters=parameter_list,
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
@@ -931,42 +917,138 @@ def test_set_segment_models():
         assert checkval == expectedval
 
 
+def test_set_segment_models_multiple():
+    """test the set_segment_models method
+    with segments on multiple columns"""
+    # set arbitrary dates
+    # they're only used to make sure segments are set correctly
+    A1B1_start_date = "2018-01-01"
+    A1B2_start_date = "2019-01-01"
+    A2B1_start_date = "2020-02-02"
+    A2B2_start_date = "2021-02-02"
+    parameter_list = [
+        {
+            "segment": {"a": "A1", "b": "B1"},
+            "start_date": A1B1_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
+        },
+        {
+            "segment": {"a": "A1", "b": "B2"},
+            "start_date": A1B2_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
+        },
+        {
+            "segment": {"a": "A2", "b": "B1"},
+            "start_date": A2B1_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
+        },
+        {
+            "segment": {"a": "A2", "b": "B2"},
+            "start_date": A2B2_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
+        },
+    ]
+
+    predict_start_date = TEST_DATE_STR
+    predict_end_date = TEST_PREDICT_END_STR
+
+    forecast = FunnelForecast(
+        model_type="test",
+        parameters=parameter_list,
+        use_all_us_holidays=None,
+        start_date=predict_start_date,
+        end_date=predict_end_date,
+        metric_hub=None,
+    )
+
+    observed_data = pd.DataFrame(
+        {"a": ["A1", "A1", "A2", "A2", "A2"], "b": ["B1", "B2", "B1", "B2", "B2"]}
+    )
+
+    segment_list = ["a", "b"]
+
+    forecast._set_segment_models(
+        observed_df=observed_data, segment_column_list=segment_list
+    )
+
+    # put the segments and the start date in the same dictionary to make
+    # comparison easier
+    # the important things to check is that all possible combinations
+    # of segments are present and that each has the parameters set properly
+    # start_date is a stand-in for these parameters and
+    # is determined by the value of a as specified in parameter_dict
+    check_segment_models = [
+        dict(**el.segment, **{"start_date": el.start_date})
+        for el in forecast.segment_models
+    ]
+    expected = [
+        {"a": "A1", "b": "B1", "start_date": A1B1_start_date},
+        {"a": "A1", "b": "B2", "start_date": A1B2_start_date},
+        {"a": "A2", "b": "B1", "start_date": A2B1_start_date},
+        {"a": "A2", "b": "B2", "start_date": A2B2_start_date},
+    ]
+
+    # can't make a set of dicts for comparison
+    # so sort the lists and compare each element
+    compare_sorted = zip(
+        sorted(check_segment_models, key=lambda x: (x["a"], x["b"])),
+        sorted(expected, key=lambda x: (x["a"], x["b"])),
+    )
+
+    for checkval, expectedval in compare_sorted:
+        assert checkval == expectedval
+
+
 def test_set_segment_models_exception():
     """test the exception for segment_models where
     and exception is raised if a model_setting_split_dim
     is specified that isn't in the data"""
     A1_start_date = "2018-01-01"
     A2_start_date = "2020-02-02"
-    parameter_dict = {
-        "model_setting_split_dim": "c",  # not in data
-        "segment_settings": {
-            "A1": {
-                "start_date": A1_start_date,
-                "end_date": None,
-                "holidays": [],
-                "regressors": [],
-                "grid_parameters": {},
-                "cv_settings": {},
-            },
-            "A2": {
-                "start_date": A2_start_date,
-                "end_date": None,
-                "holidays": [],
-                "regressors": [],
-                "grid_parameters": {},
-                "cv_settings": {},
-            },
+    parameter_list = [
+        {
+            "segment": {"c": "A1"},
+            "start_date": A1_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
         },
-    }
+        {
+            "segment": {"c": "A2"},
+            "start_date": A2_start_date,
+            "end_date": None,
+            "holidays": [],
+            "regressors": [],
+            "grid_parameters": {},
+            "cv_settings": {},
+        },
+    ]
 
-    parameter_dotmap = DotMap(parameter_dict)
     predict_start_date = TEST_DATE_STR
     predict_end_date = TEST_PREDICT_END_STR
 
     forecast = FunnelForecast(
         model_type="test",
-        parameters=parameter_dotmap,
-        use_holidays=None,
+        parameters=parameter_list,
+        use_all_us_holidays=None,
         start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
@@ -980,7 +1062,7 @@ def test_set_segment_models_exception():
 
     with pytest.raises(
         ValueError,
-        match="model_setting_split_dim set to c which is not among segment columns: a,b",
+        match="Segment keys missing from metric hub segments: c",
     ):
         forecast._set_segment_models(
             observed_df=observed_data, segment_column_list=segment_list
