@@ -82,21 +82,12 @@ def get_users():
   [
     {
       u'User_Home_Country': u'United States of America',
-      u'User_Home_City': u'Portland',
-      u'User_Functional_Group': u'IT',
-      u'User_Preferred_First_Name': u'Chris',
-      u'Worker_s_Manager': [
-        {
-          u'User_Manager_Preferred_Last_Name': u'Bixby',
-          u'User_Manager_Preferred_First_Name': u'Bill'
-        }],
-      u'User_Cost_Center': u'1440 - Enterprise Applications and Services (EApps)',
-      u'User_Email_Address': u'test@mozilla.com',
-      u'User_Work_Location': u'Portland Office',
+      u'User_Home_City': u'Portland',      
+      u'User_Preferred_First_Name': u'Chris',      
+      u'User_Email_Address': u'test@mozilla.com',      
       u'User_Preferred_Last_Name': u'Test',
       u'User_Employee_ID': u'12345678',
-      u'User_Home_Postal_Code': u'90210',
-      u'User_Manager_Email_Address': u'thehulk@mozilla.com'},
+      u'User_Home_Postal_Code': u'90210',      
     {...},
     ...
   ]
@@ -118,23 +109,9 @@ def get_users():
         users = [user for user in results["Report_Entry"]
                 if not (user.get("User_Home_Country", "") == "" and
                         user.get("User_Home_Postal_Code", "") == "")]
-        
-        # TODO: Avaliate if the code below makes sense after the go-live        
-        # The fields below are no longer wanted to go to XMatters.
-        # Setting them to empty string will force an update on all the user records
-        # We may want to delete this code after the go-live
-        for user in users:
-            user['User_Cost_Center'] = ''
-            user['User_Manager_Email_Address'] = ''
-            user['User_Functional_Group'] = ''
-            user['User_Work_Location'] = ''
-            user['User_Manager_Preferred_First_Name'] = ''
-            user['User_Manager_Preferred_Last_Name'] = ''
-            user["Worker_s_Manager"][0]["User_Manager_Preferred_First_Name"] = ''
-            user["Worker_s_Manager"][0]["User_Manager_Preferred_Last_Name"] = ''
 
         return users
-        
+
     except Exception:
         logger.critical(sys.exc_info()[0])
         raise

@@ -549,15 +549,7 @@ def update_user(wd_user, xm_user, xm_sites):
         headers = {
             "Content-Type": "application/json",
             "Authorization": "Bearer " + get_access_token(),
-        }
-
-    manager_name = ""
-    if "Worker_s_Manager" in wd_user:
-        manager_name = (
-            wd_user["Worker_s_Manager"][0]["User_Manager_Preferred_First_Name"]
-            + " "
-            + wd_user["Worker_s_Manager"][0]["User_Manager_Preferred_Last_Name"]
-        )
+        } 
     site_key = (
         wd_user.get("User_Home_Country", "")
         + ":"
@@ -572,15 +564,10 @@ def update_user(wd_user, xm_user, xm_sites):
             wd_user.get("User_Preferred_Last_Name", "[NO LAST NAME]")
         ),
         "site": xm_sites[site_key],
-        "properties": {
-            "Cost Center": wd_user.get("User_Cost_Center", ""),
-            "Manager": manager_name,
-            "Manager Email": wd_user.get("User_Manager_Email_Address", ""),
-            "Functional Group": wd_user.get("User_Functional_Group", ""),
+        "properties": {                      
             "Home City": wd_user.get("User_Home_City", ""),
             "Home Country": wd_user.get("User_Home_Country", ""),
-            "Home Zipcode": wd_user.get("User_Home_Postal_Code", "")[:20],
-            "Work Location": wd_user.get("User_Work_Location", ""),
+            "Home Zipcode": wd_user.get("User_Home_Postal_Code", "")[:20]
         },
     }
 
@@ -625,14 +612,6 @@ def add_user(wd_user, xm_sites):
             "Content-Type": "application/json",
             "Authorization": "Bearer " + get_access_token(),
         }
-
-    manager_name = ""
-    if "Worker_s_Manager" in wd_user:
-        manager_name = (
-            wd_user["Worker_s_Manager"][0]["User_Manager_Preferred_First_Name"]
-            + " "
-            + wd_user["Worker_s_Manager"][0]["User_Manager_Preferred_Last_Name"]
-        )
     site_key = (
         wd_user.get("User_Home_Country", "")
         + ":"
@@ -652,14 +631,9 @@ def add_user(wd_user, xm_sites):
         "roles": ["Standard User"],
         "supervisors": [_config.supervisor_id],
         "properties": {
-            "Cost Center": wd_user.get("User_Cost_Center", ""),
-            "Manager": manager_name,
-            "Manager Email": wd_user.get("User_Manager_Email_Address", ""),
-            "Functional Group": wd_user.get("User_Functional_Group", ""),
             "Home City": wd_user.get("User_Home_City", ""),
             "Home Country": wd_user.get("User_Home_Country", ""),
-            "Home Zipcode": wd_user.get("User_Home_Postal_Code", "")[:20],
-            "Work Location": wd_user.get("User_Work_Location", ""),
+            "Home Zipcode": wd_user.get("User_Home_Postal_Code", "")[:20]
         },
     }
 
