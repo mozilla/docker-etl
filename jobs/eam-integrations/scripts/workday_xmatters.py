@@ -14,13 +14,6 @@ sys.path.append(os.path.dirname(os.path.realpath(__file__)) + "/..")
 
 
 def user_data_matches(wd_user, xm_user):
-    manager_name = ""
-    if "Worker_s_Manager" in wd_user:
-        manager_name = (
-            wd_user["Worker_s_Manager"][0]["User_Manager_Preferred_First_Name"]
-            + " "
-            + wd_user["Worker_s_Manager"][0]["User_Manager_Preferred_Last_Name"]
-        )
     site_key = (
         wd_user.get("User_Home_Country", "")
         + ":"
@@ -42,42 +35,6 @@ def user_data_matches(wd_user, xm_user):
         elif site_key != xm_user["site"]["name"]:
             logger.info(
                 "MISMATCH (site name): %s <-> %s" % (site_key, xm_user["site"]["name"])
-            )
-            return False
-        elif (
-            wd_user.get("User_Manager_Email_Address", "")
-            != xm_user["properties"]["Manager Email"]
-        ):
-            logger.info(
-                "MISMATCH (manager email): %s <-> %s"
-                % (
-                    wd_user["User_Manager_Email_Address"],
-                    xm_user["properties"]["Manager Email"],
-                )
-            )
-            return False
-        elif manager_name != xm_user["properties"]["Manager"]:
-            logger.info(
-                "MISMATCH (manager name): %s <-> %s"
-                % (manager_name, xm_user["properties"]["Manager"])
-            )
-            return False
-        elif wd_user["User_Cost_Center"] != xm_user["properties"]["Cost Center"]:
-            logger.info(
-                "MISMATCH (cost center): %s <-> %s"
-                % (wd_user["User_Cost_Center"], xm_user["properties"]["Cost Center"])
-            )
-            return False
-        elif (
-            wd_user.get("User_Functional_Group", "")
-            != xm_user["properties"]["Functional Group"]
-        ):
-            logger.info(
-                "MISMATCH (functional group): %s <-> %s"
-                % (
-                    wd_user["User_Functional_Group"],
-                    xm_user["properties"]["Functional Group"],
-                )
             )
             return False
         elif wd_user.get("User_Home_City", "") != xm_user["properties"]["Home City"]:
@@ -104,15 +61,6 @@ def user_data_matches(wd_user, xm_user):
                 % (
                     wd_user["User_Home_Postal_Code"],
                     xm_user["properties"]["Home Zipcode"],
-                )
-            )
-            return False
-        elif wd_user["User_Work_Location"] != xm_user["properties"]["Work Location"]:
-            logger.info(
-                "MISMATCH (Work Location): %s <-> %s"
-                % (
-                    wd_user["User_Work_Location"],
-                    xm_user["properties"]["Work Location"],
                 )
             )
             return False
