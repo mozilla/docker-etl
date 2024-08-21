@@ -119,32 +119,3 @@ if __name__ == "__main__":
 
     integration = SlackIntegration()
     integration.run(args.force)
-
-# # Replace 'your-slack-bot-token' with your actual bot token
-# slack_token = os.environ.get("SLACK_CHANNEL_TOKEN")
-# headers = {
-#     'Authorization': f'Bearer {slack_token}'
-# }
-
-# # The endpoint URL to list all channels (conversations.list method)
-# url = 'https://slack.com/api/conversations.list'
-
-# # Parameters for the request
-# params = {
-#     'limit': 1000,  # You can adjust the limit as needed
-#     'types': 'public_channel,private_channel'  # Adjust to include other types if needed
-# }
-
-# response = requests.get(url, headers=headers, params=params)
-
-# if response.status_code == 200:
-#     data = response.json()
-#     if data.get('ok', False):
-#         channels = data.get('channels', [])
-#         for channel in channels:
-#             print(f"Channel ID: {channel['id']}, Channel Name: {channel['name']}")
-#     else:
-#         print(f"Error fetching channels: {data.get('error')}")
-# else:
-#     print(f"Request failed with status code {response.status_code}")
-
