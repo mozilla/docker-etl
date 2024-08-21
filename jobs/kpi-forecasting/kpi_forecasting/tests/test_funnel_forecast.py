@@ -9,7 +9,6 @@ import pytest
 import numpy as np
 
 
-from kpi_forecasting.configs.model_inputs import ProphetRegressor, ProphetHoliday
 from kpi_forecasting.models.funnel_forecast import (
     FunnelSegmentModelSettings,
     FunnelForecast,
@@ -24,21 +23,32 @@ TEST_PREDICT_END = TEST_DATE + relativedelta(months=2)
 TEST_PREDICT_END_STR = TEST_PREDICT_END.strftime("%Y-%m-%d")
 
 
+def mock_get_observed_data(self):
+    self.observed_df = pd.DataFrame(
+        {
+            "submission_date": [
+                (TEST_DATE - relativedelta(days=1)),
+                TEST_DATE,  # just an arbitrary date in the past
+            ]
+        }
+    )
+
+
 @pytest.fixture()
-def forecast():
+def forecast(mocker):
     """This mocks a generic forecast object"""
     # 2024-01-01 is arbitarily chosen as a future date
-    predict_start_date = TEST_DATE_STR
     predict_end_date = TEST_PREDICT_END_STR
 
+    mocker.patch.object(FunnelForecast, "_get_observed_data", mock_get_observed_data)
+
     forecast = FunnelForecast(
-        model_type="test",
         parameters={},
         use_all_us_holidays=None,
-        start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
     )
+
     return forecast
 
 
@@ -67,6 +77,22 @@ def segment_info_fit_tests():
     return segment_info_dict
 
 
+def mock_get_observed_data_fit(self):
+    self.observed_df = pd.DataFrame(
+        {
+            "a": ["A1", "A1", "A2", "A2"],
+            "b": ["B1", "B2", "B1", "B2"],
+            "y": [-1, 1, -1, 1],
+            "submission_date": [
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
+                TEST_DATE - relativedelta(days=2),
+                TEST_DATE - relativedelta(days=1),
+            ],
+        }
+    )
+
+
 @pytest.fixture()
 def funnel_forecast_for_fit_tests(segment_info_fit_tests, mocker):
     """This method creates a forecast object from the segment dict
@@ -76,7 +102,6 @@ def funnel_forecast_for_fit_tests(segment_info_fit_tests, mocker):
         {
             "segment": {"a": "A1"},
             "start_date": segment_info_fit_tests["A1"]["start_date"],
-            "end_date": None,
             "holidays": [],
             "regressors": [],
             "grid_parameters": segment_info_fit_tests["A1"]["grid_parameters"],
@@ -85,7 +110,6 @@ def funnel_forecast_for_fit_tests(segment_info_fit_tests, mocker):
         {
             "segment": {"a": "A2"},
             "start_date": segment_info_fit_tests["A2"]["start_date"],
-            "end_date": None,
             "holidays": [],
             "regressors": [],
             "grid_parameters": segment_info_fit_tests["A2"]["grid_parameters"],
@@ -93,14 +117,15 @@ def funnel_forecast_for_fit_tests(segment_info_fit_tests, mocker):
         },
     ]
 
-    predict_start_date = TEST_DATE_STR
     predict_end_date = TEST_DATE_NEXT_DAY_STR
 
+    mocker.patch.object(
+        FunnelForecast, "_get_observed_data", mock_get_observed_data_fit
+    )
+
     forecast = FunnelForecast(
-        model_type="test",
         parameters=parameter_list,
         use_all_us_holidays=None,
-        start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
     )
@@ -507,7 +532,6 @@ def test_under_predict(mocker):
         {
             "segment": {"a": "A1"},
             "start_date": A1_start_date,
-            "end_date": None,
             "holidays": [],
             "regressors": [],
             "grid_parameters": {"param1": [1, 2], "param2": [20, 10]},
@@ -518,11 +542,11 @@ def test_under_predict(mocker):
     predict_start_date = TEST_DATE_NEXT_DAY_STR
     predict_end_date = TEST_PREDICT_END_STR
 
+    mocker.patch.object(FunnelForecast, "_get_observed_data", mock_get_observed_data)
+
     forecast = FunnelForecast(
-        model_type="test",
         parameters=parameter_list,
         use_all_us_holidays=None,
-        start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
     )
@@ -617,26 +641,12 @@ def test_predict(funnel_forecast_for_fit_tests, segment_info_fit_tests):
     """test the predict method.  This is similar to test_under_predict
     but multiple segments are acted upon"""
 
-    observed_data = pd.DataFrame(
-        {
-            "a": ["A1", "A1", "A2", "A2"],
-            "b": ["B1", "B2", "B1", "B2"],
-            "y": [-1, 1, -1, 1],
-            "submission_date": [
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-            ],
-        }
-    )
-
     segment_list = ["a"]
 
     funnel_forecast_for_fit_tests._set_segment_models(
-        observed_df=observed_data, segment_column_list=segment_list
+        observed_df=funnel_forecast_for_fit_tests.observed_df,
+        segment_column_list=segment_list,
     )
-    funnel_forecast_for_fit_tests.observed_df = observed_data
     funnel_forecast_for_fit_tests.fit()
     funnel_forecast_for_fit_tests.predict()
 
@@ -667,6 +677,7 @@ def test_predict(funnel_forecast_for_fit_tests, segment_info_fit_tests):
         expected = expected_raw[expected_time_filter].reset_index(drop=True)
 
         forecast_df = segment.forecast_df
+
         pd.testing.assert_frame_equal(forecast_df, expected)
 
         # check the components
@@ -686,15 +697,10 @@ def test_predict(funnel_forecast_for_fit_tests, segment_info_fit_tests):
             ]
         ] = 0
 
-        # because of time filtereing of training data, if the history has one
-        # element, y will but [0, 1].  The first element is turned into a NULL
-        # and then becomes a 0 because of fillna(0)
-        # if it has two it will have both elements and be [-1,1]
-
-        if len(segment.segment_model.history) == 2:
-            expected_components["y"] = [-1, 1]
-        else:
-            expected_components["y"] = [0, 1]
+        # history is left-joined onto the predictions to make the components df
+        # observed and predicted do not overlap so all values will be null, which are
+        # then imputed to 0
+        expected_components["y"] = [0, 0]
 
         components_df = segment.components_df
 
@@ -718,7 +724,6 @@ def test_auto_tuning(forecast, mocker):
     segment_settings = FunnelSegmentModelSettings(
         segment={"a": "A1"},
         start_date=TEST_DATE_STR,
-        end_date=TEST_PREDICT_END_STR,
         holidays=[],
         regressors=[],
         grid_parameters={"param1": [1, 2], "param2": [20, 10]},
@@ -787,13 +792,9 @@ def test_under_fit(funnel_forecast_for_fit_tests, segment_info_fit_tests):
         assert segment_model.value == segment_info_fit_tests[key]["min_param_value"]
 
         # the history attribute is used in the components output so check it is set properly
-        expected_training = observed_data[
-            (observed_data["a"] == key)
-            & (
-                observed_data["submission_date"]
-                >= pd.to_datetime(segment_info_fit_tests[key]["start_date"]).date()
-            )
-        ].rename(columns={"submission_date": "ds"})
+        expected_training = observed_data[(observed_data["a"] == key)].rename(
+            columns={"submission_date": "ds"}
+        )
 
         pd.testing.assert_frame_equal(segment_model.history, expected_training)
 
@@ -835,17 +836,13 @@ def test_fit(funnel_forecast_for_fit_tests, segment_info_fit_tests):
         assert segment_model.value == segment_info_fit_tests[key]["min_param_value"]
 
         # check history attribute
-        expected_training = observed_data[
-            (observed_data["a"] == key)
-            & (
-                observed_data["submission_date"]
-                >= pd.to_datetime(segment_info_fit_tests[key]["start_date"]).date()
-            )
-        ].rename(columns={"submission_date": "ds"})
+        expected_training = observed_data[(observed_data["a"] == key)].rename(
+            columns={"submission_date": "ds"}
+        )
         pd.testing.assert_frame_equal(segment_model.history, expected_training)
 
 
-def test_set_segment_models():
+def test_set_segment_models(mocker):
     """test the set_segment_models method"""
     A1_start_date = "2018-01-01"
     A2_start_date = "2020-02-02"
@@ -853,7 +850,6 @@ def test_set_segment_models():
         {
             "segment": {"a": "A1"},
             "start_date": A1_start_date,
-            "end_date": None,
             "holidays": [],
             "regressors": [],
             "grid_parameters": {},
@@ -862,7 +858,6 @@ def test_set_segment_models():
         {
             "segment": {"a": "A2"},
             "start_date": A2_start_date,
-            "end_date": None,
             "holidays": [],
             "regressors": [],
             "grid_parameters": {},
@@ -873,11 +868,11 @@ def test_set_segment_models():
     predict_start_date = TEST_DATE_STR
     predict_end_date = TEST_PREDICT_END_STR
 
+    mocker.patch.object(FunnelForecast, "_get_observed_data", mock_get_observed_data)
+
     forecast = FunnelForecast(
-        model_type="test",
         parameters=parameter_list,
         use_all_us_holidays=None,
-        start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
     )
@@ -909,9 +904,6 @@ def test_set_segment_models():
         {"a": "A2", "b": "B2", "start_date": A2_start_date},
     ]
 
-    print(expected)
-    print(check_segment_models)
-
     # can't make a set of dicts for comparison
     # so sort the lists and compare each element
     compare_sorted = zip(
@@ -923,7 +915,7 @@ def test_set_segment_models():
         assert checkval == expectedval
 
 
-def test_set_segment_models_multiple():
+def test_set_segment_models_multiple(mocker):
     """test the set_segment_models method
     with segments on multiple columns"""
     # set arbitrary dates
@@ -936,7 +928,6 @@ def test_set_segment_models_multiple():
         {
             "segment": {"a": "A1", "b": "B1"},
             "start_date": A1B1_start_date,
-            "end_date": None,
             "holidays": [],
             "regressors": [],
             "grid_parameters": {},
@@ -945,7 +936,6 @@ def test_set_segment_models_multiple():
         {
             "segment": {"a": "A1", "b": "B2"},
             "start_date": A1B2_start_date,
-            "end_date": None,
             "holidays": [],
             "regressors": [],
             "grid_parameters": {},
@@ -954,7 +944,6 @@ def test_set_segment_models_multiple():
         {
             "segment": {"a": "A2", "b": "B1"},
             "start_date": A2B1_start_date,
-            "end_date": None,
             "holidays": [],
             "regressors": [],
             "grid_parameters": {},
@@ -963,7 +952,6 @@ def test_set_segment_models_multiple():
         {
             "segment": {"a": "A2", "b": "B2"},
             "start_date": A2B2_start_date,
-            "end_date": None,
             "holidays": [],
             "regressors": [],
             "grid_parameters": {},
@@ -974,11 +962,11 @@ def test_set_segment_models_multiple():
     predict_start_date = TEST_DATE_STR
     predict_end_date = TEST_PREDICT_END_STR
 
+    mocker.patch.object(FunnelForecast, "_get_observed_data", mock_get_observed_data)
+
     forecast = FunnelForecast(
-        model_type="test",
         parameters=parameter_list,
         use_all_us_holidays=None,
-        start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
     )
@@ -1021,7 +1009,7 @@ def test_set_segment_models_multiple():
         assert checkval == expectedval
 
 
-def test_set_segment_models_exception():
+def test_set_segment_models_exception(mocker):
     """test the exception for segment_models where
     and exception is raised if a model_setting_split_dim
     is specified that isn't in the data"""
@@ -1051,11 +1039,11 @@ def test_set_segment_models_exception():
     predict_start_date = TEST_DATE_STR
     predict_end_date = TEST_PREDICT_END_STR
 
+    mocker.patch.object(FunnelForecast, "_get_observed_data", mock_get_observed_data)
+
     forecast = FunnelForecast(
-        model_type="test",
         parameters=parameter_list,
         use_all_us_holidays=None,
-        start_date=predict_start_date,
         end_date=predict_end_date,
         metric_hub=None,
     )
@@ -1073,543 +1061,6 @@ def test_set_segment_models_exception():
         forecast._set_segment_models(
             observed_df=observed_data, segment_column_list=segment_list
         )
-
-
-def test_fill_regressor_dates(forecast):
-    """test _fill_regressor_dates
-    the name in the regressor info indicates which case is being tested
-    Dates are chosen arbitrarily"""
-    # get the set start and end dates for the forecast fixture
-    # as datetime objects
-    default_start_datetime = datetime(TEST_DATE.year, TEST_DATE.month, TEST_DATE.day)
-    default_end_datetime = datetime(
-        TEST_PREDICT_END.year, TEST_PREDICT_END.month, TEST_PREDICT_END.day
-    )
-
-    # set the start date with an arbitrary date
-    regressor_info = {
-        "name": "only_start",
-        "description": "only has a start",
-        "start_date": "2020-08-15",
-    }
-    regressor = ProphetRegressor(**regressor_info)
-    forecast._fill_regressor_dates(regressor)
-    assert regressor.start_date == pd.to_datetime("2020-08-15")
-
-    # this is the end dat for the forecast fixture
-    assert regressor.end_date == default_end_datetime
-
-    # set the end date with an arbitrary date
-    regressor_info = {
-        "name": "only_end",
-        "description": "only has a end",
-        "end_date": "2125-08-15",
-    }
-    regressor = ProphetRegressor(**regressor_info)
-    forecast._fill_regressor_dates(regressor)
-    # the start date for the forecast fixture is TEST_DATE
-    assert regressor.start_date == default_start_datetime
-    assert regressor.end_date == pd.to_datetime("2125-08-15")
-
-    # set both the start and end dates to arbitrary dates
-    regressor_info = {
-        "name": "both",
-        "description": "only has a start",
-        "start_date": "2020-08-15",
-        "end_date": "2020-09-15",
-    }
-    regressor = ProphetRegressor(**regressor_info)
-    forecast._fill_regressor_dates(regressor)
-    assert regressor.start_date == pd.to_datetime("2020-08-15")
-    assert regressor.end_date == pd.to_datetime("2020-09-15")
-
-    # use the defaults for both
-    regressor_info = {
-        "name": "neither",
-        "description": "nothin to see here",
-    }
-    regressor = ProphetRegressor(**regressor_info)
-    forecast._fill_regressor_dates(regressor)
-    assert regressor.start_date == default_start_datetime
-    assert regressor.end_date == default_end_datetime
-
-    # use arbitrary out of order dates to set
-    regressor_info = {
-        "name": "out_of_order",
-        "description": "best better break",
-        "start_date": "2020-08-15",
-        "end_date": "2000-09-15",
-    }
-    regressor = ProphetRegressor(**regressor_info)
-    with pytest.raises(
-        Exception,
-        match="Regressor out_of_order start date comes after end date",
-    ):
-        forecast._fill_regressor_dates(regressor)
-
-
-def test_add_regressors(forecast):
-    """test add regressors
-    test case for each element of regressor_list_raw is indicated in name"""
-
-    # choose arbitrary dates for dates
-    # name indicates the relationship of the window
-    # to the timeframe of the data as defined in the ds
-    # column of df below
-    regressor_list_raw = [
-        {
-            "name": "all_in",
-            "description": "it's all in",
-            "start_date": "2124-01-01",
-            "end_date": "2124-01-06",
-        },
-        {
-            "name": "all_out",
-            "description": "it's all out",
-            "start_date": "2124-02-01",
-            "end_date": "2124-02-06",
-        },
-        {
-            "name": "just_end",
-            "description": "just the second half",
-            "start_date": "2124-01-03",
-            "end_date": "2124-02-06",
-        },
-        {
-            "name": "just_middle",
-            "description": "just the middle two",
-            "start_date": "2124-01-02",
-            "end_date": "2124-01-03",
-        },
-    ]
-
-    regressor_list = [ProphetRegressor(**r) for r in regressor_list_raw]
-
-    df = pd.DataFrame(
-        {
-            "ds": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-03").date(),
-                pd.to_datetime("2124-01-04").date(),
-            ],
-        }
-    )
-
-    output_df = forecast._add_regressors(df, regressors=regressor_list)
-
-    expected_df = pd.DataFrame(
-        {
-            "ds": [
-                pd.to_datetime("2124-01-01").date(),
-                pd.to_datetime("2124-01-02").date(),
-                pd.to_datetime("2124-01-03").date(),
-                pd.to_datetime("2124-01-04").date(),
-            ],
-            "all_in": [0, 0, 0, 0],
-            "all_out": [1, 1, 1, 1],
-            "just_end": [1, 1, 0, 0],
-            "just_middle": [1, 0, 0, 1],
-        }
-    )
-
-    assert set(output_df.columns) == set(expected_df.columns)
-    pd.testing.assert_frame_equal(output_df, expected_df[output_df.columns])
-
-
-def test_build_train_dataframe_no_regressors(forecast):
-    """test _build_train_dataframe with no regressors"""
-    regressor_list = []
-
-    grid_parameters = {
-        "changepoint_prior_scale": [0.01, 0.1, 0.15, 0.2],
-        "changepoint_range": [0.8, 0.9, 1],
-        "n_changepoints": [30],
-        "weekly_seasonality": True,
-        "yearly_seasonality": True,
-        "growth": "logistic",
-    }
-    cv_settings = {
-        "initial": "366 days",
-        "period": "30 days",
-        "horizon": "30 days",
-        "parallel": "processes",
-    }
-    segment_settings = FunnelSegmentModelSettings(
-        segment={"a": 1, "b": 2},
-        start_date=TEST_DATE_STR,
-        end_date=TEST_PREDICT_END_STR,
-        holidays=[],
-        regressors=regressor_list,
-        grid_parameters=grid_parameters,
-        cv_settings=cv_settings,
-    )
-
-    observed_df = pd.DataFrame(
-        {
-            "a": [1, 1, 1, 1, 3, 3],
-            "b": [1, 1, 2, 2, 2, 2],
-            "y": [1, 2, 3, 4, 5, 6],
-            "submission_date": [
-                TEST_DATE - relativedelta(months=1),
-                TEST_DATE_NEXT_DAY - relativedelta(months=1),
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE + relativedelta(months=1),
-                TEST_DATE_NEXT_DAY + relativedelta(months=1),
-            ],
-        }
-    )
-
-    output_train_df = forecast._build_train_dataframe(
-        observed_df, segment_settings=segment_settings
-    )
-    expected_train_df = pd.DataFrame(
-        {
-            "a": [1, 1],
-            "b": [2, 2],
-            "y": [3, 4],
-            "ds": [
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-            ],
-        }
-    )
-    pd.testing.assert_frame_equal(
-        output_train_df.reset_index(drop=True), expected_train_df
-    )
-
-    # test again but with add_logistic_growth_cols set to true
-    output_train_wlog_df = forecast._build_train_dataframe(
-        observed_df, segment_settings=segment_settings, add_logistic_growth_cols=True
-    )
-    expected_train_wlog_df = pd.DataFrame(
-        {
-            "a": [1, 1],
-            "b": [2, 2],
-            "y": [3, 4],
-            "ds": [
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-            ],
-            "floor": [1.5, 1.5],
-            "cap": [6.0, 6.0],
-        }
-    )
-
-    assert set(output_train_wlog_df.columns) == set(expected_train_wlog_df.columns)
-    pd.testing.assert_frame_equal(
-        output_train_wlog_df.reset_index(drop=True),
-        expected_train_wlog_df[output_train_wlog_df.columns],
-    )
-
-
-def test_build_train_dataframe(forecast):
-    """test _build_train_dataframe and include regressors"""
-    regressor_list = [
-        {
-            "name": "all_in",
-            "description": "it's all in",
-            "start_date": TEST_DATE_STR,
-            "end_date": (TEST_DATE + relativedelta(days=6)).strftime("%Y-%m-%d"),
-        },
-        {
-            "name": "all_out",
-            "description": "it's all in",
-            "start_date": (TEST_DATE + relativedelta(months=1)).strftime("%Y-%m-%d"),
-            "end_date": (TEST_DATE + relativedelta(months=1, days=6)).strftime(
-                "%Y-%m-%d"
-            ),
-        },
-        {
-            "name": "just_end",
-            "description": "just the second one",
-            "start_date": (TEST_DATE + relativedelta(days=1)).strftime("%Y-%m-%d"),
-            "end_date": (TEST_DATE + relativedelta(months=1, days=6)).strftime(
-                "%Y-%m-%d"
-            ),
-        },
-    ]
-
-    grid_parameters = {
-        "changepoint_prior_scale": [0.01, 0.1, 0.15, 0.2],
-        "changepoint_range": [0.8, 0.9, 1],
-        "n_changepoints": [30],
-        "weekly_seasonality": True,
-        "yearly_seasonality": True,
-        "growth": "logistic",
-    }
-    cv_settings = {
-        "initial": "366 days",
-        "period": "30 days",
-        "horizon": "30 days",
-        "parallel": "processes",
-    }
-    segment_settings = FunnelSegmentModelSettings(
-        segment={"a": 1, "b": 2},
-        start_date=TEST_DATE_STR,
-        end_date=(TEST_DATE + relativedelta(months=1)).strftime("%Y-%m-%d"),
-        holidays=[],
-        regressors=regressor_list,
-        grid_parameters=grid_parameters,
-        cv_settings=cv_settings,
-    )
-
-    observed_df = pd.DataFrame(
-        {
-            "a": [1, 1, 1, 1, 3, 3],
-            "b": [1, 1, 2, 2, 2, 2],
-            "y": [1, 2, 3, 4, 5, 6],
-            "submission_date": [
-                TEST_DATE - relativedelta(months=1),
-                TEST_DATE_NEXT_DAY - relativedelta(months=1),
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE + relativedelta(months=1),
-                TEST_DATE_NEXT_DAY + relativedelta(months=1),
-            ],
-        }
-    )
-    output_train_df = forecast._build_train_dataframe(
-        observed_df, segment_settings=segment_settings
-    )
-    expected_train_df = pd.DataFrame(
-        {
-            "a": [1, 1],
-            "b": [2, 2],
-            "y": [3, 4],
-            "ds": [
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-            ],
-            "all_in": [0, 0],
-            "all_out": [
-                1,
-                1,
-            ],
-            "just_end": [1, 0],
-        }
-    )
-    pd.testing.assert_frame_equal(
-        output_train_df.reset_index(drop=True), expected_train_df
-    )
-
-    output_train_wlog_df = forecast._build_train_dataframe(
-        observed_df, segment_settings=segment_settings, add_logistic_growth_cols=True
-    )
-    expected_train_wlog_df = pd.DataFrame(
-        {
-            "a": [1, 1],
-            "b": [2, 2],
-            "y": [3, 4],
-            "ds": [
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-            ],
-            "all_in": [0, 0],
-            "all_out": [1, 1],
-            "just_end": [1, 0],
-            "floor": [1.5, 1.5],
-            "cap": [6.0, 6.0],
-        }
-    )
-
-    assert set(output_train_wlog_df.columns) == set(expected_train_wlog_df.columns)
-    pd.testing.assert_frame_equal(
-        output_train_wlog_df.reset_index(drop=True),
-        expected_train_wlog_df[output_train_wlog_df.columns],
-    )
-
-
-def test_build_predict_dataframe_no_regressors(forecast):
-    """test _build_predict with no regressors"""
-    regressor_list = []
-
-    grid_parameters = {
-        "changepoint_prior_scale": [0.01, 0.1, 0.15, 0.2],
-        "changepoint_range": [0.8, 0.9, 1],
-        "n_changepoints": [30],
-        "weekly_seasonality": True,
-        "yearly_seasonality": True,
-        "growth": "logistic",
-    }
-    cv_settings = {
-        "initial": "366 days",
-        "period": "30 days",
-        "horizon": "30 days",
-        "parallel": "processes",
-    }
-    segment_settings = FunnelSegmentModelSettings(
-        segment={"a": 1, "b": 2},
-        start_date=TEST_DATE_STR,
-        end_date=TEST_PREDICT_END_STR,
-        holidays=[],
-        regressors=regressor_list,
-        grid_parameters=grid_parameters,
-        cv_settings=cv_settings,
-    )
-
-    # manually set trained_parameters, normally this would happen during training
-    segment_settings.trained_parameters = {"floor": -1.0, "cap": 10.0}
-
-    dates_to_predict = pd.DataFrame(
-        {
-            "submission_date": [
-                TEST_DATE - relativedelta(months=1),
-                TEST_DATE_NEXT_DAY - relativedelta(months=1),
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-            ],
-        }
-    )
-
-    output_predict_df = forecast._build_predict_dataframe(
-        dates_to_predict, segment_settings=segment_settings
-    )
-    expected_predict_df = pd.DataFrame(
-        {
-            "ds": [
-                TEST_DATE - relativedelta(months=1),
-                TEST_DATE_NEXT_DAY - relativedelta(months=1),
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-            ],
-        }
-    )
-    pd.testing.assert_frame_equal(
-        output_predict_df.reset_index(drop=True), expected_predict_df
-    )
-
-    # test against but with add_logistic_growth_cols set to true
-    output_predict_wlog_df = forecast._build_predict_dataframe(
-        dates_to_predict,
-        segment_settings=segment_settings,
-        add_logistic_growth_cols=True,
-    )
-    expected_predict_wlog_df = pd.DataFrame(
-        {
-            "ds": [
-                TEST_DATE - relativedelta(months=1),
-                TEST_DATE_NEXT_DAY - relativedelta(months=1),
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-            ],
-            "floor": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
-            "cap": [10.0, 10.0, 10.0, 10.0, 10.0, 10.0],
-        }
-    )
-
-    assert set(output_predict_wlog_df.columns) == set(expected_predict_wlog_df.columns)
-    pd.testing.assert_frame_equal(
-        output_predict_wlog_df.reset_index(drop=True),
-        expected_predict_wlog_df[output_predict_wlog_df.columns],
-    )
-
-
-def test_build_predict_dataframe(forecast):
-    """test _build_predict_dataframe including regressors"""
-    regressor_list = [
-        {
-            "name": "all_in",
-            "description": "it's all in",
-            "start_date": TEST_DATE_STR,
-            "end_date": (TEST_DATE + relativedelta(days=6)).strftime("%Y-%m-%d"),
-        },
-        {
-            "name": "all_out",
-            "description": "it's all in",
-            "start_date": (TEST_DATE + relativedelta(months=1)).strftime("%Y-%m-%d"),
-            "end_date": (TEST_DATE + relativedelta(months=1, days=6)).strftime(
-                "%Y-%m-%d"
-            ),
-        },
-        {
-            "name": "just_end",
-            "description": "just the second one",
-            "start_date": (TEST_DATE + relativedelta(days=1)).strftime("%Y-%m-%d"),
-            "end_date": (TEST_DATE + relativedelta(months=1, days=6)).strftime(
-                "%Y-%m-%d"
-            ),
-        },
-    ]
-
-    grid_parameters = {
-        "changepoint_prior_scale": [0.01, 0.1, 0.15, 0.2],
-        "changepoint_range": [0.8, 0.9, 1],
-        "n_changepoints": [30],
-        "weekly_seasonality": True,
-        "yearly_seasonality": True,
-        "growth": "logistic",
-    }
-    cv_settings = {
-        "initial": "366 days",
-        "period": "30 days",
-        "horizon": "30 days",
-        "parallel": "processes",
-    }
-    segment_settings = FunnelSegmentModelSettings(
-        segment={"a": 1, "b": 2},
-        start_date=TEST_DATE_STR,
-        end_date=TEST_PREDICT_END_STR,
-        holidays=[],
-        regressors=regressor_list,
-        grid_parameters=grid_parameters,
-        cv_settings=cv_settings,
-    )
-
-    # set training_parameters, which is usually done in the fit method
-    segment_settings.trained_parameters = {"floor": -1.0, "cap": 10.0}
-
-    dates_to_predict = pd.DataFrame(
-        {
-            "submission_date": [TEST_DATE, TEST_DATE_NEXT_DAY],
-        }
-    )
-
-    output_train_df = forecast._build_predict_dataframe(
-        dates_to_predict,
-        segment_settings=segment_settings,
-    )
-    expected_train_df = pd.DataFrame(
-        {
-            "ds": [TEST_DATE, TEST_DATE_NEXT_DAY],
-            "all_in": [0, 0],
-            "all_out": [1, 1],
-            "just_end": [1, 0],
-        }
-    )
-    pd.testing.assert_frame_equal(
-        output_train_df.reset_index(drop=True), expected_train_df
-    )
-
-    # test again but with add_logistic_growth_cols set to true
-    output_train_wlog_df = forecast._build_predict_dataframe(
-        dates_to_predict,
-        segment_settings=segment_settings,
-        add_logistic_growth_cols=True,
-    )
-    expected_train_wlog_df = pd.DataFrame(
-        {
-            "ds": [TEST_DATE, TEST_DATE_NEXT_DAY],
-            "all_in": [0, 0],
-            "all_out": [1, 1],
-            "just_end": [1, 0],
-            "floor": [-1.0, -1.0],
-            "cap": [10.0, 10.0],
-        }
-    )
-
-    assert set(output_train_wlog_df.columns) == set(expected_train_wlog_df.columns)
-    pd.testing.assert_frame_equal(
-        output_train_wlog_df.reset_index(drop=True),
-        expected_train_wlog_df[output_train_wlog_df.columns],
-    )
 
 
 def test_build_model(forecast):
@@ -1690,7 +1141,6 @@ def test_build_model(forecast):
     segment_settings = FunnelSegmentModelSettings(
         segment={"a": 1, "b": 2},
         start_date=TEST_DATE_STR,
-        end_date=TEST_PREDICT_END_STR,
         holidays=holiday_list.values(),
         regressors=regressor_list,
         grid_parameters=grid_parameters,
@@ -1709,7 +1159,7 @@ def test_build_model(forecast):
         },
     )
 
-    holiday_df = model.holidays
+    holiday_df = segment_settings.model_parameters["holidays"]
     expected_holidays = pd.concat(
         [
             pd.DataFrame(

@@ -12,13 +12,10 @@ metric_hub:
     partner: "partner"
   where: "partner = 'Google'"
 
+forecast_start: NULL
+forecast_end: NULL
+
 forecast_model:
-  model_type: "funnel"
-  start_date: NULL
-  end_date: NULL
-  use_all_us_holidays: False
-  predict_historical_dates: True
-  number_of_simulations: 1000
   parameters:
     - segment: 
         device: desktop
