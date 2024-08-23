@@ -146,19 +146,31 @@ class BaseEnsembleForecast:
                 raise ValueError("Partition not Found")
             selected_partition["segment"] = segment
 
+            if "start_date" in selected_partition:
+                start_date = pd.to_datetime(selected_partition["start_date"]).date()
+            else:
+                start_date = None
+
             # Create a FunnelSegmentModelSettings object for each segment combination
             segment_models.append(
                 {
                     "model": self.model_class(**selected_partition["parameters"]),
                     "segment": segment,
+                    "start_date": start_date,
                 }
             )
         self.segment_models = segment_models
 
-    def filter_data_to_segment(self, df: pd.DataFrame, segment: dict) -> pd.DataFrame:
+    def filter_data_to_segment(
+        self, df: pd.DataFrame, segment: dict, start_date: str
+    ) -> pd.DataFrame:
         column_matches_segment = df[list(segment)] == pd.Series(segment)
         row_in_segment = column_matches_segment.all(axis=1)
-        return df.loc[row_in_segment]
+        filter_array = row_in_segment
+        if start_date:
+            row_after_start = df["submission_date"] >= start_date
+            filter_array &= row_after_start
+        return df.loc[filter_array]
 
     def fit(self, observed_df) -> None:
         """Fit a model using historic metric data provided by `metric_hub`."""
@@ -169,10 +181,21 @@ class BaseEnsembleForecast:
             model = segment_model["model"]
             model._set_seed()
             observed_subset = self.filter_data_to_segment(
-                observed_df, segment_model["segment"]
+                observed_df, segment_model["segment"], segment_model["start_date"]
             )
             model.fit(observed_subset)
         return self
+
+    def get_filtered_observed_df(self, observed_df: pd.DataFrame) -> pd.DataFrame:
+        """returns the observed data filtered using the start_date for each segmen
+        can only be called after model is fit"""
+        observed_data_list = []
+        for segment_model in self.segment_models:
+            observed_subset = self.filter_data_to_segment(
+                observed_df, segment_model["segment"], segment_model["start_date"]
+            )
+            observed_data_list.append(observed_subset)
+        return pd.concat(observed_data_list)
 
     def predict(self, dates_to_predict) -> None:
         """Generate a forecast from `start_date` to `end_date`.
@@ -181,15 +204,25 @@ class BaseEnsembleForecast:
         end_date = dates_to_predict["submission_date"].iloc[-1]
 
         print(f"Forecasting from {start_date} to {end_date}.", flush=True)
-        forecast_list = []
         for segment_model in self.segment_models:
+            config_start_date = segment_model["start_date"]
+
+            if config_start_date and config_start_date > start_date:
+                dates_to_predict_segment = dates_to_predict[
+                    dates_to_predict["submission_date"] >= config_start_date
+                ].copy()
+            else:
+                dates_to_predict_segment = dates_to_predict.copy()
+
             model = segment_model["model"]
             model._set_seed()
-            predict_df = model.predict(dates_to_predict)
+            predict_df = model.predict(dates_to_predict_segment)
 
             # add segments on as columns
             for column, value in segment_model["segment"].items():
                 predict_df[column] = value
-            forecast_list.append(predict_df)
-        self.forecast_list = forecast_list
+            predict_df["forecast_parameters"] = json.dumps(model._get_parameters())
+
+            segment_model["forecast"] = predict_df
+        self.forecast_list = [el["forecast"] for el in self.segment_models]
         return pd.concat(self.forecast_list)

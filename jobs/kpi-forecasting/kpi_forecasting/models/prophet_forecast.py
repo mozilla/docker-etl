@@ -137,7 +137,9 @@ class ProphetForecast(BaseForecast):
 
         if self.holidays == []:
             self.holidays = None
+            self.holidays_raw = None
         elif self.holidays:
+            self.holidays_raw = self.holidays
             holiday_list = [ProphetHoliday(**h) for h in self.holidays]
             holiday_df = pd.concat(
                 [
@@ -155,8 +157,11 @@ class ProphetForecast(BaseForecast):
             )
             self.holidays = holiday_df
         if self.regressors:
+            self.regressors_raw = self.regressors
             regressor_list = [ProphetRegressor(**r) for r in self.regressors]
             self.regressors = regressor_list
+        else:
+            self.regressors_raw = None
 
         self.model = self._build_model()
 
@@ -191,6 +196,8 @@ class ProphetForecast(BaseForecast):
             stan_backend=self.stan_backend,
             scaling=self.scaling,
             holidays_mode=self.holidays_mode,
+            regressors=self.regressors_raw,
+            use_all_us_holidays=self.use_all_us_holidays,
         )
 
         for regressor in self.regressors:
@@ -204,6 +211,33 @@ class ProphetForecast(BaseForecast):
             model.add_country_holidays(country_name="US")
 
         return model
+
+    def _get_parameters(self) -> Dict:
+        """Return parameters used to create a new, identical ProphetForecast object"""
+
+        # holidays and regressors get modified so use the
+        # raw version so these values could be used to create a new
+        # ProphetForecast without throwing an error
+        return {
+            "growth": self.growth,
+            "changepoints": self.changepoints,
+            "n_changepoints": self.n_changepoints,
+            "changepoint_range": self.changepoint_range,
+            "yearly_seasonality": self.yearly_seasonality,
+            "weekly_seasonality": self.weekly_seasonality,
+            "daily_seasonality": self.daily_seasonality,
+            "holidays": self.holidays_raw,
+            "seasonality_mode": self.seasonality_mode,
+            "seasonality_prior_scale": self.seasonality_prior_scale,
+            "holidays_prior_scale": self.holidays_prior_scale,
+            "changepoint_prior_scale": self.changepoint_prior_scale,
+            "mcmc_samples": self.mcmc_samples,
+            "interval_width": self.interval_width,
+            "uncertainty_samples": self.uncertainty_samples,
+            "stan_backend": self.stan_backend,
+            "scaling": self.scaling,
+            "holidays_mode": self.holidays_mode,
+        }
 
     @property
     def column_names_map(self) -> Dict[str, str]:
@@ -420,6 +454,7 @@ def aggregate_forecast_observed(
     period: str,
     numpy_aggregations: List[str],
     percentiles: List[int],
+    additional_aggregation_columns: List[str] = [],
 ):
     # build a list of all functions that we'll summarize the data by
     aggregations = [getattr(np, i) for i in numpy_aggregations]
@@ -427,9 +462,11 @@ def aggregate_forecast_observed(
 
     # aggregate metric to the correct date period (day, month, year)
     observed_summarized = pdx.aggregate_to_period(observed_df, period)
-    forecast_agg = pdx.aggregate_to_period(forecast_df, period).sort_values(
-        "submission_date"
-    )
+    forecast_agg = pdx.aggregate_to_period(
+        forecast_df,
+        period,
+        additional_aggregation_columns=additional_aggregation_columns,
+    ).sort_values("submission_date")
 
     # find periods of overlap between observed and forecasted data
     # merge preserves key order so overlap will be sorted by submission_date

@@ -9,39 +9,89 @@ from google.cloud.bigquery.enums import SqlTypeNames as bq_types
 import numpy as np
 import pandas as pd
 from pandas.api import types as pd_types
-import prophet
 from prophet.diagnostics import cross_validation
 
-from kpi_forecasting.configs.model_inputs import ProphetHoliday, ProphetRegressor
 from kpi_forecasting.models.prophet_forecast import (
     ProphetForecast,
+    aggregate_forecast_observed,
 )
 from kpi_forecasting.models.base_forecast import BaseEnsembleForecast
 
 
+@dataclass
 class ProphetAutotunerForecast(ProphetForecast):
-    def _get_crossvalidation_metric(
-        self, m: prophet.Prophet, cv_settings: dict
-    ) -> float:
+    grid_parameters: dict = {}
+    cv_settings: dict = {}
+
+    def _get_crossvalidation_metric(self, m: ProphetForecast) -> float:
         """function for calculated the metric used for crossvalidation
 
         Args:
-            m (prophet.Prophet): Prophet model for crossvalidation
+            m (ProphetForecast): Prophet model for crossvalidation
             cv_settings (dict): settings set by segment in the config file
 
         Returns:
-            float: Metric where closer to zero means a better model
+            float: Metric which should always be positive and where smaller values
+                indicate better models
         """
-        df_cv = cross_validation(m, **cv_settings)
+        df_cv = cross_validation(m, **self.cv_settings)
 
         df_bias = df_cv.groupby("cutoff")[["yhat", "y"]].sum().reset_index()
         df_bias["pcnt_bias"] = df_bias["yhat"] / df_bias["y"] - 1
         # Prophet splits the historical data when doing cross validation using
         # cutoffs. The `.tail(3)` limits the periods we consider for the best
         # parameters to the 3 most recent cutoff periods.
-        return df_bias.tail(3)["pcnt_bias"].mean()
+        return np.abs(df_bias.tail(3)["pcnt_bias"].mean())
 
-    def _predict(
+    def _auto_tuning(self, observed_df) -> ProphetForecast:
+        """
+        Perform automatic tuning of model parameters.
+
+        Args:
+            observed_df (pd.DataFrame): dataframe of observed data
+                Expected to have columns:
+                specified in the segments section of the config,
+                submission_date column with unique dates corresponding to each observation and
+                y column containing values of observations
+            segment_settings (FunnelSegmentModelSettings): The settings for the segment.
+
+        Returns:
+            ProphetForecast: ProphetForecast that produced the best crossvalidation metric.
+        """
+
+        for k, v in self.grid_parameters.items():
+            if not isinstance(v, list):
+                self.grid_parameters[k] = [v]
+
+        auto_param_grid = [
+            dict(zip(self.grid_parameters.keys(), v))
+            for v in itertools.product(*self.grid_parameters.values())
+        ]
+
+        set_params = self._get_prophet_parameters()
+        for param in self.grid_parameters:
+            set_params.pop(param)
+
+        auto_param_grid = [dict(**el, **set_params) for el in auto_param_grid]
+
+        bias = np.inf
+        best_model = None
+        for params in auto_param_grid:
+            m = ProphetForecast(**params)
+            m.fit(observed_df)
+            crossval_metric = self._get_crossvalidation_metric(m)
+            if crossval_metric < bias:
+                best_model = m
+
+        return best_model
+
+    def fit(self, observed_df: pd.DataFrame) -> object:
+        train_dataframe = self._build_train_dataframe(observed_df)
+        # model returned by _auto_tuning is already fit
+        self.model = self._auto_tuning(train_dataframe)
+        return self
+
+    def predict(
         self,
         dates_to_predict_raw: pd.DataFrame,
     ) -> pd.DataFrame:
@@ -62,6 +112,7 @@ class ProphetAutotunerForecast(ProphetForecast):
         samples = self.model.predictive_samples(dates_to_predict)
         df = pd.DataFrame(samples["yhat"])
         df["submission_date"] = dates_to_predict_raw
+        self._validate_forecast_df(df)
 
         component_cols = [
             "ds",
@@ -92,7 +143,6 @@ class ProphetAutotunerForecast(ProphetForecast):
         components_df.rename(columns={"ds": "submission_date"}, inplace=True)
 
         self.components_df = components_df.copy()
-
         return df
 
     def _validate_forecast_df(self, df: pd.DataFrame) -> None:
@@ -118,55 +168,6 @@ class ProphetAutotunerForecast(ProphetForecast):
                     f" but column {i} has type {df[i].dtypes}."
                 )
 
-    def _auto_tuning(
-        self, observed_df, segment_settings: FunnelSegmentModelSettings
-    ) -> Dict[str, float]:
-        """
-        Perform automatic tuning of model parameters.
-
-        Args:
-            observed_df (pd.DataFrame): dataframe of observed data
-                Expected to have columns:
-                specified in the segments section of the config,
-                submission_date column with unique dates corresponding to each observation and
-                y column containing values of observations
-            segment_settings (FunnelSegmentModelSettings): The settings for the segment.
-
-        Returns:
-            Dict[str, float]: The tuned parameters.
-        """
-        add_log_growth_cols = (
-            "growth" in segment_settings.grid_parameters.keys()
-            and segment_settings.grid_parameters["growth"] == "logistic"
-        )
-
-        for k, v in segment_settings.grid_parameters.items():
-            if not isinstance(v, list):
-                segment_settings.grid_parameters[k] = [v]
-
-        param_grid = [
-            dict(zip(segment_settings.grid_parameters.keys(), v))
-            for v in itertools.product(*segment_settings.grid_parameters.values())
-        ]
-
-        test_dat = self._build_train_dataframe(
-            observed_df, segment_settings, add_log_growth_cols
-        )
-        bias = []
-
-        for params in param_grid:
-            m = self._build_model(segment_settings, params)
-            m.fit(test_dat)
-
-            crossval_metric = self._get_crossvalidation_metric(
-                m, segment_settings.cv_settings
-            )
-            bias.append(crossval_metric)
-
-        min_abs_bias_index = np.argmin(np.abs(bias))
-
-        return param_grid[min_abs_bias_index]
-
 
 @dataclass
 class FunnelForecast(BaseEnsembleForecast):
@@ -184,24 +185,8 @@ class FunnelForecast(BaseEnsembleForecast):
         if not isinstance(self.model_class, ProphetAutotunerForecast):
             raise ValueError("model_class set when ProphetForecast is expected")
 
-    def _fit(self, observed_df: pd.DataFrame) -> None:
-        """
-        Fit and save a Prophet model for each segment combination.
 
-        Args:
-            observed_df (pd.DataFrame): dataframe of observations.  Expected to have columns
-                specified in the segments section of the config,
-                submission_date column with unique dates corresponding to each observation and
-                y column containing values of observations
-        """
-        # Initialize model; build model dataframe
-        test_dat = self._build_train_dataframe(observed_df)
-
-        self.model.fit(test_dat)
-        self.history = test_dat
-
-
-def _percentile_name_map(self, percentiles: List[int]) -> Dict[str, str]:
+def percentile_name_map(self, percentiles: List[int]) -> Dict[str, str]:
     """
     Map percentiles to their corresponding names for the BQ table.
 
@@ -221,19 +206,20 @@ def _percentile_name_map(self, percentiles: List[int]) -> Dict[str, str]:
     }
 
 
-def _combine_forecast_observed(
+def combine_forecast_observed(
     self,
     forecast_df: pd.DataFrame,
     observed_df: pd.DataFrame,
     period: str,
     numpy_aggregations: List,
     percentiles,
-    segment: dict,
+    segment_cols: List[str],
 ) -> pd.DataFrame:
     """Calculate aggregates over the forecast and observed data
         and concatenate the two dataframes
     Args:
-        forecast_df (pd.DataFrame): forecast dataframe
+        forecast_df (pd.DataFrame): forecast dataframe.  This dataframe should include the segments as columns
+            as well as a forecast_parameters column with the forecast parameters
         observed_df (pd.DataFrame): observed dataframe
         period (str): period to aggregate up to, must be in (day, month, year)
         numpy_aggregations (List): List of aggregation functions to apply across samples from the
@@ -248,20 +234,23 @@ def _combine_forecast_observed(
         pd.DataFrame: combined dataframe containing aggregated values from observed and forecast
     """
     # filter the forecast data to just the data in the future
+    # note that if start_date is set, it is the applied to the start of observed_df
+    # and that it therefore doesn't need to be applied here
     last_historic_date = observed_df["submission_date"].max()
     forecast_df = forecast_df.loc[forecast_df["submission_date"] > last_historic_date]
 
-    forecast_summarized, observed_summarized = self._aggregate_forecast_observed(
-        forecast_df, observed_df, period, numpy_aggregations, percentiles
+    forecast_summarized, observed_summarized = aggregate_forecast_observed(
+        forecast_df,
+        observed_df,
+        period,
+        numpy_aggregations,
+        percentiles,
+        additional_aggregation_columns=segment_cols,
     )
 
     # add datasource-specific metadata columns
     forecast_summarized["source"] = "forecast"
     observed_summarized["source"] = "historical"
-
-    # add segment columns to forecast  table
-    for dim, value in segment.items():
-        forecast_summarized[dim] = value
 
     # rename forecast percentile to low, middle, high
     # rename mean to value
@@ -271,71 +260,15 @@ def _combine_forecast_observed(
 
     # create a single dataframe that contains observed and forecasted data
     df = pd.concat([observed_summarized, forecast_summarized])
-    return df
-
-
-def _summarize(
-    self,
-    segment_settings: FunnelSegmentModelSettings,
-    period: str,
-    numpy_aggregations: List[str],
-    percentiles: List[int] = [10, 50, 90],
-) -> pd.DataFrame:
-    """
-    Calculate summary metrics on a specific segment
-    for `forecast_df` over a given period, and add metadata.
-
-    Args:
-        segment_settings (FunnelSegmentModelSettings): The settings for the segment.
-        period (str): The period for aggregation.
-        numpy_aggregations (List[str]): List of numpy aggregation functions.
-        percentiles (List[int]): List of percentiles.
-
-    Returns:
-        pd.DataFrame: The summarized dataframe.
-    """
-    if len(percentiles) != 3:
-        raise ValueError(
-            """
-            Can only pass a list of length 3 as percentiles, for lower, mid, and upper values.
-            """
-        )
-
-    # the start date for this segment's historical data, in cases where the full time series
-    ## of historical data is not used for model training
-    segment_observed_start_date = datetime.strptime(
-        segment_settings.start_date, "%Y-%m-%d"
-    ).date()
-
-    # find indices in observed_df for rows that exactly match segment dict
-    segment_historical_indices = (
-        self.observed_df[list(segment_settings.segment)]
-        == pd.Series(segment_settings.segment)
-    ).all(axis=1)
-
-    segment_observed_df = self.observed_df.loc[
-        (segment_historical_indices)
-        & (self.observed_df["submission_date"] >= segment_observed_start_date)
-    ].copy()
-
-    df = self._combine_forecast_observed(
-        segment_settings.forecast_df,
-        segment_observed_df,
-        period,
-        numpy_aggregations,
-        percentiles,
-        segment_settings.segment,
-    )
-
-    df["forecast_parameters"] = json.dumps(segment_settings.trained_parameters)
-
-    # add summary metadata columns
     df["aggregation_period"] = period.lower()
     return df
 
 
 def summarize(
     self,
+    forecast_df: pd.DataFrame,
+    observed_df: pd.DataFrame,
+    segment_cols: List[str],
     periods: List[str] = ["day", "month"],
     numpy_aggregations: List[str] = ["mean"],
     percentiles: List[int] = [10, 50, 90],
@@ -345,52 +278,40 @@ def summarize(
 
     Args:
         periods (List[str], optional): The periods for summarization. Defaults to ["day", "month"].
+        forecast_df (pd.DataFrame): forecast dataframe
+        observed_df (pd.DataFrame): observed data
+        segment_cols (List of str): list of columns used for segmentation
         numpy_aggregations (List[str], optional): The numpy aggregation functions. Defaults to ["mean"].
         percentiles (List[int], optional): The percentiles for summarization. Defaults to [10, 50, 90].
     """
-    summary_df_list = []
-    components_df_list = []
-    for segment in self.segment_models:
-        summary_df = pd.concat(
-            [
-                self._summarize(
-                    segment,
-                    i,
-                    numpy_aggregations,
-                    percentiles,
-                )
-                for i in periods
-            ]
+    if len(percentiles) != 3:
+        raise ValueError(
+            """
+            Can only pass a list of length 3 as percentiles, for lower, mid, and upper values.
+            """
         )
-        for dim, dim_value in segment.segment.items():
-            segment.components_df[dim] = dim_value
-        summary_df_list.append(summary_df.copy(deep=True))
-        components_df_list.append(segment.components_df)
-        del summary_df
 
-    df = pd.concat(summary_df_list, ignore_index=True)
+    summary_df = pd.concat(
+        [
+            combine_forecast_observed(
+                forecast_df,
+                observed_df,
+                i,
+                numpy_aggregations,
+                percentiles,
+                segment_cols,
+            )
+            for i in periods
+        ]
+    )
 
-    # add Metric Hub metadata columns
-    df["metric_alias"] = self.metric_hub.alias.lower()
-    df["metric_hub_app_name"] = self.metric_hub.app_name.lower()
-    df["metric_hub_slug"] = self.metric_hub.slug.lower()
-    df["metric_start_date"] = pd.to_datetime(self.metric_hub.min_date)
-    df["metric_end_date"] = pd.to_datetime(self.metric_hub.max_date)
-    df["metric_collected_at"] = self.collected_at
-
-    # add forecast model metadata columns
-    df["forecast_start_date"] = self.start_date
-    df["forecast_end_date"] = self.end_date
-    df["forecast_trained_at"] = self.trained_at
-    df["forecast_predicted_at"] = self.predicted_at
-
-    self.summary_df = df
-
-    self.components_df = pd.concat(components_df_list, ignore_index=True)
+    return summary_df
 
 
 def write_results(
-    self,
+    summary_df,
+    components_df,
+    segment_list,
     project: str,
     dataset: str,
     table: str,
@@ -417,10 +338,7 @@ def write_results(
     client = bigquery.Client(project=project)
     schema = [
         bigquery.SchemaField("submission_date", bq_types.DATE),
-        *[
-            bigquery.SchemaField(k, bq_types.STRING)
-            for k in self.metric_hub.segments.keys()
-        ],
+        *[bigquery.SchemaField(k, bq_types.STRING) for k in segment_list],
         bigquery.SchemaField("aggregation_period", bq_types.STRING),
         bigquery.SchemaField("source", bq_types.STRING),
         bigquery.SchemaField("value", bq_types.FLOAT),
@@ -440,7 +358,7 @@ def write_results(
         bigquery.SchemaField("forecast_parameters", bq_types.STRING),
     ]
     job = client.load_table_from_dataframe(
-        dataframe=self.summary_df,
+        dataframe=summary_df,
         destination=f"{project}.{dataset}.{table}",
         job_config=bigquery.LoadJobConfig(
             schema=schema,
@@ -452,10 +370,11 @@ def write_results(
     job.result()
 
     if components_table:
-        numeric_cols = list(self.components_df.select_dtypes(include=float).columns)
-        string_cols = list(self.components_df.select_dtypes(include=object).columns)
-        self.components_df["metric_slug"] = self.metric_hub.slug
-        self.components_df["forecast_trained_at"] = self.trained_at
+        numeric_cols = list(components_df.select_dtypes(include=float).columns)
+        string_cols = list(components_df.select_dtypes(include=object).columns)
+        # self.components_df = pd.concat(components_df_list, ignore_index=True)
+        # components_df["metric_slug"] = self.metric_hub.slug
+        # components_df["forecast_trained_at"] = self.trained_at
 
         schema = [
             bigquery.SchemaField("submission_date", bq_types.DATE),
@@ -473,7 +392,7 @@ def write_results(
         )
 
         job = client.load_table_from_dataframe(
-            dataframe=self.components_df,
+            dataframe=components_df,
             destination=f"{project}.{components_dataset}.{components_table}",
             job_config=bigquery.LoadJobConfig(
                 schema=schema,

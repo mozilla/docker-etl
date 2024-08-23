@@ -12,6 +12,8 @@ import numpy as np
 from kpi_forecasting.models.funnel_forecast import (
     FunnelSegmentModelSettings,
     FunnelForecast,
+    combine_forecast_observed,
+    summarize,
 )
 
 # Arbitrarily choose some date to use for the tests
@@ -206,9 +208,6 @@ def mock_aggregate_forecast_observed(
 
 def test_combine_forecast_observed(mocker, forecast):
     """tests the _combine_forecast_observed method"""
-    mocker.patch.object(
-        forecast, "_aggregate_forecast_observed", mock_aggregate_forecast_observed
-    )
 
     forecast_df = pd.DataFrame(
         {
@@ -216,6 +215,7 @@ def test_combine_forecast_observed(mocker, forecast):
                 TEST_DATE,
                 TEST_DATE_NEXT_DAY,
             ],
+            "a": ["A1", "A1"],
         }
     )
 
@@ -233,13 +233,13 @@ def test_combine_forecast_observed(mocker, forecast):
     numpy_aggregations = ["mean"]
     percentiles = [10, 50, 90]
 
-    output_df = forecast._combine_forecast_observed(
+    output_df = combine_forecast_observed(
         forecast_df=forecast_df,
         observed_df=observed_df,
-        period="period",
+        period="day",
         numpy_aggregations=numpy_aggregations,
         percentiles=percentiles,
-        segment={"a": "A1"},
+        segment_cols=["a"],
     )
 
     # mean was renamed to value, percentiles to high, medium, low
