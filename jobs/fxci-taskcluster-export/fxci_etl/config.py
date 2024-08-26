@@ -19,6 +19,7 @@ class PulseConfig:
     password: str
     host: str = "pulse.mozilla.org"
     port: int = 5671
+    durable: bool = True
     queues: ClassVar[dict[str, PulseExchangeConfig]] = {
         "task-completed": PulseExchangeConfig(
             exchange="exchange/taskcluster-queue/v1/task-completed",
