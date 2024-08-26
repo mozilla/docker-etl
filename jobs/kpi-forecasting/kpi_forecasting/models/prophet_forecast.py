@@ -17,22 +17,6 @@ from kpi_forecasting.configs.model_inputs import ProphetHoliday, ProphetRegresso
 
 
 @dataclass
-class ProphetDataManager:
-    """Class for managing data to send to prophet
-
-    Args:
-        end_date (str): A 'YYYY-MM-DD' formatted-string that specifies the last
-            date the metric should be queried.
-        predict_historical_dates (bool):  If True, forecast starts at the first
-            date in the observed data.  If False, it uses the value of start_date it set
-            and the first day after the observed data ends otherwise
-    """
-
-    end_date: str
-    predict_historical_dates: bool = False
-
-
-@dataclass
 class ProphetForecast(BaseForecast):
     """
     Holds the configuration and results for each segment
@@ -169,11 +153,7 @@ class ProphetForecast(BaseForecast):
 
     def _build_model(self) -> prophet.Prophet:
         """
-        Build a Prophet model from parameters.
-
-        Args:
-            segment_settings (FunnelSegmentModelSettings): The settings for the segment.
-            parameters (Dict[str, Union[float, str, bool]]): The parameters for the model.
+        Build a Prophet model from parameters using attributes set on initialization
 
         Returns:
             prophet.Prophet: The Prophet model.
@@ -279,8 +259,6 @@ class ProphetForecast(BaseForecast):
 
         Args:
             observed_df: dataframe of observed data
-            segment_settings (FunnelSegmentModelSettings): The settings for the segment.
-            add_logistic_growth_cols (bool, optional): Whether to add logistic growth columns. Defaults to False.
 
         Returns:
             pd.DataFrame: The dataframe for the model.
@@ -305,9 +283,6 @@ class ProphetForecast(BaseForecast):
 
         Args:
             dates_to_predict (pd.DataFrame): dataframe of dates to predict
-            segment_settings (FunnelSegmentModelSettings): settings related to the segment
-            add_logistic_growth_cols (bool):  Whether to add logistic growth columns. Defaults to False.
-
 
         Returns:
             pd.DataFrame: dataframe to use used in prediction
@@ -449,13 +424,34 @@ class ProphetForecast(BaseForecast):
 
 
 def aggregate_forecast_observed(
-    forecast_df,
-    observed_df,
+    forecast_df: pd.DataFrame,
+    observed_df: pd.DataFrame,
     period: str,
     numpy_aggregations: List[str],
     percentiles: List[int],
     additional_aggregation_columns: List[str] = [],
-):
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Aggregate samples produced by prophet to aggregates specified in
+     numpy_aggregations and percentiles, and aggregate in time up to the period
+     specified in period.  Aggregation will include any columns passed to
+     additional_aggergation_columns
+
+    Args:
+        forecast_df (pd.DataFrame): raw output of the predict function from ProphetForecast or
+            one of it's child classes
+        observed_df (_type_): raw input of the fit function from ProphetForecast or
+            one of it's child classes
+        period (str): period to aggregate to in time.  Must be 'day', 'month' or 'year'
+        numpy_aggregations (List[str]): aggregates from numpy to use.  Can be the name of any
+            numpy function that outputs a single value
+        percentiles (List[int]): list of number for which the percentile should be generated
+        additional_aggregation_columns (List[str], optional):
+            additional columns to use in the aggregation. Defaults to [].
+
+    Returns:
+        forecast_summarized (pd.DataFrame): summarized forecast data
+        observed_summarized (pd.DataFrame): summarized observed data
+    """
     # build a list of all functions that we'll summarize the data by
     aggregations = [getattr(np, i) for i in numpy_aggregations]
     aggregations.extend([pdx.percentile(i) for i in percentiles])
@@ -526,7 +522,18 @@ def aggregate_forecast_observed(
     return forecast_summarized, observed_summarized
 
 
-def combine_forecast_observed(forecast_summarized, observed_summarized):
+def combine_forecast_observed(
+    forecast_summarized: pd.DataFrame, observed_summarized: pd.DataFrame
+) -> pd.DataFrame:
+    """combines summarized forecast and observed data
+
+    Args:
+        forecast_summarized (pd.DataFrame): summarized forecast data
+        observed_summarized (pd.DataFrame): summarized observed data
+
+    Returns:
+        pd.DataFrame: combined data
+    """
     # remaining column of metric values get the column name 'value'
     forecast_summarized = forecast_summarized.melt(
         id_vars="submission_date", var_name="measure"
@@ -552,6 +559,18 @@ def summarize(
     """
     Calculate summary metrics for `self.forecast_df` over a given period, and
     add metadata.
+
+    Args:
+    forecast_df (pd.DataFrame): raw output of the predict function from ProphetForecast or
+        one of it's child classes
+    observed_df (_type_): raw input of the fit function from ProphetForecast or
+        one of it's child classes
+    period (str): period to aggregate to in time.  Must be 'day', 'month' or 'year'
+    numpy_aggregations (List[str]): aggregates from numpy to use.  Can be the name of any
+        numpy function that outputs a single value
+    percentiles (List[int]): list of number for which the percentile should be generated
+    additional_aggregation_columns (List[str], optional):
+        additional columns to use in the aggregation. Defaults to [].
     """
 
     forecast_summarized, observed_summarized = aggregate_forecast_observed(

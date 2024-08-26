@@ -1,19 +1,15 @@
 import json
-import numpy as np
 import pandas as pd
 import abc
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List
 
-from datetime import datetime, timedelta, timezone
-from kpi_forecasting.metric_hub import MetricHub
 
 
 @dataclass
 class BaseForecast(abc.ABC):
     """
-    Holds the configuration and results for each segment
-    in a funnel forecasting model.
+    Abstract Base class for forecast objects
     """
 
     @abc.abstractmethod
@@ -61,9 +57,9 @@ class BaseForecast(abc.ABC):
 @dataclass
 class BaseEnsembleForecast:
     """
-    A base class for fitting, forecasting, and summarizing forecasts. This class
-    should not be invoked directly; it should be inherited by a child class. The
-    child class needs to implement `_fit` and `_forecast` methods in order to work.
+    A base class for forecasts that partition the data using the segments parameter
+    and fit a different model to each segment.  The type of model used is the same for
+    all segments and is set with the model_class attribute
 
     Args:
         parameters (Dict): Parameters that should be passed to the forecasting model.
@@ -164,6 +160,18 @@ class BaseEnsembleForecast:
     def filter_data_to_segment(
         self, df: pd.DataFrame, segment: dict, start_date: str
     ) -> pd.DataFrame:
+        """function to filter data to the segment set in segment
+        and in time to only dates on or after start_date
+
+        Args:
+            df (pd.DataFrame): dataframe to filter
+            segment (dict): dictionary where keys are columns and values
+                are the value that column takes for that segment
+            start_date (str): filter df so that the earliest date is start_date
+
+        Returns:
+            pd.DataFrame: filtered dataframe
+        """
         column_matches_segment = df[list(segment)] == pd.Series(segment)
         row_in_segment = column_matches_segment.all(axis=1)
         filter_array = row_in_segment
@@ -172,8 +180,12 @@ class BaseEnsembleForecast:
             filter_array &= row_after_start
         return df.loc[filter_array]
 
-    def fit(self, observed_df) -> None:
-        """Fit a model using historic metric data provided by `metric_hub`."""
+    def fit(self, observed_df: pd.DataFrame) -> None:
+        """Fit models across all segments for the data in observed_df
+
+        Args:
+            observed_df (pd.DataFrame): data used to fit
+        """
         print(f"Fitting {self.model_type} model.", flush=True)
         # create list of models depending on whether there are segments or not
         self._set_segment_models(observed_df)
@@ -186,20 +198,16 @@ class BaseEnsembleForecast:
             model.fit(observed_subset)
         return self
 
-    def get_filtered_observed_df(self, observed_df: pd.DataFrame) -> pd.DataFrame:
-        """returns the observed data filtered using the start_date for each segmen
-        can only be called after model is fit"""
-        observed_data_list = []
-        for segment_model in self.segment_models:
-            observed_subset = self.filter_data_to_segment(
-                observed_df, segment_model["segment"], segment_model["start_date"]
-            )
-            observed_data_list.append(observed_subset)
-        return pd.concat(observed_data_list)
+    def predict(self, dates_to_predict: pd.DataFrame) -> pd.DataFrame:
+        """Generates a prediction for each segment for the dates in dates_to_predict
 
-    def predict(self, dates_to_predict) -> None:
-        """Generate a forecast from `start_date` to `end_date`.
-        Result is set to `self.forecast_df`"""
+        Args:
+            dates_to_predict (pd.DataFrame): dataframe with a single column,
+            submission_date that is a string in `%Y-%m-%d` format
+
+        Returns:
+            pd.DataFrame: prediction across all segments
+        """
         start_date = dates_to_predict["submission_date"].iloc[0]
         end_date = dates_to_predict["submission_date"].iloc[-1]
 

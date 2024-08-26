@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 import itertools
-from typing import Dict, List, Union
+from typing import List
 
 from google.cloud import bigquery
 from google.cloud.bigquery.enums import SqlTypeNames as bq_types
@@ -51,8 +51,6 @@ class ProphetAutotunerForecast(ProphetForecast):
                 specified in the segments section of the config,
                 submission_date column with unique dates corresponding to each observation and
                 y column containing values of observations
-            segment_settings (FunnelSegmentModelSettings): The settings for the segment.
-
         Returns:
             ProphetForecast: ProphetForecast that produced the best crossvalidation metric.
         """
@@ -85,6 +83,11 @@ class ProphetAutotunerForecast(ProphetForecast):
         return best_model.model
 
     def fit(self, observed_df: pd.DataFrame) -> object:
+        """Select the best fit model and set it to the model attribute
+
+        Args:
+            observed_df (pd.DataFrame): observed data used to fit
+        """
         train_dataframe = self._build_train_dataframe(observed_df)
         # model returned by _auto_tuning is already fit
         self.model = self._auto_tuning(train_dataframe)
@@ -99,9 +102,8 @@ class ProphetAutotunerForecast(ProphetForecast):
         Generate forecast samples for a segment.
 
         Args:
-            dates_to_predict (pd.DataFrame): dataframe of dates to predict
-            segment_settings (FunnelSegmentModelSettings): The settings for the segment.
-
+            dates_to_predict (pd.DataFrame): dataframe with a single column,
+            submission_date that is a string in `%Y-%m-%d` format
         Returns:
             pd.DataFrame: The forecasted values.
         """
@@ -277,9 +279,9 @@ def summarize(
     Summarize the forecast results over specified periods.
 
     Args:
-        periods (List[str], optional): The periods for summarization. Defaults to ["day", "month"].
         forecast_df (pd.DataFrame): forecast dataframe
         observed_df (pd.DataFrame): observed data
+        periods (List[str], optional): The periods for summarization. Defaults to ["day", "month"].
         segment_cols (List of str): list of columns used for segmentation
         numpy_aggregations (List[str], optional): The numpy aggregation functions. Defaults to ["mean"].
         percentiles (List[int], optional): The percentiles for summarization. Defaults to [10, 50, 90].

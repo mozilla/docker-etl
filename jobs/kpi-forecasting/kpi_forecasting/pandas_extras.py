@@ -19,7 +19,21 @@ def aggregate_to_period(
     date_col: str = "submission_date",
     additional_aggregation_columns: list = [],
 ) -> pd.DataFrame:
-    """Floor dates to the correct period and aggregate."""
+    """aggregates a dataframe to a period within any additional columns specified
+
+    Args:
+        df (pd.DataFrame): dataframe to aggregate to.  Must have a date column
+            with the name specified in the date_col argument
+        period (str): period to aggregate the datat to
+        aggregation (callable, optional): function to use to aggergate. Defaults to np.sum.
+        date_col (str, optional): column in the dataframe that contains the date
+            information used in aggregation. Defaults to "submission_date".
+        additional_aggregation_columns (list, optional): Additional columns
+            within which the date aggregation should occur. Defaults to [].
+
+    Returns:
+        pd.DataFrame: _description_
+    """
     if period.lower() not in ["day", "month", "year"]:
         raise ValueError(
             f"Don't know how to floor dates by {period}. Please use 'day', 'month', or 'year'."

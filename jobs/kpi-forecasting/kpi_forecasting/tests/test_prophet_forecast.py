@@ -1,10 +1,9 @@
-from datetime import date, datetime
+from datetime import date
 from dateutil.relativedelta import relativedelta
 
 import pandas as pd
 import numpy as np
 import pytest
-import collections
 
 
 from kpi_forecasting.models.prophet_forecast import (
