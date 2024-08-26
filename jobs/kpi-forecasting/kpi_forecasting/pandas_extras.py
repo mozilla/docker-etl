@@ -58,7 +58,5 @@ def aggregate_to_period(
         )
 
     # unique preseves order so we should be fine to concat
-    output_df = pd.concat(
-        [x_numeric_agg, x_string_agg.drop(columns=aggregation_cols)], axis=1
-    )
+    output_df = x_numeric_agg.merge(x_string_agg, on=aggregation_cols)
     return output_df

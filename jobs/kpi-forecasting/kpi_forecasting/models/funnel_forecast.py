@@ -1,7 +1,5 @@
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
 import itertools
-import json
 from typing import Dict, List, Union
 
 from google.cloud import bigquery
@@ -20,8 +18,8 @@ from kpi_forecasting.models.base_forecast import BaseEnsembleForecast
 
 @dataclass
 class ProphetAutotunerForecast(ProphetForecast):
-    grid_parameters: dict = {}
-    cv_settings: dict = {}
+    grid_parameters: dict = field(default_factory=dict)
+    cv_settings: dict = field(default_factory=dict)
 
     def _get_crossvalidation_metric(self, m: ProphetForecast) -> float:
         """function for calculated the metric used for crossvalidation
@@ -68,7 +66,7 @@ class ProphetAutotunerForecast(ProphetForecast):
             for v in itertools.product(*self.grid_parameters.values())
         ]
 
-        set_params = self._get_prophet_parameters()
+        set_params = self._get_parameters()
         for param in self.grid_parameters:
             set_params.pop(param)
 
@@ -82,13 +80,15 @@ class ProphetAutotunerForecast(ProphetForecast):
             crossval_metric = self._get_crossvalidation_metric(m)
             if crossval_metric < bias:
                 best_model = m
+                bias = crossval_metric
 
-        return best_model
+        return best_model.model
 
     def fit(self, observed_df: pd.DataFrame) -> object:
         train_dataframe = self._build_train_dataframe(observed_df)
         # model returned by _auto_tuning is already fit
         self.model = self._auto_tuning(train_dataframe)
+        self.history = train_dataframe
         return self
 
     def predict(
@@ -176,38 +176,37 @@ class FunnelForecast(BaseEnsembleForecast):
     in a funnel forecasting model.
     """
 
-    grid_parameters: Dict[str, Union[List[float], float]] = None
-    cv_settings: Dict[str, str] = None
     model_class: object = ProphetAutotunerForecast
 
-    def __post_init__(self):
-        super(FunnelForecast, self).__post_init__(self)
-        if not isinstance(self.model_class, ProphetAutotunerForecast):
+    def __post_init__(self, *args, **kwargs):
+        super(FunnelForecast, self).__post_init__()
+        if not self.model_class == ProphetAutotunerForecast:
             raise ValueError("model_class set when ProphetForecast is expected")
 
 
-def percentile_name_map(self, percentiles: List[int]) -> Dict[str, str]:
-    """
-    Map percentiles to their corresponding names for the BQ table.
-
+def combine_forecast_observed(
+    forecast_summarized: pd.DataFrame,
+    observed_summarized: pd.DataFrame,
+) -> pd.DataFrame:
+    """Combines the observed and forecast data as part of summarization
     Args:
-        percentiles (List[int]): The list of percentiles.
+        forecast_summarized (pd.DataFrame): forecast dataframe.  This dataframe should include the segments as columns
+            as well as a forecast_parameters column with the forecast parameters
+        observed_summarized (pd.DataFrame): observed dataframe
 
     Returns:
-        Dict[str, str]: The mapping of percentile names.
+        pd.DataFrame: combined dataframe containing aggregated values from observed and forecast
     """
+    # add datasource-specific metadata columns
+    forecast_summarized["source"] = "forecast"
+    observed_summarized["source"] = "historical"
 
-    percentiles.sort()
-    return {
-        f"p{percentiles[0]}": "value_low",
-        f"p{percentiles[1]}": "value_mid",
-        f"p{percentiles[2]}": "value_high",
-        "mean": "value",
-    }
+    # create a single dataframe that contains observed and forecasted data
+    df = pd.concat([observed_summarized, forecast_summarized])
+    return df
 
 
-def combine_forecast_observed(
-    self,
+def summarize_with_parameters(
     forecast_df: pd.DataFrame,
     observed_df: pd.DataFrame,
     period: str,
@@ -216,7 +215,7 @@ def combine_forecast_observed(
     segment_cols: List[str],
 ) -> pd.DataFrame:
     """Calculate aggregates over the forecast and observed data
-        and concatenate the two dataframes
+        and concatenate the two dataframes for a single set of parameters
     Args:
         forecast_df (pd.DataFrame): forecast dataframe.  This dataframe should include the segments as columns
             as well as a forecast_parameters column with the forecast parameters
@@ -248,30 +247,31 @@ def combine_forecast_observed(
         additional_aggregation_columns=segment_cols,
     )
 
-    # add datasource-specific metadata columns
-    forecast_summarized["source"] = "forecast"
-    observed_summarized["source"] = "historical"
+    percentile_name_map = {
+        f"p{percentiles[0]}": "value_low",
+        f"p{percentiles[1]}": "value_mid",
+        f"p{percentiles[2]}": "value_high",
+        "mean": "value",
+    }
 
     # rename forecast percentile to low, middle, high
     # rename mean to value
-    forecast_summarized = forecast_summarized.rename(
-        columns=self._percentile_name_map(percentiles)
-    )
+    forecast_summarized = forecast_summarized.rename(columns=percentile_name_map)
 
-    # create a single dataframe that contains observed and forecasted data
-    df = pd.concat([observed_summarized, forecast_summarized])
+    df = combine_forecast_observed(forecast_summarized, observed_summarized)
+
     df["aggregation_period"] = period.lower()
+
     return df
 
 
 def summarize(
-    self,
     forecast_df: pd.DataFrame,
     observed_df: pd.DataFrame,
-    segment_cols: List[str],
     periods: List[str] = ["day", "month"],
     numpy_aggregations: List[str] = ["mean"],
     percentiles: List[int] = [10, 50, 90],
+    segment_cols: List[str] = [],
 ) -> None:
     """
     Summarize the forecast results over specified periods.
@@ -293,7 +293,7 @@ def summarize(
 
     summary_df = pd.concat(
         [
-            combine_forecast_observed(
+            summarize_with_parameters(
                 forecast_df,
                 observed_df,
                 i,

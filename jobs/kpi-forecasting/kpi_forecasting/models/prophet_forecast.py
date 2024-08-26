@@ -4,10 +4,10 @@ from pandas.api import types as pd_types
 import prophet
 import numpy as np
 from dataclasses import dataclass, field
-from typing import Dict, List, Union
+from typing import Dict, List
 
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from kpi_forecasting.models.base_forecast import BaseForecast
 from kpi_forecasting import pandas_extras as pdx
 from google.cloud import bigquery
@@ -111,24 +111,24 @@ class ProphetForecast(BaseForecast):
     use_all_us_holidays: bool = False
 
     # these are the arguments used to initialize the Prophet object
-    growth = "linear"
-    changepoints = None
-    n_changepoints = 25
-    changepoint_range = 0.8
-    yearly_seasonality = "auto"
-    weekly_seasonality = "auto"
-    daily_seasonality = "auto"
-    holidays = None
-    seasonality_mode = "additive"
-    seasonality_prior_scale = 10.0
-    holidays_prior_scale = 10.0
-    changepoint_prior_scale = 0.05
-    mcmc_samples = 0
-    interval_width = 0.80
-    uncertainty_samples = 1000
-    stan_backend = None
+    growth: str = "linear"
+    changepoints: list = None
+    n_changepoints: int = 25
+    changepoint_range: float = 0.8
+    yearly_seasonality: str = "auto"
+    weekly_seasonality: str = "auto"
+    daily_seasonality: str = "auto"
+    holidays: pd.DataFrame = None
+    seasonality_mode: str = "additive"
+    seasonality_prior_scale: float = 10.0
+    holidays_prior_scale: float = 10.0
+    changepoint_prior_scale: float = 0.05
+    mcmc_samples: int = 0
+    interval_width: float = 0.80
+    uncertainty_samples: int = 1000
+    stan_backend: str = None
     scaling: str = "absmax"
-    holidays_mode = None
+    holidays_mode: str = None
     number_of_simulations: int = 1000
 
     def __post_init__(self):
@@ -137,6 +137,8 @@ class ProphetForecast(BaseForecast):
 
         if self.holidays == []:
             self.holidays = None
+            self.holidays_raw = None
+        elif not self.holidays:
             self.holidays_raw = None
         elif self.holidays:
             self.holidays_raw = self.holidays
@@ -196,8 +198,6 @@ class ProphetForecast(BaseForecast):
             stan_backend=self.stan_backend,
             scaling=self.scaling,
             holidays_mode=self.holidays_mode,
-            regressors=self.regressors_raw,
-            use_all_us_holidays=self.use_all_us_holidays,
         )
 
         for regressor in self.regressors:
@@ -461,23 +461,53 @@ def aggregate_forecast_observed(
     aggregations.extend([pdx.percentile(i) for i in percentiles])
 
     # aggregate metric to the correct date period (day, month, year)
-    observed_summarized = pdx.aggregate_to_period(observed_df, period)
+    observed_summarized = pdx.aggregate_to_period(
+        observed_df,
+        period,
+        additional_aggregation_columns=additional_aggregation_columns,
+    )
     forecast_agg = pdx.aggregate_to_period(
         forecast_df,
         period,
         additional_aggregation_columns=additional_aggregation_columns,
     ).sort_values("submission_date")
 
+    aggregation_columns = ["submission_date"] + additional_aggregation_columns
+
     # find periods of overlap between observed and forecasted data
     # merge preserves key order so overlap will be sorted by submission_date
     overlap = forecast_agg.merge(
-        observed_summarized,
-        on="submission_date",
+        observed_summarized[aggregation_columns + ["value"]],
+        on=aggregation_columns,
         how="left",
     ).fillna(0)
 
+    # separate out numeric columns, which will be the samples
+    # from non-numeric
+
+    forecast_agg_no_aggregation_cols = forecast_agg[
+        [el for el in forecast_agg.columns if el not in aggregation_columns]
+    ]
+    forecast_agg_string = forecast_agg_no_aggregation_cols.select_dtypes(
+        include=["datetime64", object]
+    )
+
+    # assuming that the numeric columns are exactly those created by
+    # predictive_samples
+    forecast_agg_numeric = forecast_agg_no_aggregation_cols.select_dtypes(
+        include=["float", "int"]
+    )
+
+    # put aggergation columns back into x_numeric so groupby works
+    forecast_agg_numeric = forecast_agg[
+        list(forecast_agg_numeric.columns) + aggregation_columns
+    ]
+    forecast_agg_string = forecast_agg[
+        list(forecast_agg_string.columns) + aggregation_columns
+    ]
+
     forecast_summarized = (
-        forecast_agg.set_index("submission_date")
+        forecast_agg_numeric.set_index(aggregation_columns)
         # Add observed data samples to any overlapping forecasted period. This
         # ensures that any forecast made partway through a period accounts for
         # previously observed data within the period. For example, when a monthly
@@ -486,6 +516,11 @@ def aggregate_forecast_observed(
         # calculate summary values, aggregating by submission_date,
         .agg(aggregations, axis=1)
         .reset_index()
+    )
+
+    # add string columns back in
+    forecast_summarized = forecast_summarized.merge(
+        forecast_agg_string, on=aggregation_columns
     )
 
     return forecast_summarized, observed_summarized

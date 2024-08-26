@@ -105,8 +105,6 @@ def test_predict(forecast):
     # to make sure the validation works set the number of simulations
     out = forecast.predict(dates_to_predict).reset_index(drop=True)
 
-    print(out)
-
     # in MockModel, the predictive_samples method sets the output to
     # np.arange(len(dates_to_predict)) * self.value for one column called 0
     # this helps ensure the forecast_df in segment_models is set properly
@@ -237,11 +235,14 @@ def test_aggregate_forecast_to_month():
     forecast_df = pd.DataFrame(
         [
             {
-                **{"submission_date": TEST_DATE},
+                **{"submission_date": TEST_DATE, "forecast_parameters": "test_month"},
                 **{i: el for i, el in enumerate(test_date_samples)},
             },
             {
-                **{"submission_date": TEST_DATE_NEXT_DAY},
+                **{
+                    "submission_date": TEST_DATE_NEXT_DAY,
+                    "forecast_parameters": "test_month",
+                },
                 **{i: el for i, el in enumerate(test_next_date_samples)},
             },
         ]
@@ -290,6 +291,7 @@ def test_aggregate_forecast_to_month():
                 "p10": np.percentile(test_date_samples + test_next_date_samples, 10),
                 "p50": np.percentile(test_date_samples + test_next_date_samples, 50),
                 "p90": np.percentile(test_date_samples + test_next_date_samples, 90),
+                "forecast_parameters": "test_month",
             },
         ]
     )
@@ -300,6 +302,130 @@ def test_aggregate_forecast_to_month():
 
     pd.testing.assert_frame_equal(
         observed_summarized_output, observed_summarized_expected_df
+    )
+
+
+def test_aggregate_forecast_to_month_extra_agg_col():
+    """tests the aggregate_forecast_observed method in the case
+    where the observed and forecasted have no overlap and the aggregation
+    happens at the day level"""
+    test_date_samples = np.arange(1000)
+    test_next_date_samples = np.arange(1000) * 2
+    forecast_df = pd.DataFrame(
+        [
+            {
+                **{
+                    "submission_date": TEST_DATE,
+                    "a": "A1",
+                    "forecast_parameters": "A1",
+                },
+                **{i: el for i, el in enumerate(test_date_samples)},
+            },
+            {
+                **{
+                    "submission_date": TEST_DATE_NEXT_DAY,
+                    "a": "A1",
+                    "forecast_parameters": "A1",
+                },
+                **{i: el for i, el in enumerate(test_next_date_samples)},
+            },
+            {
+                **{
+                    "submission_date": TEST_DATE,
+                    "a": "A2",
+                    "forecast_parameters": "A2",
+                },
+                **{i: el for i, el in enumerate(2 * test_date_samples)},
+            },
+            {
+                **{
+                    "submission_date": TEST_DATE_NEXT_DAY,
+                    "a": "A2",
+                    "forecast_parameters": "A2",
+                },
+                **{i: el for i, el in enumerate(2 * test_next_date_samples)},
+            },
+        ]
+    )
+
+    # rows with negative values are those expected to be removed
+    # by filters in summarize
+    # arbitrarily subtract 1 month so there's not overlap
+    observed_df = pd.DataFrame(
+        {
+            "submission_date": [
+                TEST_DATE - relativedelta(months=1),
+                TEST_DATE_NEXT_DAY - relativedelta(months=1),
+            ],
+            "value": [10, 20],
+            "a": ["A1", "A1"],
+        }
+    )
+
+    numpy_aggregations = ["mean"]
+    percentiles = [10, 50, 90]
+    forecast_summarized_output, observed_summarized_output = (
+        aggregate_forecast_observed(
+            forecast_df,
+            observed_df,
+            period="month",
+            numpy_aggregations=numpy_aggregations,
+            percentiles=percentiles,
+            additional_aggregation_columns=["a"],
+        )
+    )
+
+    # TEST_DATE should be the first of the month
+    observed_summarized_expected_df = pd.DataFrame(
+        {
+            "submission_date": [
+                pd.to_datetime(TEST_DATE - relativedelta(months=1)),
+            ],
+            "value": [30],
+            "a": ["A1"],
+        }
+    )
+
+    forecast_summarized_expected_df = pd.DataFrame(
+        [
+            {
+                "submission_date": pd.to_datetime(TEST_DATE),
+                "mean": np.mean(test_date_samples + test_next_date_samples),
+                "p10": np.percentile(test_date_samples + test_next_date_samples, 10),
+                "p50": np.percentile(test_date_samples + test_next_date_samples, 50),
+                "p90": np.percentile(test_date_samples + test_next_date_samples, 90),
+                "a": "A1",
+                "forecast_parameters": "A1",
+            },
+            {
+                "submission_date": pd.to_datetime(TEST_DATE),
+                "mean": 2 * np.mean(test_date_samples + test_next_date_samples),
+                "p10": 2
+                * np.percentile(test_date_samples + test_next_date_samples, 10),
+                "p50": 2
+                * np.percentile(test_date_samples + test_next_date_samples, 50),
+                "p90": 2
+                * np.percentile(test_date_samples + test_next_date_samples, 90),
+                "a": "A2",
+                "forecast_parameters": "A2",
+            },
+        ]
+    )
+
+    assert set(forecast_summarized_output.columns) == set(
+        forecast_summarized_output.columns
+    )
+    pd.testing.assert_frame_equal(
+        forecast_summarized_output[forecast_summarized_expected_df.columns],
+        forecast_summarized_expected_df,
+    )
+
+    assert set(observed_summarized_output.columns) == set(
+        observed_summarized_expected_df.columns
+    )
+    pd.testing.assert_frame_equal(
+        observed_summarized_output[observed_summarized_expected_df.columns],
+        observed_summarized_expected_df,
     )
 
 
@@ -384,6 +510,152 @@ def test_aggregate_forecast_observed_overlap_to_day():
     )
 
 
+def test_aggregate_forecast_observed_overlap_to_day_with_additional():
+    """tests the aggregate_forecast_observed method in the case
+    where the observed and forecasted overlap and the aggregation
+    happens at the day level"""
+    test_date_samples = np.arange(1000)
+    test_next_date_samples = np.arange(1000) * 2
+    forecast_df = pd.DataFrame(
+        [
+            {
+                **{
+                    "submission_date": TEST_DATE,
+                    "a": "A1",
+                    "forecast_parameters": "A1",
+                },
+                **{i: el for i, el in enumerate(test_date_samples)},
+            },
+            {
+                **{
+                    "submission_date": TEST_DATE_NEXT_DAY,
+                    "a": "A1",
+                    "forecast_parameters": "A1",
+                },
+                **{i: el for i, el in enumerate(test_next_date_samples)},
+            },
+            {
+                **{
+                    "submission_date": TEST_DATE,
+                    "a": "A2",
+                    "forecast_parameters": "A2",
+                },
+                **{i: el for i, el in enumerate(2 * test_date_samples)},
+            },
+            {
+                **{
+                    "submission_date": TEST_DATE_NEXT_DAY,
+                    "a": "A2",
+                    "forecast_parameters": "A2",
+                },
+                **{i: el for i, el in enumerate(2 * test_next_date_samples)},
+            },
+        ]
+    )
+
+    # rows with negative values are those expected to be removed
+    # by filters in summarize
+    observed_df = pd.DataFrame(
+        {
+            "submission_date": [
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+            ],
+            "value": [10, 20],
+            "a": ["A1", "A2"],
+        }
+    )
+
+    numpy_aggregations = ["mean"]
+    percentiles = [10, 50, 90]
+    forecast_summarized_output, observed_summarized_output = (
+        aggregate_forecast_observed(
+            forecast_df,
+            observed_df,
+            period="day",
+            numpy_aggregations=numpy_aggregations,
+            percentiles=percentiles,
+            additional_aggregation_columns=["a"],
+        )
+    )
+    observed_summarized_expected_df = pd.DataFrame(
+        {
+            "submission_date": [
+                pd.to_datetime(TEST_DATE),
+                pd.to_datetime(TEST_DATE_NEXT_DAY),
+            ],
+            "value": [10, 20],
+            "a": ["A1", "A2"],
+        }
+    )
+
+    # add values from observed because of overlap
+    forecast_summarized_expected_df = pd.DataFrame(
+        [
+            {
+                "submission_date": pd.to_datetime(TEST_DATE),
+                "a": "A1",
+                "forecast_parameters": "A1",
+                "mean": np.mean(test_date_samples + 10),
+                "p10": np.percentile(test_date_samples + 10, 10),
+                "p50": np.percentile(test_date_samples + 10, 50),
+                "p90": np.percentile(test_date_samples + 10, 90),
+            },
+            {
+                "submission_date": pd.to_datetime(TEST_DATE_NEXT_DAY),
+                "a": "A1",
+                "forecast_parameters": "A1",
+                "mean": np.mean(test_next_date_samples),
+                "p10": np.percentile(test_next_date_samples, 10),
+                "p50": np.percentile(test_next_date_samples, 50),
+                "p90": np.percentile(test_next_date_samples, 90),
+            },
+            {
+                "submission_date": pd.to_datetime(TEST_DATE),
+                "a": "A2",
+                "forecast_parameters": "A2",
+                "mean": np.mean(2 * test_date_samples),
+                "p10": np.percentile(2 * test_date_samples, 10),
+                "p50": np.percentile(2 * test_date_samples, 50),
+                "p90": np.percentile(2 * test_date_samples, 90),
+            },
+            {
+                "submission_date": pd.to_datetime(TEST_DATE_NEXT_DAY),
+                "a": "A2",
+                "forecast_parameters": "A2",
+                "mean": np.mean(2 * test_next_date_samples + 20),
+                "p10": np.percentile(2 * test_next_date_samples + 20, 10),
+                "p50": np.percentile(2 * test_next_date_samples + 20, 50),
+                "p90": np.percentile(2 * test_next_date_samples + 20, 90),
+            },
+        ]
+    )
+
+    assert set(forecast_summarized_expected_df.columns) == set(
+        forecast_summarized_output.columns
+    )
+    pd.testing.assert_frame_equal(
+        forecast_summarized_output[forecast_summarized_expected_df.columns]
+        .sort_values(["submission_date", "a"])
+        .reset_index(drop=True),
+        forecast_summarized_expected_df.sort_values(
+            ["submission_date", "a"]
+        ).reset_index(drop=True),
+    )
+
+    assert set(observed_summarized_expected_df.columns) == set(
+        observed_summarized_output.columns
+    )
+    pd.testing.assert_frame_equal(
+        observed_summarized_output[observed_summarized_expected_df.columns]
+        .sort_values(["submission_date", "a"])
+        .reset_index(drop=True),
+        observed_summarized_expected_df.sort_values(
+            ["submission_date", "a"]
+        ).reset_index(drop=True),
+    )
+
+
 def test_aggregate_forecast_observed_overlap_to_month():
     """tests the aggregate_forecast_observed method in the case
     where the observed and forecasted overlap and the aggregation
@@ -463,11 +735,150 @@ def test_aggregate_forecast_observed_overlap_to_month():
     )
 
 
+def test_aggregate_forecast_observed_overlap_to_month_with_additional():
+    """tests the aggregate_forecast_observed method in the case
+    where the observed and forecasted overlap and the aggregation
+    happens at the day level"""
+    test_date_samples = np.arange(1000)
+    test_next_date_samples = np.arange(1000) * 2
+    forecast_df = pd.DataFrame(
+        [
+            {
+                **{
+                    "submission_date": TEST_DATE,
+                    "forecast_parameters": "A1",
+                    "a": "A1",
+                },
+                **{i: el for i, el in enumerate(test_date_samples)},
+            },
+            {
+                **{
+                    "submission_date": TEST_DATE_NEXT_DAY,
+                    "forecast_parameters": "A1",
+                    "a": "A1",
+                },
+                **{i: el for i, el in enumerate(test_next_date_samples)},
+            },
+            {
+                **{
+                    "submission_date": TEST_DATE,
+                    "forecast_parameters": "A2",
+                    "a": "A2",
+                },
+                **{i: el for i, el in enumerate(2 * test_date_samples)},
+            },
+            {
+                **{
+                    "submission_date": TEST_DATE_NEXT_DAY,
+                    "forecast_parameters": "A2",
+                    "a": "A2",
+                },
+                **{i: el for i, el in enumerate(2 * test_next_date_samples)},
+            },
+        ]
+    )
+
+    # rows with negative values are those expected to be removed
+    # by filters in summarize
+    observed_df = pd.DataFrame(
+        {
+            "submission_date": [
+                TEST_DATE,
+                TEST_DATE_NEXT_DAY,
+            ],
+            "value": [10, 20],
+            "a": ["A1", "A2"],
+        }
+    )
+
+    numpy_aggregations = ["mean"]
+    percentiles = [10, 50, 90]
+    forecast_summarized_output, observed_summarized_output = (
+        aggregate_forecast_observed(
+            forecast_df,
+            observed_df,
+            period="month",
+            numpy_aggregations=numpy_aggregations,
+            percentiles=percentiles,
+            additional_aggregation_columns=["a"],
+        )
+    )
+    observed_summarized_expected_df = pd.DataFrame(
+        {
+            "submission_date": [
+                pd.to_datetime(TEST_DATE),
+                pd.to_datetime(TEST_DATE),
+            ],
+            "value": [10, 20],
+            "a": ["A1", "A2"],
+        }
+    )
+
+    # add values from observed because of overlap
+    forecast_summarized_expected_df = pd.DataFrame(
+        [
+            {
+                "submission_date": pd.to_datetime(TEST_DATE),
+                "forecast_parameters": "A1",
+                "a": "A1",
+                "mean": np.mean(test_date_samples + test_next_date_samples + 10),
+                "p10": np.percentile(
+                    test_date_samples + test_next_date_samples + 10, 10
+                ),
+                "p50": np.percentile(
+                    test_date_samples + test_next_date_samples + 10, 50
+                ),
+                "p90": np.percentile(
+                    test_date_samples + test_next_date_samples + 10, 90
+                ),
+            },
+            {
+                "submission_date": pd.to_datetime(TEST_DATE),
+                "forecast_parameters": "A2",
+                "a": "A2",
+                "mean": np.mean(
+                    2 * test_date_samples + 2 * test_next_date_samples + 20
+                ),
+                "p10": np.percentile(
+                    2 * test_date_samples + 2 * test_next_date_samples + 20, 10
+                ),
+                "p50": np.percentile(
+                    2 * test_date_samples + 2 * test_next_date_samples + 20, 50
+                ),
+                "p90": np.percentile(
+                    2 * test_date_samples + 2 * test_next_date_samples + 20, 90
+                ),
+            },
+        ]
+    )
+
+    assert set(forecast_summarized_expected_df.columns) == set(
+        forecast_summarized_output.columns
+    )
+    pd.testing.assert_frame_equal(
+        forecast_summarized_output[forecast_summarized_expected_df.columns]
+        .sort_values(["submission_date", "a"])
+        .reset_index(drop=True),
+        forecast_summarized_expected_df.sort_values(
+            ["submission_date", "a"]
+        ).reset_index(drop=True),
+    )
+
+    assert set(observed_summarized_expected_df.columns) == set(
+        observed_summarized_output.columns
+    )
+    pd.testing.assert_frame_equal(
+        observed_summarized_output[observed_summarized_expected_df.columns]
+        .sort_values(["submission_date", "a"])
+        .reset_index(drop=True),
+        observed_summarized_expected_df.sort_values(
+            ["submission_date", "a"]
+        ).reset_index(drop=True),
+    )
+
+
 def test_combine_forecast_observed():
-    """tests the _combine_forecast_observed method"""
-    # forecast predictions are set with the
-    # mock_aggregate_forecast_observed function so they
-    # can be ommited here
+    """tests the combine_forecast_observed method"""
     forecast_df = pd.DataFrame(
         {
             "submission_date": [
@@ -541,9 +952,6 @@ def test_combine_forecast_observed():
 
 def test_summarize():
     """testing _summarize"""
-    # forecast predictions are set with the
-    # mock_aggregate_forecast_observed function so they
-    # can be ommited here
     test_date_samples = np.arange(1000)
     test_next_date_samples = np.arange(1000) * 2
     forecast_df = pd.DataFrame(

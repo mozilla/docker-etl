@@ -66,6 +66,9 @@ def good_class():
             # check that all are even after _predict runs
             assert np.all(forecast_df % 2 == 0)
 
+        def _get_parameters(self):
+            return {"id": self.id, "factor": self.factor}
+
     return GoodClass
 
 
@@ -245,7 +248,7 @@ def test_fit_multiple(good_class):
             assert segment["model"].model.is_fit == A2B2_start_date
 
 
-def test_fit_multipl_with_start(good_class):
+def test_fit_multiple_with_start(good_class):
     """test the fit method
     with segments on multiple columns.
     Implicitly testing set_segment_models with multiple
