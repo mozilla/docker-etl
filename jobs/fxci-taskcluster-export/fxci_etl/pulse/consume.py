@@ -5,6 +5,7 @@ from fxci_etl.pulse.handler import BigQueryHandler, PulseHandler
 
 
 def get_connection(config: Config):
+    assert config.pulse
     pulse = config.pulse
     return Connection(
         hostname=pulse.host,
@@ -18,6 +19,7 @@ def get_connection(config: Config):
 def get_consumer(
     config: Config, connection: Connection, name: str, callbacks: list[PulseHandler]
 ):
+    assert config.pulse
     pulse = config.pulse
     qconf = pulse.queues[name]
     exchange = Exchange(qconf.exchange, type="topic")
@@ -29,9 +31,9 @@ def get_consumer(
         name=f"queue/{pulse.user}/{name}",
         exchange=exchange,
         routing_key=qconf.routing_key,
-        durable=True,
+        durable=pulse.durable,
         exclusive=False,
-        auto_delete=False,
+        auto_delete=not pulse.durable,
     )
 
     consumer = connection.Consumer(queue, auto_declare=False, callbacks=callbacks)
