@@ -86,8 +86,8 @@ class BigQueryHandler(PulseHandler):
 
     def __init__(self, config: Config, **kwargs: Any):
         super().__init__(config, **kwargs)
-        self.loader = BigQueryLoader(self.config)
-        self.records: list[Record] = []
+        self.task_records: list[Task] = []
+        self.run_records: list[Run] = []
 
     def process_event(self, event):
         data = event.data
@@ -117,7 +117,7 @@ class BigQueryHandler(PulseHandler):
         if "workerId" in run:
             run_record["worker_id"] = run["workerId"]
 
-        self.records.append(
+        self.run_records.append(
             Run.from_dict(self.config.bigquery.tables.runs, run_record)
         )
 
@@ -136,15 +136,21 @@ class BigQueryHandler(PulseHandler):
                     task_record["tags"] = [
                         {"key": k, "value": v} for k, v in data["task"]["tags"].items()
                     ]
-                self.records.append(
+                self.task_records.append(
                     Task.from_dict(self.config.bigquery.tables.tasks, task_record)
                 )
             except Exception:
                 # Don't insert the run without its corresponding task.
-                self.records.pop()
+                self.run_records.pop()
                 raise
 
     def on_processing_complete(self):
-        if self.records:
-            self.loader.insert(self.records)
-            self.records = []
+        if self.task_records:
+            task_loader = BigQueryLoader(self.config, "tasks")
+            task_loader.insert(self.task_records)
+            self.task_records = []
+
+        if self.run_records:
+            run_loader = BigQueryLoader(self.config, "runs")
+            run_loader.insert(self.run_records)
+            self.run_records = []
