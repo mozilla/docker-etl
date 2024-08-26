@@ -1,93 +1,29 @@
 import base64
 import json
-from abc import ABC, abstractmethod
-from dataclasses import InitVar, asdict, dataclass, fields, is_dataclass
-from datetime import datetime, timezone
+from dataclasses import asdict
 from itertools import batched
 from pprint import pprint
-from typing import Any, Type, TypeAlias, Union, get_args, get_origin
 
-import dacite
-from aenum import Enum, NoAlias
-from dacite.config import Config as DaciteConfig
 from google.cloud import storage
 from google.cloud.exceptions import NotFound
 from google.cloud.bigquery import (
     Client,
-    SchemaField,
     Table,
     TimePartitioning,
     TimePartitioningType,
 )
 
+from fxci_etl.schemas import Record, get_record_cls, generate_schema
 from fxci_etl.config import Config
-
-
-class BigQueryTypes(Enum, settings=NoAlias):  # type: ignore
-    DATE: TypeAlias = str
-    FLOAT: TypeAlias = float
-    INTEGER: TypeAlias = int
-    STRING: TypeAlias = str
-    TIMESTAMP: TypeAlias = int
-
-
-def generate_schema(cls):
-    assert is_dataclass(cls)
-    schema = []
-    for field in fields(cls):
-        _type = field.type
-        origin = get_origin(_type)
-        args = get_args(_type)
-
-        if origin is Union and type(None) in args:
-            mode = "NULLABLE"
-            _type = [arg for arg in args if arg is not type(None)][0]
-
-        elif origin is list:
-            mode = "REPEATED"
-            _type = args[0]
-
-        else:
-            mode = "REQUIRED"
-
-        if is_dataclass(_type):
-            nested_schema = generate_schema(_type)
-            schema.append(
-                SchemaField(field.name, "RECORD", mode=mode, fields=nested_schema)
-            )
-        else:
-            schema.append(SchemaField(field.name, _type.name, mode=mode))
-    return schema
-
-
-@dataclass
-class Record(ABC):
-    submission_date: BigQueryTypes.DATE
-    table_name: InitVar[str]
-
-    def __post_init__(self, table_name):
-        self.table = table_name
-
-    @classmethod
-    def from_dict(cls, table_name: str, data: dict[str, Any]) -> "Record":
-        current_date = datetime.now(timezone.utc).date()
-
-        data["submission_date"] = current_date.strftime("%Y-%m-%d")
-        data["table_name"] = table_name
-        return dacite.from_dict(
-            data_class=cls, data=data, config=DaciteConfig(check_types=False)
-        )
-
-    @abstractmethod
-    def __str__(self) -> str: ...
 
 
 class BigQueryLoader:
     CHUNK_SIZE = 25000
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, table_type: str):
         self.config = config
-        self._tables = {}
+        self.table_type = table_type
+        self.table = self.ensure_table(table_type)
 
         if config.bigquery.credentials:
             self.client = Client.from_service_account_info(
@@ -104,71 +40,71 @@ class BigQueryLoader:
             self.storage_client = storage.Client()
 
         self.bucket = self.storage_client.bucket(config.storage.bucket)
-        self._record_backup = self.bucket.blob("failed-bq-records.json")
+        self._record_backup = self.bucket.blob(f"failed-bq-records.{table_type}.json")
 
-    def ensure_table(self, name: str, cls_: Type[Record]):
-        """Checks if the table exists in BQ and creates it otherwise.
+    def ensure_table(self, table_type: str) -> Table:
+        """Ensures the specified table exists and returns it.
 
-        Fails if the table exists but has the wrong schema.
+        Checks if the table exists in BQ and creates it otherwise. Fails if the table
+        exists but has the wrong schema.
+
+        Args:
+            table_type (str): Table type to check and return.
+
+        Returns:
+            Table: A BigQuery Table instance for the specified table type.
         """
-        print(f"Ensuring table {name} exists.")
         bq = self.config.bigquery
-        schema = generate_schema(cls_)
+        table_name = getattr(bq.tables, table_type)
+
+        print(f"Ensuring table {table_name} exists.")
+
+        schema_cls = get_record_cls(table_type)
+        schema = generate_schema(schema_cls)
 
         partition = TimePartitioning(
             type_=TimePartitioningType.DAY,
             field="submission_date",
             require_partition_filter=True,
         )
-        table = Table(f"{bq.project}.{bq.dataset}.{name}", schema=schema)
+        table = Table(f"{bq.project}.{bq.dataset}.{table_name}", schema=schema)
         table.time_partitioning = partition
         self.client.create_table(table, exists_ok=True)
-
-    def get_table(self, name: str, cls_: Type[Record]) -> Table:
-        if name not in self._tables:
-            self.ensure_table(name, cls_)
-            bq = self.config.bigquery
-            self._tables[name] = self.client.get_table(
-                f"{bq.project}.{bq.dataset}.{name}"
-            )
-        return self._tables[name]
+        return table
 
     def insert(self, records: list[Record] | Record):
+        """Insert records into the table.
+
+        Args:
+            records (list[Record]): List of records to insert into the table.
+        """
         if isinstance(records, Record):
             records = [records]
 
         try:
             # Load previously failed records from storage, maybe the issue is fixed.
             for obj in json.loads(self._record_backup.download_as_string()):
-                table = obj.pop("table")
-                records.append(Record.from_dict(table, obj))
+                records.append(Record.from_dict(obj))
         except NotFound:
             pass
 
-        tables = {}
-        for record in records:
-            if record.table not in tables:
-                tables[record.table] = []
-            tables[record.table].append(record)
+        print(f"Attempting to insert {len(records)} records into table '{self.table_type}'")
 
-        failed_records = []
-        for name, rows in tables.items():
-            print(f"Attempting to insert {len(rows)} records into table '{name}'")
-            table = self.get_table(name, rows[0].__class__)
+        # There's a 10MB limit on the `insert_rows` request, submit rows in
+        # batches to avoid exceeding it.
+        errors = []
+        for batch in batched(records, self.CHUNK_SIZE):
+            errors.extend(
+                self.client.insert_rows(
+                    self.table, [asdict(row) for row in batch], retry=False
+                )
+            )
 
-            # There's a 10MB limit on the `insert_rows` request, submit rows in
-            # batches to avoid exceeding it.
-            errors = []
-            for batch in batched(rows, self.CHUNK_SIZE):
-                errors.extend(self.client.insert_rows(table, [asdict(row) for row in batch], retry=False))
+        if errors:
+            print("The following records failed:")
+            pprint(errors)
 
-            if errors:
-                print("The following records failed:")
-                for error in errors:
-                    pprint(error)
-                    failed_records.append(rows[error["index"]])
+        num_inserted = len(records) - len(errors)
+        print(f"Inserted {num_inserted} records in table '{self.table_type}'")
 
-            num_inserted = len(rows) - len(errors)
-            print(f"Inserted {num_inserted} records in table '{table}'")
-
-        self._record_backup.upload_from_string(json.dumps(failed_records))
+        self._record_backup.upload_from_string(json.dumps(errors))

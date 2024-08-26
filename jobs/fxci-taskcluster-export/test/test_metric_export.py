@@ -10,6 +10,7 @@ from google.cloud.monitoring_v3 import Aggregation, ListTimeSeriesRequest, TimeI
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from fxci_etl.metric import export
+from fxci_etl.schemas import Metrics
 
 
 @pytest.fixture(autouse=True)
@@ -190,8 +191,7 @@ def test_export_metrics(mocker, make_config):
         ]
     )
     assert mock_exporter.set_last_end_time.called is True
-    record = export.WorkerUptime.from_dict(
-        "foo",
+    record = Metrics.from_dict(
         {
             "submission_date": "2024-08-01",
             "instance_id": instance_id,
@@ -200,6 +200,6 @@ def test_export_metrics(mocker, make_config):
             "uptime": uptime,
             "interval_start_time": start_time,
             "interval_end_time": end_time,
-        },
+        }
     )
     mock_loader.insert.assert_called_once_with([record, record])

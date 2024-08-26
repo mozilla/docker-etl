@@ -1,6 +1,5 @@
 import base64
 import json
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pprint import pprint
 
@@ -17,24 +16,12 @@ from google.protobuf.duration_pb2 import Duration
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from fxci_etl.config import Config
-from fxci_etl.loaders.bigquery import BigQueryLoader, BigQueryTypes as t, Record
+from fxci_etl.loaders.bigquery import BigQueryLoader
+from fxci_etl.schemas import Metrics
 
 METRIC = "compute.googleapis.com/instance/uptime"
 DEFAULT_INTERVAL = 3600 * 6
 MIN_BUFFER_TIME = 10  # minutes
-
-
-@dataclass
-class WorkerUptime(Record):
-    instance_id: t.STRING
-    project: t.STRING
-    zone: t.STRING
-    uptime: t.FLOAT
-    interval_start_time: t.TIMESTAMP
-    interval_end_time: t.TIMESTAMP
-
-    def __str__(self):
-        return f"worker {self.instance_id}"
 
 
 class MetricExporter:
@@ -137,8 +124,7 @@ def export_metrics(config: Config, dry_run: bool = False) -> int:
                 continue
 
             records.append(
-                WorkerUptime.from_dict(
-                    config.bigquery.tables.metrics,
+                Metrics.from_dict(
                     {
                         "project": ts.resource.labels["project_id"],
                         "zone": ts.resource.labels["zone"],
@@ -158,7 +144,7 @@ def export_metrics(config: Config, dry_run: bool = False) -> int:
     if not records:
         raise Exception("Abort: No records retrieved!")
 
-    loader = BigQueryLoader(config)
+    loader = BigQueryLoader(config, "metrics")
     loader.insert(records)
 
     exporter.set_last_end_time(int(interval.end_time.timestamp()))  # type: ignore
