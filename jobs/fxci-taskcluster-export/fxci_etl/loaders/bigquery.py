@@ -94,14 +94,14 @@ class BigQueryLoader:
                 json.loads(base64.b64decode(config.bigquery.credentials).decode("utf8"))
             )
         else:
-            self.client = Client()
+            self.client = Client(project=config.bigquery.project)
 
         if config.storage.credentials:
             self.storage_client = storage.Client.from_service_account_info(
                 json.loads(base64.b64decode(config.storage.credentials).decode("utf8"))
             )
         else:
-            self.storage_client = storage.Client()
+            self.storage_client = storage.Client(project=config.storage.project)
 
         self.bucket = self.storage_client.bucket(config.storage.bucket)
         self._record_backup = self.bucket.blob("failed-bq-records.json")

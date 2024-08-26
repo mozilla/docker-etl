@@ -46,7 +46,7 @@ class MetricExporter:
                 json.loads(base64.b64decode(config.storage.credentials).decode("utf8"))
             )
         else:
-            self.storage_client = storage.Client()
+            self.storage_client = storage.Client(project=config.storage.project)
 
         bucket = self.storage_client.bucket(config.storage.bucket)
         self.last_export = bucket.blob("last_uptime_export_interval.json")
