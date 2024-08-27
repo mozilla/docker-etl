@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 import itertools
 from typing import List
+import json
 
 from google.cloud import bigquery
 from google.cloud.bigquery.enums import SqlTypeNames as bq_types
@@ -32,7 +33,7 @@ class ProphetAutotunerForecast(ProphetForecast):
             float: Metric which should always be positive and where smaller values
                 indicate better models
         """
-        df_cv = cross_validation(m, **self.cv_settings)
+        df_cv = cross_validation(m.model, **self.cv_settings)
 
         df_bias = df_cv.groupby("cutoff")[["yhat", "y"]].sum().reset_index()
         df_bias["pcnt_bias"] = df_bias["yhat"] / df_bias["y"] - 1
@@ -72,6 +73,7 @@ class ProphetAutotunerForecast(ProphetForecast):
 
         bias = np.inf
         best_model = None
+        best_params = None
         for params in auto_param_grid:
             m = ProphetForecast(**params)
             m.fit(observed_df)
@@ -79,6 +81,18 @@ class ProphetAutotunerForecast(ProphetForecast):
             if crossval_metric < bias:
                 best_model = m
                 bias = crossval_metric
+                best_params = params
+
+        # set the parameters of the current object
+        # to those of the optimized ProphetForecast object
+        for attr_name, best_value in best_params.items():
+            setattr(self, attr_name, best_value)
+        if best_model.growth == "logistic":
+            # case where logistic growth is being used
+            # need to set some parameters used to make training and
+            # predict dfs
+            self.logistic_growth_cap = best_model.logistic_growth_cap
+            self.logistic_growth_floor = best_model.logistic_growth_floor
 
         return best_model.model
 
@@ -137,8 +151,10 @@ class ProphetAutotunerForecast(ProphetForecast):
         # error rates and how components resulted in those predictions. The `fillna`
         # call will fill the missing y values for forecasted dates, where only yhat
         # is available.
+        history_df = self.history[["ds", "y"]].copy()
+        history_df["ds"] = pd.to_datetime(history_df["ds"])
         components_df = components_df.merge(
-            self.history[["ds", "y"]],
+            history_df,
             on="ds",
             how="left",
         ).fillna(0)
@@ -184,6 +200,12 @@ class FunnelForecast(BaseEnsembleForecast):
         super(FunnelForecast, self).__post_init__()
         if not self.model_class == ProphetAutotunerForecast:
             raise ValueError("model_class set when ProphetForecast is expected")
+
+    def _get_parameters(self):
+        parameter_dict = {}
+        for el in self.parameters:
+            parameter_dict[str(el["segment"])] = json.dumps(el)
+        return parameter_dict
 
 
 def combine_forecast_observed(
@@ -313,7 +335,7 @@ def summarize(
 def write_results(
     summary_df,
     components_df,
-    segment_list,
+    segment_cols,
     project: str,
     dataset: str,
     table: str,
@@ -340,7 +362,7 @@ def write_results(
     client = bigquery.Client(project=project)
     schema = [
         bigquery.SchemaField("submission_date", bq_types.DATE),
-        *[bigquery.SchemaField(k, bq_types.STRING) for k in segment_list],
+        *[bigquery.SchemaField(k, bq_types.STRING) for k in segment_cols],
         bigquery.SchemaField("aggregation_period", bq_types.STRING),
         bigquery.SchemaField("source", bq_types.STRING),
         bigquery.SchemaField("value", bq_types.FLOAT),

@@ -194,6 +194,7 @@ def test_aggregate_forecast_to_day():
                 pd.to_datetime(TEST_DATE_NEXT_DAY - relativedelta(months=1)),
             ],
             "value": [10, 20],
+            "aggregation_period": ["day", "day"],
         }
     )
 
@@ -205,6 +206,7 @@ def test_aggregate_forecast_to_day():
                 "p10": np.percentile(test_date_samples, 10),
                 "p50": np.percentile(test_date_samples, 50),
                 "p90": np.percentile(test_date_samples, 90),
+                "aggregation_period": "day",
             },
             {
                 "submission_date": pd.to_datetime(TEST_DATE_NEXT_DAY),
@@ -212,6 +214,7 @@ def test_aggregate_forecast_to_day():
                 "p10": np.percentile(test_next_date_samples, 10),
                 "p50": np.percentile(test_next_date_samples, 50),
                 "p90": np.percentile(test_next_date_samples, 90),
+                "aggregation_period": "day",
             },
         ]
     )
@@ -279,6 +282,7 @@ def test_aggregate_forecast_to_month():
                 pd.to_datetime(TEST_DATE - relativedelta(months=1)),
             ],
             "value": [30],
+            "aggregation_period": ["month"],
         }
     )
 
@@ -291,6 +295,7 @@ def test_aggregate_forecast_to_month():
                 "p50": np.percentile(test_date_samples + test_next_date_samples, 50),
                 "p90": np.percentile(test_date_samples + test_next_date_samples, 90),
                 "forecast_parameters": "test_month",
+                "aggregation_period": "month",
             },
         ]
     )
@@ -382,6 +387,7 @@ def test_aggregate_forecast_to_month_extra_agg_col():
             ],
             "value": [30],
             "a": ["A1"],
+            "aggregation_period": "month",
         }
     )
 
@@ -395,6 +401,7 @@ def test_aggregate_forecast_to_month_extra_agg_col():
                 "p90": np.percentile(test_date_samples + test_next_date_samples, 90),
                 "a": "A1",
                 "forecast_parameters": "A1",
+                "aggregation_period": "month",
             },
             {
                 "submission_date": pd.to_datetime(TEST_DATE),
@@ -407,6 +414,7 @@ def test_aggregate_forecast_to_month_extra_agg_col():
                 * np.percentile(test_date_samples + test_next_date_samples, 90),
                 "a": "A2",
                 "forecast_parameters": "A2",
+                "aggregation_period": "month",
             },
         ]
     )
@@ -477,6 +485,7 @@ def test_aggregate_forecast_observed_overlap_to_day():
                 pd.to_datetime(TEST_DATE_NEXT_DAY),
             ],
             "value": [10, 20],
+            "aggregation_period": ["day", "day"],
         }
     )
 
@@ -489,6 +498,7 @@ def test_aggregate_forecast_observed_overlap_to_day():
                 "p10": np.percentile(test_date_samples + 10, 10),
                 "p50": np.percentile(test_date_samples + 10, 50),
                 "p90": np.percentile(test_date_samples + 10, 90),
+                "aggregation_period": "day",
             },
             {
                 "submission_date": pd.to_datetime(TEST_DATE_NEXT_DAY),
@@ -496,6 +506,7 @@ def test_aggregate_forecast_observed_overlap_to_day():
                 "p10": np.percentile(test_next_date_samples + 20, 10),
                 "p50": np.percentile(test_next_date_samples + 20, 50),
                 "p90": np.percentile(test_next_date_samples + 20, 90),
+                "aggregation_period": "day",
             },
         ]
     )
@@ -585,6 +596,7 @@ def test_aggregate_forecast_observed_overlap_to_day_with_additional():
             ],
             "value": [10, 20],
             "a": ["A1", "A2"],
+            "aggregation_period": ["day", "day"],
         }
     )
 
@@ -599,6 +611,7 @@ def test_aggregate_forecast_observed_overlap_to_day_with_additional():
                 "p10": np.percentile(test_date_samples + 10, 10),
                 "p50": np.percentile(test_date_samples + 10, 50),
                 "p90": np.percentile(test_date_samples + 10, 90),
+                "aggregation_period": "day",
             },
             {
                 "submission_date": pd.to_datetime(TEST_DATE_NEXT_DAY),
@@ -608,6 +621,7 @@ def test_aggregate_forecast_observed_overlap_to_day_with_additional():
                 "p10": np.percentile(test_next_date_samples, 10),
                 "p50": np.percentile(test_next_date_samples, 50),
                 "p90": np.percentile(test_next_date_samples, 90),
+                "aggregation_period": "day",
             },
             {
                 "submission_date": pd.to_datetime(TEST_DATE),
@@ -617,6 +631,7 @@ def test_aggregate_forecast_observed_overlap_to_day_with_additional():
                 "p10": np.percentile(2 * test_date_samples, 10),
                 "p50": np.percentile(2 * test_date_samples, 50),
                 "p90": np.percentile(2 * test_date_samples, 90),
+                "aggregation_period": "day",
             },
             {
                 "submission_date": pd.to_datetime(TEST_DATE_NEXT_DAY),
@@ -626,6 +641,7 @@ def test_aggregate_forecast_observed_overlap_to_day_with_additional():
                 "p10": np.percentile(2 * test_next_date_samples + 20, 10),
                 "p50": np.percentile(2 * test_next_date_samples + 20, 50),
                 "p90": np.percentile(2 * test_next_date_samples + 20, 90),
+                "aggregation_period": "day",
             },
         ]
     )
@@ -703,6 +719,7 @@ def test_aggregate_forecast_observed_overlap_to_month():
                 pd.to_datetime(TEST_DATE),
             ],
             "value": [30],
+            "aggregation_period": ["month"],
         }
     )
 
@@ -721,6 +738,7 @@ def test_aggregate_forecast_observed_overlap_to_month():
                 "p90": np.percentile(
                     test_date_samples + test_next_date_samples + 30, 90
                 ),
+                "aggregation_period": "month",
             },
         ]
     )
@@ -810,6 +828,7 @@ def test_aggregate_forecast_observed_overlap_to_month_with_additional():
             ],
             "value": [10, 20],
             "a": ["A1", "A2"],
+            "aggregation_period": ["month", "month"],
         }
     )
 
@@ -830,6 +849,7 @@ def test_aggregate_forecast_observed_overlap_to_month_with_additional():
                 "p90": np.percentile(
                     test_date_samples + test_next_date_samples + 10, 90
                 ),
+                "aggregation_period": "month",
             },
             {
                 "submission_date": pd.to_datetime(TEST_DATE),
@@ -847,6 +867,7 @@ def test_aggregate_forecast_observed_overlap_to_month_with_additional():
                 "p90": np.percentile(
                     2 * test_date_samples + 2 * test_next_date_samples + 20, 90
                 ),
+                "aggregation_period": "month",
             },
         ]
     )
@@ -888,6 +909,7 @@ def test_combine_forecast_observed():
             "p10": [0, 0],
             "p50": [0, 0],
             "p90": [0, 0],
+            "aggregation_period": ["I get removed"] * 2,
         }
     )
 
@@ -900,6 +922,7 @@ def test_combine_forecast_observed():
                 TEST_DATE_NEXT_DAY,
             ],
             "value": [10, 20],
+            "aggregation_period": ["I get removed"] * 2,
         }
     )
 
@@ -983,7 +1006,7 @@ def test_summarize():
     output_df = summarize(
         forecast_df,
         observed_df,
-        period="day",
+        periods=["day"],
         numpy_aggregations=numpy_aggregations,
         percentiles=percentiles,
     )
@@ -997,6 +1020,7 @@ def test_summarize():
             "value": [10, 20],
             "measure": ["observed", "observed"],
             "source": ["historical", "historical"],
+            "aggregation_period": ["day", "day"],
         }
     )
 
@@ -1008,48 +1032,56 @@ def test_summarize():
                 "measure": "mean",
                 "value": np.mean(test_date_samples + 10),
                 "source": "forecast",
+                "aggregation_period": "day",
             },
             {
                 "submission_date": pd.to_datetime(TEST_DATE_NEXT_DAY),
                 "measure": "mean",
                 "value": np.mean(test_next_date_samples + 20),
                 "source": "forecast",
+                "aggregation_period": "day",
             },
             {
                 "submission_date": pd.to_datetime(TEST_DATE),
                 "measure": "p10",
                 "value": np.percentile(test_date_samples + 10, 10),
                 "source": "forecast",
+                "aggregation_period": "day",
             },
             {
                 "submission_date": pd.to_datetime(TEST_DATE_NEXT_DAY),
                 "measure": "p10",
                 "value": np.percentile(test_next_date_samples + 20, 10),
                 "source": "forecast",
+                "aggregation_period": "day",
             },
             {
                 "submission_date": pd.to_datetime(TEST_DATE),
                 "measure": "p50",
                 "value": np.percentile(test_date_samples + 10, 50),
                 "source": "forecast",
+                "aggregation_period": "day",
             },
             {
                 "submission_date": pd.to_datetime(TEST_DATE_NEXT_DAY),
                 "measure": "p50",
                 "value": np.percentile(test_next_date_samples + 20, 50),
                 "source": "forecast",
+                "aggregation_period": "day",
             },
             {
                 "submission_date": pd.to_datetime(TEST_DATE),
                 "measure": "p90",
                 "value": np.percentile(test_date_samples + 10, 90),
                 "source": "forecast",
+                "aggregation_period": "day",
             },
             {
                 "submission_date": pd.to_datetime(TEST_DATE_NEXT_DAY),
                 "measure": "p90",
                 "value": np.percentile(test_next_date_samples + 20, 90),
                 "source": "forecast",
+                "aggregation_period": "day",
             },
         ]
     )
@@ -1110,7 +1142,7 @@ def test_summarize_non_overlapping_day():
         dict(**{"submission_date": predict_submission_dates}, **forecast_data)
     )
 
-    output_df = summarize(forecast_df, observed_df, "day", ["mean", "median"], [50])
+    output_df = summarize(forecast_df, observed_df, ["day"], ["mean", "median"], [50])
 
     expected_observed_df = observed_df.copy()
     expected_observed_df["source"] = "historical"
@@ -1214,7 +1246,7 @@ def test_summarize_non_overlapping_month():
         dict(**{"submission_date": predict_submission_dates}, **forecast_data)
     )
 
-    output_df = summarize(forecast_df, observed_df, "month", ["mean", "median"], [50])
+    output_df = summarize(forecast_df, observed_df, ["month"], ["mean", "median"], [50])
 
     expected_observed_dates = sorted(
         pd.to_datetime(observed_df["submission_date"].values)
@@ -1331,7 +1363,7 @@ def test_summarize_overlapping_day():
         dict(**{"submission_date": predict_submission_dates}, **forecast_data)
     )
 
-    output_df = summarize(forecast_df, observed_df, "day", ["mean", "median"], [50])
+    output_df = summarize(forecast_df, observed_df, ["day"], ["mean", "median"], [50])
 
     expected_observed_df = observed_df.copy()
     expected_observed_df["source"] = "historical"
@@ -1438,7 +1470,7 @@ def test_summarize_overlapping_month():
         dict(**{"submission_date": predict_submission_dates}, **forecast_data)
     )
 
-    output_df = summarize(forecast_df, observed_df, "month", ["mean", "median"], [50])
+    output_df = summarize(forecast_df, observed_df, ["month"], ["mean", "median"], [50])
 
     expected_observed_dates = sorted(
         pd.to_datetime(observed_df["submission_date"].values)
@@ -1516,6 +1548,141 @@ def test_summarize_overlapping_month():
     output_df_compare = (
         output_df[columns]
         .sort_values(["submission_date", "source", "measure"])
+        .reset_index(drop=True)
+    )
+    pd.testing.assert_frame_equal(
+        expected_df_compare, output_df_compare, check_exact=False
+    )
+
+
+def test_summarize_overlapping_month_and_day():
+    # choose arbitrary year for the start and end dates
+    # the first date of two different months is chosen
+    # this is a simple way to check that the aggregation
+    # for multiple periods is working
+    observed_start_date = "2124-01-01"
+    observed_end_date = "2124-02-01"
+
+    observed_submission_dates = [
+        pd.to_datetime(observed_start_date),
+        pd.to_datetime(observed_end_date),
+    ]
+    predict_submission_dates = [
+        pd.to_datetime(observed_start_date),
+        pd.to_datetime(observed_end_date),
+    ]
+    observed_df = pd.DataFrame(
+        {
+            "submission_date": observed_submission_dates,
+            "value": [1] * len(observed_submission_dates),
+        }
+    )
+
+    # there are the samples generated
+    # the mean and median are the aggregates used
+    test_samples = np.array([1, 1, 2, 3, 5, 8, 13])
+    test_mean = np.mean(test_samples)
+    test_median = np.median(test_samples)
+
+    # mean and median scale with a factor
+    # so a factor is multiplied on to make sure the aggregation is working
+    # across rows properly
+    forecast_array = np.stack(
+        [test_samples] * len(predict_submission_dates),
+        axis=0,
+    )
+    forecast_data = {str(i): forecast_array[:, i] for i in range(len(test_samples))}
+    forecast_df = pd.DataFrame(
+        dict(**{"submission_date": predict_submission_dates}, **forecast_data)
+    )
+
+    output_df = summarize(
+        forecast_df, observed_df, ["month", "day"], ["mean", "median"], [50]
+    )
+
+    expected_observed_dates = sorted(
+        pd.to_datetime(observed_df["submission_date"].values)
+        .to_period("m")
+        .to_timestamp()
+        .unique()
+    )
+    expected_observed_df = pd.DataFrame(
+        {
+            "submission_date": expected_observed_dates,
+            "source": ["historical", "historical"],
+            "measure": ["observed", "observed"],
+            "value": [1, 1],
+        }
+    )
+
+    forecast_observed_dates = sorted(
+        pd.to_datetime(forecast_df["submission_date"].values)
+        .to_period("m")
+        .to_timestamp()
+        .unique()
+    )
+
+    forecast_mean_df = pd.DataFrame(
+        {
+            "submission_date": forecast_observed_dates,
+            "source": ["forecast", "forecast"],
+            "measure": ["mean", "mean"],
+            "value": [
+                test_mean + 1,
+                test_mean + 1,
+            ],
+        }
+    )
+
+    forecast_median_df = pd.DataFrame(
+        {
+            "submission_date": forecast_observed_dates,
+            "source": ["forecast", "forecast"],
+            "measure": ["median", "median"],
+            "value": [
+                test_median + 1,
+                test_median + 1,
+            ],
+        }
+    )
+
+    forecast_p50_df = pd.DataFrame(
+        {
+            "submission_date": forecast_observed_dates,
+            "source": ["forecast", "forecast"],
+            "measure": ["p50", "p50"],
+            "value": [
+                test_median + 1,
+                test_median + 1,
+            ],
+        }
+    )
+
+    expected_df = pd.concat(
+        [expected_observed_df, forecast_mean_df, forecast_median_df, forecast_p50_df]
+    )
+
+    expected_df["aggregation_period"] = "month"
+
+    # day will have the same values because there are two days
+    # the first day of two different months
+    # only thing that changes is the aggregation_period
+    # and 01-31 becomes 01-01
+    expected_df_day = expected_df.copy()
+    expected_df_day["aggregation_period"] = "day"
+
+    expected_df = pd.concat([expected_df_day, expected_df])
+
+    assert set(expected_df.columns) == set(output_df.columns)
+    columns = expected_df.columns
+    expected_df_compare = (
+        expected_df[columns]
+        .sort_values(["submission_date", "source", "measure", "aggregation_period"])
+        .reset_index(drop=True)
+    )
+    output_df_compare = (
+        output_df[columns]
+        .sort_values(["submission_date", "source", "measure", "aggregation_period"])
         .reset_index(drop=True)
     )
     pd.testing.assert_frame_equal(

@@ -13,7 +13,12 @@ from kpi_forecasting import pandas_extras as pdx
 from google.cloud import bigquery
 from google.cloud.bigquery.enums import SqlTypeNames as bq_types
 
-from kpi_forecasting.configs.model_inputs import ProphetHoliday, ProphetRegressor
+from kpi_forecasting.configs.model_inputs import (
+    ProphetHoliday,
+    ProphetRegressor,
+    holiday_collection,
+    regressor_collection,
+)
 
 
 @dataclass
@@ -126,7 +131,9 @@ class ProphetForecast(BaseForecast):
             self.holidays_raw = None
         elif self.holidays:
             self.holidays_raw = self.holidays
-            holiday_list = [ProphetHoliday(**h) for h in self.holidays]
+            holiday_list = [
+                ProphetHoliday(**holiday_collection[h]) for h in self.holidays
+            ]
             holiday_df = pd.concat(
                 [
                     pd.DataFrame(
@@ -144,7 +151,9 @@ class ProphetForecast(BaseForecast):
             self.holidays = holiday_df
         if self.regressors:
             self.regressors_raw = self.regressors
-            regressor_list = [ProphetRegressor(**r) for r in self.regressors]
+            regressor_list = [
+                ProphetRegressor(**regressor_collection[r]) for r in self.regressors
+            ]
             self.regressors = regressor_list
         else:
             self.regressors_raw = None
@@ -303,6 +312,7 @@ class ProphetForecast(BaseForecast):
         # the model
         train_dataframe = self._build_train_dataframe(observed_df)
         self.model.fit(train_dataframe)
+        return self
 
     def predict(self, dates_to_predict) -> pd.DataFrame:
         # generate the forecast samples
@@ -341,32 +351,29 @@ class ProphetForecast(BaseForecast):
                     f" but column {i} has type {df[i].dtypes}."
                 )
 
-    def _predict_legacy(self) -> pd.DataFrame:
+    def _predict_legacy(
+        self, dates_to_predict, metric_hub_alias, parameters
+    ) -> pd.DataFrame:
         """
         Recreate the legacy format used in
         `moz-fx-data-shared-prod.telemetry_derived.kpi_automated_forecast_v1`.
         """
         # TODO: This method should be removed once the forecasting data model is updated:
         # https://mozilla-hub.atlassian.net/browse/DS-2676
-
-        df = self.model.predict(
-            self.dates_to_predict.rename(columns=self.column_names_map)
-        )
+        df = self._build_predict_dataframe(dates_to_predict)
 
         # set legacy column values
-        if "dau" in self.metric_hub.alias.lower():
+        if "dau" in metric_hub_alias.lower():
             df["metric"] = "DAU"
         else:
-            df["metric"] = self.metric_hub.alias
+            df["metric"] = metric_hub_alias
 
         df["forecast_date"] = str(
             datetime.now(timezone.utc).replace(tzinfo=None).date()
         )
-        df["forecast_parameters"] = str(
-            json.dumps({**self.parameters, "holidays": self.use_all_us_holidays})
-        )
+        df["forecast_parameters"] = str(json.dumps(parameters))
 
-        alias = self.metric_hub.alias.lower()
+        alias = metric_hub_alias.lower()
 
         if ("desktop" in alias) and ("mobile" in alias):
             raise ValueError(
@@ -519,6 +526,9 @@ def aggregate_forecast_observed(
         forecast_agg_string, on=aggregation_columns
     )
 
+    forecast_summarized["aggregation_period"] = period.lower()
+    observed_summarized["aggregation_period"] = period.lower()
+
     return forecast_summarized, observed_summarized
 
 
@@ -534,6 +544,10 @@ def combine_forecast_observed(
     Returns:
         pd.DataFrame: combined data
     """
+    # remove aggregation period because it messes everything up with the melt
+    forecast_summarized = forecast_summarized.drop(columns=["aggregation_period"])
+    observed_summarized = observed_summarized.drop(columns=["aggregation_period"])
+
     # remaining column of metric values get the column name 'value'
     forecast_summarized = forecast_summarized.melt(
         id_vars="submission_date", var_name="measure"
@@ -552,7 +566,7 @@ def combine_forecast_observed(
 def summarize(
     forecast_df,
     observed_df,
-    period: str,
+    periods: List[str],
     numpy_aggregations: List[str],
     percentiles: List[int],
 ) -> pd.DataFrame:
@@ -572,16 +586,19 @@ def summarize(
     additional_aggregation_columns (List[str], optional):
         additional columns to use in the aggregation. Defaults to [].
     """
+    df_list = []
+    for period in periods:
+        forecast_summarized, observed_summarized = aggregate_forecast_observed(
+            forecast_df, observed_df, period, numpy_aggregations, percentiles
+        )
 
-    forecast_summarized, observed_summarized = aggregate_forecast_observed(
-        forecast_df, observed_df, period, numpy_aggregations, percentiles
-    )
+        df = combine_forecast_observed(forecast_summarized, observed_summarized)
 
-    df = combine_forecast_observed(forecast_summarized, observed_summarized)
-    # add summary metadata columns
-    df["aggregation_period"] = period.lower()
+        # it got removed in combine_forecast_observed so put it back
+        df["aggregation_period"] = period
+        df_list.append(df)
 
-    return df
+    return pd.concat(df_list)
 
 
 def summarize_legacy(summary_df) -> pd.DataFrame:
@@ -685,7 +702,6 @@ def summarize_legacy(summary_df) -> pd.DataFrame:
 
 
 def write_results(
-    self,
     summary_df: pd.DataFrame,
     summary_df_legacy: pd.DataFrame,
     forecast_df_legacy: pd.DataFrame,
@@ -694,9 +710,9 @@ def write_results(
     table: str,
     project_legacy: str,
     dataset_legacy: str,
+    forecast_table_legacy: str,
+    confidences_table_legacy: str,
     write_disposition: str = "WRITE_APPEND",
-    forecast_table_legacy: str = "kpi_automated_forecast_v1_branch",
-    confidences_table_legacy: str = "kpi_automated_forecast_confidences_v1_branch",
 ) -> None:
     """
     Write `self.summary_df` to Big Query.

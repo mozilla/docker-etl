@@ -13,45 +13,45 @@ metric_hub:
   where: "partner = 'Google'"
 
 forecast_model:
-  model_type: "funnel"
   start_date: NULL
   end_date: NULL
-  use_all_us_holidays: False
   predict_historical_dates: True
-  number_of_simulations: 1000
   parameters:
     - segment:
         device: desktop
       start_date: "2018-01-01"
-      end_date: NULL
-      holidays: ["easter", "covid_sip11"]
-      regressors: ["post_esr_migration", "in_covid"]
-      grid_parameters:
-        changepoint_prior_scale: [0.001, 0.01, 0.1, 0.2, 0.5]
-        changepoint_range: [0.8, 0.9]
-        weekly_seasonality: True
-        yearly_seasonality: True
-      cv_settings:
-        initial: "1296 days"
-        period: "30 days"
-        horizon: "30 days"
-        parallel: "processes"
+      parameters:
+        holidays: ["easter", "covid_sip11"]
+        regressors: ["post_esr_migration", "in_covid"]
+        use_all_us_holidays: False
+        grid_parameters:
+          changepoint_prior_scale: [0.001, 0.01, 0.1, 0.2, 0.5]
+          changepoint_range: [0.8, 0.9]
+          weekly_seasonality: True
+          yearly_seasonality: True
+        cv_settings:
+          initial: "1296 days"
+          period: "30 days"
+          horizon: "30 days"
+          parallel: "processes"
     - segment:
         device: mobile  
       start_date: "2020-01-01"
-      end_date: NULL
-      holidays: ["easter"]
-      regressors: ["after_fenix", "in_covid"]
-      grid_parameters:
-        changepoint_prior_scale: [0.001, 0.01, 0.1]
-        weekly_seasonality: True
-        yearly_seasonality: True
-        growth: "logistic"
-      cv_settings:
-        initial: "366 days"
-        period: "30 days"
-        horizon: "30 days"
-        parallel: "processes"
+      parameters:
+        end_date: NULL
+        holidays: ["easter"]
+        regressors: ["after_fenix", "in_covid"]
+        use_all_us_holidays: False
+        grid_parameters:
+          changepoint_prior_scale: [0.001, 0.01, 0.1]
+          weekly_seasonality: True
+          yearly_seasonality: True
+          growth: "logistic"
+        cv_settings:
+          initial: "366 days"
+          period: "30 days"
+          horizon: "30 days"
+          parallel: "processes"
 
 summarize:
   periods: ["day", "month"]
@@ -59,7 +59,7 @@ summarize:
   percentiles: [10, 50, 90]
 
 write_results:
-  project: "moz-fx-data-shared-prod"
-  dataset: "search_derived"
-  table: "search_funnel_forecasts_v1"
-  components_table: "search_forecast_model_components_v1"
+  project: "moz-fx-data-bq-data-science"
+  dataset: "jsnyder"
+  table: "search_funnel_forecasts_v1_branch"
+  components_table: "search_forecast_model_components_v1_branch"

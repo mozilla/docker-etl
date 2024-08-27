@@ -763,10 +763,12 @@ def test_autotuner_predict(mocker):
         {
             "a": ["A1", "A1"],
             "b": ["B1", "B2"],
-            "submission_date": [
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-            ],
+            "submission_date": pd.to_datetime(
+                [
+                    TEST_DATE,
+                    TEST_DATE_NEXT_DAY,
+                ]
+            ),
             "y": [1, 2],
         }
     )
@@ -775,10 +777,12 @@ def test_autotuner_predict(mocker):
 
     dates_to_predict = pd.DataFrame(
         {
-            "submission_date": [
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-            ]
+            "submission_date": pd.to_datetime(
+                [
+                    TEST_DATE,
+                    TEST_DATE_NEXT_DAY,
+                ]
+            )
         }
     )
 
@@ -791,10 +795,12 @@ def test_autotuner_predict(mocker):
     expected = pd.DataFrame(
         {
             0: [0, model_value],
-            "submission_date": [
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-            ],
+            "submission_date": pd.to_datetime(
+                [
+                    TEST_DATE,
+                    TEST_DATE_NEXT_DAY,
+                ]
+            ),
         }
     )
 
@@ -802,6 +808,9 @@ def test_autotuner_predict(mocker):
 
     # check the components
     expected_components = observed_df[["submission_date", "y"]].copy()
+    expected_components["submission_date"] = pd.to_datetime(
+        expected_components["submission_date"]
+    )
     expected_components[
         [
             "yhat",
@@ -1108,18 +1117,20 @@ def test_funnel_predict(mocker):
         {
             "a": ["A1", "A1", "A2", "A2", "A2"] * 2,
             "b": ["B1", "B2", "B1", "B2", "B2"] * 2,
-            "submission_date": [
-                TEST_DATE,
-                TEST_DATE,
-                TEST_DATE,
-                TEST_DATE,
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE_NEXT_DAY,
-                TEST_DATE_NEXT_DAY,
-            ],
+            "submission_date": pd.to_datetime(
+                [
+                    TEST_DATE,
+                    TEST_DATE,
+                    TEST_DATE,
+                    TEST_DATE,
+                    TEST_DATE,
+                    TEST_DATE_NEXT_DAY,
+                    TEST_DATE_NEXT_DAY,
+                    TEST_DATE_NEXT_DAY,
+                    TEST_DATE_NEXT_DAY,
+                    TEST_DATE_NEXT_DAY,
+                ]
+            ),
             "value": [1, 2, 3, 4, 5] * 2,
         }
     )
@@ -1128,10 +1139,12 @@ def test_funnel_predict(mocker):
 
     dates_to_predict = pd.DataFrame(
         {
-            "submission_date": [
-                TEST_DATE,
-                TEST_DATE_NEXT_DAY,
-            ]
+            "submission_date": pd.to_datetime(
+                [
+                    TEST_DATE,
+                    TEST_DATE_NEXT_DAY,
+                ]
+            )
         }
     )
 
@@ -1149,10 +1162,12 @@ def test_funnel_predict(mocker):
         expected = pd.DataFrame(
             {
                 0: [0, model_value],
-                "submission_date": [
-                    TEST_DATE,
-                    TEST_DATE_NEXT_DAY,
-                ],
+                "submission_date": pd.to_datetime(
+                    [
+                        TEST_DATE,
+                        TEST_DATE_NEXT_DAY,
+                    ]
+                ),
                 "a": [segment["segment"]["a"], segment["segment"]["a"]],
                 "b": [segment["segment"]["b"], segment["segment"]["b"]],
                 "forecast_parameters": [json.dumps(segment["model"]._get_parameters())]
@@ -1163,6 +1178,151 @@ def test_funnel_predict(mocker):
         pd.testing.assert_frame_equal(
             out_subset.reset_index(drop=True), expected.reset_index(drop=True)
         )
+
+        # check the components
+        expected_components = (
+            observed_data.loc[
+                (observed_data["a"] == segment["segment"]["a"])
+                & (observed_data["b"] == segment["segment"]["b"]),
+                ["submission_date", "value"],
+            ]
+            .rename(columns={"value": "y"})
+            .copy()
+        )
+        expected_components[
+            [
+                "yhat",
+                "trend",
+                "trend_upper",
+                "trend_lower",
+                "weekly",
+                "weekly_upper",
+                "weekly_lower",
+                "yearly",
+                "yearly_upper",
+                "yearly_lower",
+            ]
+        ] = 0
+
+        components_df = segment["model"].components_df
+        assert set(expected_components.columns) == set(components_df.columns)
+        pd.testing.assert_frame_equal(
+            components_df.reset_index(drop=True),
+            expected_components[components_df.columns].reset_index(drop=True),
+        )
+
+
+def test_funnel_predict_growth(mocker):
+    """test the predict method when growth is set in the
+    grid parameters.  Extra attributes need to be updated with this one"""
+
+    # arbitrarily choose number_of_simulations as a parameter
+    # to set in order to check the test
+    parameter_list = [
+        {
+            "segment": {"a": "A1"},
+            "parameters": {
+                "grid_parameters": {
+                    "seasonality_prior_scale": [1, 2],
+                    "holidays_prior_scale": [20, 10],
+                    "growth": "logistic",
+                },
+            },
+        },
+        {
+            "segment": {"a": "A2"},
+            "parameters": {
+                "growth": "A2",
+                "grid_parameters": {
+                    "seasonality_prior_scale": [3, 4],
+                    "holidays_prior_scale": [40, 30],
+                },
+            },
+        },
+    ]
+
+    mocker.patch.object(ProphetForecast, "_build_model", mock_build_model)
+    mocker.patch.object(
+        ProphetAutotunerForecast,
+        "_get_crossvalidation_metric",
+        mock_get_crossvalidation_metric,
+    )
+    ensemble_object = FunnelForecast(parameters=parameter_list, segments=["a", "b"])
+
+    observed_data = pd.DataFrame(
+        {
+            "a": ["A1", "A1", "A2", "A2", "A2"] * 2,
+            "b": ["B1", "B2", "B1", "B2", "B2"] * 2,
+            "submission_date": pd.to_datetime(
+                [
+                    TEST_DATE,
+                    TEST_DATE,
+                    TEST_DATE,
+                    TEST_DATE,
+                    TEST_DATE,
+                    TEST_DATE_NEXT_DAY,
+                    TEST_DATE_NEXT_DAY,
+                    TEST_DATE_NEXT_DAY,
+                    TEST_DATE_NEXT_DAY,
+                    TEST_DATE_NEXT_DAY,
+                ]
+            ),
+            "value": [1, 2, 3, 4, 5] * 2,
+        }
+    )
+
+    ensemble_object.fit(observed_data)
+
+    dates_to_predict = pd.DataFrame(
+        {
+            "submission_date": pd.to_datetime(
+                [
+                    TEST_DATE,
+                    TEST_DATE_NEXT_DAY,
+                ]
+            )
+        }
+    )
+
+    out = ensemble_object.predict(dates_to_predict).reset_index(drop=True)
+
+    for segment in ensemble_object.segment_models:
+        # in MockModel, the predictive_samples method sets the output to
+        # np.arange(len(dates_to_predict)) * self.value for one column called 0
+        # this helps ensure the forecast_df in segment_models is set properly
+        out_subset = out[
+            (out["a"] == segment["segment"]["a"])
+            & (out["b"] == segment["segment"]["b"])
+        ]
+        model_value = segment["model"].model.value
+        expected = pd.DataFrame(
+            {
+                0: [0, model_value],
+                "submission_date": pd.to_datetime(
+                    [
+                        TEST_DATE,
+                        TEST_DATE_NEXT_DAY,
+                    ]
+                ),
+                "a": [segment["segment"]["a"], segment["segment"]["a"]],
+                "b": [segment["segment"]["b"], segment["segment"]["b"]],
+                "forecast_parameters": [json.dumps(segment["model"]._get_parameters())]
+                * 2,
+            }
+        )
+
+        pd.testing.assert_frame_equal(
+            out_subset.reset_index(drop=True), expected.reset_index(drop=True)
+        )
+
+        # check that the growth attributes were set
+        if segment["segment"]["a"] == "A1":
+            if segment["segment"]["b"] == "B1":
+                assert segment["model"].logistic_growth_floor == 0.5
+                assert segment["model"].logistic_growth_cap == 1.5
+            elif segment["segment"]["b"] == "B2":
+                assert segment["model"].logistic_growth_floor == 1.0
+                assert segment["model"].logistic_growth_cap == 3.0
 
         # check the components
         expected_components = (
@@ -1259,30 +1419,7 @@ def test_set_segment_models_exception(mocker):
 def test_build_model():
     """test build_model
     just runs the function and ensures no error is raised"""
-    regressor_list = [
-        {
-            "name": "all_in",
-            "description": "it's all in",
-            "start_date": TEST_DATE_STR,
-            "end_date": (TEST_DATE + relativedelta(days=6)).strftime("%Y-%m-%d"),
-        },
-        {
-            "name": "all_out",
-            "description": "it's all in",
-            "start_date": (TEST_DATE + relativedelta(months=1)).strftime("%Y-%m-%d"),
-            "end_date": (TEST_DATE + relativedelta(months=1, days=6)).strftime(
-                "%Y-%m-%d"
-            ),
-        },
-        {
-            "name": "just_end",
-            "description": "just the second one",
-            "start_date": (TEST_DATE + relativedelta(days=1)).strftime("%Y-%m-%d"),
-            "end_date": (TEST_DATE + relativedelta(months=1, days=6)).strftime(
-                "%Y-%m-%d"
-            ),
-        },
-    ]
+    regressor_list = ["post_esr_migration", "in_covid", "ad_click_bug"]
 
     # use holidays from holiday config file
     holiday_list = {
@@ -1332,7 +1469,7 @@ def test_build_model():
         "parallel": "processes",
     }
     forecast = ProphetAutotunerForecast(
-        holidays=holiday_list.values(),
+        holidays=holiday_list.keys(),
         regressors=regressor_list,
         grid_parameters=grid_parameters,
         cv_settings=cv_settings,

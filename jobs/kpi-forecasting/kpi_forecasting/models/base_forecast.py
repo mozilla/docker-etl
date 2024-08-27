@@ -66,7 +66,7 @@ class BaseEnsembleForecast:
         segments: segments from the metric hub data pull
     """
 
-    parameters: Dict | List
+    parameters: List
     model_class: object = BaseForecast
     segments: dict = None
 
