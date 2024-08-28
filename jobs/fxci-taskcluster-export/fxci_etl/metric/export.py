@@ -1,11 +1,9 @@
 import base64
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pprint import pprint
 
-import pytz
 from google.cloud import storage
-from google.cloud.exceptions import NotFound
 from google.cloud.monitoring_v3 import (
     Aggregation,
     ListTimeSeriesRequest,
@@ -73,11 +71,10 @@ class MetricExporter:
 
     def get_time_interval(self, date: str) -> TimeInterval:
         """Return the time interval for the specified date."""
-        utc = pytz.UTC
-        now = datetime.now(utc)
+        now = datetime.now(timezone.utc)
         date_obj = datetime.strptime(date, "%Y-%m-%d")
-        start_time = utc.localize(datetime.combine(date_obj, datetime.min.time()))
-        end_time = utc.localize(datetime.combine(date_obj, datetime.max.time()))
+        start_time = datetime.combine(date_obj, datetime.min.time()).replace(tzinfo=timezone.utc)
+        end_time = datetime.combine(date_obj, datetime.max.time()).replace(tzinfo=timezone.utc)
 
         # Ensure end_time is at least 10 minutes in the past to ensure Cloud
         # Monitoring has finished adding metrics for the prior day.

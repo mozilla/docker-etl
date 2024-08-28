@@ -1,9 +1,8 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from math import floor
 from unittest.mock import call
 
 import pytest
-import pytz
 from freezegun import freeze_time
 from google.cloud.monitoring_v3 import Aggregation, ListTimeSeriesRequest, TimeInterval
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -55,11 +54,10 @@ def test_metric_exporter_get_timeseries(make_config):
 @freeze_time("2024-08-02 00:15:00")
 def test_metric_exporter_get_time_interval(make_config):
     # constants
-    utc = pytz.UTC
     date_str = "2024-08-01"
     date_obj = datetime.strptime(date_str, "%Y-%m-%d")
-    expected_start_time = utc.localize(datetime.combine(date_obj, datetime.min.time()))
-    expected_end_time = utc.localize(datetime.combine(date_obj, datetime.max.time()))
+    expected_start_time = datetime.combine(date_obj, datetime.min.time()).replace(tzinfo=timezone.utc)
+    expected_end_time = datetime.combine(date_obj, datetime.max.time()).replace(tzinfo=timezone.utc)
 
     config = make_config()
     exporter = export.MetricExporter(config)

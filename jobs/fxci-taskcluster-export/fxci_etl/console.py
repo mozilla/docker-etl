@@ -1,11 +1,10 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import sys
 from pathlib import Path
 
 from cleo.application import Application
 from cleo.commands.command import Command
 from cleo.helpers import option
-import pytz
 
 from fxci_etl.config import Config
 from fxci_etl.metric.export import export_metrics
@@ -61,7 +60,7 @@ class MetricExportCommand(ConfigCommand):
         config = self.parse_config(self.option("config"))
         date = self.option("date")
         if date is None:
-            yesterday = datetime.now(pytz.UTC).date() - timedelta(days=1)
+            yesterday = datetime.now(timezone.utc).date() - timedelta(days=1)
             date = yesterday.strftime("%Y-%m-%d")
 
         return export_metrics(config, date, dry_run=self.option("dry-run"))
