@@ -360,7 +360,7 @@ class ProphetForecast(BaseForecast):
         """
         # TODO: This method should be removed once the forecasting data model is updated:
         # https://mozilla-hub.atlassian.net/browse/DS-2676
-        df = self._build_predict_dataframe(dates_to_predict)
+        df = self.model.predict(self._build_predict_dataframe(dates_to_predict))
 
         # set legacy column values
         if "dau" in metric_hub_alias.lower():

@@ -13,8 +13,8 @@ metric_hub:
   where: "partner = 'Google'"
 
 forecast_model:
-  start_date: NULL
-  end_date: NULL
+  forecast_start: NULL
+  forecast_end: NULL
   predict_historical_dates: True
   parameters:
     - segment:
@@ -38,7 +38,6 @@ forecast_model:
         device: mobile  
       start_date: "2020-01-01"
       parameters:
-        end_date: NULL
         holidays: ["easter"]
         regressors: ["after_fenix", "in_covid"]
         use_all_us_holidays: False

@@ -113,6 +113,8 @@ class KPIPipeline:
             components_df = pd.concat(
                 [el["model"].components_df for el in model.segment_models]
             )
+            components_df["metric_slug"] = self.metric_hub.slug
+            components_df["forecast_trained_at"] = self.trained_at
             funnel_write_results(
                 summarized,
                 components_df,
@@ -154,8 +156,10 @@ def main() -> None:
     observed_df = pipeline.get_raw_data()
     fit_model = pipeline.fit(observed_df=observed_df)
     predict_dates = pipeline.get_predict_dates(observed_df)
-    summarized = pipeline.predict_and_summarize(fit_model, predict_dates, observed_df)
-    pipeline.write_results(fit_model, summarized, predict_dates)
+    summarized = pipeline.predict_and_summarize(
+        fit_model, predict_dates.copy(), observed_df
+    )
+    pipeline.write_results(fit_model, summarized, predict_dates.copy())
 
 
 if __name__ == "__main__":

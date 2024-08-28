@@ -396,9 +396,6 @@ def write_results(
     if components_table:
         numeric_cols = list(components_df.select_dtypes(include=float).columns)
         string_cols = list(components_df.select_dtypes(include=object).columns)
-        # self.components_df = pd.concat(components_df_list, ignore_index=True)
-        # components_df["metric_slug"] = self.metric_hub.slug
-        # components_df["forecast_trained_at"] = self.trained_at
 
         schema = [
             bigquery.SchemaField("submission_date", bq_types.DATE),
