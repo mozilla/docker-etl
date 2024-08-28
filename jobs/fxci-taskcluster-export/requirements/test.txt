@@ -373,10 +373,6 @@ python-dateutil==2.9.0.post0 \
     # via
     #   freezegun
     #   google-cloud-bigquery
-pytz==2024.1 \
-    --hash=sha256:2a29735ea9c18baf14b448846bde5a48030ed267578472d8955cd0e7443a9812 \
-    --hash=sha256:328171f4e3623139da4983451950b28e95ac706e13f3f2630a879749e7a8b319
-    # via -r base.in
 rapidfuzz==3.9.5 \
     --hash=sha256:031806eb035a6f09f4ff23b9d971d50b30b5e93aa3ee620c920bee1dc32827e7 \
     --hash=sha256:0d34b0e8e29f80cb2ac8afe8fb7b01a542b136ffbf7e2b9983d11bce49398f68 \
