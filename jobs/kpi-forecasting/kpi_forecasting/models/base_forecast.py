@@ -215,9 +215,13 @@ class BaseEnsembleForecast:
             config_start_date = segment_model["start_date"]
 
             if config_start_date and config_start_date > start_date:
-                dates_to_predict_segment = dates_to_predict[
-                    dates_to_predict["submission_date"] >= config_start_date
-                ].copy()
+                dates_to_predict_segment = (
+                    dates_to_predict[
+                        dates_to_predict["submission_date"] >= config_start_date
+                    ]
+                    .reset_index(drop=True)
+                    .copy()
+                )
             else:
                 dates_to_predict_segment = dates_to_predict.copy()
 
@@ -229,7 +233,6 @@ class BaseEnsembleForecast:
             for column, value in segment_model["segment"].items():
                 predict_df[column] = value
             predict_df["forecast_parameters"] = json.dumps(model._get_parameters())
-
             segment_model["forecast"] = predict_df
         self.forecast_list = [el["forecast"] for el in self.segment_models]
         return pd.concat(self.forecast_list)

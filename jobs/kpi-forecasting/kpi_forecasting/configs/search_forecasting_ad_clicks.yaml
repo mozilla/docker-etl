@@ -15,7 +15,7 @@ metric_hub:
 forecast_model:
   forecast_start: NULL
   forecast_end: NULL
-  predict_historical_dates: NULL
+  predict_historical_dates: True
   parameters:
     - segment: 
         device: desktop
@@ -65,3 +65,4 @@ write_results:
   dataset: "jsnyder"
   table: "search_funnel_forecasts_v1_branch"
   components_table: "search_forecast_model_components_v1_branch"
+  write_disposition: "WRITE_TRUNCATE"

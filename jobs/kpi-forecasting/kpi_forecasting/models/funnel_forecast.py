@@ -127,7 +127,7 @@ class ProphetAutotunerForecast(ProphetForecast):
         # draws samples from Prophet posterior distribution, to provide percentile predictions
         samples = self.model.predictive_samples(dates_to_predict)
         df = pd.DataFrame(samples["yhat"])
-        df["submission_date"] = dates_to_predict_raw
+        df["submission_date"] = dates_to_predict_raw["submission_date"].values
         self._validate_forecast_df(df)
 
         component_cols = [
@@ -270,7 +270,6 @@ def summarize_with_parameters(
         percentiles,
         additional_aggregation_columns=segment_cols,
     )
-
     percentile_name_map = {
         f"p{percentiles[0]}": "value_low",
         f"p{percentiles[1]}": "value_mid",
@@ -419,9 +418,6 @@ def write_results(
                 schema=schema,
                 autodetect=False,
                 write_disposition=write_disposition,
-                schema_update_options=[
-                    bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION
-                ],
             ),
         )
 

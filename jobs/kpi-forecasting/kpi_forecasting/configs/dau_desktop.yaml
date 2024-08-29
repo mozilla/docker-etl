@@ -31,3 +31,4 @@ write_results:
   table: "kpi_forecasts_v0_branch"
   forecast_table_legacy: "kpi_automated_forecast_v1_branch"
   confidences_table_legacy: "kpi_automated_forecast_confidences_v1_branch"
+  write_disposition: "WRITE_TRUNCATE"
