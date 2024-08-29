@@ -96,9 +96,11 @@ class KPIPipeline:
         raw_predictions = model.predict(predict_dates)
         self.predicted_at = datetime.now(timezone.utc).replace(tzinfo=None)
         if self.model_type == "funnel":
+            # get filtered observed data
+            observed_df_filtered = model.get_filtered_observed_data(observed_df)
             return funnel_summarize(
                 raw_predictions,
-                observed_df,
+                observed_df_filtered,
                 segment_cols=self.segments,
                 **self.config_data["summarize"],
             )
@@ -110,9 +112,14 @@ class KPIPipeline:
     def write_results(self, model, summarized, predict_dates):
         summarized = self.add_metadata(summarized)
         if self.model_type == "funnel":
-            components_df = pd.concat(
-                [el["model"].components_df for el in model.segment_models]
-            )
+            components_df_list = []
+            # create the components dataframe
+            for segment in model.segment_models:
+                components_df = segment["model"].components_df
+                for key, val in segment["segment"].items():
+                    components_df[key] = val
+                components_df_list.append(components_df)
+            components_df = pd.concat(components_df_list)
             components_df["metric_slug"] = self.metric_hub.slug
             components_df["forecast_trained_at"] = self.trained_at
             funnel_write_results(

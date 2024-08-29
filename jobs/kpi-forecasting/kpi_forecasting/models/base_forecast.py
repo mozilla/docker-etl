@@ -4,6 +4,13 @@ import abc
 from dataclasses import dataclass
 from typing import List
 
+import logging
+
+logger = logging.getLogger("cmdstanpy")
+logger.addHandler(logging.NullHandler())
+logger.propagate = False
+logger.setLevel(logging.CRITICAL)
+
 
 @dataclass
 class BaseForecast(abc.ABC):
@@ -179,6 +186,24 @@ class BaseEnsembleForecast:
             filter_array &= row_after_start
         return df.loc[filter_array]
 
+    def get_filtered_observed_data(self, observed_df: pd.DataFrame) -> pd.DataFrame:
+        """Returns the observed dataframe with time filters applied
+            to each segments data
+
+        Args:
+            observed_df (pd.DataFrame): full observed dataframe
+
+        Returns:
+            pd.DataFrame: filtered observed dataframe
+        """
+        observed_df_list = []
+        for segment_model in self.segment_models:
+            observed_subset = self.filter_data_to_segment(
+                observed_df, segment_model["segment"], segment_model["start_date"]
+            )
+            observed_df_list.append(observed_subset)
+        return pd.concat(observed_df_list)
+
     def fit(self, observed_df: pd.DataFrame) -> None:
         """Fit models across all segments for the data in observed_df
 
@@ -189,6 +214,7 @@ class BaseEnsembleForecast:
         # create list of models depending on whether there are segments or not
         self._set_segment_models(observed_df)
         for segment_model in self.segment_models:
+            print(segment_model["segment"])
             model = segment_model["model"]
             model._set_seed()
             observed_subset = self.filter_data_to_segment(
