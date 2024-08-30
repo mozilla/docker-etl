@@ -231,6 +231,7 @@ class ProphetForecast(BaseForecast):
             "holidays_mode": self.holidays_mode,
             "cap": self.logistic_growth_cap,
             "floor": self.logistic_growth_floor,
+            "regressors": self.regressors_raw,
         }
 
     @property

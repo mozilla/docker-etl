@@ -93,6 +93,8 @@ class ProphetAutotunerForecast(ProphetForecast):
             # predict dfs
             self.logistic_growth_cap = best_model.logistic_growth_cap
             self.logistic_growth_floor = best_model.logistic_growth_floor
+        if best_model.regressors is not None:
+            self.regressors = best_model.regressors
 
         return best_model.model
 
