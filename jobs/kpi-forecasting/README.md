@@ -171,7 +171,7 @@ This repo was designed to make it simple to add new forecasting models in the fu
 the `models.base_forecast.BaseForecast` class and to implement the `_fit` and `_predict` methods. Output from the `_fit` method will automatically be validated by `BaseForecast._validate_forecast_df`.
 
 One caveat is that, in order for aggregations over time periods to work (e.g. monthly forecasts), the `_predict` method must generate a number
-of simulated timeseries. This enables the measurement of variation across a range of possible outcomes. This number is set by `BaseForecast.number_of_simulations`.
+of simulated timeseries. This enables the measurement of variation across a range of possible outcomes. This number is set by `BaseForecast.uncertainty_samples`.
 
 When testing locally, be sure to modify any config files to use non-production `project` and `dataset` values that you have write access to; otherwise the `write_output` step will fail.
 

@@ -102,6 +102,7 @@ class ProphetAutotunerForecast(ProphetForecast):
         Args:
             observed_df (pd.DataFrame): observed data used to fit
         """
+        self._set_seed()
         train_dataframe = self._build_train_dataframe(observed_df)
         # model returned by _auto_tuning is already fit
         self.model = self._auto_tuning(train_dataframe)
@@ -121,6 +122,7 @@ class ProphetAutotunerForecast(ProphetForecast):
         Returns:
             pd.DataFrame: The forecasted values.
         """
+        self._set_seed()
         # add regressors, logistic growth limits (if applicable) to predict dataframe
         dates_to_predict = self._build_predict_dataframe(dates_to_predict_raw)
 

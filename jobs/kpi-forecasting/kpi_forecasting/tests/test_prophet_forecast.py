@@ -69,7 +69,7 @@ def mock_build_model(self):
 
 @pytest.fixture
 def forecast(mocker):
-    parameter_dict = {"number_of_simulations": 1}
+    parameter_dict = {"uncertainty_samples": 1}
 
     mocker.patch.object(ProphetForecast, "_build_model", mock_build_model)
 
@@ -1009,6 +1009,7 @@ def test_summarize():
         periods=["day"],
         numpy_aggregations=numpy_aggregations,
         percentiles=percentiles,
+        forecast_parameters="",
     )
 
     observed_expected_df = pd.DataFrame(
@@ -1091,6 +1092,7 @@ def test_summarize():
         ["submission_date", "measure"]
     )
     expected["aggregation_period"] = "day"
+    expected["forecast_parameters"] = ""
 
     assert set(expected.columns) == set(output_df.columns)
     pd.testing.assert_frame_equal(
@@ -1142,7 +1144,9 @@ def test_summarize_non_overlapping_day():
         dict(**{"submission_date": predict_submission_dates}, **forecast_data)
     )
 
-    output_df = summarize(forecast_df, observed_df, ["day"], ["mean", "median"], [50])
+    output_df = summarize(
+        forecast_df, observed_df, ["day"], ["mean", "median"], [50], ""
+    )
 
     expected_observed_df = observed_df.copy()
     expected_observed_df["source"] = "historical"
@@ -1187,6 +1191,7 @@ def test_summarize_non_overlapping_day():
     )
 
     expected_df["aggregation_period"] = "day"
+    expected_df["forecast_parameters"] = ""
 
     assert set(expected_df.columns) == set(output_df.columns)
     columns = expected_df.columns
@@ -1246,7 +1251,9 @@ def test_summarize_non_overlapping_month():
         dict(**{"submission_date": predict_submission_dates}, **forecast_data)
     )
 
-    output_df = summarize(forecast_df, observed_df, ["month"], ["mean", "median"], [50])
+    output_df = summarize(
+        forecast_df, observed_df, ["month"], ["mean", "median"], [50], ""
+    )
 
     expected_observed_dates = sorted(
         pd.to_datetime(observed_df["submission_date"].values)
@@ -1307,6 +1314,7 @@ def test_summarize_non_overlapping_month():
     )
 
     expected_df["aggregation_period"] = "month"
+    expected_df["forecast_parameters"] = ""
 
     assert set(expected_df.columns) == set(output_df.columns)
     columns = expected_df.columns
@@ -1363,7 +1371,9 @@ def test_summarize_overlapping_day():
         dict(**{"submission_date": predict_submission_dates}, **forecast_data)
     )
 
-    output_df = summarize(forecast_df, observed_df, ["day"], ["mean", "median"], [50])
+    output_df = summarize(
+        forecast_df, observed_df, ["day"], ["mean", "median"], [50], ""
+    )
 
     expected_observed_df = observed_df.copy()
     expected_observed_df["source"] = "historical"
@@ -1410,6 +1420,7 @@ def test_summarize_overlapping_day():
     )
 
     expected_df["aggregation_period"] = "day"
+    expected_df["forecast_parameters"] = ""
 
     assert set(expected_df.columns) == set(output_df.columns)
     columns = expected_df.columns
@@ -1470,7 +1481,9 @@ def test_summarize_overlapping_month():
         dict(**{"submission_date": predict_submission_dates}, **forecast_data)
     )
 
-    output_df = summarize(forecast_df, observed_df, ["month"], ["mean", "median"], [50])
+    output_df = summarize(
+        forecast_df, observed_df, ["month"], ["mean", "median"], [50], ""
+    )
 
     expected_observed_dates = sorted(
         pd.to_datetime(observed_df["submission_date"].values)
@@ -1537,6 +1550,7 @@ def test_summarize_overlapping_month():
     )
 
     expected_df["aggregation_period"] = "month"
+    expected_df["forecast_parameters"] = ""
 
     assert set(expected_df.columns) == set(output_df.columns)
     columns = expected_df.columns
@@ -1597,7 +1611,7 @@ def test_summarize_overlapping_month_and_day():
     )
 
     output_df = summarize(
-        forecast_df, observed_df, ["month", "day"], ["mean", "median"], [50]
+        forecast_df, observed_df, ["month", "day"], ["mean", "median"], [50], ""
     )
 
     expected_observed_dates = sorted(
@@ -1672,6 +1686,7 @@ def test_summarize_overlapping_month_and_day():
     expected_df_day["aggregation_period"] = "day"
 
     expected_df = pd.concat([expected_df_day, expected_df])
+    expected_df["forecast_parameters"] = ""
 
     assert set(expected_df.columns) == set(output_df.columns)
     columns = expected_df.columns

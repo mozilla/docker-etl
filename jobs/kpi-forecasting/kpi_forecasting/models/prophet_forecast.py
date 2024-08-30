@@ -118,7 +118,8 @@ class ProphetForecast(BaseForecast):
     stan_backend: str = None
     scaling: str = "absmax"
     holidays_mode: str = None
-    number_of_simulations: int = 1000
+    floor: float = None
+    cap: float = None
 
     def __post_init__(self):
         holiday_list = []
@@ -159,6 +160,8 @@ class ProphetForecast(BaseForecast):
             self.regressors_raw = None
 
         self.model = self._build_model()
+        self.logistic_growth_cap = self.cap
+        self.logistic_growth_floor = self.floor
 
     def _build_model(self) -> prophet.Prophet:
         """
@@ -226,6 +229,8 @@ class ProphetForecast(BaseForecast):
             "stan_backend": self.stan_backend,
             "scaling": self.scaling,
             "holidays_mode": self.holidays_mode,
+            "cap": self.logistic_growth_cap,
+            "floor": self.logistic_growth_floor,
         }
 
     @property
@@ -310,25 +315,26 @@ class ProphetForecast(BaseForecast):
     def fit(self, observed_df) -> None:
         # Modify observed data to have column names that Prophet expects, and fit
         # the model
+        self._set_seed()
         train_dataframe = self._build_train_dataframe(observed_df)
         self.model.fit(train_dataframe)
         return self
 
     def predict(self, dates_to_predict) -> pd.DataFrame:
         # generate the forecast samples
+        self._set_seed()
         samples = self.model.predictive_samples(
             dates_to_predict.rename(columns=self.column_names_map)
         )
         df = pd.DataFrame(samples["yhat"])
         df["submission_date"] = dates_to_predict
         self._validate_forecast_df(df, dates_to_predict)
-
         return df
 
     def _validate_forecast_df(self, df, dates_to_predict) -> None:
         """Validate that `self.forecast_df` has been generated correctly."""
         columns = df.columns
-        expected_shape = (len(dates_to_predict), 1 + self.number_of_simulations)
+        expected_shape = (len(dates_to_predict), 1 + self.uncertainty_samples)
         numeric_columns = df.drop(columns="submission_date").columns
 
         if "submission_date" not in columns:
@@ -569,6 +575,7 @@ def summarize(
     periods: List[str],
     numpy_aggregations: List[str],
     percentiles: List[int],
+    forecast_parameters: dict,
 ) -> pd.DataFrame:
     """
     Calculate summary metrics for `self.forecast_df` over a given period, and
@@ -596,6 +603,7 @@ def summarize(
 
         # it got removed in combine_forecast_observed so put it back
         df["aggregation_period"] = period
+        df["forecast_parameters"] = forecast_parameters
         df_list.append(df)
 
     return pd.concat(df_list)

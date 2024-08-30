@@ -835,7 +835,7 @@ def test_autotuner_predict(mocker):
 
 def test_funnelforecast_fit(mocker):
     """test the fit method, and implicitly the set_segment_models method"""
-    # arbitrarily choose number_of_simulations as a parameter
+    # arbitrarily choose growth as a parameter
     # to set in order to check the test
     parameter_list = [
         {
@@ -947,7 +947,7 @@ def test_funnelforecast_fit(mocker):
 def test_funnelforecast_fit_multiple(mocker):
     """test the set_segment_models method
     with segments on multiple columns"""
-    # arbitrarily choose number_of_simulations as a parameter
+    # arbitrarily choose growth as a parameter
     # to set in order to check the test
     parameter_list = [
         {
@@ -1080,7 +1080,7 @@ def test_funnel_predict(mocker):
     """test the predict method.  This is similar to test_under_predict
     but multiple segments are acted upon"""
 
-    # arbitrarily choose number_of_simulations as a parameter
+    # arbitrarily choose growth as a parameter
     # to set in order to check the test
     parameter_list = [
         {
@@ -1216,7 +1216,7 @@ def test_funnel_predict_growth(mocker):
     """test the predict method when growth is set in the
     grid parameters.  Extra attributes need to be updated with this one"""
 
-    # arbitrarily choose number_of_simulations as a parameter
+    # arbitrarily choose growth as a parameter
     # to set in order to check the test
     parameter_list = [
         {
@@ -1361,7 +1361,7 @@ def test_set_segment_models_exception(mocker):
     """test the exception for segment_models where
     and exception is raised if a model_setting_split_dim
     is specified that isn't in the data"""
-    # arbitrarily choose number_of_simulations as a parameter
+    # arbitrarily choose growth as a parameter
     # to set in order to check the test
     parameter_list = [
         {

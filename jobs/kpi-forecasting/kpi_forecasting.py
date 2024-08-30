@@ -1,5 +1,6 @@
 import pandas as pd
 from datetime import datetime, timezone, timedelta
+import json
 
 from kpi_forecasting.inputs import CLI, load_yaml
 from kpi_forecasting.models.prophet_forecast import (
@@ -49,7 +50,6 @@ class KPIPipeline:
         summary_df["forecast_end_date"] = self.end_date
         summary_df["forecast_trained_at"] = self.trained_at
         summary_df["forecast_predicted_at"] = self.predicted_at
-        summary_df["forecast_parameters"] = self.metadata_parameters
 
         return summary_df
 
@@ -89,7 +89,6 @@ class KPIPipeline:
             model_parameters = self.config_data["forecast_model"]["parameters"]
         model = self.model_class(**model_parameters)
         self.trained_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        self.metadata_parameters = model._get_parameters()
         return model.fit(observed_df)
 
     def predict_and_summarize(self, model, predict_dates, observed_df):
@@ -105,8 +104,12 @@ class KPIPipeline:
                 **self.config_data["summarize"],
             )
         elif self.model_type == "prophet":
+            forecast_parameters = json.dumps(model._get_parameters())
             return prophet_summarize(
-                raw_predictions, observed_df, **self.config_data["summarize"]
+                raw_predictions,
+                observed_df,
+                forecast_parameters=forecast_parameters,
+                **self.config_data["summarize"],
             )
 
     def write_results(self, model, summarized, predict_dates):
@@ -130,7 +133,9 @@ class KPIPipeline:
             )
         elif self.model_type == "prophet":
             forecast_df_legacy = model._predict_legacy(
-                predict_dates, self.metric_hub.alias, self.metadata_parameters
+                predict_dates,
+                self.metric_hub.alias,
+                model._get_parameters(),
             )
             summary_df_legacy = prophet_summarize_legacy(summarized)
             prophet_write_results(
