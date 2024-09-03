@@ -91,6 +91,7 @@ class ProphetAutotunerForecast(ProphetForecast):
             # case where logistic growth is being used
             # need to set some parameters used to make training and
             # predict dfs
+            self.growth = "logistic"
             self.logistic_growth_cap = best_model.logistic_growth_cap
             self.logistic_growth_floor = best_model.logistic_growth_floor
         if best_model.regressors is not None:
@@ -104,10 +105,11 @@ class ProphetAutotunerForecast(ProphetForecast):
         Args:
             observed_df (pd.DataFrame): observed data used to fit
         """
-        self._set_seed()
-        train_dataframe = self._build_train_dataframe(observed_df)
         # model returned by _auto_tuning is already fit
-        self.model = self._auto_tuning(train_dataframe)
+        # don't need to set seed since it happens in the
+        # ProphetForecast object created in the auto_tuning
+        self.model = self._auto_tuning(observed_df)
+        train_dataframe = self._build_train_dataframe(observed_df)
         self.history = train_dataframe
         return self
 
@@ -124,9 +126,10 @@ class ProphetAutotunerForecast(ProphetForecast):
         Returns:
             pd.DataFrame: The forecasted values.
         """
-        self._set_seed()
         # add regressors, logistic growth limits (if applicable) to predict dataframe
+        self._set_seed()
         dates_to_predict = self._build_predict_dataframe(dates_to_predict_raw)
+        self.predict_input = dates_to_predict
 
         # draws samples from Prophet posterior distribution, to provide percentile predictions
         samples = self.model.predictive_samples(dates_to_predict)
