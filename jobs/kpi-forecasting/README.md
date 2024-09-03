@@ -2,6 +2,11 @@
 
 This job forecasts [Metric Hub](https://mozilla.acryl.io/glossaryNode/urn:li:glossaryNode:Metric%20Hub/Contents?is_lineage_mode=false) metrics based on YAML configs defined in `.kpi-forecasting/configs`.  The output destinations in BigQuery for each config can be found in the `write_results` section.  Note that different configs can write to the same table.
 
+Currently the forecasts are all done by Prophet.  There are two classes used:
+ - `models/prophet_forecast.py/ProphetForecast`  Fits a single prophet model on the entire dataset, configured as specified in the config file
+ - `models/funnel_forecast.py/FunnelForecast`  Fits multiple models based on what segment they fall into.  Segments are defined in the `metric_hub.segments` in which columns in the data are specified to used for segmentation.  The data is partitioned into subsets based on all the different combinations of values the specified columns can take.  A subset of the parameters can be used to specify parameters for partitions with specific values on those parameters. For funnel forecast, the `parameters` section of the config is a list, each element of which specifies configuration to be applied to partitions where the columns and values within those columns have the values of the keys and values of the `parameters.segement` fields respectively.  The segmentation functionality is defined in `models/base_forecast.py/BaseEnsembleForecast`.  Additionally, funnel forecast has automatic hyperparameter tuning which is implemented by `models/funnel_forecast.py/ProphetAutotunerForecast`.
+  
+
 # Usage
 
 ## Docker Container
