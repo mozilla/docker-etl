@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import sys
 from pathlib import Path
 
@@ -43,6 +44,12 @@ class MetricExportCommand(ConfigCommand):
     description = "Export configured metrics' timeseries."
     options = ConfigCommand.options + [
         option(
+            "--date",
+            flag=False,
+            description="Calendar day to retrieve metrics from. Of the form "
+            "'YYYY-MM-DD' (default: yesterday)"
+        ),
+        option(
             "--dry-run",
             flag=True,
             description="Print records rather than inserting them into BigQuery",
@@ -51,7 +58,12 @@ class MetricExportCommand(ConfigCommand):
 
     def handle(self):
         config = self.parse_config(self.option("config"))
-        return export_metrics(config, dry_run=self.option("dry-run"))
+        date = self.option("date")
+        if date is None:
+            yesterday = datetime.now(timezone.utc).date() - timedelta(days=1)
+            date = yesterday.strftime("%Y-%m-%d")
+
+        return export_metrics(config, date, dry_run=self.option("dry-run"))
 
 
 def run():
