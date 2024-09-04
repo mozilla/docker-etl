@@ -17,7 +17,7 @@ forecast_model:
   forecast_end: NULL
   predict_historical_dates: True
   parameters:
-    - segment: 
+    - segment:
         device: desktop
       start_date: "2018-01-01"
       parameters:
@@ -44,7 +44,7 @@ forecast_model:
         use_all_us_holidays: False
         grid_parameters:
           changepoint_prior_scale: [.01, .1, .15, .2]
-          changepoint_range: [0.8, 0.9, 1]
+          changepoint_range: [0.8, 0.9]
           n_changepoints: [30]
           weekly_seasonality: True
           yearly_seasonality: True
