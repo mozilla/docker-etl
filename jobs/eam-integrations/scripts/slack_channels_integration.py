@@ -2,6 +2,7 @@ import argparse
 import logging
 import sys
 import datetime
+
 from slack_channels.api.Slack import SlackAPI
 from api.util import Util
 
@@ -34,12 +35,14 @@ class Slack:
                                                                  self.integration_report_channel]
                         and float(channels_dict[x].get('created')) < days_ago.timestamp()]
 
+
         return non_archived, archived, integration_report, channels_dict
 
     def get_conversations_history(self, channel_id):
         data = self._slackAPI.get_conversations_history(channel_id)
         if not data.data.get('ok'):
             raise SlackAPIException(data)
+
         return data
 
     def conversations_archive(self, channel_id):
@@ -52,12 +55,14 @@ class Slack:
         data = self._slackAPI.conversations_delete(channel_id=channel_id)
         if not data.data.get('ok'):
             raise SlackAPIException(data)        
+ 
         return data
 
     def is_ts_older_than(self, days, unix_timestamp):
 
         timestamp_date = datetime.datetime.fromtimestamp(float(unix_timestamp))
         current_date = datetime.datetime.now()
+
         days_ago = current_date - datetime.timedelta(days=days)
         return timestamp_date < days_ago
 
@@ -154,6 +159,7 @@ class SlackIntegration:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Slack Channels Integration ")
 
+
     parser.add_argument(
         "-l",
         "--level",
@@ -162,7 +168,6 @@ if __name__ == "__main__":
         type=str,
         default="info",
     )
-
     parser.add_argument(
         "-f",
         "--force", 
@@ -183,5 +188,4 @@ if __name__ == "__main__":
 
     integration = SlackIntegration()
     integration.run(args.force)
-    
-    
+

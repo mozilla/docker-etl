@@ -27,6 +27,7 @@ class SlackAPI:
 
             if not data.data.get('ok'):
                 raise Exception(data.data)
+
             # channels_dict = {x.get('id'):x for x in data.data.get('channels',[])}
             for x in data.data.get('channels',''):
                 channels_dict[x.get('id')] = x
@@ -64,6 +65,7 @@ class SlackAPI:
         return self.api_adapter.post(endpoint=endpoint,
                                      headers=headers,
                                      params=params)
+
 
         
     def chat_post_message(self, channel_id, text):
