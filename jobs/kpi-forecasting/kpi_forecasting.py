@@ -1,6 +1,7 @@
 import pandas as pd
 from datetime import datetime, timezone, timedelta
 import json
+import pickle
 
 from kpi_forecasting.inputs import CLI, load_yaml
 from kpi_forecasting.models.prophet_forecast import (
@@ -172,6 +173,9 @@ def main() -> None:
         fit_model, predict_dates.copy(), observed_df
     )
     pipeline.write_results(fit_model, summarized, predict_dates.copy())
+
+    with open("main_model.pkl", "wb") as f:
+        pickle.dump(fit_model, f)
 
 
 if __name__ == "__main__":
