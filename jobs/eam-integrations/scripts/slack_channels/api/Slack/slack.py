@@ -5,22 +5,28 @@ from .secrets import config
 
 class SlackAPI:
     def __init__(self):
-        self.api_adapter = APIAdaptor(host=config['slack_host'])  
-        self._token = os.getenv('SLACK_CHANNEL_TOKEN')
+        self.api_adapter = APIAdaptor(host=config['slack_host'])
+        self._token = config['slack_token']
 
     def get_conversations_list(self, types):
         channels_dict = {}
-        params = {'limit': 1,
-                  'types': types}
+        params = {'limit': 100,
+                  'types': types,
+                  'team_id': 'T07JXFQU132',
+                  # 'last_message_activity_before': 1724426147
+        }
         
         headers = {'Authorization': f'Bearer {self._token }'}
         endpoint = "api/conversations.list"
+        #endpoint = "api/admin.conversations.lookup"
         
         while (True):
-            data = self.api_adapter.get(endpoint=endpoint, 
+            data = self.api_adapter.get(endpoint=endpoint,
                                         headers=headers,
                                         params=params)
 
+            if not data.data.get('ok'):
+                raise Exception(data.data)
             # channels_dict = {x.get('id'):x for x in data.data.get('channels',[])}
             for x in data.data.get('channels',''):
                 channels_dict[x.get('id')] = x
@@ -49,6 +55,16 @@ class SlackAPI:
         return self.api_adapter.post(endpoint=endpoint,
                                      headers=headers,
                                      params=params)
+
+    def conversations_delete(self, channel_id):
+        params = {'channel_id': channel_id}
+        headers = {'Authorization': f'Bearer {self._token }'}
+        endpoint = "api/admin.conversations.delete"
+
+        return self.api_adapter.post(endpoint=endpoint,
+                                     headers=headers,
+                                     params=params)
+
         
     def chat_post_message(self, channel_id, text):
         params = {'channel': channel_id,
