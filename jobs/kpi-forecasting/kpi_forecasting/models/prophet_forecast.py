@@ -362,8 +362,8 @@ class ProphetForecast(BaseForecast):
         project_legacy: str,
         dataset_legacy: str,
         write_disposition: str = "WRITE_APPEND",
-        forecast_table_legacy: str = "kpi_automated_forecast_v1_branch",
-        confidences_table_legacy: str = "kpi_automated_forecast_confidences_v1_branch",
+        forecast_table_legacy: str = "kpi_automated_forecast_v1",
+        confidences_table_legacy: str = "kpi_automated_forecast_confidences_v1",
     ) -> None:
         """
         Write `self.summary_df` to Big Query.
