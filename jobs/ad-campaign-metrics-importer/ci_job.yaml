@@ -1,0 +1,15 @@
+build-job-ad-campaign-metrics-importer:
+  docker:
+    - image: << pipeline.parameters.git-image >>
+  steps:
+    - checkout
+    - compare-branch:
+        pattern: ^jobs/ad-campaign-metrics-importer/
+    - setup_remote_docker:
+        version: << pipeline.parameters.docker-version >>
+    - run:
+        name: Build Docker image
+        command: docker build -t app:build jobs/ad-campaign-metrics-importer/
+    - run:
+        name: Test Code
+        command: docker run app:build pytest --flake8 --black

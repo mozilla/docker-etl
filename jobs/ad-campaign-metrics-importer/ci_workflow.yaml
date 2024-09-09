@@ -1,0 +1,13 @@
+job-ad-campaign-metrics-importer:
+  jobs:
+    - build-job-ad-campaign-metrics-importer
+    - gcp-gcr/build-and-push-image:
+        context: data-eng-airflow-gcr
+        docker-context: jobs/ad-campaign-metrics-importer/
+        path: jobs/ad-campaign-metrics-importer/
+        image: ad-campaign-metrics-importer_docker_etl
+        requires:
+          - build-job-ad-campaign-metrics-importer
+        filters:
+          branches:
+            only: main
