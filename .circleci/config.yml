@@ -65,6 +65,22 @@ jobs:
           name: Verify CI config is up-to-date
           command: docker run docker-etl:build python3 -m docker_etl.ci_config --dry-run | diff -B .circleci/config.yml -
 
+  build-job-ad-campaign-metrics-importer:
+    docker:
+      - image: << pipeline.parameters.git-image >>
+    steps:
+      - checkout
+      - compare-branch:
+          pattern: ^jobs/ad-campaign-metrics-importer/
+      - setup_remote_docker:
+          version: << pipeline.parameters.docker-version >>
+      - run:
+          name: Build Docker image
+          command: docker build -t app:build jobs/ad-campaign-metrics-importer/
+      - run:
+          name: Test Code
+          command: docker run app:build pytest --flake8 --black
+
   build-job-bq2sftp:
     docker:
       - image: << pipeline.parameters.git-image >>
@@ -364,6 +380,20 @@ workflows:
     jobs:
       - build-docker-etl
 
+  job-ad-campaign-metrics-importer:
+    jobs:
+      - build-job-ad-campaign-metrics-importer
+      - gcp-gcr/build-and-push-image:
+          context: data-eng-airflow-gcr
+          docker-context: jobs/ad-campaign-metrics-importer/
+          path: jobs/ad-campaign-metrics-importer/
+          image: ad-campaign-metrics-importer_docker_etl
+          requires:
+            - build-job-ad-campaign-metrics-importer
+          filters:
+            branches:
+              only: main
+
   job-bq2sftp:
     jobs:
       - build-job-bq2sftp
@@ -494,7 +524,6 @@ workflows:
           filters:
             branches:
               only: main
-
 
   job-fxci-taskcluster-export:
     jobs:
