@@ -5,10 +5,10 @@ from setuptools import setup, find_packages
 readme = open("README.md").read()
 
 setup(
-    name="docker-etl-job",  # TODO: change placeholder name
+    name="ad_campaign_metrics_importer",
     version="0.1.0",
-    author="Mozilla Corporation",
-    packages=find_packages(include=["docker_etl"]), # TODO: change placeholder name
+    author="ksantos@mozilla.com",
+    packages=find_packages(include=["ad_campaign_metrics_importer"]),
     long_description=readme,
     include_package_data=True,
     license="MPL 2.0",
