@@ -1,6 +1,6 @@
-# Python Template Job
+# Ad Campaign Metrics Importer Job
 
-This is an example of a dockerized Python job.
+This job is responsible for importing Kevel campaign impression data (the number of impressions and clicks) for active Kevel campaigns and storing it in Shepherd DB.
 
 ## Usage
 
@@ -8,7 +8,7 @@ This script is intended to be run in a docker container.
 Build the docker image with:
 
 ```sh
-docker build -t python-template-job .
+docker build -t ad-campaign-metrics-importer .
 ```
 
 To run locally, install dependencies with:
@@ -19,7 +19,7 @@ pip install -r requirements.txt
 
 Run the script with 
 
-```sh   
+```sh
 python3 -m python_template_job.main
 ```
 

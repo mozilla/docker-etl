@@ -1,5 +1,5 @@
 FROM python:3.8
-MAINTAINER REPLACE ME <replaceme@mozilla.com>
+MAINTAINER <ksantos@mozilla.com>
 
 # https://github.com/mozilla-services/Dockerflow/blob/master/docs/building-container.md
 ARG USER_ID="10001"
@@ -12,14 +12,14 @@ RUN groupadd --gid ${USER_ID} ${GROUP_ID} && \
 
 WORKDIR ${HOME}
 
-RUN pip install --upgrade pip
+RUN pip install --upgrade pip --no-cache-dir
 
 COPY requirements.txt requirements.txt
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt --no-cache-dir
 
 COPY . .
 
-RUN pip install .
+RUN pip install . --no-cache-dir
 
 # Drop root and change ownership of the application folder to the user
 RUN chown -R ${USER_ID}:${GROUP_ID} ${HOME}
