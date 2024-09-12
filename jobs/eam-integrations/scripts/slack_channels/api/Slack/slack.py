@@ -38,8 +38,8 @@ class SlackAPI:
 
         return channels_dict
 
-    def get_conversations_history(self, channel_id):
-        params = {'limit': 1, 'channel': channel_id}
+    def get_conversations_history(self, params):
+        
         headers = {'Authorization': f'Bearer {self._token }'}
         endpoint = "api/conversations.history"
 
@@ -65,7 +65,15 @@ class SlackAPI:
                                      headers=headers,
                                      params=params)
 
-        
+    def join_channel(self, channel_id):
+        params = {'channel': channel_id}
+        endpoint = "api/conversations.join"
+        headers = {'Authorization': f'Bearer {self._token }'}
+
+        return self.api_adapter.post(endpoint=endpoint,
+                                     headers=headers,
+                                     params=params)
+    
     def chat_post_message(self, channel_id, text):
         params = {'channel': channel_id,
                   'text': text}

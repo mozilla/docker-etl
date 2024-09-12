@@ -77,9 +77,9 @@ class APIAdaptor:
     def get(self, endpoint: str, params: Dict = None, headers: str = None, auth=None, timeout=20,response_json=True):
         return self._request(http_method="GET", endpoint=endpoint, params=params, headers=headers, auth=auth,timeout=timeout,response_json=response_json)
 
-    def post(self, endpoint: str, params: Dict = None,  headers: str = None, data: Dict = None):
+    def post(self, endpoint: str, params: Dict = None,  headers: str = None, data: Dict = None, auth = None):
         return self._request(
-            http_method="POST", endpoint=endpoint, params=params, data=data, headers=headers
+            http_method="POST", endpoint=endpoint, params=params, data=data, headers=headers, auth=auth
         )
 
     def patch(self, endpoint: str, params: Dict = None, headers: str = None, data: Dict = None):
