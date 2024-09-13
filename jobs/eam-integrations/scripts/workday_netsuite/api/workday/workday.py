@@ -28,6 +28,7 @@ class Worker:
     Most_Recent_Hire_Date: Optional[datetime] = None
     Country: Optional[str] = None
     termination_date: Optional[datetime] = None
+    Preferred_Full_Name: Optional[str] = None
 
 
 class WDLink(TypedDict):
