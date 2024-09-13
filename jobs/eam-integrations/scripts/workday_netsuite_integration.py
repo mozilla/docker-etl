@@ -142,7 +142,7 @@ class NetSuite():
             except:
                 continue
            
-                
+
 class WorkdayToNetsuiteIntegration():
     """Integration class for syncing data from Workday to Netsuite.
 
@@ -152,6 +152,7 @@ class WorkdayToNetsuiteIntegration():
     def __init__(self,) -> None:
         self.workday_service = WorkDayRaaService()
         self.netsuite = NetSuite()
+
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def run(self):
@@ -164,8 +165,9 @@ class WorkdayToNetsuiteIntegration():
 
         # Step 2: Perform data transformations
         self.logger.info("Step 2: Transforming Workday data.")
+
         self.netsuite.map_data(wd_workers)
-        
+
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="Slack Channels Integration ")
