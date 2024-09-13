@@ -106,7 +106,7 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
         stderr = stderr.decode()
     except asyncio.exceptions.TimeoutError:
         rpt["collection_duration"] = time.perf_counter() - start_counter
-        rpt["error"] = f"TIMEOUT"
+        rpt["error"] = "TIMEOUT"
 
         res["reports"].append(rpt)
         return res
@@ -126,11 +126,11 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
     else:
         for line in stdout.splitlines():
             if line.startswith("Aggregation result:"):
-                entries = parse_histogram(line[21:-1])
+                entries = parse_vector(line[21:-1])
 
                 rpt["value"] = entries
 
-                for i in range(5):
+                for i, entry in enumerate(entries):
                     ad = get_ad(task["task_id"], i)
                     print(task["task_id"], i, ad)
                     if ad is not None:
@@ -145,7 +145,7 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
                         cnt["task_index"] = i
                         cnt["task_size"] = task["task_size"]
                         cnt["campaign_id"] = ad["advertiserInfo"]["campaignId"]
-                        cnt["conversion_count"] = entries[i]
+                        cnt["conversion_count"] = entry
 
                         res["counts"].append(cnt)
             elif line.startswith("Number of reports:"):
@@ -165,7 +165,7 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
     return res
 
 
-def parse_histogram(histogram_str):
+def parse_vector(histogram_str):
     count_strs = histogram_str.split(",")
     return [
         correct_wraparound(int(count_str))
