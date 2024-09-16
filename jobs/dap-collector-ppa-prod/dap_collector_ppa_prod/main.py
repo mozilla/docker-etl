@@ -10,6 +10,18 @@ import requests
 LEADER = "https://dap-09-3.api.divviup.org"
 CMD = f"./collect --task-id {{task_id}} --leader {LEADER} --vdaf {{vdaf}} {{vdaf_args}} --authorization-bearer-token {{auth_token}} --batch-interval-start {{timestamp}} --batch-interval-duration {{duration}} --hpke-config {{hpke_config}} --hpke-private-key {{hpke_private_key}}"
 MINUTES_IN_DAY = 1440
+
+# The modulo prime for the field for Prio3SumVec, and its size in bits. We use these to detect and counteract negative
+# conversion counts (as a result of differential privacy noise being added) wrapping around.
+#
+# Note that these values are specific to the data type we use for our tasks. If we start using a different type (e.g.
+# Prio3Histogram), the values will need to be adjusted.
+#
+# https://github.com/divviup/libprio-rs/blob/a85d271ddee087f13dfd847a7170786f35abd0b9/src/vdaf/prio3.rs#L88
+# https://github.com/divviup/libprio-rs/blob/a85d271ddee087f13dfd847a7170786f35abd0b9/src/fp.rs#L87
+FIELD_PRIME = 340282366920938462946865773367900766209
+FIELD_SIZE = 128
+
 ADS_SCHEMA = [
     bigquery.SchemaField("collection_time", "TIMESTAMP", mode="REQUIRED"),
     bigquery.SchemaField("placement_id", "STRING", mode="REQUIRED"),
@@ -94,7 +106,7 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
         stderr = stderr.decode()
     except asyncio.exceptions.TimeoutError:
         rpt["collection_duration"] = time.perf_counter() - start_counter
-        rpt["error"] = f"TIMEOUT"
+        rpt["error"] = "TIMEOUT"
 
         res["reports"].append(rpt)
         return res
@@ -114,12 +126,11 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
     else:
         for line in stdout.splitlines():
             if line.startswith("Aggregation result:"):
-                entries = line[21:-1]
-                entries = list(map(int, entries.split(",")))
+                entries = parse_vector(line[21:-1])
 
                 rpt["value"] = entries
 
-                for i in range(5):
+                for i, entry in enumerate(entries):
                     ad = get_ad(task["task_id"], i)
                     print(task["task_id"], i, ad)
                     if ad is not None:
@@ -134,7 +145,7 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
                         cnt["task_index"] = i
                         cnt["task_size"] = task["task_size"]
                         cnt["campaign_id"] = ad["advertiserInfo"]["campaignId"]
-                        cnt["conversion_count"] = entries[i]
+                        cnt["conversion_count"] = entry
 
                         res["counts"].append(cnt)
             elif line.startswith("Number of reports:"):
@@ -152,6 +163,23 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
     res["reports"].append(rpt)
 
     return res
+
+
+def parse_vector(histogram_str):
+    count_strs = histogram_str.split(",")
+    return [
+        correct_wraparound(int(count_str))
+        for count_str in count_strs
+    ]
+
+
+def correct_wraparound(num):
+    cutoff = 2 ** (FIELD_SIZE - 1)
+
+    if num > cutoff:
+        return num - FIELD_PRIME
+
+    return num
 
 
 def build_base_report(task_id, timestamp, metric_type, collection_time):
