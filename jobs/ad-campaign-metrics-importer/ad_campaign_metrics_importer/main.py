@@ -10,17 +10,21 @@ def main(project_id, submission_date):
     query = """
         SELECT
             submission_date,
+            campaign_id,
             flight_id,
-            surface,
-            country,
+            ad_id,
+            creative_id,
             product,
+            surface,
+            provider,
+            country,
+            rate_type,
             clicks,
             impressions
         FROM
             `moz-fx-data-shared-prod.ads.consolidated_ad_metrics_daily_pt`
         WHERE
             submission_date = @submission_date
-            AND flight_id IS NOT NULL
     """
 
     client = bigquery.Client(project=project_id)
