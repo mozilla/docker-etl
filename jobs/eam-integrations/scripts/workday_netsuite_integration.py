@@ -4,7 +4,7 @@ from workday_netsuite.api.workday import WorkDayRaaService
 from workday_netsuite.api.netsuite import NetSuiteRestlet
 from api.util import Util
 import json
-
+from workday_netsuite.api.netsuite import NetSuiteRestletException
 class NetSuite():
     def __init__(self) -> None:
         self.ns_restlet = NetSuiteRestlet()
@@ -29,7 +29,10 @@ class NetSuite():
             return "ACH"
         elif mcountry in ["United Kingdom"]:
             return "BACS"
-        
+        else:
+            return None
+     
+
     def map_currency(self, country):
         if country in ["Belgium",  "Finland", 
                         "France", "Germany", 
@@ -51,9 +54,12 @@ class NetSuite():
                         "Italy","United States"]:
             return "USD"
         else:
-            return "ERR"
+            return None
     
-    def map_class(self, product):
+    def map_class(self, product,cost_center):
+        if not product:
+            product = self.get_product(cost_center)
+
         if product == "Advertising": return 8
         elif product == "Emails": return 113
         elif product == "Emails Dedicated": return 114
@@ -102,14 +108,13 @@ class NetSuite():
         elif product == "VPN Relay Bundle Phone": return 125
         elif product == "VPN Relay Bundle VPN": return 123
         else:
-            self.logger.info(f"Class not found for {product}")
+            return None
 
-
-    def map_data(self, wd_workers):
+    def map_data(self, wd_workers, workers_dict, max_limit):
     
-        for wd_worker in wd_workers:
+        for i, wd_worker in enumerate(wd_workers):
             ns_country = self.map_country(wd_worker.Country)
-            
+            manager = workers_dict[wd_worker.Manager_ID]
             employee_data = {
                     "employees": [
                         {
@@ -123,7 +128,7 @@ class NetSuite():
                             "Employee Type": wd_worker.Employee_Type,
                             "Employee Status - Active?": 'Actively Employed' if wd_worker.Employee_Status=='1'else 'Terminated'  ,
                             "Email - Primary Work": wd_worker.primaryWorkEmail,
-                            "Manager": wd_worker.Manager,
+                            "Manager": f"{wd_worker.Manager_ID} - {manager['First_Name']} {manager['Last_Name']}",
                             "Manager ID": wd_worker.Manager_ID,
                             "Manager E-mail": wd_worker.Manage_Email_Address,
                             "Cost Center - ID": wd_worker.Cost_Center_ID,
@@ -133,13 +138,17 @@ class NetSuite():
                             "Company": wd_worker.Company,
                             "DEFAULT CURRENCY FOR EXP. REPORT": self.map_currency(ns_country),
                             "Payment Method": self.map_payment_method(ns_country),
-                            "Class": self.map_class(wd_worker.Product)
+                            "Class": self.map_class(wd_worker.Product, wd_worker.Cost_Center)
                         }
                     ]
                 }
             try:
                 self.ns_restlet.update(employee_data) 
-            except:
+            except NetSuiteRestletException as e:
+                self.logger.info(f"error {e.args[0].data}")
+
+            except Exception as e:
+                self.logger.info(f"error {e}")
                 continue
            
 
@@ -155,18 +164,23 @@ class WorkdayToNetsuiteIntegration():
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def run(self):
+    def run(self, max_limit):
+        #tests
+        Util.verify_email_identity()
+        Util.send_email(source="mcastelluccio@data.mozaws.net", 
+                        destination=["jmoscon@mozilla.com"], 
+                        subject="Test", body="email test")
         """Run all the steps of the integration"""
         # self.netsuite.ns_restlet.get_employees()
         # Step 1: Get list of workers from workday
         self.logger.info("Step 1: Gathering data to run the transformations. ")
-        wd_workers = self.workday_service.get_listing_of_workers()
+        wd_workers, workers_dict = self.workday_service.get_listing_of_workers()
         self.logger.info(f"{len(wd_workers)} workers returned from Workday.")
 
         # Step 2: Perform data transformations
         self.logger.info("Step 2: Transforming Workday data.")
 
-        self.netsuite.map_data(wd_workers)
+        #self.netsuite.map_data(wd_workers, workers_dict, max_limit)
 
 
 if __name__ == "__main__":
@@ -183,10 +197,10 @@ if __name__ == "__main__":
    
     parser.add_argument(
         "-f",
-        "--force", 
+        "--max_limit", 
         action="store",
         type=int,
-        help="If true, the script will run and delete and archive channels, otherwise it will only report the channels",
+        help="limit the number of changes",
         default=40
     )
     args = None
@@ -197,11 +211,11 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     logger.info("Starting...")
-    logger.info(f"force={args.force}")
+    logger.info(f"max_limit={args.max_limit}")
     
     WD = WorkdayToNetsuiteIntegration()
 
     logger = logging.getLogger("main")
-    logger.info('Starting Workday to Netsuite Integration ...')
+    logger.info('Starting Workday to Netsuite Integratiogitn ...')
 
-    WD.run()
+    WD.run(args.max_limit)
