@@ -58,7 +58,7 @@ class Slack:
     def conversations_delete(self, channel_id):
         data = self._slackAPI.conversations_delete(channel_id=channel_id)
         if not data.data.get('ok'):
-            raise SlackAPIException(data)        
+            raise SlackAPIException(data)
         return data
 
     def is_ts_older_than(self, days, unix_timestamp):
@@ -66,7 +66,7 @@ class Slack:
         timestamp_date = datetime.datetime.fromtimestamp(float(unix_timestamp))
         current_date = datetime.datetime.now()
 
-        days_ago = current_date - datetime.timedelta(days=days)
+        days_ago = current_date - datetime.timedelta(seconds=days)
         return timestamp_date < days_ago
 
     def chat_post_message(self, channel_id, text):
@@ -87,7 +87,7 @@ class SlackIntegration:
         self._slack = Slack()
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def run(self, force):
+    def run(self, max_limit):
         
         # ==================================================================================
         # 1 - Getting all Slack channels (public and private).
@@ -122,7 +122,7 @@ class SlackIntegration:
         #                    Six months is our message retention period.
         # ==================================================================================
         report += "_*`Names of channels to be archived:`*_\r "
-        for channel_id in non_archived:
+        for channel_id in non_archived[:max_limit]:
             try:
 
                 #return the last limit messages
@@ -167,7 +167,7 @@ Otherwise it will be deleted in 1 month"""
         #     Business Rule: For archived channels: Select channels that have been archived 
         #     for at least one month and delete them.
         # ==================================================================================
-        for channel_id in archived:
+        for channel_id in archived[:max_limit]:
             try:
 
                 # the updated field of an archived channel contains the date of when the 
@@ -188,6 +188,7 @@ Otherwise it will be deleted in 1 month"""
         # 4 - Posting the report message to the integration channel
         # ==================================================================================
         try:
+            self._slack.join_channel(channel_id=integration_report)
             self._slack.chat_post_message(integration_report, report)
         except Exception as e:
             self.logger.info(e.args[0].data)
@@ -208,10 +209,10 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "-f",
-        "--force", 
+        "--max_limit", 
         action="store",
         type=int,
-        help="If true, the script will run and delete and archive channels, otherwise it will only report the channels",
+        help="limit the number of changes",
         default=40
     )
     args = None
@@ -222,8 +223,7 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     logger.info("Starting...")
-    logger.info(f"force={args.force}")
-
+  
     integration = SlackIntegration()
-    integration.run(args.force)
+    integration.run(args.max_limit)
 

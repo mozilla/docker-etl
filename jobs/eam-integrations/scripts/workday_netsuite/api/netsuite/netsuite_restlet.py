@@ -3,6 +3,9 @@ from requests_oauthlib import OAuth1
 from .secrets import config
 from api.util import APIAdaptor
 
+class NetSuiteRestletException(Exception):
+    pass
+
 
 class NetSuiteRestlet():
     def __init__(self) -> None:
@@ -33,5 +36,7 @@ class NetSuiteRestlet():
 
         params = {'script':2017,'deploy':1}
          
-        self.api_adapter.post(endpoint=endpoint, auth=self.auth, params=params,
+        ret =  self.api_adapter.post(endpoint=endpoint, auth=self.auth, params=params,
                               headers=headers, data=body_data)
+        if ret.data.get("type", "") == 'error.SuiteScriptError':
+            raise NetSuiteRestletException(ret)
