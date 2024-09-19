@@ -58,11 +58,12 @@ class WorkDayRaaService():
                               auth=(self.config['username'],
                                     self.config['password']),
                               timeout=self.config['timeout'])
-
+        worker_dict = {}
         wd_data = json.loads(result.text)
         worker_list = []
         for worker in wd_data["Report_Entry"]:
             worker['Cost_Center_ID'] = worker.pop('Cost_Center_-_ID')
             worker_list.append(Worker(**worker))
+            worker_dict[worker['Employee_ID']] = worker
 
-        return worker_list
+        return worker_list,worker_dict
