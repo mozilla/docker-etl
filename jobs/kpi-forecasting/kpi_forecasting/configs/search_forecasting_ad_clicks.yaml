@@ -1,4 +1,5 @@
 ---
+model_type: funnel
 metric_hub:
   app_name: "multi_product"
   slug: "search_forecasting_ad_clicks"
@@ -65,4 +66,3 @@ write_results:
   dataset: "search_derived"
   table: "search_funnel_forecasts_v1"
   components_table: "search_forecast_model_components_v1"
-  write_disposition: "WRITE_TRUNCATE"
