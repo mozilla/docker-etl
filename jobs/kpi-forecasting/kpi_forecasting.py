@@ -28,14 +28,17 @@ MODELS = {
 class KPIPipeline:
     def __init__(self, config_path):
         self.config_data = load_yaml(filepath=config_path)
-        if isinstance(self.config_data["forecast_model"]["parameters"], list):
+        model_type = self.config_data["model_type"]
+        if model_type == "funnel":
             self.model_type = "funnel"
             self.model_class = FunnelForecast
             self.segments = list(self.config_data["metric_hub"]["segments"].keys())
-        else:
+        elif model_type == "prophet":
             self.model_type = "prophet"
             self.model_class = ProphetForecast
             self.segments = None
+        else:
+            raise ValueError(f"Model type {model_type} is not supported")
 
     def add_metadata(self, summary_df):
         # add Metric Hub metadata columns
