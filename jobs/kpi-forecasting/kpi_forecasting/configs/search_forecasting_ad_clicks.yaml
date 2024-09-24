@@ -61,8 +61,8 @@ summarize:
   percentiles: [10, 50, 90]
 
 write_results:
-  project: "moz-fx-data-bq-data-science"
-  dataset: "jsnyder"
-  table: "search_funnel_forecasts_v1_branch"
-  components_table: "search_forecast_model_components_v1_branch"
+  project: "moz-fx-data-shared-prod"
+  dataset: "search_derived"
+  table: "search_funnel_forecasts_v1"
+  components_table: "search_forecast_model_components_v1"
   write_disposition: "WRITE_TRUNCATE"
