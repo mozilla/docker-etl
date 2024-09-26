@@ -260,5 +260,5 @@ class BaseEnsembleForecast:
                 predict_df[column] = value
             predict_df["forecast_parameters"] = json.dumps(model._get_parameters())
             segment_model["forecast"] = predict_df
-        self.forecast_list = [el["forecast"] for el in self.segment_models]
+        self.forecast_list = [x["forecast"] for x in self.segment_models]
         return pd.concat(self.forecast_list)
