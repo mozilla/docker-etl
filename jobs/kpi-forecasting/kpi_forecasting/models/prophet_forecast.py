@@ -734,9 +734,6 @@ def write_results(
             should the table be overwritten ("WRITE_TRUNCATE") or appended to
             ("WRITE_APPEND")?
     """
-    # get legacy tables
-    # TODO: remove this once the forecasting data model is updated:
-    # https://mozilla-hub.atlassian.net/browse/DS-2676
 
     print(f"Writing results to `{project}.{dataset}.{table}`.", flush=True)
     client = bigquery.Client(project=project)
