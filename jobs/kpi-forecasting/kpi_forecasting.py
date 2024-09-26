@@ -28,17 +28,15 @@ MODELS = {
 class KPIPipeline:
     def __init__(self, config_path):
         self.config_data = load_yaml(filepath=config_path)
-        model_type = self.config_data["model_type"]
-        if model_type == "funnel":
-            self.model_type = "funnel"
+        self.model_type = self.config_data["model_type"]
+        if self.model_type == "funnel":
             self.model_class = FunnelForecast
             self.segments = list(self.config_data["metric_hub"]["segments"].keys())
-        elif model_type == "prophet":
-            self.model_type = "prophet"
+        elif self.model_type == "prophet":
             self.model_class = ProphetForecast
             self.segments = None
         else:
-            raise ValueError(f"Model type {model_type} is not supported")
+            raise ValueError(f"Model type {self.model_type} is not supported")
 
     def add_metadata(self, summary_df):
         # add Metric Hub metadata columns
@@ -57,7 +55,7 @@ class KPIPipeline:
 
         return summary_df
 
-    def get_raw_data(self):
+    def get_historical_data(self):
         metric_hub = MetricHub(**self.config_data["metric_hub"])
         self.collected_at = datetime.now(timezone.utc).replace(tzinfo=None)
         observed_df = metric_hub.fetch()
@@ -66,16 +64,14 @@ class KPIPipeline:
         return observed_df
 
     def get_predict_dates(self, observed_df):
-        start_date = pd.to_datetime(
+        self.start_date = pd.to_datetime(
             self.config_data["forecast_model"]["forecast_start"]
             or self._default_start_date(observed_df)
         )
-        self.start_date = start_date
-        end_date = pd.to_datetime(
+        self.end_date = pd.to_datetime(
             self.config_data["forecast_model"]["forecast_end"]
             or self._default_end_date()
         )
-        self.end_date = end_date
         return pd.DataFrame(
             {"submission_date": pd.date_range(start_date, end_date).date}
         )
@@ -86,9 +82,9 @@ class KPIPipeline:
 
         if self.model_type == "funnel":
             model_parameters = {
-                "parameters": self.config_data["forecast_model"]["parameters"]
+                "parameters": self.config_data["forecast_model"]["parameters"],
+                "segments": self.segments,
             }
-            model_parameters["segments"] = self.segments
         elif self.model_type == "prophet":
             model_parameters = self.config_data["forecast_model"]["parameters"]
         model = self.model_class(**model_parameters)
@@ -96,8 +92,8 @@ class KPIPipeline:
         return model.fit(observed_df)
 
     def predict_and_summarize(self, model, predict_dates, observed_df):
-        raw_predictions = model.predict(predict_dates)
         self.predicted_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        raw_predictions = model.predict(predict_dates)
         if self.model_type == "funnel":
             # get filtered observed data
             observed_df_filtered = model.get_filtered_observed_data(observed_df)
@@ -169,7 +165,7 @@ def main() -> None:
 
     pipeline = KPIPipeline(config_path)
 
-    observed_df = pipeline.get_raw_data()
+    observed_df = pipeline.get_historical_data()
     fit_model = pipeline.fit(observed_df=observed_df)
     predict_dates = pipeline.get_predict_dates(observed_df)
     summarized = pipeline.predict_and_summarize(
