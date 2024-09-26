@@ -56,11 +56,9 @@ class KPIPipeline:
         return summary_df
 
     def get_historical_data(self):
-        metric_hub = MetricHub(**self.config_data["metric_hub"])
+        self.metric_hub = MetricHub(**self.config_data["metric_hub"])
         self.collected_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        observed_df = metric_hub.fetch()
-        # set attribute to generate metadata later
-        self.metric_hub = metric_hub
+        observed_df = self.metric_hub.fetch()
         return observed_df
 
     def get_predict_dates(self, observed_df):
