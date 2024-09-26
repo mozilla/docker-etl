@@ -10,3 +10,6 @@ build-job-dap-collector-ppa-prod:
     - run:
         name: Build Docker image
         command: docker build -t app:build jobs/dap-collector-ppa-prod/
+    - run:
+        name: Test Code
+        command: docker run app:build python3 -m pytest
