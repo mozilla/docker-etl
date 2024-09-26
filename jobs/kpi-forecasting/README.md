@@ -173,14 +173,12 @@ write_results:
 - `./kpi_forecasting/models` contains the forecasting models.
 
 This repo was designed to make it simple to add new forecasting models in the future. In general, a model needs to inherit
-the `models.base_forecast.BaseForecast` class and to implement the `_fit` and `_predict` methods. Output from the `_fit` method will automatically be validated by `BaseForecast._validate_forecast_df`.
-
-One caveat is that, in order for aggregations over time periods to work (e.g. monthly forecasts), the `_predict` method must generate a number
-of simulated timeseries. This enables the measurement of variation across a range of possible outcomes. This number is set by `BaseForecast.uncertainty_samples`.
+the `models.base_forecast.BaseForecast` class and to implement the `fit` and `predict` methods.
 
 When testing locally, be sure to modify any config files to use non-production `project` and `dataset` values that you have write access to; otherwise the `write_output` step will fail.
 
 ## Interface
 The forecast objects in this repo implement an interface similar to `sklearn` or `darts`.  Every forecast method should have a `fit` method for fitting the forecast and `predict` method for making predictions.  The signature of these functions can be seen in `models.base_forecast.BaseForecast`.
 
+The `BaseEnsembleForecast` makes it possible to fit multiple models over the data, where different subsets of the data have different models applied to them.  These subsets are referred to as "segments" in the code.  Only one kind of model is supported, and different instances of this model are fit over the different segments.  The type of model is set by the `model_class` argument, and should be a class that implements the same interface as `BaseForecast`. The `fit` and `predict` methods in `BaseEnsembleForecast` determine which segment each row of incoming data belongs to and uses the `fit` and `predict` methods of the model class on the segment. This can be seen in the `FunnelForecast` object, which uses the `BaseEnsembleForecast` with `ProphetAutotunerForecast` as the model_class.
 
