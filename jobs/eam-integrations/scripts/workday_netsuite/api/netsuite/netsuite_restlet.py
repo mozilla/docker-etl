@@ -25,18 +25,22 @@ class NetSuiteRestlet():
 
     def get_employees(self):
         headers = {"Content-Type": "application/json"}
-        endpoint = f"/services/rest/record/v1/employee"
-        self.api_adapter.get(endpoint=endpoint, auth=self.auth,
+        endpoint = f"/app/site/hosting/restlet.nl"
+        params = {'script':1823,'deploy':1}
+        ret =  self.api_adapter.get(endpoint=endpoint, auth=self.auth, params=params,
                               headers=headers)
+    
+        return ret
 
     def update(self, body_data):
         headers = {"Content-Type": "application/json"}
- 
         endpoint = f"/app/site/hosting/restlet.nl"
-
-        params = {'script':2017,'deploy':1}
-         
+        params = {'script':1823,'deploy':1}
         ret =  self.api_adapter.post(endpoint=endpoint, auth=self.auth, params=params,
                               headers=headers, data=body_data)
+        if len(ret.data)==0:
+            return #inactive
+        if 'Successfully' in ret.data:
+            return #inactive + active
         if ret.data.get("type", "") == 'error.SuiteScriptError':
             raise NetSuiteRestletException(ret)
