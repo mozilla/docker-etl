@@ -49,7 +49,36 @@ class WorkDayRaaService():
     def __init__(self):
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+    def build_comparison_string(self, wd_worker):
+            return (
+                wd_worker.get('Employee_ID','')
+                + "|" 
+                + wd_worker.get('Employee_Type','')
+                + "|" 
+                + wd_worker.get('Original_Hire_Date','')
+                + "|"
+                + wd_worker.get('Company','')
+                + "|"
+                + wd_worker.get('Manager_ID','')
+                + "|"
+                + wd_worker.get('Cost_Center','')
+                + "|"
+                + wd_worker.get('Cost_Center_ID','')              
+                + "|"
+                + wd_worker.get('Product','')    
+                + "|"
+                + wd_worker.get('primaryWorkEmail','')
+                + "|"
+                + wd_worker.get('First_Name','')   
+                + "|"
+                + wd_worker.get('Last_Name','') 
+                + "|"
+                + wd_worker.get('Country','')
+                + "|"
+                + wd_worker.get('termination_date','') 
+ 
+            )
+
     def get_listing_of_workers(self) -> list[Worker]:
 
         """Get  listing of workers report data from WorkDay"""
@@ -61,9 +90,11 @@ class WorkDayRaaService():
         worker_dict = {}
         wd_data = json.loads(result.text)
         worker_list = []
+        wd_comp ={}
         for worker in wd_data["Report_Entry"]:
             worker['Cost_Center_ID'] = worker.pop('Cost_Center_-_ID')
             worker_list.append(Worker(**worker))
             worker_dict[worker['Employee_ID']] = worker
-
-        return worker_list,worker_dict
+        
+            wd_comp[worker['Employee_ID']] = self.build_comparison_string(worker)
+        return worker_list,worker_dict, wd_comp
