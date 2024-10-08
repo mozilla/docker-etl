@@ -9,11 +9,11 @@ from api.util import Util
 class SlackAPIException(Exception):
     pass
 
-
 class Slack:
-    def __init__(self):
+    def __init__(self, donot_delete_lst):
         self._slackAPI = SlackAPI()
         self.integration_report_channel = 'integrations-report'
+        self.donot_delete_lst = ['content-admin-test']
 
     def get_conversations_list(self, days):
 
@@ -28,14 +28,16 @@ class Slack:
                               ]
 
         archived = [x for x in channels_dict
-                    if channels_dict[x].get('is_archived')]
+                    if channels_dict[x].get('is_archived')
+                    and channels_dict[x].get('name') not in self.donot_delete_lst]
 
         # excluding channels created within the past X days (from input)
         non_archived = [x for x in channels_dict
                         if channels_dict[x].get('is_archived') is False
                         and channels_dict[x].get('name') not in ['general',
                                                                  self.integration_report_channel]
-                        and float(channels_dict[x].get('created')) < days_ago.timestamp()]
+                        and float(channels_dict[x].get('created')) < days_ago.timestamp()
+                        and channels_dict[x].get('name') not in self.donot_delete_lst]
  
 
         return non_archived, archived, integration_report, channels_dict
@@ -84,19 +86,21 @@ class Slack:
 
 class SlackIntegration:
     def __init__(self):
-        self._slack = Slack()
+        self._slack = Slack(['content-admin-test'])
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def run(self, max_limit):
-        
+        num_deleted = 0
+        num_archived = 0
+        num_warnings = 0
         # ==================================================================================
         # 1 - Getting all Slack channels (public and private).
         # ==================================================================================
-
-        #seconds = 60*60*24*180
-        seconds = 1
+        self.logger.info("1 - Getting all Slack channels (public only).")
+        lst_msg_secs = 60*60*24*166 # 166 days
+        lst_msg_secs = 1
         try:
-            non_archived, archived, integration_report, channels_dict = self._slack.get_conversations_list(seconds)
+            non_archived, archived, integration_report, channels_dict = self._slack.get_conversations_list(lst_msg_secs)
 
             if not integration_report:
                 self.logger.info(f"The {self._slack.integration_report_channel} channel was not found.")
@@ -110,63 +114,86 @@ class SlackIntegration:
             
             sys.exit(1)
 
-        report = "_*SLACK CHANNELS INTEGRATION REPORT:*_\r"
-        report += f"_*`Number of Channels:`*_ `{len(channels_dict.keys())}`\r"
-        report += f"_*`Number of archived channels:`*_ `{len(archived)}`\r"
-        report += f"_*`Number of active channels:`*_ `{len(non_archived)}`\r"
-
         # ==================================================================================
         # 2 - Selecting non-archived channels
         #     Business Rule: For non-archived channels: Select channels where the last
         #                    message was sent six or more months ago, and archive them.
         #                    Six months is our message retention period.
         # ==================================================================================
-        report += "_*`Names of channels to be archived:`*_\r "
+        self.logger.info("2 - Selecting non-archived channels")
+        msg_archived = """Hello, in 14 days this channel will be automatically archived by the Slack admins due to inactivity. Then it will be deleted in 30 days. If you wish to continue using it, please post a message. If you wish to unarchive it after the 14th day please ask in #servicedesk."""
+
         for channel_id in non_archived[:max_limit]:
             try:
-
                 #return the last limit messages
                 data = self._slack.get_conversations_history(channel_id=channel_id, limit=10)
             except Exception as e:
                 self.logger.info(e.args[0].data)
                 continue
             #filter only msgs sent by users
-            msgs = [x for x in data.data.get('messages')if 'subtype' not in x.keys()] 
+            msgs = [x for x in data.data.get('messages')
+                    if 'subtype' not in x.keys()
+                    or 'channel_unarchive' in x.values()] # unarchive msgs considered as a normal msg
+            
+            # no msgs
             if len(msgs) == 0:
-                if channels_dict.get(channel_id).get('num_members')>0:
-                    continue
-                
                 created = channels_dict.get(channel_id).get('created')
-                if (self._slack.is_ts_older_than(days=seconds, unix_timestamp=created)):
-                #
-                    self.logger.info(f'channel {channels_dict[channel_id].get("name")} set to be deleted')
-                    report += f"* `{channels_dict[channel_id].get('name')}`\r"
-                    r = self._slack.conversations_delete(channel_id=channel_id)
-                    continue
+                
+                # Channel has no members -> delete channel
+                if (channels_dict.get(channel_id).get('num_members')==0):
+                    # Channel older than N then Delete channel
+                    if (self._slack.is_ts_older_than(days=lst_msg_secs, unix_timestamp=created)):
+                        r = self._slack.conversations_delete(channel_id=channel_id)
+                        num_deleted += 1
+                        self.logger.info(f'Channel {channels_dict[channel_id].get("name")} was deleted [no msgs and no members]')
+
+                # Channel has members -> post warning msg
                 else:
-                    #channel has no messages, skip it
-                    continue
-            #ts = data.data.get('messages')[0].get('ts')
-            ts = msgs[0].get('ts')
+                    # Channel older than N then Archive it
+                    if (self._slack.is_ts_older_than(days=lst_msg_secs, unix_timestamp=created)):
+                        self._slack.join_channel(channel_id=channel_id)
+                        self._slack.chat_post_message(channel_id=channel_id,text=msg_archived)
+                        num_warnings +=1
+                        #r = self._slack.conversations_archive(channel_id)
+                        #num_archived +=1
+                        #self.logger.info(f'Channel {channels_dict[channel_id].get("name")} was archived')
 
-            if (self._slack.is_ts_older_than(days=seconds, unix_timestamp=ts)):
-                self.logger.info(f'The channel {channels_dict[channel_id].get("name")} set to be archived')
-                report += f"* `{channels_dict[channel_id].get('name')}`\r"
-                msg = """This channel was automatically archived by the Slack admins because of
-180 days of inactivity. If you wish to restore it please ask in #servicedesk. 
-Otherwise it will be deleted in 1 month"""
-                self._slack.join_channel(channel_id=channel_id)
-                self._slack.chat_post_message(channel_id=channel_id,text=msg)
-
-                r = self._slack.conversations_archive(channel_id)
-
-        report += "Archived channels to be deleted: "
+            else:
+                # Channel has msgs
+                # Archive channel if last msg is from the Mozilla Service Account and is the warning msg
+                # 
+                ts = msgs[0].get('ts')
+                # TODO put user in a data structure
+                if (msgs[0].get('user')=='U07MZF1V34Y') and msgs[0].get('text')==msg_archived:
+                    # Archive channel if ts >= 14 days
+                    ts_14_days = 60*60*24*14
+                    ts_14_days = 1
+                    if (self._slack.is_ts_older_than(days=ts_14_days, unix_timestamp=ts)):
+                        r = self._slack.conversations_archive(channel_id)
+                        self.logger.info(f'The channel {channels_dict[channel_id].get("name")} was archived') 
+                        num_archived +=1
+                        continue
+                
+                # Channel has no members -> delete channel
+                if (channels_dict.get(channel_id).get('num_members')==0):
+                    r = self._slack.conversations_delete(channel_id=channel_id)
+                    num_deleted += 1
+                    self.logger.info(f'Channel {channels_dict[channel_id].get("name")} was deleted [no msgs and no members]')
+                else:
+                    # Channel has members, send warning message.
+                    if (self._slack.is_ts_older_than(days=lst_msg_secs, unix_timestamp=ts)):
+                        
+                        self._slack.join_channel(channel_id=channel_id)
+                        self._slack.chat_post_message(channel_id=channel_id,text=msg_archived) 
+                        num_warnings +=1
         
         # ==================================================================================
         # 3 - Selecting archived channels to be deleted
         #     Business Rule: For archived channels: Select channels that have been archived 
         #     for at least one month and delete them.
         # ==================================================================================
+        archived_secs = 60*60*24*30
+        archived_secs = 1
         for channel_id in archived[:max_limit]:
             try:
 
@@ -178,16 +205,20 @@ Otherwise it will be deleted in 1 month"""
                 self.logger.info(e.args[0].data)
                 continue
 
-
-            if (self._slack.is_ts_older_than(days=seconds, unix_timestamp=ts/1000)):
-                self.logger.info(f'channel {channels_dict[channel_id].get("name")} set to be deleted')
-                report += f"* `{channels_dict[channel_id].get('name')}`\r"
+            if (self._slack.is_ts_older_than(days=archived_secs, unix_timestamp=ts/1000)):
                 r = self._slack.conversations_delete(channel_id=channel_id)
+                num_deleted +=1
+                self.logger.info(f'Channel {channels_dict[channel_id].get("name")} was deleted')
 
         # ==================================================================================
         # 4 - Posting the report message to the integration channel
         # ==================================================================================
         try:
+            report = "_*SLACK CHANNELS INTEGRATION REPORT:*_\r"
+            report += f"_*`Number of Public and Archived Channels (before integration):`*_ `{len(channels_dict)}`\r"
+            report += f"_*`Warning messages posted by the integration:`*_ `{num_warnings}`\r"
+            report += f"_*`Channels archived by the integration:`*_ `{num_archived}`\r"
+            report += f"_*`Channels deleted by the integration:`*_ `{num_deleted}`\r"
             self._slack.join_channel(channel_id=integration_report)
             self._slack.chat_post_message(integration_report, report)
         except Exception as e:
