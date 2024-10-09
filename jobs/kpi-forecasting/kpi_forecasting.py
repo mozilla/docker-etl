@@ -1,13 +1,19 @@
-<<<<<<< HEAD
 import pandas as pd
 from datetime import datetime, timezone, timedelta
 import json
 
-=======
->>>>>>> 73e76df (Revert "Implement SKLearn interface (#272)" (#284))
 from kpi_forecasting.inputs import CLI, load_yaml
-from kpi_forecasting.models.prophet_forecast import ProphetForecast
-from kpi_forecasting.models.funnel_forecast import FunnelForecast
+from kpi_forecasting.models.prophet_forecast import (
+    ProphetForecast,
+    summarize as prophet_summarize,
+    write_results as prophet_write_results,
+    summarize_legacy as prophet_summarize_legacy,
+)
+from kpi_forecasting.models.funnel_forecast import (
+    FunnelForecast,
+    summarize as funnel_summarize,
+    write_results as funnel_write_results,
+)
 from kpi_forecasting.metric_hub import MetricHub
 
 
@@ -18,7 +24,6 @@ MODELS = {
 }
 
 
-<<<<<<< HEAD
 class KPIPipeline:
     def __init__(self, config_path):
         self.config_data = load_yaml(filepath=config_path)
@@ -155,18 +160,9 @@ def main() -> None:
     # Load the config
     config_path = CLI().args.config
     will_write = CLI().args.write
-=======
-def main() -> None:
-    # Load the config
-    config = load_yaml(filepath=CLI().args.config)
-    model_type = config["forecast_model"]["model_type"]
->>>>>>> 73e76df (Revert "Implement SKLearn interface (#272)" (#284))
 
-    if model_type in MODELS:
-        metric_hub = MetricHub(**config["metric_hub"])
-        model = MODELS[model_type](metric_hub=metric_hub, **config["forecast_model"])
+    pipeline = KPIPipeline(config_path)
 
-<<<<<<< HEAD
     observed_df = pipeline.get_historical_data()
     fit_model = pipeline.fit(observed_df=observed_df)
     predict_dates = pipeline.get_predict_dates(observed_df)
@@ -175,15 +171,6 @@ def main() -> None:
     )
     if will_write:
         pipeline.write_results(fit_model, summarized, predict_dates.copy())
-=======
-        model.fit()
-        model.predict()
-        model.summarize(**config["summarize"])
-        model.write_results(**config["write_results"])
-
-    else:
-        raise ValueError(f"Don't know how to forecast using {model_type}.")
->>>>>>> 73e76df (Revert "Implement SKLearn interface (#272)" (#284))
 
 
 if __name__ == "__main__":

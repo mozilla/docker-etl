@@ -1,88 +1,30 @@
 import json
-import numpy as np
 import pandas as pd
 import abc
-
-
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from kpi_forecasting.metric_hub import MetricHub
-from typing import Dict, List
+from typing import List
+
+import logging
+
+logger = logging.getLogger("cmdstanpy")
+logger.addHandler(logging.NullHandler())
+logger.propagate = False
+logger.setLevel(logging.CRITICAL)
 
 
 @dataclass
 class BaseForecast(abc.ABC):
     """
-    A base class for fitting, forecasting, and summarizing forecasts. This class
-    should not be invoked directly; it should be inherited by a child class. The
-    child class needs to implement `_fit` and `_forecast` methods in order to work.
-
-    Args:
-        model_type (str): The name of the forecasting model that's being used.
-        parameters (Dict): Parameters that should be passed to the forecasting model.
-        use_all_us_holidays (bool): Whether or not the forecasting model should use holidays.
-            The base model does not apply holiday logic; that logic needs to be built
-            in the child class.
-        start_date (str): A 'YYYY-MM-DD' formatted-string that specifies the first
-            date that should be forecsted.
-        end_date (str): A 'YYYY-MM-DD' formatted-string that specifies the last
-            date the metric should be queried.
-        metric_hub (MetricHub): A MetricHub object that provides details about the
-            metric to be forecasted.
-        predict_historical_dates (bool):  If True, forecast starts at the first
-            date in the observed data.  If False, it uses the value of start_date it set
-            and the first day after the observed data ends otherwise
+    Abstract Base class for forecast objects
     """
 
-    model_type: str
-    parameters: Dict
-    use_all_us_holidays: bool
-    start_date: str
-    end_date: str
-    metric_hub: MetricHub
-    predict_historical_dates: bool = False
-
-    def _get_observed_data(self):
-        if self.metric_hub:
-            # the columns in this dataframe
-            # are "value" for the metric, submission_date
-            # and any segments where the column name
-            # is the name of the segment
-            self.observed_df = self.metric_hub.fetch()
-
-    def __post_init__(self) -> None:
-        # fetch observed observed data
-        self.collected_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        self._get_observed_data()
-
-        # raise an error is predict_historical_dates is True and start_date is set
-        if self.start_date and self.predict_historical_dates:
-            raise ValueError(
-                "forecast start_date set while predict_historical_dates is True"
-            )
-        # use default start/end dates if the user doesn't specify them
-        self.start_date = pd.to_datetime(self.start_date or self._default_start_date)
-        self.end_date = pd.to_datetime(self.end_date or self._default_end_date)
-        self.dates_to_predict = pd.DataFrame(
-            {"submission_date": pd.date_range(self.start_date, self.end_date).date}
-        )
-
-        # initialize unset attributes
-        self.model = None
-        self.forecast_df = None
-        self.summary_df = None
-
-        # metadata
-        self.metadata_params = json.dumps(
-            {
-                "model_type": self.model_type.lower(),
-                "model_params": self.parameters,
-                "use_all_us_holidays": self.use_all_us_holidays,
-            }
-        )
+    @abc.abstractmethod
+    def _set_seed(self) -> None:
+        """Set random seed to ensure that fits and predictions are reproducible."""
+        return NotImplementedError
 
     @abc.abstractmethod
-    def _fit(self, observed_df: pd.DataFrame) -> None:
+    def fit(self, observed_df: pd.DataFrame) -> object:
         """Fit a forecasting model using `observed_df.` This will typically
         be the data that was generated using
         Metric Hub in `__post_init__`.
@@ -90,11 +32,13 @@ class BaseForecast(abc.ABC):
 
         Args:
             observed_df (pd.DataFrame): observed data used to fit the model
+
+        Returns: self
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def _predict(self, dates_to_predict: pd.DataFrame) -> pd.DataFrame:
+    def predict(self, dates_to_predict: pd.DataFrame) -> pd.DataFrame:
         """Forecast using `self.model` on dates in `dates_to_predict`.
         This method should return a dataframe that will
         be validated by `_validate_forecast_df`.
@@ -115,116 +59,206 @@ class BaseForecast(abc.ABC):
             forecast_df (pd.DataFrame): dataframe produced by `_predict`"""
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def _summarize(
-        self,
-        forecast_df: pd.DataFrame,
-        observed_df: pd.DataFrame,
-        period: str,
-        numpy_aggregations: List[str],
-        percentiles: List[int],
-    ) -> pd.DataFrame:
-        """Calculate summary metrics for `forecast_df` over a given period, and
-        add metadata.
 
-        Args:
-            forecast_df (pd.DataFrame): forecast dataframe created by `predict`
-            observed_df (pd.DataFrame): observed data used to generate prediction
-            period (str): aggregation period up to which metrics are aggregated
-            numpy_aggregations (List[str]): List of numpy aggregation names
-            percentiles (List[int]): List of percentiles to aggregate up to
+@dataclass
+class BaseEnsembleForecast:
+    """
+    A base class for forecasts that partition the data using the segments parameter
+    and fit a different model to each segment.  The type of model used is the same for
+    all segments and is set with the model_class attribute
 
-        Returns:
-            pd.DataFrame: dataframe containing metrics listed in numpy_aggregations
-                and percentiles
-        """
-        raise NotImplementedError
+    Args:
+        parameters (Dict): Parameters that should be passed to the forecasting model.
+        model_class: Class to use to construct an ensemble
+        segments: segments from the metric hub data pull
+    """
 
-    @property
-    def _default_start_date(self) -> str:
-        """The first day after the last date in the observed dataset."""
-        if self.predict_historical_dates:
-            return self.observed_df["submission_date"].min()
-        else:
-            return self.observed_df["submission_date"].max() + timedelta(days=1)
+    parameters: List
+    model_class: object = BaseForecast
+    segments: dict = None
 
-    @property
-    def _default_end_date(self) -> str:
-        """78 weeks (18 months) ahead of the current UTC date."""
-        return (
-            datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(weeks=78)
-        ).date()
-
-    def _set_seed(self) -> None:
-        """Set random seed to ensure that fits and predictions are reproducible."""
-        np.random.seed(42)
-
-    def fit(self) -> None:
-        """Fit a model using historic metric data provided by `metric_hub`."""
-        print(f"Fitting {self.model_type} model.", flush=True)
-        self._set_seed()
-        self.trained_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        self._fit(self.observed_df)
-
-    def predict(self) -> None:
-        """Generate a forecast from `start_date` to `end_date`.
-        Result is set to `self.forecast_df`"""
-        print(f"Forecasting from {self.start_date} to {self.end_date}.", flush=True)
-        self._set_seed()
-        self.predicted_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        self.forecast_df = self._predict(self.dates_to_predict)
-        self._validate_forecast_df(self.forecast_df)
-
-    def summarize(
-        self,
-        periods: List[str] = ["day", "month"],
-        numpy_aggregations: List[str] = ["mean"],
-        percentiles: List[int] = [10, 50, 90],
-    ) -> pd.DataFrame:
-        """
-        Calculate summary metrics for `forecast_df` and add metadata.
-        The dataframe returned here will be reported in Big Query when
-        `write_results` is called.
-
-        Args:
-            periods (List[str]): A list of the time periods that the data should be aggregated and
-                summarized by. For example ["day", "month"]
-            numpy_aggregations (List[str]): A list of numpy methods (represented as strings) that can
-                be applied to summarize numeric values in a numpy dataframe. For example, ["mean"].
-            percentiles (List[int]): A list of integers representing the percentiles that should be reported
-                in the summary. For example [50] would calculate the 50th percentile (i.e. the median).
-
-        Returns:
-            pd.DataFrame: metric dataframe for all metrics and aggregations
-        """
-        summary_df = pd.concat(
-            [
-                self._summarize(
-                    self.forecast_df,
-                    self.observed_df,
-                    i,
-                    numpy_aggregations,
-                    percentiles,
-                )
-                for i in periods
-            ]
+    def __post_init__(self) -> None:
+        # metadata
+        self.model_type = self.model_class.__class__.__name__.lower().replace(
+            "Forecast", ""
+        )
+        self.metadata_params = json.dumps(
+            {
+                "model_type": self.model_type,
+                "model_params": self.parameters,
+            }
         )
 
-        # add Metric Hub metadata columns
-        summary_df["metric_alias"] = self.metric_hub.alias.lower()
-        summary_df["metric_hub_app_name"] = self.metric_hub.app_name.lower()
-        summary_df["metric_hub_slug"] = self.metric_hub.slug.lower()
-        summary_df["metric_start_date"] = pd.to_datetime(self.metric_hub.min_date)
-        summary_df["metric_end_date"] = pd.to_datetime(self.metric_hub.max_date)
-        summary_df["metric_collected_at"] = self.collected_at
+    def _set_segment_models(self, observed_df: pd.DataFrame) -> None:
+        """Creates an element in the segment_models attribute for each segment specified in the
+            metric_hub.segments section of the config.  It is populated from the list of
+            parameters in the forecast_model.parameters section of the configuration file.
+            The segements section of each element of the list specifies which values within which
+            segments the parameters are associated with.
 
-        # add forecast model metadata columns
-        summary_df["forecast_start_date"] = self.start_date
-        summary_df["forecast_end_date"] = self.end_date
-        summary_df["forecast_trained_at"] = self.trained_at
-        summary_df["forecast_predicted_at"] = self.predicted_at
-        summary_df["forecast_parameters"] = self.metadata_params
+        Args:
+            observed_df (pd.DataFrame): dataframe containing observed data used to model
+                must contain columns specified in the keys of the segments section of the config
+        """
 
-        self.summary_df = summary_df
+        # Construct a DataFrame containing all combination of segment x
+        ## in the observed_df
+        combination_df = observed_df[self.segments].drop_duplicates()
 
-        return self.summary_df
+        # Construct dictionaries from those combinations
+        # this will be used to check that the config actually partitions the data
+        segment_combinations = combination_df.to_dict("records")
+
+        # get subset of segment that is used in partitioning
+        split_dims = None
+        for partition in self.parameters:
+            partition_dim = set(partition["segment"].keys())
+            if split_dims and partition_dim != split_dims:
+                raise ValueError(
+                    "Segment keys are not the same across different elements of parameters in the config file"
+                )
+            elif split_dims is None:
+                split_dims = partition_dim
+            else:
+                # this is case where split_dim is set and matches paritition_dim
+                continue
+        if not split_dims <= set(combination_df.keys()):
+            missing_dims = split_dims - set(combination_df.keys())
+            missing_dims_str = ",".join(missing_dims)
+            raise ValueError(
+                f"Segment keys missing from metric hub segments: {missing_dims_str}"
+            )
+
+        # For each segment combinination, get the model parameters from the config
+        ## file. Parse the holidays and regressors specified in the config file.
+        segment_models = []
+        for segment in segment_combinations:
+            # find the correct configuration
+            for partition in self.parameters:
+                partition_segment = partition["segment"]
+                selected_partition = None
+                # get subset of segment that is used to partition
+                subset_segment = {
+                    key: val for key, val in segment.items() if key in split_dims
+                }
+                if partition_segment == subset_segment:
+                    selected_partition = partition.copy()
+                    break
+            if selected_partition is None:
+                raise ValueError("Partition not Found")
+            selected_partition["segment"] = segment
+
+            if "start_date" in selected_partition:
+                start_date = pd.to_datetime(selected_partition["start_date"]).date()
+            else:
+                start_date = None
+
+            # Create a FunnelSegmentModelSettings object for each segment combination
+            segment_models.append(
+                {
+                    "model": self.model_class(**selected_partition["parameters"]),
+                    "segment": segment,
+                    "start_date": start_date,
+                }
+            )
+        self.segment_models = segment_models
+
+    def filter_data_to_segment(
+        self, df: pd.DataFrame, segment: dict, start_date: str
+    ) -> pd.DataFrame:
+        """function to filter data to the segment set in segment
+        and in time to only dates on or after start_date
+
+        Args:
+            df (pd.DataFrame): dataframe to filter
+            segment (dict): dictionary where keys are columns and values
+                are the value that column takes for that segment
+            start_date (str): filter df so that the earliest date is start_date
+
+        Returns:
+            pd.DataFrame: filtered dataframe
+        """
+        column_matches_segment = df[list(segment)] == pd.Series(segment)
+        row_in_segment = column_matches_segment.all(axis=1)
+        filter_array = row_in_segment
+        if start_date:
+            row_after_start = df["submission_date"] >= start_date
+            filter_array &= row_after_start
+        return df.loc[filter_array]
+
+    def get_filtered_observed_data(self, observed_df: pd.DataFrame) -> pd.DataFrame:
+        """Returns the observed dataframe with time filters applied
+            to each segments data
+
+        Args:
+            observed_df (pd.DataFrame): full observed dataframe
+
+        Returns:
+            pd.DataFrame: filtered observed dataframe
+        """
+        observed_df_list = []
+        for segment_model in self.segment_models:
+            observed_subset = self.filter_data_to_segment(
+                observed_df, segment_model["segment"], segment_model["start_date"]
+            )
+            observed_df_list.append(observed_subset)
+        return pd.concat(observed_df_list)
+
+    def fit(self, observed_df: pd.DataFrame) -> None:
+        """Fit models across all segments for the data in observed_df
+
+        Args:
+            observed_df (pd.DataFrame): data used to fit
+        """
+        print(f"Fitting {self.model_type} model.", flush=True)
+        # create list of models depending on whether there are segments or not
+        self._set_segment_models(observed_df)
+        for segment_model in self.segment_models:
+            print(segment_model["segment"])
+            model = segment_model["model"]
+            model._set_seed()
+            observed_subset = self.filter_data_to_segment(
+                observed_df, segment_model["segment"], segment_model["start_date"]
+            )
+            model.fit(observed_subset)
+        return self
+
+    def predict(self, dates_to_predict: pd.DataFrame) -> pd.DataFrame:
+        """Generates a prediction for each segment for the dates in dates_to_predict
+
+        Args:
+            dates_to_predict (pd.DataFrame): dataframe with a single column,
+            submission_date that is a string in `%Y-%m-%d` format
+
+        Returns:
+            pd.DataFrame: prediction across all segments
+        """
+        start_date = dates_to_predict["submission_date"].iloc[0]
+        end_date = dates_to_predict["submission_date"].iloc[-1]
+
+        print(f"Forecasting from {start_date} to {end_date}.", flush=True)
+        for segment_model in self.segment_models:
+            config_start_date = segment_model["start_date"]
+
+            if config_start_date and config_start_date > start_date:
+                dates_to_predict_segment = (
+                    dates_to_predict[
+                        dates_to_predict["submission_date"] >= config_start_date
+                    ]
+                    .reset_index(drop=True)
+                    .copy()
+                )
+            else:
+                dates_to_predict_segment = dates_to_predict.copy()
+
+            model = segment_model["model"]
+            model._set_seed()
+            predict_df = model.predict(dates_to_predict_segment)
+
+            # add segments on as columns
+            for column, value in segment_model["segment"].items():
+                predict_df[column] = value
+            predict_df["forecast_parameters"] = json.dumps(model._get_parameters())
+            segment_model["forecast"] = predict_df
+        self.forecast_list = [x["forecast"] for x in self.segment_models]
+        return pd.concat(self.forecast_list)

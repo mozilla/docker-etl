@@ -17,8 +17,23 @@ def aggregate_to_period(
     period: str,
     aggregation: callable = np.sum,
     date_col: str = "submission_date",
+    additional_aggregation_columns: list = [],
 ) -> pd.DataFrame:
-    """Floor dates to the correct period and aggregate."""
+    """aggregates a dataframe to a period within any additional columns specified
+
+    Args:
+        df (pd.DataFrame): dataframe to aggregate to.  Must have a date column
+            with the name specified in the date_col argument
+        period (str): period to aggregate the datat to
+        aggregation (callable, optional): function to use to aggergate. Defaults to np.sum.
+        date_col (str, optional): column in the dataframe that contains the date
+            information used in aggregation. Defaults to "submission_date".
+        additional_aggregation_columns (list, optional): Additional columns
+            within which the date aggregation should occur. Defaults to [].
+
+    Returns:
+        pd.DataFrame: _description_
+    """
     if period.lower() not in ["day", "month", "year"]:
         raise ValueError(
             f"Don't know how to floor dates by {period}. Please use 'day', 'month', or 'year'."
@@ -27,9 +42,15 @@ def aggregate_to_period(
     x = df.copy(deep=True)
     x[date_col] = pd.to_datetime(x[date_col]).dt.to_period(period[0]).dt.to_timestamp()
 
+    aggregation_cols = [date_col] + additional_aggregation_columns
     # treat numeric and string types separately
-    x_string = x.select_dtypes(include=["datetime64", object])
-    x_numeric = x.select_dtypes(include=["float", "int", "datetime64"])
+    x_no_aggregation_cols = x[[el for el in x.columns if el not in aggregation_cols]]
+    x_string = x_no_aggregation_cols.select_dtypes(include=["datetime64", object])
+    x_numeric = x_no_aggregation_cols.select_dtypes(include=["float", "int"])
+
+    # put aggergation columns back into x_numeric so groupby works
+    x_numeric = x[list(x_numeric.columns) + aggregation_cols]
+    x_string = x[list(x_string.columns) + aggregation_cols]
 
     if set(x_string.columns) | set(x_numeric.columns) != set(x.columns):
         missing_columns = set(x.columns) - (
@@ -40,7 +61,7 @@ def aggregate_to_period(
             f"Columns do not have string or numeric type: {missing_columns_str}"
         )
 
-    x_numeric_agg = x_numeric.groupby(date_col).agg(aggregation).reset_index()
+    x_numeric_agg = x_numeric.groupby(aggregation_cols).agg(aggregation).reset_index()
 
     # all values of x_string should be the same because it is just the dimensions
     x_string_agg = x_string.drop_duplicates().reset_index(drop=True)
@@ -51,7 +72,5 @@ def aggregate_to_period(
         )
 
     # unique preseves order so we should be fine to concat
-    output_df = pd.concat(
-        [x_numeric_agg, x_string_agg.drop(columns=[date_col])], axis=1
-    )
+    output_df = x_numeric_agg.merge(x_string_agg, on=aggregation_cols)
     return output_df
