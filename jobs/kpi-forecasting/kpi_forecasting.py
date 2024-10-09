@@ -160,7 +160,6 @@ def main() -> None:
     # Load the config
     config_path = CLI().args.config
     will_write = CLI().args.write
-    print(will_write)
 
     pipeline = KPIPipeline(config_path)
 
