@@ -1,5 +1,4 @@
 ---
-model_type: prophet
 metric_hub:
   app_name: "firefox_desktop"
   slug: "daily_active_users_v2"
@@ -8,16 +7,17 @@ metric_hub:
   end_date: NULL
 
 forecast_model:
-  forecast_start: NULL
-  forecast_end: NULL
+  model_type: "prophet"
+  start_date: NULL
+  end_date: NULL
+  use_all_us_holidays: False
   predict_historical_dates: False
+  number_of_simulations: 1000
   parameters:
     seasonality_prior_scale: 0.00825
     changepoint_prior_scale: 0.15983
     weekly_seasonality: True
     yearly_seasonality: True
-    use_all_us_holidays: False
-
 
 summarize:
   periods: ["day", "month"]
@@ -30,5 +30,3 @@ write_results:
   dataset: "telemetry_derived"
   dataset_legacy: "telemetry_derived"
   table: "kpi_forecasts_v0"
-  forecast_table_legacy: "kpi_automated_forecast_v1"
-  confidences_table_legacy: "kpi_automated_forecast_confidences_v1"
