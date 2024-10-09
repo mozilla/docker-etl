@@ -71,7 +71,7 @@ class KPIPipeline:
             or self._default_end_date()
         )
         return pd.DataFrame(
-            {"submission_date": pd.date_range(start_date, end_date).date}
+            {"submission_date": pd.date_range(self.start_date, self.end_date).date}
         )
 
     def fit(self, observed_df):
