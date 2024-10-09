@@ -66,8 +66,7 @@ install_name_tool -add_rpath /PATH/TO/CONDA/envs/kpi-forecasting-dev/lib/cmdstan
 
 ### Running locally
 A metric can be forecasted by using a command line argument that passes the relevant YAML file to the `kpi_forecasting.py` script.
-[Here are approaches for accessing a Docker container's terminal](https://docs.docker.com/desktop/use-desktop/container/#integrated-terminal).
-
+[Here are approaches for accessing a Docker container's terminal](https://docs.docker.com/desktop/use-desktop/container/#integrated-terminal).  The `--no-write` argument can also be passed to essentially run a test and ensure the pipeline runs end-to-end.
 For example, the following command forecasts Desktop DAU numbers:
 
 ```sh
@@ -181,4 +180,9 @@ When testing locally, be sure to modify any config files to use non-production `
 The forecast objects in this repo implement an interface similar to `sklearn` or `darts`.  Every forecast method should have a `fit` method for fitting the forecast and `predict` method for making predictions.  The signature of these functions can be seen in `models.base_forecast.BaseForecast`.
 
 The `BaseEnsembleForecast` makes it possible to fit multiple models over the data, where different subsets of the data have different models applied to them.  These subsets are referred to as "segments" in the code.  Only one kind of model is supported, and different instances of this model are fit over the different segments.  The type of model is set by the `model_class` argument, and should be a class that implements the same interface as `BaseForecast`. The `fit` and `predict` methods in `BaseEnsembleForecast` determine which segment each row of incoming data belongs to and uses the `fit` and `predict` methods of the model class on the segment. This can be seen in the `FunnelForecast` object, which uses the `BaseEnsembleForecast` with `ProphetAutotunerForecast` as the model_class.
+
+## Testing
+Before merging, run the pipeline with the `--no-write` flag to ensure it runs end-to-end, IE:
+
+`python ./kpi_forecasting.py --no-write -c ./kpi_forecasting/configs/dau_mobile.yaml`
 
