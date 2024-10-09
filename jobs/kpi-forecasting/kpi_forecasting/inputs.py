@@ -16,6 +16,13 @@ class CLI:
         self.parser.add_argument(
             "-c", "--config", type=str, help="Path to configuration yaml file"
         )
+        self.parser.add_argument(
+            "--write",
+            type=bool,
+            help="If true, write results",
+            default=True,
+            action=argparse.BooleanOptionalAction,
+        )
         self.args = self.parser.parse_args()
 
 
