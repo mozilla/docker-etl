@@ -258,6 +258,11 @@ jobs:
       - run:
           name: Test Code
           command: docker run app:build pytest --ruff --ruff-format
+      - run:
+          name: integration test for kpi
+          command: |
+            docker un app:build python ./kpi_forecasting.py -c ./kpi_forecasting/configs/dau_mobile.yaml --no-write
+            docker un app:build python ./kpi_forecasting.py -c ./kpi_forecasting/configs/dau_desktop.yaml --no-write
 
 
   build-job-mozaggregator2bq:
