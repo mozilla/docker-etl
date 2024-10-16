@@ -58,7 +58,7 @@ def read_json(config_url, check_keys=[]):
     if isinstance(data, list):
         duplicates  = json_array_find_duplicates(data, check_keys)
         if duplicates:
-            print(f"[WARN] found duplicates in {config_url}: {duplicates}")
+            raise ValueError(f"[ERROR] found duplicates in {config_url}: {duplicates}")
 
     return data
 
