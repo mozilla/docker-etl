@@ -296,7 +296,7 @@ def check_time_precision(time_precision_minutes, end_collection_date, ad_start_o
     elif time_precision_minutes % MINUTES_IN_DAY != 0:
         # time precision is a day or longer, but is not a multiple of a day
         return f"Task has time precision that is not an even multiple of a day"
-    elif end_collection_date_seconds % (time_precision_minutes*60) != 0:
+    elif (end_collection_date_seconds + ad_start_offset) % (time_precision_minutes*60) != 0:
         # time precision is a multiple of day, but the end does not align with this task's buckets
         return f"{end_collection_date} does not align with task aggregation buckets"
 
