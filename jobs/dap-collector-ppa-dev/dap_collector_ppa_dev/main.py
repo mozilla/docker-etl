@@ -10,6 +10,7 @@ import requests
 LEADER = "https://dap-09-3.api.divviup.org"
 CMD = f"./collect --task-id {{task_id}} --leader {LEADER} --vdaf {{vdaf}} {{vdaf_args}} --authorization-bearer-token {{auth_token}} --batch-interval-start {{timestamp}} --batch-interval-duration {{duration}} --hpke-config {{hpke_config}} --hpke-private-key {{hpke_private_key}}"
 MINUTES_IN_DAY = 1440
+UNIX_EPOCH_WEEKDAY = datetime.datetime.fromtimestamp(0, tz=datetime.timezone.utc).weekday()
 
 # The modulo prime for the field for Prio3SumVec, and its size in bits. We use these to detect and counteract negative
 # conversion counts (as a result of differential privacy noise being added) wrapping around.
@@ -27,13 +28,13 @@ ADS_SCHEMA = [
     bigquery.SchemaField("placement_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("ad_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("conversion_key", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("task_size", "INTEGER", mode="REQUIRED"),
     bigquery.SchemaField("task_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("task_index", "INTEGER", mode="REQUIRED"),
     bigquery.SchemaField("conversion_count", "INTEGER", mode="REQUIRED"),
     bigquery.SchemaField("advertiser_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("advertiser_name", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("campaign_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("time_precision_minutes", "INTEGER"),
 ]
 REPORT_SCHEMA = [
     bigquery.SchemaField("collection_time", "TIMESTAMP", mode="REQUIRED"),
@@ -44,15 +45,37 @@ REPORT_SCHEMA = [
     bigquery.SchemaField("report_count", "INTEGER"),
     bigquery.SchemaField("error", "STRING"),
     bigquery.SchemaField("value", "INTEGER", mode="REPEATED"),
+    bigquery.SchemaField("time_precision_minutes", "INTEGER"),
 ]
 
 ads = {}
 
-def read_json(config_url):
+def read_json(config_url, check_keys=[]):
     """Read configuration from Google Cloud bucket."""
-
     resp = requests.get(config_url)
-    return resp.json()
+    data = resp.json()
+
+    if isinstance(data, list):
+        duplicates  = json_array_find_duplicates(data, check_keys)
+        if duplicates:
+            raise ValueError(f"[ERROR] found duplicates in {config_url}: {duplicates}")
+
+    return data
+
+def json_array_find_duplicates(json_array, keys):
+    duplicates = {key: [] for key in keys}
+    seen_values = {key: set() for key in keys}
+
+    for item in json_array:
+        for key in keys:
+            if key in item:
+                value = item[key]
+                if value in seen_values[key]:
+                    duplicates[key].append(value)
+                else:
+                    seen_values[key].add(value)
+
+    return {key: val for key, val in duplicates.items() if val}
 
 
 def toh(timestamp):
@@ -73,7 +96,7 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
     res["reports"] = []
     res["counts"] = []
 
-    rpt = build_base_report(task["task_id"], timestamp, task["metric_type"], collection_time)
+    rpt = build_base_report(task, timestamp, collection_time)
 
     # Convert VDAF description to string for command line use
     vdaf_args = ""
@@ -143,7 +166,6 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
                         cnt["conversion_key"] = ad["advertiserInfo"]["conversionKey"]
                         cnt["task_id"] = task["task_id"]
                         cnt["task_index"] = i
-                        cnt["task_size"] = task["task_size"]
                         cnt["campaign_id"] = ad["advertiserInfo"]["campaignId"]
                         cnt["conversion_count"] = entry
 
@@ -182,16 +204,17 @@ def correct_wraparound(num):
     return num
 
 
-def build_base_report(task_id, timestamp, metric_type, collection_time):
+def build_base_report(task, timestamp, collection_time):
     row = {}
-    row["task_id"] = task_id
+    row["task_id"] = task["task_id"]
     row["slot_start"] = timestamp
-    row["metric_type"] = metric_type
+    row["metric_type"] = task["metric_type"]
     row["collection_time"] = collection_time
+    row["time_precision_minutes"] = task["time_precision_minutes"]
     return row
 
 
-def build_error_result(task_id, timestamp, metric_type, error):
+def build_error_result(task, timestamp, error):
     collection_time = str(datetime.datetime.now(datetime.timezone.utc).timestamp())
 
     results = {}
@@ -199,7 +222,7 @@ def build_error_result(task_id, timestamp, metric_type, error):
     results["reports"] = []
     slot_start = int(timestamp.timestamp())
 
-    rpt = build_base_report(task_id, slot_start, metric_type, collection_time)
+    rpt = build_base_report(task, slot_start, collection_time)
     rpt["collection_duration"] = 0
     rpt["error"] = error
 
@@ -258,7 +281,7 @@ def check_collection_date(date):
         return None
 
 
-def check_time_precision(time_precision_minutes, end_collection_date):
+def check_time_precision(time_precision_minutes, end_collection_date, ad_start_offset):
     """Check that a given time precision is valid for the collection date
     """
     end_collection_date_seconds = int(end_collection_date.timestamp())
@@ -273,12 +296,18 @@ def check_time_precision(time_precision_minutes, end_collection_date):
     elif time_precision_minutes % MINUTES_IN_DAY != 0:
         # time precision is a day or longer, but is not a multiple of a day
         return f"Task has time precision that is not an even multiple of a day"
-    elif end_collection_date_seconds % (time_precision_minutes*60) != 0:
+    elif (end_collection_date_seconds + ad_start_offset) % (time_precision_minutes*60) != 0:
         # time precision is a multiple of day, but the end does not align with this task's buckets
         return f"{end_collection_date} does not align with task aggregation buckets"
 
     return None
 
+def find_ad_start_offset(task):
+    if "ad_start_date_iso" not in task:
+        return 0
+    ad_start_date_weekday = datetime.datetime.fromisoformat(task["ad_start_date_iso"]).weekday()
+    days_away_from_thursday = (ad_start_date_weekday - UNIX_EPOCH_WEEKDAY) % 7
+    return days_away_from_thursday*MINUTES_IN_DAY*60
 
 async def collect_task(task, auth_token, hpke_private_key, date):
     """Collects data for the given task through to the given day.
@@ -292,11 +321,11 @@ async def collect_task(task, auth_token, hpke_private_key, date):
 
     err = check_collection_date(end_collection_date)
     if err is not None:
-        return build_error_result(task["task_id"], end_collection_date, task["metric_type"], err)
+        return build_error_result(task, end_collection_date, err)
 
-    err = check_time_precision(time_precision_minutes, end_collection_date)
+    err = check_time_precision(time_precision_minutes, end_collection_date, find_ad_start_offset(task))
     if err is not None:
-        return build_error_result(task["task_id"], end_collection_date, task["metric_type"], err)
+        return build_error_result(task, end_collection_date, err)
 
     # task precision and date are valid
     if time_precision_minutes < MINUTES_IN_DAY:
@@ -379,11 +408,17 @@ def main(project, ad_table_id, report_table_id, auth_token, hpke_private_key, da
     ads = read_json(ad_config_url)
     ensure_table(bqclient, ad_table_id, ADS_SCHEMA)
     ensure_table(bqclient, report_table_id, REPORT_SCHEMA)
+
+    reports = []
+    counts = []
     for task in read_json(task_config_url):
         print(f"Now processing task: {task['task_id']}")
         results = asyncio.run(collect_task(task, auth_token, hpke_private_key, date))
-        store_data(results["reports"], bqclient, report_table_id)
-        store_data(results["counts"], bqclient, ad_table_id)
+        reports += results["reports"]
+        counts += results["counts"]
+
+    store_data(reports, bqclient, report_table_id)
+    store_data(counts, bqclient, ad_table_id)
 
 if __name__ == "__main__":
     main()
