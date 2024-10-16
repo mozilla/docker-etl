@@ -28,7 +28,6 @@ ADS_SCHEMA = [
     bigquery.SchemaField("placement_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("ad_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("conversion_key", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("task_size", "INTEGER", mode="REQUIRED"),
     bigquery.SchemaField("task_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("task_index", "INTEGER", mode="REQUIRED"),
     bigquery.SchemaField("conversion_count", "INTEGER", mode="REQUIRED"),
@@ -60,7 +59,7 @@ def read_json(config_url, check_keys=[]):
         duplicates  = json_array_find_duplicates(data, check_keys)
         if duplicates:
             print(f"[WARN] found duplicates in {config_url}: {duplicates}")
-            
+
     return data
 
 def json_array_find_duplicates(json_array, keys):
@@ -167,7 +166,6 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
                         cnt["conversion_key"] = ad["advertiserInfo"]["conversionKey"]
                         cnt["task_id"] = task["task_id"]
                         cnt["task_index"] = i
-                        cnt["task_size"] = task["task_size"]
                         cnt["campaign_id"] = ad["advertiserInfo"]["campaignId"]
                         cnt["conversion_count"] = entry
 
