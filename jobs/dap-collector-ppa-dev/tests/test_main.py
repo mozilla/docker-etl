@@ -1,4 +1,4 @@
-from dap_collector_ppa_prod.main import parse_vector, find_ad_start_offset, json_array_find_duplicates
+from dap_collector_ppa_dev.main import parse_vector, find_ad_start_offset, json_array_find_duplicates
 import datetime
 
 
