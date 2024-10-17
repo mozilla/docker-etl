@@ -6,6 +6,9 @@ import time
 
 from google.cloud import bigquery
 import requests
+from jsonschema import validate, ValidationError
+
+
 
 LEADER = "https://dap-09-3.api.divviup.org"
 CMD = f"./collect --task-id {{task_id}} --leader {LEADER} --vdaf {{vdaf}} {{vdaf_args}} --authorization-bearer-token {{auth_token}} --batch-interval-start {{timestamp}} --batch-interval-duration {{duration}} --hpke-config {{hpke_config}} --hpke-private-key {{hpke_private_key}}"
@@ -27,7 +30,7 @@ ADS_SCHEMA = [
     bigquery.SchemaField("collection_time", "TIMESTAMP", mode="REQUIRED"),
     bigquery.SchemaField("placement_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("ad_id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("conversion_key", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("task_size", "INTEGER", mode="REQUIRED"),
     bigquery.SchemaField("task_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("task_index", "INTEGER", mode="REQUIRED"),
     bigquery.SchemaField("conversion_count", "INTEGER", mode="REQUIRED"),
@@ -36,6 +39,37 @@ ADS_SCHEMA = [
     bigquery.SchemaField("campaign_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("time_precision_minutes", "INTEGER"),
 ]
+
+AD_CONFIG_JSON_SCHEMA = {
+    "type": "array",  # The outer structure is an array
+    "items": {
+        "type": "object",
+        "required": ["taskId", "taskIndex", "advertiserInfo"],
+        "properties": {
+            "taskId": {"type": "string"},
+            "taskIndex": {"type": "integer"},
+            "advertiserInfo": {
+                "type": "object",
+                "required": ["advertiserId", "adId", "placementId", "campaignId", "extraInfo"],
+                "properties": {
+                    "advertiserId": {"type": "string"},
+                    "adId": {"type": "string"},
+                    "placementId": {"type": "string"},
+                    "campaignId": {"type": "string"},
+                    "extraInfo": {
+                        "type": "object",
+                        "required": ["spend", "budget"],
+                        "properties": {
+                            "spend": {"type": "integer"},
+                            "budget": {"type": "integer"}
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 REPORT_SCHEMA = [
     bigquery.SchemaField("collection_time", "TIMESTAMP", mode="REQUIRED"),
     bigquery.SchemaField("collection_duration", "FLOAT", mode="REQUIRED"),
@@ -48,19 +82,40 @@ REPORT_SCHEMA = [
     bigquery.SchemaField("time_precision_minutes", "INTEGER"),
 ]
 
+TASK_CONFIG_JSON_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": [
+            "task_id", 
+            "time_precision_minutes", 
+            "vdaf_args_structured", 
+            "vdaf", 
+            "hpke_config"
+        ],
+        "properties": {
+            "task_id": {"type": "string"},
+            "time_precision_minutes": {"type": "integer"},
+            "vdaf_args_structured": {
+                "type": "object",
+                "required": ["length", "bits"],
+                "properties": {
+                    "length": {"type": "integer"},
+                    "bits": {"type": "integer"}
+                }
+            },
+            "vdaf": {"type": "string"},
+            "hpke_config": {"type": "string"}
+        }
+    }
+}
+
 ads = {}
 
-def read_json(config_url, check_keys=[]):
+def read_json(config_url):
     """Read configuration from Google Cloud bucket."""
     resp = requests.get(config_url)
-    data = resp.json()
-
-    if isinstance(data, list):
-        duplicates  = json_array_find_duplicates(data, check_keys)
-        if duplicates:
-            raise ValueError(f"[ERROR] found duplicates in {config_url}: {duplicates}")
-
-    return data
+    return resp.json()
 
 def json_array_find_duplicates(json_array, keys):
     duplicates = {key: [] for key in keys}
@@ -74,9 +129,31 @@ def json_array_find_duplicates(json_array, keys):
                     duplicates[key].append(value)
                 else:
                     seen_values[key].add(value)
-
     return {key: val for key, val in duplicates.items() if val}
 
+def validate_json_config(data, unique_keys, json_schema):
+    if unique_keys:
+        if not isinstance(data, list):
+            raise ValueError(f"uniqueKeys supplied but data not a list")
+        
+        duplicates  = json_array_find_duplicates(data, ["taskId", "taskIndex"])
+        if duplicates:
+            raise ValueError(f"data contains duplicates for unique_keys")
+        
+    try:
+        validate(instance=data, schema=json_schema)
+    except ValidationError as e:
+        raise ValueError(f"schema validation failed: {e.message}")
+
+def get_ad_config(ad_config_url):
+    data = read_json(ad_config_url)
+    validate_json_config(data, ["taskId", "taskIndex"], AD_CONFIG_JSON_SCHEMA)
+    return data    
+
+def get_task_config(task_config_url):
+    data = read_json(task_config_url)
+    validate_json_config(data, ["task_id"], TASK_CONFIG_JSON_SCHEMA)
+    return data
 
 def toh(timestamp):
     """Turn a timestamp into a datetime object which prints human readably."""
@@ -163,9 +240,9 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
                         cnt["advertiser_id"] = ad["advertiserInfo"]["advertiserId"]
                         cnt["advertiser_name"] = ad["advertiserInfo"]["advertiserName"]
                         cnt["ad_id"] = ad["advertiserInfo"]["adId"]
-                        cnt["conversion_key"] = ad["advertiserInfo"]["conversionKey"]
                         cnt["task_id"] = task["task_id"]
                         cnt["task_index"] = i
+                        cnt["task_size"] = task["vdaf_args_structured"]["length"]
                         cnt["campaign_id"] = ad["advertiserInfo"]["campaignId"]
                         cnt["conversion_count"] = entry
 
@@ -208,7 +285,7 @@ def build_base_report(task, timestamp, collection_time):
     row = {}
     row["task_id"] = task["task_id"]
     row["slot_start"] = timestamp
-    row["metric_type"] = task["metric_type"]
+    row["metric_type"] = task["vdaf"]
     row["collection_time"] = collection_time
     row["time_precision_minutes"] = task["time_precision_minutes"]
     return row
@@ -405,13 +482,13 @@ def main(project, ad_table_id, report_table_id, auth_token, hpke_private_key, da
     ad_table_id = project + "." + ad_table_id
     report_table_id = project + "." + report_table_id
     bqclient = bigquery.Client(project=project)
-    ads = read_json(ad_config_url)
+    ads = get_ad_config(ad_config_url)
     ensure_table(bqclient, ad_table_id, ADS_SCHEMA)
     ensure_table(bqclient, report_table_id, REPORT_SCHEMA)
 
     reports = []
     counts = []
-    for task in read_json(task_config_url):
+    for task in get_task_config(task_config_url):
         print(f"Now processing task: {task['task_id']}")
         results = asyncio.run(collect_task(task, auth_token, hpke_private_key, date))
         reports += results["reports"]
