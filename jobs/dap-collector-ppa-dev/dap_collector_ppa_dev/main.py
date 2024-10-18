@@ -6,6 +6,9 @@ import time
 
 from google.cloud import bigquery
 import requests
+from jsonschema import validate, ValidationError
+
+
 
 LEADER = "https://dap-09-3.api.divviup.org"
 CMD = f"./collect --task-id {{task_id}} --leader {LEADER} --vdaf {{vdaf}} {{vdaf_args}} --authorization-bearer-token {{auth_token}} --batch-interval-start {{timestamp}} --batch-interval-duration {{duration}} --hpke-config {{hpke_config}} --hpke-private-key {{hpke_private_key}}"
@@ -27,7 +30,7 @@ ADS_SCHEMA = [
     bigquery.SchemaField("collection_time", "TIMESTAMP", mode="REQUIRED"),
     bigquery.SchemaField("placement_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("ad_id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("conversion_key", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("task_size", "INTEGER", mode="REQUIRED"),
     bigquery.SchemaField("task_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("task_index", "INTEGER", mode="REQUIRED"),
     bigquery.SchemaField("conversion_count", "INTEGER", mode="REQUIRED"),
@@ -36,6 +39,37 @@ ADS_SCHEMA = [
     bigquery.SchemaField("campaign_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("time_precision_minutes", "INTEGER"),
 ]
+
+AD_CONFIG_JSON_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": ["taskId", "taskIndex", "advertiserInfo"],
+        "properties": {
+            "taskId": {"type": "string"},
+            "taskIndex": {"type": "integer"},
+            "advertiserInfo": {
+                "type": "object",
+                "required": ["advertiserId", "adId", "placementId", "campaignId", "extraInfo"],
+                "properties": {
+                    "advertiserId": {"type": "string"},
+                    "adId": {"type": "string"},
+                    "placementId": {"type": "string"},
+                    "campaignId": {"type": "string"},
+                    "extraInfo": {
+                        "type": "object",
+                        "required": ["spend", "budget"],
+                        "properties": {
+                            "spend": {"type": "integer"},
+                            "budget": {"type": "integer"}
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 REPORT_SCHEMA = [
     bigquery.SchemaField("collection_time", "TIMESTAMP", mode="REQUIRED"),
     bigquery.SchemaField("collection_duration", "FLOAT", mode="REQUIRED"),
@@ -48,19 +82,42 @@ REPORT_SCHEMA = [
     bigquery.SchemaField("time_precision_minutes", "INTEGER"),
 ]
 
+TASK_CONFIG_JSON_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": [
+            "task_id", 
+            "time_precision_minutes", 
+            "vdaf_args_structured", 
+            "vdaf", 
+            "hpke_config"
+        ],
+        "properties": {
+            "task_id": {"type": "string"},
+            "time_precision_minutes": {"type": "integer"},
+            "start_date": {"type": "string"},
+            "end_date": {"type": "string"},
+            "vdaf_args_structured": {
+                "type": "object",
+                "required": ["length", "bits"],
+                "properties": {
+                    "length": {"type": "integer"},
+                    "bits": {"type": "integer"}
+                }
+            },
+            "vdaf": {"type": "string"},
+            "hpke_config": {"type": "string"}
+        }
+    }
+}
+
 ads = {}
 
-def read_json(config_url, check_keys=[]):
+def read_json(config_url):
     """Read configuration from Google Cloud bucket."""
     resp = requests.get(config_url)
-    data = resp.json()
-
-    if isinstance(data, list):
-        duplicates  = json_array_find_duplicates(data, check_keys)
-        if duplicates:
-            raise ValueError(f"[ERROR] found duplicates in {config_url}: {duplicates}")
-
-    return data
+    return resp.json()
 
 def json_array_find_duplicates(json_array, keys):
     duplicates = {key: [] for key in keys}
@@ -74,9 +131,54 @@ def json_array_find_duplicates(json_array, keys):
                     duplicates[key].append(value)
                 else:
                     seen_values[key].add(value)
-
     return {key: val for key, val in duplicates.items() if val}
 
+def validate_json_config(data, unique_keys, json_schema):
+    if unique_keys:
+        if not isinstance(data, list):
+            raise ValueError(f"uniqueKeys supplied but data not a list")
+        
+        duplicates  = json_array_find_duplicates(data, ["taskId", "taskIndex"])
+        if duplicates:
+            raise ValueError(f"data contains duplicates for unique_keys, duplicates: {duplicates}")
+
+    try:
+        validate(instance=data, schema=json_schema)
+    except ValidationError as e:
+        raise ValueError(f"schema validation failed: {e.message}")
+
+def validate_task_data(taskdata):
+    time_precision_minutes = taskdata["time_precision_minutes"]
+    if time_precision_minutes == 0:
+        return f"time_precision_minutes can not be zero"
+    if time_precision_minutes < MINUTES_IN_DAY:
+        if MINUTES_IN_DAY % time_precision_minutes !=0:
+            return f"Task has time precision that does not evenly divide a day"
+        else:
+            return None
+    if time_precision_minutes % MINUTES_IN_DAY !=0:
+        return f"time_precision_minutes is longer than a day but is not a whole multiple of a day"
+
+    start_date=datetime.datetime.strptime(taskdata["start_date"], "%Y-%b-%d")
+    end_date=datetime.datetime.strptime(taskdata["end_date"], "%Y-%b-%d")
+    ttl_minutes=(end_date-start_date)/60
+    ttl_minutes = (end_date - start_date).total_seconds() / 60
+
+    if ttl_minutes % time_precision_minutes !=0:
+        return f"time_precision_minutes ({time_precision_minutes}) does not allow a full cocverage between {start_date} and end_date: {end_date} ({ttl_minutes} minutes )"
+
+    return None
+
+def get_ad_config(ad_config_url):
+    data = read_json(ad_config_url)
+    validate_json_config(data, ["taskId", "taskIndex"], AD_CONFIG_JSON_SCHEMA)
+    return data    
+
+def get_task_config(task_config_url):
+    data = read_json(task_config_url)
+    validate_json_config(data, ["task_id"], TASK_CONFIG_JSON_SCHEMA)
+    validate_task_data(data)
+    return data
 
 def toh(timestamp):
     """Turn a timestamp into a datetime object which prints human readably."""
@@ -163,9 +265,9 @@ async def collect_once(task, timestamp, duration, hpke_private_key, auth_token):
                         cnt["advertiser_id"] = ad["advertiserInfo"]["advertiserId"]
                         cnt["advertiser_name"] = ad["advertiserInfo"]["advertiserName"]
                         cnt["ad_id"] = ad["advertiserInfo"]["adId"]
-                        cnt["conversion_key"] = ad["advertiserInfo"]["conversionKey"]
                         cnt["task_id"] = task["task_id"]
                         cnt["task_index"] = i
+                        cnt["task_size"] = task["vdaf_args_structured"]["length"]
                         cnt["campaign_id"] = ad["advertiserInfo"]["campaignId"]
                         cnt["conversion_count"] = entry
 
@@ -208,7 +310,7 @@ def build_base_report(task, timestamp, collection_time):
     row = {}
     row["task_id"] = task["task_id"]
     row["slot_start"] = timestamp
-    row["metric_type"] = task["metric_type"]
+    row["metric_type"] = task["vdaf"]
     row["collection_time"] = collection_time
     row["time_precision_minutes"] = task["time_precision_minutes"]
     return row
@@ -281,62 +383,68 @@ def check_collection_date(date):
         return None
 
 
-def check_time_precision(time_precision_minutes, end_collection_date, ad_start_offset):
-    """Check that a given time precision is valid for the collection date
+def check_collection_dates(start_collection_date, end_collection_date, task):
     """
-    end_collection_date_seconds = int(end_collection_date.timestamp())
+    Check if the collection dates are valid based on the task's ad start and end dates.
 
-    if time_precision_minutes is None:
-        # task is missing a time precision setting
-        return f"Task missing time time_precision_minutes value"
-    elif time_precision_minutes < MINUTES_IN_DAY:
-        if MINUTES_IN_DAY % time_precision_minutes > 0:
-            # time precision has to evenly divide a day in order for this collector code to query all aggregations
-            return f"Task has time precision that does not evenly divide a day"
-    elif time_precision_minutes % MINUTES_IN_DAY != 0:
-        # time precision is a day or longer, but is not a multiple of a day
-        return f"Task has time precision that is not an even multiple of a day"
-    elif (end_collection_date_seconds + ad_start_offset) % (time_precision_minutes*60) != 0:
-        # time precision is a multiple of day, but the end does not align with this task's buckets
-        return f"{end_collection_date} does not align with task aggregation buckets"
+    The function validates:
+    1. If the `start_collection_date` is after or equal to the task's ad start date.
+    2. If the `end_collection_date` is before or equal to the task's ad end date.
+    3. For task with time_precision_minutes longer than a day -- If the `start_collection_date` is aligned with the `time_precision_minutes` defined in the task.
+    
+    Args:
+        start_collection_date (datetime): The start date of the collection.
+        end_collection_date (datetime): The end date of the collection.
+        task (dict): The task dictionary containing 'start_date', 'end_date', and 'time_precision_minutes'.
+
+    Returns:
+        str: An error message if a validation fails, otherwise None.
+    """
+
+    ad_start_date = datetime.datetime.strptime(task["start_date"], "%Y-%b-%d").replace(tzinfo=datetime.timezone.utc)
+    ad_end_date=datetime.datetime.strptime(task["end_date"], "%Y-%b-%d").replace(tzinfo=datetime.timezone.utc)
+
+    if start_collection_date < ad_start_date:
+        return f"start_collection_date {start_collection_date} is before ad_start_date {ad_start_date}"
+    if end_collection_date > ad_end_date:
+        return f"end_collection_date {end_collection_date} is after ad_end_date {ad_end_date}"
+
+    time_precision_minutes = task["time_precision_minutes"]
+
+    if time_precision_minutes < MINUTES_IN_DAY:
+        return None
+
+    minutes_after_ad_start = (start_collection_date - ad_start_date).total_seconds()/60
+    if minutes_after_ad_start % time_precision_minutes != 0:
+        return f"start_collection_date is not aligned with the time_precision_minutes of {time_precision_minutes}."
 
     return None
 
-def find_ad_start_offset(task):
-    if "ad_start_date_iso" not in task:
-        return 0
-    ad_start_date_weekday = datetime.datetime.fromisoformat(task["ad_start_date_iso"]).weekday()
-    days_away_from_thursday = (ad_start_date_weekday - UNIX_EPOCH_WEEKDAY) % 7
-    return days_away_from_thursday*MINUTES_IN_DAY*60
-
 async def collect_task(task, auth_token, hpke_private_key, date):
     """Collects data for the given task through to the given day.
-        For tasks with time precision smaller than a day, will collect data for aggregations from the day prior to date.
-        For tasks with time precision a day or multiple of day, will collect data for the aggregation that ends on date.
-            If date does not align with the end of an aggregation, it will not collect anything.
+        For tasks with time precision smaller than a day, will collect data for aggregations from the day prior to {date}.
+        For tasks with time precision a day or multiple of day, will collect data for the aggregation that ends on {date}.
+            will not collect anything if
+                {date} does not align with the end of an aggregation.
+                ~~~~~~~~~~~~~~~~~~~~~~~~~
     """
-    end_collection_date = datetime.datetime.fromisoformat(date)
-    end_collection_date = end_collection_date.replace(tzinfo=datetime.timezone.utc)
-    time_precision_minutes = task["time_precision_minutes"]
-
+    end_collection_date = datetime.datetime.fromisoformat(date).replace(tzinfo=datetime.timezone.utc)
     err = check_collection_date(end_collection_date)
     if err is not None:
         return build_error_result(task, end_collection_date, err)
+    
+    time_precision_minutes = task["time_precision_minutes"]
 
-    err = check_time_precision(time_precision_minutes, end_collection_date, find_ad_start_offset(task))
-    if err is not None:
-        return build_error_result(task, end_collection_date, err)
-
-    # task precision and date are valid
     if time_precision_minutes < MINUTES_IN_DAY:
-        # time precision is shorter than daily
-        # query for the last day of aggregations
         start_collection_date = end_collection_date - datetime.timedelta(days=1)
     else:
-        # time precision is a multiple of a day
-        # query for the aggregation that ends at end_collection_date
         aggregation_days = time_precision_minutes/MINUTES_IN_DAY
         start_collection_date = end_collection_date - datetime.timedelta(days=aggregation_days)
+    
+
+    err = check_collection_dates(start_collection_date, end_collection_date, task)
+    if err is not None:
+        return build_error_result(task, end_collection_date, err)
 
     return await collect_many(
         task, start_collection_date, end_collection_date, time_precision_minutes * 60, hpke_private_key, auth_token
@@ -405,13 +513,13 @@ def main(project, ad_table_id, report_table_id, auth_token, hpke_private_key, da
     ad_table_id = project + "." + ad_table_id
     report_table_id = project + "." + report_table_id
     bqclient = bigquery.Client(project=project)
-    ads = read_json(ad_config_url)
+    ads = get_ad_config(ad_config_url)
     ensure_table(bqclient, ad_table_id, ADS_SCHEMA)
     ensure_table(bqclient, report_table_id, REPORT_SCHEMA)
 
     reports = []
     counts = []
-    for task in read_json(task_config_url):
+    for task in get_task_config(task_config_url):
         print(f"Now processing task: {task['task_id']}")
         results = asyncio.run(collect_task(task, auth_token, hpke_private_key, date))
         reports += results["reports"]
