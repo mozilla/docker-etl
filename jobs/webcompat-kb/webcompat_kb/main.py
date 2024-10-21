@@ -359,11 +359,6 @@ class BugzillaToBigQuery:
         for bug in kb_bugs.values():
             kb_depends_on_ids |= set(bug["depends_on"])
 
-        platform_bugs = fetched_bugs["platform_bugs"]
-        kb_bugs.update(self.kb_bugs_from_platform_bugs(platform_bugs,
-                                                       set(kb_bugs.keys()),
-                                                       set(site_reports.keys())))
-
         logging.info("Fetching blocking bugs for KB bugs")
         completed, extra_platform_bugs = self.fetch_blocking_bugs(kb_depends_on_ids)
 
@@ -371,6 +366,7 @@ class BugzillaToBigQuery:
             logging.error("Failed to fetch blocking bugs")
             return None
 
+        platform_bugs = fetched_bugs["platform_bugs"]
         platform_bugs.update(extra_platform_bugs)
 
         all_bugs: dict[int, Bug] = {}
@@ -1162,6 +1158,14 @@ class BugzillaToBigQuery:
 
         all_bugs, site_reports, kb_bugs, platform_bugs = fetch_all_result
 
+        # Add platform bugs that should be imported as knowledge base bugs (with some
+        # modifications to their dependencies)
+        kb_bugs.update(
+            self.kb_bugs_from_platform_bugs(
+                platform_bugs, set(kb_bugs.keys()), set(site_reports.keys())
+            )
+        )
+
         # Process KB bugs fields and get their dependant core/breakage bugs ids.
         kb_data, kb_dep_ids = self.process_relations(kb_bugs, RELATION_CONFIG)
         self.add_kb_entry_breakage(kb_data, kb_dep_ids, site_reports)
@@ -1179,7 +1183,9 @@ class BugzillaToBigQuery:
 
         # Process core bugs and update KB data with missing links from core bugs.
         if platform_bugs:
-            core_data, _ = self.process_relations(platform_bugs, PLATFORM_RELATION_CONFIG)
+            core_data, _ = self.process_relations(
+                platform_bugs, PLATFORM_RELATION_CONFIG
+            )
             kb_data = self.add_links(kb_data, core_data)
 
         # Build relations for BQ tables.
