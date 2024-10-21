@@ -306,6 +306,10 @@ class BugzillaToBigQuery:
                 for blocked_id in bug["blocks"]
                 if blocked_id in site_report_ids
             ]
+
+            # Don't store bugs that platform bug depends on
+            bug["depends_on"] = []
+
             filtered[bug_id] = bug
 
         return filtered

@@ -1428,7 +1428,7 @@ def test_kb_bugs_from_platform_bugs(bz):
                 "see_also": [],
                 "severity": "S3",
                 "product": "Core",
-                "depends_on": [999999],
+                "depends_on": [],
                 "summary": "Example core site report and platform bug",
                 "resolution": "",
                 "last_change_time": "2024-05-27T15:07:03Z",
