@@ -1389,8 +1389,8 @@ def test_values_with_colon():
     assert parse_string_to_json(input_str) == expected
 
 
-def test_filter_kb_other(bz):
-    core_as_kb_bugs = bz.filter_kb_other(
+def test_kb_bugs_from_platform_bugs(bz):
+    core_as_kb_bugs = bz.kb_bugs_from_platform_bugs(
         SAMPLE_CORE_AS_KB_BUGS, {1835339}, {1896383, 222222}
     )
 
