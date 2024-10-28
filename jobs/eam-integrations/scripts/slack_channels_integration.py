@@ -31,6 +31,7 @@ class Slack:
                     if channels_dict[x].get('is_archived')
                     and channels_dict[x].get('id') not in self.donot_delete_lst]
 
+
         # excluding channels created within the past X days (from input)
         non_archived = [x for x in channels_dict
                         if channels_dict[x].get('is_archived') is False
@@ -97,10 +98,12 @@ class SlackIntegration:
         # operations: delete archived no members, 
         #             warning msg, 
         #             archive, delete after warning msgs 
+
         # ==================================================================================
         # 1 - Getting all Slack channels (public).
         # ==================================================================================
         self.logger.info("1 - Getting all Slack channels (public channels only).")
+
         lst_msg_secs = 60*60*24*166 # 166 days
         lst_msg_secs = 1
         try:

@@ -79,11 +79,11 @@ FILTER_CONFIG = {
         "o2": "substring",
         "v2": "webcompat:site-report",
     },
-    "knowledge_base_wc": {
+    "knowledge_base": {
         "product": "Web Compatibility",
         "component": "Knowledge Base",
     },
-    "knowledge_base_other": {
+    "platform_bugs": {
         "f1": "product",
         "o1": "notequals",
         "v1": "Web Compatibility",
@@ -169,7 +169,7 @@ RELATION_CONFIG = {
 }
 
 LINK_FIELDS = ["other_browser_issues", "standards_issues", "standards_positions"]
-CORE_RELATION_CONFIG = {key: RELATION_CONFIG[key] for key in LINK_FIELDS}
+PLATFORM_RELATION_CONFIG = {key: RELATION_CONFIG[key] for key in LINK_FIELDS}
 
 
 def extract_int_from_field(field: str) -> Optional[int]:
@@ -280,20 +280,25 @@ class BugzillaToBigQuery:
 
         return fetch_completed, data
 
-    def filter_kb_other(
+    def kb_bugs_from_platform_bugs(
         self,
-        kb_bugs_other: BugsById,
-        compat_kb_ids: set[int],
+        platform_bugs: BugsById,
+        kb_ids: set[int],
         site_report_ids: set[int],
     ) -> BugsById:
+        """Get a list of platform bugs that should also be considered knowledge base bugs
+
+        These are platform bugs that aren't blocking an existing kb entry
+        """
+
         filtered = {}
 
-        for bug_id, source_bug in kb_bugs_other.items():
-            bug = {**source_bug}
-
-            # Check if the core bug already has a kb entry and skip if so
-            if any(blocked_id in compat_kb_ids for blocked_id in bug["blocks"]):
+        for bug_id, source_bug in platform_bugs.items():
+            # Check if the platform bug already has a kb entry and skip if so
+            if any(blocked_id in kb_ids for blocked_id in source_bug["blocks"]):
                 continue
+
+            bug = source_bug.copy()
 
             # Only store a breakage bug as it's the relation we care about
             bug["blocks"] = [
@@ -301,6 +306,10 @@ class BugzillaToBigQuery:
                 for blocked_id in bug["blocks"]
                 if blocked_id in site_report_ids
             ]
+
+            # Don't store bugs that platform bug depends on
+            bug["depends_on"] = []
+
             filtered[bug_id] = bug
 
         return filtered
@@ -344,26 +353,21 @@ class BugzillaToBigQuery:
         site_reports = fetched_bugs["site_reports_wc"]
         site_reports.update(fetched_bugs["site_reports_other"])
 
-        kb_bugs = fetched_bugs["knowledge_base_wc"]
-        kb_bugs.update(
-            self.filter_kb_other(
-                fetched_bugs["knowledge_base_other"],
-                set(kb_bugs.keys()),
-                set(site_reports.keys()),
-            )
-        )
+        kb_bugs = fetched_bugs["knowledge_base"]
 
         kb_depends_on_ids = set()
         for bug in kb_bugs.values():
             kb_depends_on_ids |= set(bug["depends_on"])
 
         logging.info("Fetching blocking bugs for KB bugs")
-
-        completed, core_bugs = self.fetch_blocking_bugs(kb_depends_on_ids)
+        completed, extra_platform_bugs = self.fetch_blocking_bugs(kb_depends_on_ids)
 
         if not completed:
             logging.error("Failed to fetch blocking bugs")
             return None
+
+        platform_bugs = fetched_bugs["platform_bugs"]
+        platform_bugs.update(extra_platform_bugs)
 
         all_bugs: dict[int, Bug] = {}
         for bugs in [
@@ -372,11 +376,11 @@ class BugzillaToBigQuery:
             fetched_bugs["interventions"],
             fetched_bugs["other"],
             fetched_bugs["parity"],
-            core_bugs,
+            platform_bugs,
         ]:
             all_bugs.update(bugs)
 
-        return all_bugs, site_reports, kb_bugs, core_bugs
+        return all_bugs, site_reports, kb_bugs, platform_bugs
 
     def process_relations(
         self, bugs: BugsById, relation_config: Mapping[str, Mapping[str, Any]]
@@ -1152,7 +1156,15 @@ class BugzillaToBigQuery:
                 "Fetching bugs from Bugzilla was not completed due to an error, aborting."
             )
 
-        all_bugs, site_reports, kb_bugs, core_bugs = fetch_all_result
+        all_bugs, site_reports, kb_bugs, platform_bugs = fetch_all_result
+
+        # Add platform bugs that should be imported as knowledge base bugs (with some
+        # modifications to their dependencies)
+        kb_bugs.update(
+            self.kb_bugs_from_platform_bugs(
+                platform_bugs, set(kb_bugs.keys()), set(site_reports.keys())
+            )
+        )
 
         # Process KB bugs fields and get their dependant core/breakage bugs ids.
         kb_data, kb_dep_ids = self.process_relations(kb_bugs, RELATION_CONFIG)
@@ -1166,12 +1178,14 @@ class BugzillaToBigQuery:
 
         missing_bugs, core_missing = fetch_missing_result
 
-        core_bugs.update(core_missing)
+        platform_bugs.update(core_missing)
         all_bugs.update(missing_bugs)
 
         # Process core bugs and update KB data with missing links from core bugs.
-        if core_bugs:
-            core_data, _ = self.process_relations(core_bugs, CORE_RELATION_CONFIG)
+        if platform_bugs:
+            core_data, _ = self.process_relations(
+                platform_bugs, PLATFORM_RELATION_CONFIG
+            )
             kb_data = self.add_links(kb_data, core_data)
 
         # Build relations for BQ tables.
