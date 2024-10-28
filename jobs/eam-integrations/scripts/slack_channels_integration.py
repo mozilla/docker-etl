@@ -13,7 +13,7 @@ class Slack:
     def __init__(self, donot_delete_lst):
         self._slackAPI = SlackAPI()
         self.integration_report_channel = 'integrations-report'
-        self.donot_delete_lst = ['content-admin-test']
+        self.donot_delete_lst = ['C07NW6GV1V2','C07RXPTAH9S']
 
     def get_conversations_list(self, days):
 
@@ -29,7 +29,8 @@ class Slack:
 
         archived = [x for x in channels_dict
                     if channels_dict[x].get('is_archived')
-                    and channels_dict[x].get('name') not in self.donot_delete_lst]
+                    and channels_dict[x].get('id') not in self.donot_delete_lst]
+
 
         # excluding channels created within the past X days (from input)
         non_archived = [x for x in channels_dict
@@ -37,7 +38,7 @@ class Slack:
                         and channels_dict[x].get('name') not in ['general',
                                                                  self.integration_report_channel]
                         and float(channels_dict[x].get('created')) < days_ago.timestamp()
-                        and channels_dict[x].get('name') not in self.donot_delete_lst]
+                        and channels_dict[x].get('id') not in self.donot_delete_lst]
  
 
         return non_archived, archived, integration_report, channels_dict
@@ -89,14 +90,20 @@ class SlackIntegration:
         self._slack = Slack(['content-admin-test'])
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def run(self, max_limit):
+    def run(self, max_limit, operations = []):
         num_deleted = 0
         num_archived = 0
         num_warnings = 0
+
+        # operations: delete archived no members, 
+        #             warning msg, 
+        #             archive, delete after warning msgs 
+
         # ==================================================================================
-        # 1 - Getting all Slack channels (public and private).
+        # 1 - Getting all Slack channels (public).
         # ==================================================================================
-        self.logger.info("1 - Getting all Slack channels (public only).")
+        self.logger.info("1 - Getting all Slack channels (public channels only).")
+
         lst_msg_secs = 60*60*24*166 # 166 days
         lst_msg_secs = 1
         try:
@@ -121,7 +128,7 @@ class SlackIntegration:
         #                    Six months is our message retention period.
         # ==================================================================================
         self.logger.info("2 - Selecting non-archived channels")
-        msg_archived = """Hello, in 14 days this channel will be automatically archived by the Slack admins due to inactivity. Then it will be deleted in 30 days. If you wish to continue using it, please post a message. If you wish to unarchive it after the 14th day please ask in #servicedesk."""
+        msg_archived = """Hello, in 14 days this channel will be automatically archived by the Slack admins due to inactivity. Then it will be deleted in 30 days. If you wish to continue using it, please post a message. If you wish to unarchive it after the 14th day please ask in #servicedesk. We cannot restore a channel once it's deleted."""
 
         for channel_id in non_archived[:max_limit]:
             try:

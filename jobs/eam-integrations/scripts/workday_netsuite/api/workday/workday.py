@@ -4,8 +4,9 @@ import requests
 from typing import TypedDict
 from datetime import datetime
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 from .secrets import config
+from typing import List, Optional
 
 @dataclass
 class Worker:
@@ -29,19 +30,27 @@ class Worker:
     Country: Optional[str] = None
     termination_date: Optional[datetime] = None
     Preferred_Full_Name: Optional[str] = None
+    City: Optional[str] = None
+    Home_Country: Optional[str] = None
+    State: Optional[str] = None
+    Primary_Address: Optional[str] = None
+    Postal: Optional[str] = None
+    Province: Optional[str] = None
 
 
-class WDLink(TypedDict):
-    """ TypedDict hints for WorkDay RaaS service."""
-    wd_listing_of_workers_link: str
+@dataclass
+class InternationalTransfer:
+    Full_Name: Optional[str]
+    New_Country: Optional[str]
+    Employee_Type: Optional[str]
+    Old_Country: Optional[str]
+    Employee_ID: Optional[str]
+    Manager: Optional[str]
+    Intl_Transfer_Date: Optional[str]
 
-
-class WorkDayRaaSConfig(TypedDict):
-    """TypedDict hints for WorkDay RaaS service."""
-    username: str
-    password: str
-    links: list[WDLink]
-    timeout: int
+@dataclass
+class Report:
+    Report_Entry: Optional[List[InternationalTransfer]]
 
 
 class WorkDayRaaService():
@@ -49,6 +58,7 @@ class WorkDayRaaService():
     def __init__(self):
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+
     def build_comparison_string(self, wd_worker):
             return (
                 wd_worker.get('Employee_ID','')
@@ -60,8 +70,6 @@ class WorkDayRaaService():
                 + wd_worker.get('Company','')
                 + "|"
                 + wd_worker.get('Manager_ID','')
-                + "|"
-                + wd_worker.get('Cost_Center','')
                 + "|"
                 + wd_worker.get('Cost_Center_ID','')              
                 + "|"
@@ -87,6 +95,9 @@ class WorkDayRaaService():
                               auth=(self.config['username'],
                                     self.config['password']),
                               timeout=self.config['timeout'])
+        
+        return json.loads(result.text)
+    
         worker_dict = {}
         wd_data = json.loads(result.text)
         worker_list = []
@@ -97,3 +108,13 @@ class WorkDayRaaService():
             worker_dict[worker['Employee_ID']] = worker
             wd_comp[worker['Employee_ID']] = self.build_comparison_string(worker)
         return worker_list,worker_dict, wd_comp
+    
+    def get_international_transfers(self, begin_date, end_date):
+        self.logger.info('Getting listing of workers from WorkDay.')
+        link = self.config['links']['wd_international_transfers_link']
+        result = requests.get(link.format(end_date=end_date, begin_date=begin_date),
+                              auth=(self.config['username'],
+                                    self.config['password']),
+                              timeout=self.config['timeout'])
+        
+        return json.loads(result.text)
