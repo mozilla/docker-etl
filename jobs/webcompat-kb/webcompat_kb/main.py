@@ -239,7 +239,7 @@ def parse_datetime_str(s: str) -> datetime:
 
 class BugzillaToBigQuery:
     def __init__(
-        self, bq_project_id: str, bq_dataset_id: str, bugzilla_api_key: Optional[str]
+        self, bq_project_id: str, bq_dataset_id: str, bugzilla_api_key: Optional[str], write: bool, include_history: bool
     ):
         credentials, _ = google.auth.default(
             scopes=[
@@ -252,7 +252,9 @@ class BugzillaToBigQuery:
         self.client = bigquery.Client(credentials=credentials, project=bq_project_id)
         self.bq_dataset_id = bq_dataset_id
         self.bugzilla_api_key = bugzilla_api_key
-        self.history_fetch_completed = True
+        self.history_fetch_completed = include_history
+        self.write = write
+        self.include_history = include_history
 
     def fetch_bugs(
         self, params: Optional[dict[str, Any]] = None
@@ -553,7 +555,9 @@ class BugzillaToBigQuery:
         kb_processed: Mapping[int, Mapping[str, list[int | str]]],
         dep_processed: Mapping[int, Mapping[str, list[int | str]]],
     ) -> Mapping[int, Mapping[str, list[int | str]]]:
-        result = {**kb_processed}
+        """Create links between kb entries and external data such
+        as standards issues."""
+        result = kb_processed.copy()
 
         for kb_bug_id in result:
             for core_bug_id in result[kb_bug_id]["core_bugs"]:
@@ -787,6 +791,9 @@ class BugzillaToBigQuery:
         return history
 
     def update_history(self, records: list[BugHistoryEntry]) -> None:
+        if not records:
+            return
+
         job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
             schema=[
@@ -1148,7 +1155,6 @@ class BugzillaToBigQuery:
         ) and self.history_fetch_completed:
             filtered_existing = self.filter_relevant_history(existing_bugs_history)
             filtered_records = filtered_existing + filtered_new_history
-            self.update_history(filtered_records)
             return filtered_records
 
         return []
@@ -1289,7 +1295,11 @@ class BugzillaToBigQuery:
 
         kb_ids = list(kb_data.keys())
 
-        history_changes = self.fetch_update_history(all_bugs)
+        if self.include_history:
+            history_changes = self.fetch_update_history(all_bugs)
+        else:
+            logging.info("Not updating bug history")
+            history_changes = []
 
         etp_rels = {}
         if etp_reports:
@@ -1302,26 +1312,30 @@ class BugzillaToBigQuery:
 
             etp_rels = self.build_relations(etp_data, ETP_RELATION_CONFIG)
 
-        self.update_bugs(all_bugs)
-        self.update_kb_ids(kb_ids)
-        self.update_relations(rels, RELATION_CONFIG)
-        self.update_relations(etp_rels, ETP_RELATION_CONFIG)
+        if self.write:
+            self.update_history(history_changes)
+            self.update_bugs(all_bugs)
+            self.update_kb_ids(kb_ids)
+            self.update_relations(rels, RELATION_CONFIG)
+            self.update_relations(etp_rels, ETP_RELATION_CONFIG)
 
-        last_change_time_max = parse_datetime_str(
-            max(all_bugs.values(), key=lambda x: x["last_change_time"])[
-                "last_change_time"
-            ]
-        )
+            last_change_time_max = parse_datetime_str(
+                max(all_bugs.values(), key=lambda x: x["last_change_time"])[
+                    "last_change_time"
+                ]
+            )
 
-        self.record_import_run(
-            start_time,
-            self.history_fetch_completed,
-            len(all_bugs),
-            len(history_changes),
-            last_change_time_max,
-        )
+            self.record_import_run(
+                start_time,
+                self.history_fetch_completed,
+                len(all_bugs),
+                len(history_changes),
+                last_change_time_max,
+            )
 
-        self.update_metric_history()
+            self.update_metric_history()
+        else:
+            logging.info("Skipping writes")
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -1339,6 +1353,20 @@ def get_parser() -> argparse.ArgumentParser:
         help="Bugzilla API key",
         default=os.environ.get("BUGZILLA_API_KEY"),
     )
+    parser.add_argument(
+        "--no-history",
+        dest="include_history",
+        action="store_false",
+        default=True,
+        help="Don't read or update bug history",
+    )
+    parser.add_argument(
+        "--no-write",
+        dest="write",
+        action="store_false",
+        default=True,
+        help="Don't write updates to BigQuery",
+    )
     return parser
 
 
@@ -1348,7 +1376,7 @@ def main() -> None:
     logging.getLogger().setLevel(logging.getLevelNamesMapping()[args.log_level.upper()])
 
     bz_bq = BugzillaToBigQuery(
-        args.bq_project_id, args.bq_dataset_id, args.bugzilla_api_key
+        args.bq_project_id, args.bq_dataset_id, args.bugzilla_api_key, args.write, args.include_history
     )
     bz_bq.run()
 
