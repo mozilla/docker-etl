@@ -920,6 +920,8 @@ def bz(mock_bq, mock_auth_default):
         bq_project_id=mock_project_id,
         bq_dataset_id="placeholder_dataset",
         bugzilla_api_key="placeholder_key",
+        write=False,
+        include_history=True,
     )
 
 
