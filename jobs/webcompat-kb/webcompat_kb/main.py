@@ -342,9 +342,8 @@ class BugzillaToBigQuery:
         etp_reports: BugsById,
         etp_dependencies: BugsById,
     ) -> BugsById:
-        """Unify blocked and depends_on for each ETP bug as their dependencies are inconsistent
-
-        and store only ETP meta bugs"""
+        """Unify blocked and depends_on for each ETP bug as their dependencies are inconsistent,
+        keep only ETP meta bugs and store them only in depends_on field."""
 
         filtered = {}
 
@@ -366,6 +365,7 @@ class BugzillaToBigQuery:
             ]
 
             bug["depends_on"] = blocks + depends
+            bug["blocks"] = []
 
             filtered[bug_id] = bug
 
@@ -692,7 +692,11 @@ class BugzillaToBigQuery:
         table = self.client.get_table(kb_bugs_table)
         logging.info(f"Loaded {table.num_rows} rows into {table}")
 
-    def update_relations(self, relations, relation_config):
+    def update_relations(
+        self,
+        relations: Mapping[str, list[Mapping[str, Any]]],
+        relation_config: Mapping[str, Mapping[str, Any]],
+    ):
         for key, value in relations.items():
             if value:
                 job_config = bigquery.LoadJobConfig(
@@ -708,7 +712,9 @@ class BugzillaToBigQuery:
 
                 relation_table = f"{self.bq_dataset_id}.{key}"
                 job = self.client.load_table_from_json(
-                    value, relation_table, job_config=job_config
+                    [dict(item) for item in value],  # type conversion
+                    relation_table,
+                    job_config=job_config,
                 )
 
                 logging.info(f"Writing to `{relation_table}` table")
@@ -1285,6 +1291,7 @@ class BugzillaToBigQuery:
 
         history_changes = self.fetch_update_history(all_bugs)
 
+        etp_rels = {}
         if etp_reports:
             etp_reports_unified = self.unify_etp_dependencies(
                 etp_reports, etp_dependencies
@@ -1294,11 +1301,11 @@ class BugzillaToBigQuery:
             )
 
             etp_rels = self.build_relations(etp_data, ETP_RELATION_CONFIG)
-            self.update_relations(etp_rels, ETP_RELATION_CONFIG)
 
         self.update_bugs(all_bugs)
         self.update_kb_ids(kb_ids)
         self.update_relations(rels, RELATION_CONFIG)
+        self.update_relations(etp_rels, ETP_RELATION_CONFIG)
 
         last_change_time_max = parse_datetime_str(
             max(all_bugs.values(), key=lambda x: x["last_change_time"])[
