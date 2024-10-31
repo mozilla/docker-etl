@@ -9,6 +9,7 @@ from webcompat_kb.bugzilla import extract_int_from_field
 from webcompat_kb.bugzilla import parse_string_to_json
 from webcompat_kb.bugzilla import parse_datetime_str
 from webcompat_kb.bugzilla import RELATION_CONFIG, LINK_FIELDS, ETP_RELATION_CONFIG
+from webcompat_kb.main import get_client
 
 SAMPLE_BUGS = {
     item["id"]: item
@@ -907,8 +908,8 @@ KEYWORDS_AND_STATUS = [
 
 
 @pytest.fixture(scope="module")
-@patch("webcompat_kb.bugzilla.google.auth.default")
-@patch("webcompat_kb.bugzilla.bigquery.Client")
+@patch("webcompat_kb.main.google.auth.default")
+@patch("webcompat_kb.main.bigquery.Client")
 def bz(mock_bq, mock_auth_default):
     mock_credentials = Mock()
     mock_project_id = "placeholder_id"
@@ -916,8 +917,9 @@ def bz(mock_bq, mock_auth_default):
     mock_bq.return_value = Mock()
 
     mock_bq.return_value = Mock()
+    client = get_client(mock_project_id)
     return BugzillaToBigQuery(
-        bq_project_id=mock_project_id,
+        client=client,
         bq_dataset_id="placeholder_dataset",
         bugzilla_api_key="placeholder_key",
         write=False,
