@@ -5,9 +5,9 @@ import sys
 import google.auth
 from google.cloud import bigquery
 
-from . import bugzilla
+from . import bugzilla, crux
 
-ALL_JOBS = {"bugzilla": bugzilla}
+ALL_JOBS = {"bugzilla": bugzilla, "crux": crux}
 
 
 def get_parser() -> argparse.ArgumentParser:
