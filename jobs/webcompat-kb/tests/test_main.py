@@ -8,7 +8,7 @@ from webcompat_kb.main import BugzillaToBigQuery
 from webcompat_kb.main import extract_int_from_field
 from webcompat_kb.main import parse_string_to_json
 from webcompat_kb.main import parse_datetime_str
-from webcompat_kb.main import RELATION_CONFIG, LINK_FIELDS
+from webcompat_kb.main import RELATION_CONFIG, LINK_FIELDS, ETP_RELATION_CONFIG
 
 SAMPLE_BUGS = {
     item["id"]: item
@@ -199,6 +199,181 @@ SAMPLE_BREAKAGE_BUGS = {
             "component": "JavaScript Engine",
             "id": 444444,
             "assigned_to": "nobody@mozilla.org",
+        },
+    ]
+}
+
+SAMPLE_ETP_BUGS = {
+    item["id"]: item
+    for item in [
+        {
+            "url": "https://gothamist.com/",
+            "summary": "gothamist.com - The comments are not displayed with ETP set to Strict",
+            "id": 1910548,
+            "keywords": ["priv-webcompat", "webcompat:site-report"],
+            "component": "Privacy: Site Reports",
+            "resolution": "",
+            "blocks": [1101005],
+            "depends_on": [1875061],
+            "creation_time": "2024-07-30T07:37:28Z",
+            "see_also": ["https://github.com/webcompat/web-bugs/issues/139647"],
+            "product": "Web Compatibility",
+            "status": "NEW",
+        },
+        {
+            "see_also": ["https://github.com/webcompat/web-bugs/issues/142250"],
+            "id": 1921943,
+            "summary": "my.farys.be - Login option is missing with ETP set to STRICT",
+            "product": "Web Compatibility",
+            "keywords": [
+                "priv-webcompat",
+                "webcompat:platform-bug",
+                "webcompat:site-report",
+            ],
+            "status": "NEW",
+            "resolution": "",
+            "component": "Privacy: Site Reports",
+            "blocks": [],
+            "depends_on": [1101005, 1797458],
+            "creation_time": "2024-10-01T08:50:58Z",
+            "url": "https://my.farys.be/myfarys/",
+        },
+        {
+            "see_also": [],
+            "summary": "ryanair.com - The form to start a chat does not load with ETP set to STRICT",
+            "id": 1928102,
+            "product": "Web Compatibility",
+            "status": "NEW",
+            "keywords": ["webcompat:site-report"],
+            "blocks": [],
+            "component": "Privacy: Site Reports",
+            "resolution": "",
+            "depends_on": [1101005, 1122334],
+            "url": "https://www.ryanair.com/gb/en/lp/chat",
+            "creation_time": "2024-10-30T15:04:41Z",
+        },
+    ]
+}
+
+SAMPLE_ETP_DEPENDENCIES_BUGS = {
+    item["id"]: item
+    for item in [
+        {
+            "blocks": [
+                1526695,
+                1903311,
+                1903317,
+                1903340,
+                1903345,
+            ],
+            "resolution": "",
+            "status": "NEW",
+            "see_also": [
+                "https://webcompat.com/issues/2999",
+                "https://webcompat.com/issues/10020",
+                "https://github.com/webcompat/web-bugs/issues/23536",
+                "https://github.com/webcompat/web-bugs/issues/23241",
+                "https://github.com/webcompat/web-bugs/issues/23527",
+                "https://github.com/webcompat/web-bugs/issues/23000",
+                "https://github.com/webcompat/web-bugs/issues/21661",
+                "https://github.com/webcompat/web-bugs/issues/22735",
+                "https://webcompat.com/issues/23474",
+                "https://github.com/webcompat/web-bugs/issues/23460",
+                "https://github.com/webcompat/web-bugs/issues/24002",
+                "https://webcompat.com/issues/23470",
+                "https://webcompat.com/issues/24519",
+                "https://github.com/webcompat/web-bugs/issues/25315",
+                "https://github.com/webcompat/web-bugs/issues/26073",
+                "https://github.com/webcompat/web-bugs/issues/27976",
+                "https://github.com/webcompat/web-bugs/issues/28052#event-2248891646",
+                "https://github.com/webcompat/web-bugs/issues/28425",
+                "https://github.com/webcompat/web-bugs/issues/29218",
+                "https://webcompat.com/issues/20266",
+                "https://github.com/webcompat/web-bugs/issues/30320",
+                "https://webcompat.com/issues/38315",
+                "https://webcompat.com/issues/35647",
+            ],
+            "creation_time": "2014-11-18T16:11:29Z",
+            "summary": "[meta] ETP Strict mode or Private Browsing mode tracking protection breakage",
+            "url": "",
+            "id": 1101005,
+            "component": "Privacy: Anti-Tracking",
+            "depends_on": [
+                1400025,
+                1446243,
+                1465962,
+                1470298,
+                1470301,
+                1486425,
+                1627322,
+            ],
+            "keywords": ["meta", "webcompat:platform-bug"],
+            "product": "Core",
+        },
+        {
+            "status": "NEW",
+            "resolution": "",
+            "blocks": [1101005, 1773684, 1921943],
+            "summary": "[meta] Email Tracking Breakage",
+            "creation_time": "2022-10-26T09:33:25Z",
+            "see_also": [],
+            "component": "Privacy: Anti-Tracking",
+            "url": "",
+            "id": 1797458,
+            "product": "Core",
+            "keywords": ["meta"],
+            "depends_on": [
+                1796560,
+                1799094,
+                1799618,
+                1800007,
+                1803127,
+            ],
+        },
+        {
+            "status": "NEW",
+            "resolution": "",
+            "creation_time": "2024-01-17T13:40:16Z",
+            "see_also": [
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1869326",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1872855",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1874855",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1878855",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1428122",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1892176",
+            ],
+            "url": "",
+            "keywords": ["meta"],
+            "product": "Core",
+            "depends_on": [1884676, 1906418, 1894615],
+            "blocks": [
+                1101005,
+                1901474,
+                1905920,
+                1906053,
+                1910548,
+                1910855,
+                1912261,
+                1916183,
+                1916443,
+            ],
+            "summary": "[meta] ETP breakage for webpages that have Disqus comment section",
+            "component": "Privacy: Anti-Tracking",
+            "id": 1875061,
+        },
+        {
+            "status": "NEW",
+            "resolution": "",
+            "creation_time": "2024-01-17T13:40:16Z",
+            "see_also": [],
+            "url": "",
+            "keywords": [],
+            "product": "Core",
+            "depends_on": [444444, 555555],
+            "blocks": [],
+            "summary": "Sample non meta ETP dependency",
+            "component": "Privacy: Anti-Tracking",
+            "id": 1122334,
         },
     ]
 }
@@ -1530,3 +1705,79 @@ def test_convert_bug_data(bz):
 def test_parse_datetime():
     result = parse_datetime_str("2024-06-11T16:35:50Z")
     assert result == datetime(2024, 6, 11, 16, 35, 50, tzinfo=timezone.utc)
+
+
+def test_unify_etp_dependencies(bz):
+    unified_etp_bugs = bz.unify_etp_dependencies(
+        SAMPLE_ETP_BUGS, SAMPLE_ETP_DEPENDENCIES_BUGS
+    )
+
+    assert unified_etp_bugs == {
+        item["id"]: item
+        for item in [
+            {
+                "url": "https://gothamist.com/",
+                "summary": "gothamist.com - The comments are not displayed with ETP set to Strict",
+                "id": 1910548,
+                "keywords": ["priv-webcompat", "webcompat:site-report"],
+                "component": "Privacy: Site Reports",
+                "resolution": "",
+                "blocks": [],
+                "depends_on": [1101005, 1875061],
+                "creation_time": "2024-07-30T07:37:28Z",
+                "see_also": ["https://github.com/webcompat/web-bugs/issues/139647"],
+                "product": "Web Compatibility",
+                "status": "NEW",
+            },
+            {
+                "see_also": ["https://github.com/webcompat/web-bugs/issues/142250"],
+                "id": 1921943,
+                "summary": "my.farys.be - Login option is missing with ETP set to STRICT",
+                "product": "Web Compatibility",
+                "keywords": [
+                    "priv-webcompat",
+                    "webcompat:platform-bug",
+                    "webcompat:site-report",
+                ],
+                "status": "NEW",
+                "resolution": "",
+                "component": "Privacy: Site Reports",
+                "blocks": [],
+                "depends_on": [1101005, 1797458],
+                "creation_time": "2024-10-01T08:50:58Z",
+                "url": "https://my.farys.be/myfarys/",
+            },
+            {
+                "see_also": [],
+                "summary": "ryanair.com - The form to start a chat does not load with ETP set to STRICT",
+                "id": 1928102,
+                "product": "Web Compatibility",
+                "status": "NEW",
+                "keywords": ["webcompat:site-report"],
+                "blocks": [],
+                "component": "Privacy: Site Reports",
+                "resolution": "",
+                "depends_on": [1101005],
+                "url": "https://www.ryanair.com/gb/en/lp/chat",
+                "creation_time": "2024-10-30T15:04:41Z",
+            },
+        ]
+    }
+
+
+def test_build_etp_relations(bz):
+    unified_etp_bugs = bz.unify_etp_dependencies(
+        SAMPLE_ETP_BUGS, SAMPLE_ETP_DEPENDENCIES_BUGS
+    )
+    etp_data, _ = bz.process_relations(unified_etp_bugs, ETP_RELATION_CONFIG)
+    etp_rels = bz.build_relations(etp_data, ETP_RELATION_CONFIG)
+
+    assert etp_rels == {
+        "etp_breakage_reports": [
+            {"breakage_bug": 1910548, "etp_meta_bug": 1101005},
+            {"breakage_bug": 1910548, "etp_meta_bug": 1875061},
+            {"breakage_bug": 1921943, "etp_meta_bug": 1101005},
+            {"breakage_bug": 1921943, "etp_meta_bug": 1797458},
+            {"breakage_bug": 1928102, "etp_meta_bug": 1101005},
+        ]
+    }
