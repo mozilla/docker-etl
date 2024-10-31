@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 import requests
 import re
 import time
@@ -1335,6 +1336,24 @@ class BugzillaToBigQuery:
             logging.info("Skipping writes")
 
 
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_argument_group(
+        title="bugzilla", description="Bugzilla import arguments"
+    )
+    parser.add_argument(
+        "--bugzilla-api-key",
+        help="Bugzilla API key",
+        default=os.environ.get("BUGZILLA_API_KEY"),
+    )
+    group.add_argument(
+        "--bugzilla-no-history",
+        dest="bugzilla_include_history",
+        action="store_false",
+        default=True,
+        help="Don't read or update bug history",
+    )
+
+
 def main(args: argparse.Namespace) -> None:
     bz_bq = BugzillaToBigQuery(
         args.bq_project_id,
@@ -1343,4 +1362,5 @@ def main(args: argparse.Namespace) -> None:
         args.write,
         args.include_history,
     )
+
     bz_bq.run()
