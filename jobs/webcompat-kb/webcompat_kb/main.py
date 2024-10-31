@@ -115,6 +115,18 @@ FILTER_CONFIG = {
         "o5": "regexp",
         "v5": "parity-",
     },
+    "site_reports_etp": {
+        "product": "Web Compatibility",
+        "component": "Privacy: Site Reports",
+        "f1": "OP",
+        "f2": "bug_status",
+        "o2": "changedafter",
+        "v2": "2020-01-01",
+        "j1": "OR",
+        "f3": "resolution",
+        "o3": "isempty",
+        "f4": "CP",
+    },
 }
 
 RELATION_CONFIG = {
@@ -165,6 +177,17 @@ RELATION_CONFIG = {
         ],
         "source": "see_also",
         "condition": STANDARDS_POSITIONS,
+    },
+}
+
+ETP_RELATION_CONFIG = {
+    "etp_breakage_reports": {
+        "fields": [
+            {"name": "breakage_bug", "type": "INTEGER", "mode": "REQUIRED"},
+            {"name": "etp_meta_bug", "type": "INTEGER", "mode": "REQUIRED"},
+        ],
+        "source": "depends_on",
+        "store_id": "breakage",
     },
 }
 
@@ -314,6 +337,40 @@ class BugzillaToBigQuery:
 
         return filtered
 
+    def unify_etp_dependencies(
+        self,
+        etp_reports: BugsById,
+        etp_dependencies: BugsById,
+    ) -> BugsById:
+        """Unify blocked and depends_on for each ETP bug as their dependencies are inconsistent,
+        keep only ETP meta bugs and store them only in depends_on field."""
+
+        filtered = {}
+
+        for bug_id, source_bug in etp_reports.items():
+            bug = source_bug.copy()
+
+            blocks = [
+                blocked_id
+                for blocked_id in bug["blocks"]
+                if blocked_id in etp_dependencies
+                and "meta" in etp_dependencies[blocked_id]["keywords"]
+            ]
+
+            depends = [
+                depends_id
+                for depends_id in bug["depends_on"]
+                if depends_id in etp_dependencies
+                and "meta" in etp_dependencies[depends_id]["keywords"]
+            ]
+
+            bug["depends_on"] = blocks + depends
+            bug["blocks"] = []
+
+            filtered[bug_id] = bug
+
+        return filtered
+
     def chunked_list(self, data: list[int], size: int):
         for i in range(0, len(data), size):
             yield data[i : i + size]
@@ -337,7 +394,11 @@ class BugzillaToBigQuery:
 
     def fetch_all_bugs(
         self,
-    ) -> Optional[tuple[MutBugsById, MutBugsById, MutBugsById, MutBugsById]]:
+    ) -> Optional[
+        tuple[
+            MutBugsById, MutBugsById, MutBugsById, MutBugsById, MutBugsById, MutBugsById
+        ]
+    ]:
         """Get all the bugs that should be imported into BigQuery.
 
         :returns: A tuple of (all bugs, site report bugs, knowledge base bugs,
@@ -369,6 +430,19 @@ class BugzillaToBigQuery:
         platform_bugs = fetched_bugs["platform_bugs"]
         platform_bugs.update(extra_platform_bugs)
 
+        etp_reports = fetched_bugs["site_reports_etp"]
+        etp_depends_on_ids = set()
+
+        for bug in etp_reports.values():
+            etp_depends_on_ids |= set(bug["depends_on"])
+            etp_depends_on_ids |= set(bug["blocks"])
+
+        etp_completed, etp_dependencies = self.fetch_blocking_bugs(etp_depends_on_ids)
+
+        if not etp_completed:
+            logging.error("Failed to fetch etp blocking bugs")
+            return None
+
         all_bugs: dict[int, Bug] = {}
         for bugs in [
             site_reports,
@@ -377,10 +451,19 @@ class BugzillaToBigQuery:
             fetched_bugs["other"],
             fetched_bugs["parity"],
             platform_bugs,
+            etp_reports,
+            etp_dependencies,
         ]:
             all_bugs.update(bugs)
 
-        return all_bugs, site_reports, kb_bugs, platform_bugs
+        return (
+            all_bugs,
+            site_reports,
+            kb_bugs,
+            platform_bugs,
+            etp_reports,
+            etp_dependencies,
+        )
 
     def process_relations(
         self, bugs: BugsById, relation_config: Mapping[str, Mapping[str, Any]]
@@ -609,7 +692,11 @@ class BugzillaToBigQuery:
         table = self.client.get_table(kb_bugs_table)
         logging.info(f"Loaded {table.num_rows} rows into {table}")
 
-    def update_relations(self, relations):
+    def update_relations(
+        self,
+        relations: Mapping[str, list[Mapping[str, Any]]],
+        relation_config: Mapping[str, Mapping[str, Any]],
+    ):
         for key, value in relations.items():
             if value:
                 job_config = bigquery.LoadJobConfig(
@@ -618,14 +705,16 @@ class BugzillaToBigQuery:
                         bigquery.SchemaField(
                             item["name"], item["type"], mode=item["mode"]
                         )
-                        for item in RELATION_CONFIG[key]["fields"]
+                        for item in relation_config[key]["fields"]
                     ],
                     write_disposition="WRITE_TRUNCATE",
                 )
 
                 relation_table = f"{self.bq_dataset_id}.{key}"
                 job = self.client.load_table_from_json(
-                    value, relation_table, job_config=job_config
+                    [dict(item) for item in value],  # type conversion
+                    relation_table,
+                    job_config=job_config,
                 )
 
                 logging.info(f"Writing to `{relation_table}` table")
@@ -1156,7 +1245,14 @@ class BugzillaToBigQuery:
                 "Fetching bugs from Bugzilla was not completed due to an error, aborting."
             )
 
-        all_bugs, site_reports, kb_bugs, platform_bugs = fetch_all_result
+        (
+            all_bugs,
+            site_reports,
+            kb_bugs,
+            platform_bugs,
+            etp_reports,
+            etp_dependencies,
+        ) = fetch_all_result
 
         # Add platform bugs that should be imported as knowledge base bugs (with some
         # modifications to their dependencies)
@@ -1195,9 +1291,21 @@ class BugzillaToBigQuery:
 
         history_changes = self.fetch_update_history(all_bugs)
 
+        etp_rels = {}
+        if etp_reports:
+            etp_reports_unified = self.unify_etp_dependencies(
+                etp_reports, etp_dependencies
+            )
+            etp_data, _ = self.process_relations(
+                etp_reports_unified, ETP_RELATION_CONFIG
+            )
+
+            etp_rels = self.build_relations(etp_data, ETP_RELATION_CONFIG)
+
         self.update_bugs(all_bugs)
         self.update_kb_ids(kb_ids)
-        self.update_relations(rels)
+        self.update_relations(rels, RELATION_CONFIG)
+        self.update_relations(etp_rels, ETP_RELATION_CONFIG)
 
         last_change_time_max = parse_datetime_str(
             max(all_bugs.values(), key=lambda x: x["last_change_time"])[
