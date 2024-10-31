@@ -13,6 +13,7 @@ from typing import (
     NamedTuple,
     Optional,
     Union,
+    cast,
 )
 from datetime import date, datetime, timedelta, timezone
 
@@ -23,6 +24,8 @@ BugsById = Mapping[int, Bug]
 MutBugsById = MutableMapping[int, Bug]
 BugHistoryResponse = Mapping[str, Any]
 BugHistoryEntry = Mapping[str, Any]
+Relations = Mapping[str, list[Mapping[str, Any]]]
+RelationConfig = Mapping[str, Mapping[str, Any]]
 
 
 class HistoryRow(NamedTuple):
@@ -368,7 +371,7 @@ class BugzillaToBigQuery:
 
         return filtered
 
-    def chunked_list(self, data: list[int], size: int):
+    def chunked_list(self, data: list[int], size: int) -> Iterator[list[int]]:
         for i in range(0, len(data), size):
             yield data[i : i + size]
 
@@ -463,7 +466,7 @@ class BugzillaToBigQuery:
         )
 
     def process_relations(
-        self, bugs: BugsById, relation_config: Mapping[str, Mapping[str, Any]]
+        self, bugs: BugsById, relation_config: RelationConfig
     ) -> tuple[Mapping[int, Mapping[str, list[int | str]]], Mapping[str, set[int]]]:
         """Build relationship tables based on information in the bugs.
 
@@ -568,8 +571,8 @@ class BugzillaToBigQuery:
         return result
 
     def build_relations(
-        self, bugs: BugsById, relation_config: Mapping[str, Mapping[str, Any]]
-    ) -> Mapping[str, list[Mapping[str, Any]]]:
+        self, bugs: BugsById, relation_config: RelationConfig
+    ) -> Relations:
         relations: dict[str, list[Mapping[str, Any]]] = {
             key: [] for key in relation_config.keys()
         }
@@ -613,7 +616,7 @@ class BugzillaToBigQuery:
             "whiteboard": bug["whiteboard"],
         }
 
-    def update_bugs(self, bugs: BugsById):
+    def update_bugs(self, bugs: BugsById) -> None:
         res = [self.convert_bug_data(bug) for bug in bugs.values()]
 
         job_config = bigquery.LoadJobConfig(
@@ -659,7 +662,7 @@ class BugzillaToBigQuery:
         table = self.client.get_table(bugs_table)
         logging.info(f"Loaded {table.num_rows} rows into {table}")
 
-    def update_kb_ids(self, ids):
+    def update_kb_ids(self, ids: Iterable[int]) -> None:
         res = [{"number": kb_id} for kb_id in ids]
 
         job_config = bigquery.LoadJobConfig(
@@ -691,7 +694,9 @@ class BugzillaToBigQuery:
         table = self.client.get_table(kb_bugs_table)
         logging.info(f"Loaded {table.num_rows} rows into {table}")
 
-    def update_relations(self, relations, relation_config):
+    def update_relations(
+        self, relations: Relations, relation_config: RelationConfig
+    ) -> None:
         for key, value in relations.items():
             if value:
                 job_config = bigquery.LoadJobConfig(
@@ -707,7 +712,9 @@ class BugzillaToBigQuery:
 
                 relation_table = f"{self.bq_dataset_id}.{key}"
                 job = self.client.load_table_from_json(
-                    value, relation_table, job_config=job_config
+                    cast(Iterable[dict[str, Any]], value),
+                    relation_table,
+                    job_config=job_config,
                 )
 
                 logging.info(f"Writing to `{relation_table}` table")
@@ -996,7 +1003,7 @@ class BugzillaToBigQuery:
 
     def is_removed_earliest(
         self, added_times: list[datetime], removed_times: list[datetime]
-    ):
+    ) -> bool:
         events = [(at, "added") for at in added_times] + [
             (rt, "removed") for rt in removed_times
         ]
