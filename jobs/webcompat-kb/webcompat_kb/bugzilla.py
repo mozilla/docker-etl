@@ -16,7 +16,6 @@ from typing import (
 )
 from datetime import date, datetime, timedelta, timezone
 
-import google.auth
 from google.cloud import bigquery
 
 Bug = Mapping[str, Any]
@@ -239,21 +238,14 @@ def parse_datetime_str(s: str) -> datetime:
 class BugzillaToBigQuery:
     def __init__(
         self,
+        client: bigquery.Client,
         bq_project_id: str,
         bq_dataset_id: str,
         bugzilla_api_key: Optional[str],
         write: bool,
         include_history: bool,
     ):
-        credentials, _ = google.auth.default(
-            scopes=[
-                "https://www.googleapis.com/auth/cloud-platform",
-                "https://www.googleapis.com/auth/drive",
-                "https://www.googleapis.com/auth/bigquery",
-            ]
-        )
-
-        self.client = bigquery.Client(credentials=credentials, project=bq_project_id)
+        self.client = client
         self.bq_dataset_id = bq_dataset_id
         self.bugzilla_api_key = bugzilla_api_key
         self.history_fetch_completed = include_history
@@ -1354,13 +1346,14 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def main(args: argparse.Namespace) -> None:
+def main(client: bigquery.Client, args: argparse.Namespace) -> None:
     bz_bq = BugzillaToBigQuery(
+        client,
         args.bq_project_id,
-        args.bq_dataset_id,
+        args.bq_kb_dataset,
         args.bugzilla_api_key,
         args.write,
-        args.include_history,
+        args.bugzilla_include_history,
     )
 
     bz_bq.run()

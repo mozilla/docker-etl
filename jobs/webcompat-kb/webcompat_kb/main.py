@@ -2,7 +2,12 @@ import argparse
 import logging
 import sys
 
+import google.auth
+from google.cloud import bigquery
+
 from . import bugzilla
+
+ALL_JOBS = {"bugzilla": bugzilla}
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -31,7 +36,15 @@ def get_parser() -> argparse.ArgumentParser:
         help="Don't write updates to BigQuery",
     )
 
-    bugzilla.add_arguments(parser)
+    for job_module in ALL_JOBS.values():
+        job_module.add_arguments(parser)
+
+    parser.add_argument(
+        "jobs",
+        nargs="*",
+        choices=list(ALL_JOBS.keys()),
+        help="Jobs to run (defaults to all)",
+    )
 
     return parser
 
@@ -46,6 +59,21 @@ def set_default_args(parser: argparse.ArgumentParser, args: argparse.Namespace) 
         # Default to a test dataset
         args.bq_kb_dataset = "webcompat_knowledge_base_test"
 
+    if not args.jobs:
+        args.jobs = list(ALL_JOBS.keys())
+
+
+def get_client(bq_project_id: str) -> bigquery.Client:
+    credentials, _ = google.auth.default(
+        scopes=[
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/drive",
+            "https://www.googleapis.com/auth/bigquery",
+        ]
+    )
+
+    return bigquery.Client(credentials=credentials, project=bq_project_id)
+
 
 def main() -> None:
     logging.basicConfig()
@@ -55,7 +83,10 @@ def main() -> None:
     logging.getLogger().setLevel(logging.getLevelNamesMapping()[args.log_level.upper()])
     set_default_args(parser, args)
 
-    bugzilla.main(args)
+    client = get_client(args.bq_project_id)
+
+    for job in args.jobs:
+        ALL_JOBS[job].main(client, args)
 
 
 if __name__ == "__main__":
