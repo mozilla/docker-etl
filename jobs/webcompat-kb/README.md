@@ -32,18 +32,10 @@ webcompat-etl --bq-project=<your_project_id> --no-write
 Run tests with:
 
 ```sh
-pytest
+./test.sh
 ```
 
-`flake8` and `black` are included for code linting and formatting:
-
+Ruff is used for code formatting:
 ```sh
-pytest --black --flake8
-```
-
-or
-
-```sh
-flake8 webcompat_kb/ tests/
-black --diff webcompat_kb/ tests/
+ruff format .
 ```
