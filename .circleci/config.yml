@@ -139,6 +139,7 @@ jobs:
           name: Test Code
           command: docker run app:build python3 -m pytest
 
+
   build-job-dap-collector-ppa-prod:
     docker:
       - image: << pipeline.parameters.git-image >>
@@ -154,6 +155,7 @@ jobs:
       - run:
           name: Test Code
           command: docker run app:build python3 -m pytest
+
 
   build-job-desktop-mobile-mau-2020:
     docker:
@@ -345,6 +347,19 @@ jobs:
           command: docker run app:build pytest
 
 
+  build-job-wclouser-fxa-db-counts:
+    docker:
+      - image: << pipeline.parameters.git-image >>
+    steps:
+      - checkout
+      - compare-branch:
+          pattern: ^jobs/wclouser-fxa-db-counts/
+      - setup_remote_docker:
+          version: << pipeline.parameters.docker-version >>
+      - run:
+          name: Build Docker image
+          command: docker build -t app:build jobs/wclouser-fxa-db-counts/
+
   build-job-webcompat-kb:
     docker:
       - image: << pipeline.parameters.git-image >>
@@ -501,7 +516,6 @@ workflows:
             branches:
               only: main
 
-
   job-fxci-taskcluster-export:
     jobs:
       - build-job-fxci-taskcluster-export
@@ -616,6 +630,20 @@ workflows:
           image: search-term-data-validation-v2_docker_etl
           requires:
             - build-job-search-term-data-validation-v2
+          filters:
+            branches:
+              only: main
+
+  job-wclouser-fxa-db-counts:
+    jobs:
+      - build-job-wclouser-fxa-db-counts
+      - gcp-gcr/build-and-push-image:
+          context: data-eng-airflow-gcr
+          docker-context: jobs/wclouser-fxa-db-counts/
+          path: jobs/wclouser-fxa-db-counts/
+          image: wclouser-fxa-db-counts_docker_etl
+          requires:
+            - build-job-wclouser-fxa-db-counts
           filters:
             branches:
               only: main
