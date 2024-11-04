@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "webcompat-kb"
+description = "Download log files from Taskcluster CI systems"
+authors = [
+  {name = "Mozilla Corporation"}
+]
+version = "0.1.0"
+classifiers = [
+    "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = [
+  "google-cloud-bigquery==3.24.0",
+]
+
+[project.optional-dependencies]
+test = [
+  "mypy==1.10.0",
+  "pandas-stubs==2.2.2.240603",
+  "pytest-ruff==0.3.2",
+  "pytest==8.2.2",
+  "ruff==0.4.8",
+  "types-cachetools==5.3.0.7",
+  "types-cffi==1.16.0.20240331",
+  "types-protobuf==5.27.0.20240626",
+  "types-pyOpenSSL==24.1.0.20240425",
+  "types-python-dateutil==2.9.0.20240316",
+  "types-pytz==2024.1.0.20240417",
+  "types-requests==2.32.0.20240712",
+  "types-setuptools==70.3.0.20240710",
+  "types-tqdm==4.66.0.20240417",
+]
+
+[project.scripts]
+webcompat-etl = "webcompat_kb.main:main"
+
+[tool.pytest]
+testpaths = ["tests"]

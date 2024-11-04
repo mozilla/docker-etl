@@ -328,7 +328,7 @@ class BugzillaToBigQuery:
             if any(blocked_id in kb_ids for blocked_id in source_bug["blocks"]):
                 continue
 
-            bug = source_bug.copy()
+            bug = {**source_bug}
 
             # Only store a breakage bug as it's the relation we care about
             bug["blocks"] = [
@@ -355,7 +355,7 @@ class BugzillaToBigQuery:
         filtered = {}
 
         for bug_id, source_bug in etp_reports.items():
-            bug = source_bug.copy()
+            bug = {**source_bug}
 
             blocks = [
                 blocked_id
@@ -1306,7 +1306,7 @@ class BugzillaToBigQuery:
             logging.info("Not updating bug history")
             history_changes = []
 
-        etp_rels = {}
+        etp_rels: Mapping[str, list[Mapping[str, Any]]] = {}
         if etp_reports:
             etp_reports_unified = self.unify_etp_dependencies(
                 etp_reports, etp_dependencies
