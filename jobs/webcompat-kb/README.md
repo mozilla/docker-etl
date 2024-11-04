@@ -15,14 +15,16 @@ docker build -t webcompat-kb .
 To run locally, first install dependencies in `jobs/webcompat-kb`:
 
 ```sh
-pip install -r requirements.txt
+python3 -m venv  _venv
+source _venv/bin/activate
+pip install -e .
 ```
 
-And then run the script after authentication with gcloud: 
+And then run the script after authentication with gcloud:
 
 ```sh
 gcloud auth application-default login
-python3 webcompat_kb/main.py --bq_project_id=<your_project_id> --bq_dataset_id=<your_dataset_id>
+webcompat-etl --bq-project=<your_project_id> --no-write
 ```
 
 ## Development
@@ -30,18 +32,10 @@ python3 webcompat_kb/main.py --bq_project_id=<your_project_id> --bq_dataset_id=<
 Run tests with:
 
 ```sh
-pytest
+./test.sh
 ```
 
-`flake8` and `black` are included for code linting and formatting:
-
+Ruff is used for code formatting:
 ```sh
-pytest --black --flake8
-```
-
-or
-
-```sh
-flake8 webcompat_kb/ tests/
-black --diff webcompat_kb/ tests/
+ruff format .
 ```
