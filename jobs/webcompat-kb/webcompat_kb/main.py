@@ -1146,7 +1146,7 @@ class BugzillaToBigQuery:
 
         return []
 
-    def fetch_history(self, all_bugs: BugsById) -> list[BugHistoryEntry]:
+    def fetch_bug_history(self, all_bugs: BugsById) -> list[BugHistoryEntry]:
         filtered_new_history, new_ids = self.fetch_history_for_new_bugs(all_bugs)
 
         existing_bugs = {
@@ -1301,7 +1301,7 @@ class BugzillaToBigQuery:
         kb_ids = list(kb_data.keys())
 
         if self.include_history:
-            history_changes = self.fetch_history(all_bugs)
+            history_changes = self.fetch_bug_history(all_bugs)
         else:
             logging.info("Not updating bug history")
             history_changes = []
