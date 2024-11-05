@@ -1,5 +1,6 @@
 import argparse
 import logging
+import re
 import sys
 
 import google.auth
@@ -8,6 +9,14 @@ from google.cloud import bigquery
 from . import bugzilla, crux
 
 ALL_JOBS = {"bugzilla": bugzilla, "crux": crux}
+
+# In the following we assume ascii-only characters for now. That's perhaps wrong,
+# but it covers everything we're currently using.
+
+# See https://cloud.google.com/resource-manager/docs/creating-managing-projects#before_you_begin
+VALID_PROJECT_ID = re.compile(r"^[a-z](?:[a-z0-9\-]){4,28}[a-z0-9]$")
+# See https://cloud.google.com/bigquery/docs/datasets#dataset-naming
+VALID_DATASET_ID = re.compile(r"^[a-zA-Z_0-9]{1,1024}$")
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -54,9 +63,19 @@ def set_default_args(parser: argparse.ArgumentParser, args: argparse.Namespace) 
         logging.error("The following arguments are required --bq-project")
         sys.exit(1)
 
+    if not VALID_PROJECT_ID.match(args.bq_project_id):
+        parser.print_usage()
+        logging.error(f"Invalid project id {args.bq_project_id}")
+        sys.exit(1)
+
     if args.bq_kb_dataset is None:
         # Default to a test dataset
         args.bq_kb_dataset = "webcompat_knowledge_base_test"
+
+    if not VALID_DATASET_ID.match(args.bq_kb_dataset):
+        parser.print_usage()
+        logging.error(f"Invalid dataset id {args.bq_kb_dataset}")
+        sys.exit(1)
 
     if not args.jobs:
         args.jobs = list(ALL_JOBS.keys())
