@@ -46,7 +46,7 @@ def get_imported_datasets(client: bigquery.Client, config: Config) -> int:
 SELECT
   yyyymm
 FROM
-  `{config.bq_project}.{config.bq_crux_dataset}.import_runs`
+  `{config.bq_crux_dataset}.import_runs`
 LIMIT 1
 """
 
@@ -90,7 +90,7 @@ SELECT
   DISTINCT yyyymm,
   NET.HOST(origin) AS host,
 FROM
-  `{config.bq_project}.{config.bq_crux_dataset}.origin_ranks` AS crux_ranks
+  `{config.bq_crux_dataset}.origin_ranks` AS crux_ranks
 JOIN (
   SELECT
     country_code
