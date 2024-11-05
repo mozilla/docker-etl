@@ -4,12 +4,12 @@ from google.cloud.bigquery import Row
 
 import pytest
 
+from webcompat_kb.base import get_client
 from webcompat_kb.bugzilla import BugzillaToBigQuery
 from webcompat_kb.bugzilla import extract_int_from_field
 from webcompat_kb.bugzilla import parse_string_to_json
 from webcompat_kb.bugzilla import parse_datetime_str
 from webcompat_kb.bugzilla import RELATION_CONFIG, LINK_FIELDS, ETP_RELATION_CONFIG
-from webcompat_kb.main import get_client
 
 SAMPLE_BUGS = {
     item["id"]: item
@@ -908,8 +908,8 @@ KEYWORDS_AND_STATUS = [
 
 
 @pytest.fixture(scope="module")
-@patch("webcompat_kb.main.google.auth.default")
-@patch("webcompat_kb.main.bigquery.Client")
+@patch("webcompat_kb.base.google.auth.default")
+@patch("webcompat_kb.base.bigquery.Client")
 def bz(mock_bq, mock_auth_default):
     mock_credentials = Mock()
     mock_project_id = "placeholder_id"

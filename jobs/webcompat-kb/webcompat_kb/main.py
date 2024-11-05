@@ -1,22 +1,10 @@
 import argparse
 import logging
-import re
 import sys
 
-import google.auth
-from google.cloud import bigquery
-
-from . import bugzilla, crux
-
-ALL_JOBS = {"bugzilla": bugzilla, "crux": crux}
-
-# In the following we assume ascii-only characters for now. That's perhaps wrong,
-# but it covers everything we're currently using.
-
-# See https://cloud.google.com/resource-manager/docs/creating-managing-projects#before_you_begin
-VALID_PROJECT_ID = re.compile(r"^[a-z](?:[a-z0-9\-]){4,28}[a-z0-9]$")
-# See https://cloud.google.com/bigquery/docs/datasets#dataset-naming
-VALID_DATASET_ID = re.compile(r"^[a-zA-Z_0-9]{1,1024}$")
+# These imports are required to populate ALL_JOBS
+from . import bugzilla, crux  # noqa: F401
+from .base import ALL_JOBS, VALID_PROJECT_ID, VALID_DATASET_ID, get_client
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -45,8 +33,8 @@ def get_parser() -> argparse.ArgumentParser:
         help="Don't write updates to BigQuery",
     )
 
-    for job_module in ALL_JOBS.values():
-        job_module.add_arguments(parser)
+    for job_cls in ALL_JOBS.values():
+        job_cls.add_arguments(parser)
 
     parser.add_argument(
         "jobs",
@@ -74,7 +62,7 @@ def set_default_args(parser: argparse.ArgumentParser, args: argparse.Namespace) 
 
     if not VALID_DATASET_ID.match(args.bq_kb_dataset):
         parser.print_usage()
-        logging.error(f"Invalid dataset id {args.bq_kb_dataset}")
+        logging.error(f"Invalid kb dataset id {args.bq_kb_dataset}")
         sys.exit(1)
 
     if not args.jobs:
@@ -86,18 +74,6 @@ def set_default_args(parser: argparse.ArgumentParser, args: argparse.Namespace) 
         sys.exit(1)
 
 
-def get_client(bq_project_id: str) -> bigquery.Client:
-    credentials, _ = google.auth.default(
-        scopes=[
-            "https://www.googleapis.com/auth/cloud-platform",
-            "https://www.googleapis.com/auth/drive",
-            "https://www.googleapis.com/auth/bigquery",
-        ]
-    )
-
-    return bigquery.Client(credentials=credentials, project=bq_project_id)
-
-
 def main() -> None:
     logging.basicConfig()
 
@@ -106,11 +82,16 @@ def main() -> None:
     logging.getLogger().setLevel(logging.getLevelNamesMapping()[args.log_level.upper()])
     set_default_args(parser, args)
 
+    jobs = {job_name: ALL_JOBS[job_name]() for job_name in args.jobs}
+
+    for job_name, job in jobs.items():
+        job.set_default_args(parser, args)
+
     client = get_client(args.bq_project_id)
 
-    for job in args.jobs:
-        logging.info(f"Running job {job}")
-        ALL_JOBS[job].main(client, args)
+    for job_name, job in jobs.items():
+        logging.info(f"Running job {job_name}")
+        job.main(client, args)
 
 
 if __name__ == "__main__":
