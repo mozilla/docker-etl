@@ -19,6 +19,8 @@ from datetime import date, datetime, timedelta, timezone
 
 from google.cloud import bigquery
 
+from .base import EtlJob
+
 Bug = Mapping[str, Any]
 BugsById = Mapping[int, Bug]
 MutBugsById = MutableMapping[int, Bug]
@@ -1334,31 +1336,34 @@ class BugzillaToBigQuery:
             logging.info("Skipping writes")
 
 
-def add_arguments(parser: argparse.ArgumentParser) -> None:
-    group = parser.add_argument_group(
-        title="Bugzilla", description="Bugzilla import arguments"
-    )
-    parser.add_argument(
-        "--bugzilla-api-key",
-        help="Bugzilla API key",
-        default=os.environ.get("BUGZILLA_API_KEY"),
-    )
-    group.add_argument(
-        "--bugzilla-no-history",
-        dest="bugzilla_include_history",
-        action="store_false",
-        default=True,
-        help="Don't read or update bug history",
-    )
+class BugzillaJob(EtlJob):
+    name = "bugzilla"
 
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        group = parser.add_argument_group(
+            title="Bugzilla", description="Bugzilla import arguments"
+        )
+        parser.add_argument(
+            "--bugzilla-api-key",
+            help="Bugzilla API key",
+            default=os.environ.get("BUGZILLA_API_KEY"),
+        )
+        group.add_argument(
+            "--bugzilla-no-history",
+            dest="bugzilla_include_history",
+            action="store_false",
+            default=True,
+            help="Don't read or update bug history",
+        )
 
-def main(client: bigquery.Client, args: argparse.Namespace) -> None:
-    bz_bq = BugzillaToBigQuery(
-        client,
-        args.bq_kb_dataset,
-        args.bugzilla_api_key,
-        args.write,
-        args.bugzilla_include_history,
-    )
+    def main(self, client: bigquery.Client, args: argparse.Namespace) -> None:
+        bz_bq = BugzillaToBigQuery(
+            client,
+            args.bq_kb_dataset,
+            args.bugzilla_api_key,
+            args.write,
+            args.bugzilla_include_history,
+        )
 
-    bz_bq.run()
+        bz_bq.run()
