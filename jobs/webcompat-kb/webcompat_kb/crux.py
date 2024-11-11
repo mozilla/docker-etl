@@ -1,10 +1,13 @@
 import argparse
 import logging
+import sys
 from dataclasses import dataclass
+from datetime import datetime, UTC
 from typing import Self
 
 from google.cloud import bigquery
-from datetime import datetime, UTC
+
+from .base import EtlJob, VALID_DATASET_ID
 
 
 @dataclass
@@ -46,7 +49,7 @@ def get_imported_datasets(client: bigquery.Client, config: Config) -> int:
 SELECT
   yyyymm
 FROM
-  `{config.bq_project}.{config.bq_crux_dataset}.import_runs`
+  `{config.bq_crux_dataset}.import_runs`
 LIMIT 1
 """
 
@@ -90,7 +93,7 @@ SELECT
   DISTINCT yyyymm,
   NET.HOST(origin) AS host,
 FROM
-  `{config.bq_project}.{config.bq_crux_dataset}.origin_ranks` AS crux_ranks
+  `{config.bq_crux_dataset}.origin_ranks` AS crux_ranks
 JOIN (
   SELECT
     country_code
@@ -145,32 +148,45 @@ def get_previous_month_yyyymm(date: datetime) -> int:
     return year * 100 + month
 
 
-def add_arguments(parser: argparse.ArgumentParser) -> None:
-    group = parser.add_argument_group(title="CrUX", description="CrUX update arguments")
-    group.add_argument(
-        "--bq-crux-dataset",
-        default="crux_imported",
-        help="BigQuery CrUX import dataset",
-    )
+class CruxJob(EtlJob):
+    name = "crux"
 
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        group = parser.add_argument_group(
+            title="CrUX", description="CrUX update arguments"
+        )
+        group.add_argument(
+            "--bq-crux-dataset",
+            default="crux_imported",
+            help="BigQuery CrUX import dataset",
+        )
 
-def main(client: bigquery.Client, args: argparse.Namespace) -> None:
-    run_at = datetime.now(UTC)
-    config = Config.from_args(args)
+    def set_default_args(
+        self, parser: argparse.ArgumentParser, args: argparse.Namespace
+    ) -> None:
+        if not VALID_DATASET_ID.match(args.bq_crux_dataset):
+            parser.print_usage()
+            logging.error(f"Invalid crux dataset id {args.bq_crux_dataset}")
+            sys.exit(1)
 
-    last_import_yyyymm = get_imported_datasets(client, config)
-    last_yyyymm = get_previous_month_yyyymm(run_at)
+    def main(self, client: bigquery.Client, args: argparse.Namespace) -> None:
+        run_at = datetime.now(UTC)
+        config = Config.from_args(args)
 
-    if last_import_yyyymm >= last_yyyymm:
-        logging.info(f"Already have a CrUX import for {last_yyyymm}")
-        return
+        last_import_yyyymm = get_imported_datasets(client, config)
+        last_yyyymm = get_previous_month_yyyymm(run_at)
 
-    latest_yyyymm = get_latest_crux_dataset(client)
+        if last_import_yyyymm >= last_yyyymm:
+            logging.info(f"Already have a CrUX import for {last_yyyymm}")
+            return
 
-    if last_import_yyyymm >= latest_yyyymm:
-        logging.info("No new CrUX data available")
-        return
+        latest_yyyymm = get_latest_crux_dataset(client)
 
-    update_crux_data(client, config, latest_yyyymm)
-    update_sightline_data(client, config, latest_yyyymm)
-    update_import_date(client, config, run_at, latest_yyyymm)
+        if last_import_yyyymm >= latest_yyyymm:
+            logging.info("No new CrUX data available")
+            return
+
+        update_crux_data(client, config, latest_yyyymm)
+        update_sightline_data(client, config, latest_yyyymm)
+        update_import_date(client, config, run_at, latest_yyyymm)
