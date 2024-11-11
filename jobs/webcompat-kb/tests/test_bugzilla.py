@@ -4,11 +4,12 @@ from google.cloud.bigquery import Row
 
 import pytest
 
-from webcompat_kb.main import BugzillaToBigQuery
-from webcompat_kb.main import extract_int_from_field
-from webcompat_kb.main import parse_string_to_json
-from webcompat_kb.main import parse_datetime_str
-from webcompat_kb.main import RELATION_CONFIG, LINK_FIELDS, ETP_RELATION_CONFIG
+from webcompat_kb.bugzilla import BugzillaToBigQuery
+from webcompat_kb.bugzilla import extract_int_from_field
+from webcompat_kb.bugzilla import parse_string_to_json
+from webcompat_kb.bugzilla import parse_datetime_str
+from webcompat_kb.bugzilla import RELATION_CONFIG, LINK_FIELDS, ETP_RELATION_CONFIG
+from webcompat_kb.main import get_client
 
 SAMPLE_BUGS = {
     item["id"]: item
@@ -916,8 +917,9 @@ def bz(mock_bq, mock_auth_default):
     mock_bq.return_value = Mock()
 
     mock_bq.return_value = Mock()
+    client = get_client(mock_project_id)
     return BugzillaToBigQuery(
-        bq_project_id=mock_project_id,
+        client=client,
         bq_dataset_id="placeholder_dataset",
         bugzilla_api_key="placeholder_key",
         write=False,
@@ -1266,7 +1268,7 @@ def test_is_removed_earliest(bz):
     assert not is_removed_first_empty
 
 
-@patch("webcompat_kb.main.BugzillaToBigQuery.get_existing_history_records_by_ids")
+@patch("webcompat_kb.bugzilla.BugzillaToBigQuery.get_existing_history_records_by_ids")
 def test_filter_only_unsaved_changes(mock_get_existing, bz):
     schema = {"number": 0, "who": 1, "change_time": 2, "changes": 3}
 
@@ -1339,7 +1341,7 @@ def test_filter_only_unsaved_changes(mock_get_existing, bz):
     assert result == expected
 
 
-@patch("webcompat_kb.main.BugzillaToBigQuery.get_existing_history_records_by_ids")
+@patch("webcompat_kb.bugzilla.BugzillaToBigQuery.get_existing_history_records_by_ids")
 def test_filter_only_unsaved_changes_multiple_changes(mock_get_existing, bz):
     schema = {"number": 0, "who": 1, "change_time": 2, "changes": 3}
 
@@ -1399,7 +1401,7 @@ def test_filter_only_unsaved_changes_multiple_changes(mock_get_existing, bz):
     assert changes == expected_changes
 
 
-@patch("webcompat_kb.main.BugzillaToBigQuery.get_existing_history_records_by_ids")
+@patch("webcompat_kb.bugzilla.BugzillaToBigQuery.get_existing_history_records_by_ids")
 def test_filter_only_unsaved_changes_empty(mock_get_existing, bz):
     mock_get_existing.return_value = []
 
@@ -1460,7 +1462,7 @@ def test_filter_only_unsaved_changes_empty(mock_get_existing, bz):
     assert result == expected
 
 
-@patch("webcompat_kb.main.BugzillaToBigQuery.get_existing_history_records_by_ids")
+@patch("webcompat_kb.bugzilla.BugzillaToBigQuery.get_existing_history_records_by_ids")
 def test_filter_only_unsaved_changes_synthetic(mock_get_existing, bz):
     history, bug_ids = bz.extract_history_fields(MISSING_KEYWORDS_HISTORY)
     s_history = bz.create_synthetic_history(MISSING_KEYWORDS_BUGS, history)

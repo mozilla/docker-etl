@@ -41,3 +41,6 @@ webcompat-etl = "webcompat_kb.main:main"
 
 [tool.pytest]
 testpaths = ["tests"]
+
+[tool.mypy]
+disallow_untyped_defs = true
