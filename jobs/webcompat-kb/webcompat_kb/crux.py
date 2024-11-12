@@ -50,6 +50,7 @@ SELECT
   yyyymm
 FROM
   `{config.bq_crux_dataset}.import_runs`
+ORDER BY yyyymm DESC
 LIMIT 1
 """
 
@@ -218,11 +219,15 @@ class CruxJob(EtlJob):
         last_import_yyyymm = get_imported_datasets(client, config)
         last_yyyymm = get_previous_month_yyyymm(run_at)
 
+        logging.debug(f"Last CrUX import was {last_import_yyyymm}")
+        logging.debug(f"Last month was {last_yyyymm}")
+
         if last_import_yyyymm >= last_yyyymm:
             logging.info(f"Already have a CrUX import for {last_yyyymm}")
             return
 
         latest_yyyymm = get_latest_crux_dataset(client)
+        logging.debug(f"Latest CrUX data is {latest_yyyymm}")
 
         if last_import_yyyymm >= latest_yyyymm:
             logging.info("No new CrUX data available")
