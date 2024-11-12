@@ -116,6 +116,47 @@ WHERE
         logging.info(f"Sightline data has {result.total_rows} rows")
 
 
+def update_min_rank_data(client: bigquery.Client, config: Config, date: int) -> None:
+    if config.write:
+        insert_str = f"INSERT `{config.bq_project}.{config.bq_crux_dataset}.host_min_ranks` (yyyymm, host, global_rank, local_rank, sightline_rank)"
+    else:
+        insert_str = ""
+
+    query = f"""
+{insert_str}
+SELECT
+  {date} as yyyymm,
+  NET.HOST(origin) AS host,
+  MIN(
+  IF
+    (origin_ranks.country_code = "global", origin_ranks.rank, NULL)) AS global_rank,
+  MIN(
+  IF
+    (origin_ranks.country_code != "global", origin_ranks.rank, NULL)) AS local_rank,
+  MIN(
+  IF
+    (country_code IS NOT NULL, origin_ranks.rank, NULL)) as sightline_rank
+FROM
+  `{config.bq_crux_dataset}.origin_ranks` AS origin_ranks
+LEFT JOIN
+  UNNEST(JSON_VALUE_ARRAY('["global", "us", "fr", "de", "es", "it", "mx"]')) as country_code
+ON
+  origin_ranks.country_code = country_code
+WHERE
+  origin_ranks.yyyymm = {date}
+GROUP BY
+  host
+"""
+    if config.write:
+        logging.info("Updating host_min_ranks data")
+    else:
+        logging.info("Getting updated host_min_ranks data")
+    result = client.query(query).result()
+
+    if not config.write:
+        logging.info(f"host_min_ranks data has {result.total_rows} rows")
+
+
 def update_import_date(
     client: bigquery.Client, config: Config, run_at: datetime, data_yyyymm: int
 ) -> None:
@@ -189,4 +230,5 @@ class CruxJob(EtlJob):
 
         update_crux_data(client, config, latest_yyyymm)
         update_sightline_data(client, config, latest_yyyymm)
+        update_min_rank_data(client, config, latest_yyyymm)
         update_import_date(client, config, run_at, latest_yyyymm)
