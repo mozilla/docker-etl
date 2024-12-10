@@ -20,7 +20,7 @@ forecast_model:
   predict_historical_dates: True
   number_of_simulations: 1000
   parameters:
-    - segment: 
+    - segment:
         device: desktop
       start_date: "2018-01-01"
       end_date: NULL
@@ -45,7 +45,7 @@ forecast_model:
       regressors: ["after_fenix", "in_covid"]
       grid_parameters:
         changepoint_prior_scale: [.01, .1, .15, .2]
-        changepoint_range: [0.8, 0.9, 1]
+        changepoint_range: [0.8, 0.9]
         n_changepoints: [30]
         weekly_seasonality: True
         yearly_seasonality: True
