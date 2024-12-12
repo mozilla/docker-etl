@@ -15,7 +15,7 @@ from typing import (
     Union,
     cast,
 )
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from google.cloud import bigquery
 
@@ -1183,60 +1183,6 @@ class BugzillaToBigQuery:
 
         return []
 
-    def update_metric_history(self) -> None:
-        metrics_table = f"{self.bq_dataset_id}.webcompat_topline_metric"
-        history_table = f"{self.bq_dataset_id}.webcompat_topline_metric_history"
-
-        history_schema = [
-            bigquery.SchemaField("recorded_date", "DATE", mode="REQUIRED"),
-            bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
-            bigquery.SchemaField("bug_count", "INTEGER", mode="REQUIRED"),
-            bigquery.SchemaField("needs_diagnosis_score", "NUMERIC", mode="REQUIRED"),
-            bigquery.SchemaField("platform_score", "NUMERIC", mode="REQUIRED"),
-            bigquery.SchemaField("not_supported_score", "NUMERIC", mode="REQUIRED"),
-            bigquery.SchemaField("total_score", "NUMERIC", mode="REQUIRED"),
-        ]
-
-        self.client.create_table(
-            bigquery.Table(f"{self.client.project}.{history_table}", history_schema),
-            exists_ok=True,
-        )
-
-        query = f"""
-                SELECT recorded_date
-                FROM `{history_table}`
-                ORDER BY recorded_date DESC
-                LIMIT 1
-            """
-
-        rows = list(self.client.query(query).result())
-
-        today = date.today()
-
-        if rows and rows[0]["recorded_date"] >= today:
-            # We've already recorded historic data today
-            logging.info("Already recorded historic data today, skipping")
-            return
-
-        query = f"""
-                SELECT *
-                FROM `{metrics_table}`
-            """
-        rows = list(dict(row.items()) for row in self.client.query(query).result())
-        for row in rows:
-            row["recorded_date"] = today
-
-        logging.info(f"Writing to {history_table} table")
-
-        table = self.client.get_table(history_table)
-        errors = self.client.insert_rows(table, rows)
-
-        if errors:
-            logging.error(errors)
-        else:
-            logging.info("Metrics history recorded")
-            logging.info(f"Loaded {len(rows)} rows into {table}")
-
     def record_import_run(
         self,
         start_time: float,
@@ -1356,8 +1302,6 @@ class BugzillaToBigQuery:
                 len(history_changes),
                 last_change_time_max,
             )
-
-            self.update_metric_history()
         else:
             logging.info("Skipping writes")
 
