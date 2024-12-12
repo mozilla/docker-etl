@@ -377,7 +377,7 @@ class BugzillaToBigQuery:
         for i in range(0, len(data), size):
             yield data[i : i + size]
 
-    def fetch_blocking_bugs(self, bug_ids: set[int]) -> tuple[bool, MutBugsById]:
+    def fetch_by_id(self, bug_ids: set[int]) -> tuple[bool, MutBugsById]:
         chunk_size = 400
         all_bugs: dict[int, Bug] = {}
         all_completed = True
@@ -394,6 +394,38 @@ class BugzillaToBigQuery:
 
         return all_completed, all_bugs
 
+    def fetch_related_bugs(
+        self, bugs: BugsById, relations: list[str], all_bugs: MutBugsById
+    ) -> tuple[bool, MutBugsById]:
+        related_ids: set[int] = set()
+        related_bugs: dict[int, Bug] = {}
+        for bug in bugs.values():
+            for relation_property in relations:
+                related_ids |= set(
+                    bug_id
+                    for bug_id in bug[relation_property]
+                    if bug_id not in all_bugs
+                )
+                related_bugs.update(
+                    {
+                        bug_id: all_bugs[bug_id]
+                        for bug_id in bug[relation_property]
+                        if bug_id in all_bugs
+                    }
+                )
+
+        completed, fetched_bugs = self.fetch_by_id(related_ids)
+        all_bugs.update(fetched_bugs)
+        related_bugs.update(fetched_bugs)
+        return completed, related_bugs
+
+    def filter_core_bugs(self, bugs: BugsById) -> BugsById:
+        return {
+            bug_id: bug
+            for bug_id, bug in bugs.items()
+            if bug["product"] != "Web Compatibility"
+        }
+
     def fetch_all_bugs(
         self,
     ) -> Optional[
@@ -404,59 +436,53 @@ class BugzillaToBigQuery:
         """Get all the bugs that should be imported into BigQuery.
 
         :returns: A tuple of (all bugs, site report bugs, knowledge base bugs,
-                              core bugs)."""
+                              core bugs, ETP report bugs, ETP dependencies)."""
         fetched_bugs = {}
+        all_bugs: dict[int, Bug] = {}
 
         for category, filter_config in FILTER_CONFIG.items():
             logging.info(f"Fetching {category.replace('_', ' ').title()} bugs")
             completed, fetched_bugs[category] = self.fetch_bugs(filter_config)
+            all_bugs.update(fetched_bugs[category])
             if not completed:
                 return None
 
         site_reports = fetched_bugs["site_reports_wc"]
         site_reports.update(fetched_bugs["site_reports_other"])
 
+        logging.info("Fetching site-report blocking bugs")
+        completed_site_report_deps, site_reports_deps = self.fetch_related_bugs(
+            site_reports, ["depends_on"], all_bugs
+        )
+
+        if not completed_site_report_deps:
+            logging.error("Failed to fetch site report blocking bugs")
+            return None
+
         kb_bugs = fetched_bugs["knowledge_base"]
 
-        kb_depends_on_ids = set()
-        for bug in kb_bugs.values():
-            kb_depends_on_ids |= set(bug["depends_on"])
-
         logging.info("Fetching blocking bugs for KB bugs")
-        completed, extra_platform_bugs = self.fetch_blocking_bugs(kb_depends_on_ids)
+        completed_platform_bugs, kb_deps = self.fetch_related_bugs(
+            kb_bugs, ["depends_on"], all_bugs
+        )
 
         if not completed:
             logging.error("Failed to fetch blocking bugs")
             return None
 
         platform_bugs = fetched_bugs["platform_bugs"]
-        platform_bugs.update(extra_platform_bugs)
+        platform_bugs.update(self.filter_core_bugs(site_reports_deps))
+        platform_bugs.update(self.filter_core_bugs(kb_deps))
 
         etp_reports = fetched_bugs["site_reports_etp"]
-        etp_depends_on_ids = set()
 
-        for bug in etp_reports.values():
-            etp_depends_on_ids |= set(bug["depends_on"])
-            etp_depends_on_ids |= set(bug["blocks"])
-
-        etp_completed, etp_dependencies = self.fetch_blocking_bugs(etp_depends_on_ids)
+        etp_completed, etp_dependencies = self.fetch_related_bugs(
+            etp_reports, ["depends_on", "blocks"], all_bugs
+        )
 
         if not etp_completed:
             logging.error("Failed to fetch etp blocking bugs")
             return None
-
-        all_bugs: dict[int, Bug] = {}
-        for bugs in [
-            site_reports,
-            kb_bugs,
-            fetched_bugs["interventions"],
-            fetched_bugs["other"],
-            fetched_bugs["parity"],
-            platform_bugs,
-            etp_reports,
-            etp_dependencies,
-        ]:
-            all_bugs.update(bugs)
 
         return (
             all_bugs,
