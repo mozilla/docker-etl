@@ -3,7 +3,7 @@ import logging
 import sys
 
 # These imports are required to populate ALL_JOBS
-from . import bugzilla, crux  # noqa: F401
+from . import bugzilla, crux, metric  # noqa: F401
 from .base import ALL_JOBS, VALID_PROJECT_ID, VALID_DATASET_ID, get_client
 
 
