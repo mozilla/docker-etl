@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "webcompat-kb"
-description = "Download log files from Taskcluster CI systems"
+description = "Import webcompat data into BigQuery"
 authors = [
   {name = "Mozilla Corporation"}
 ]
