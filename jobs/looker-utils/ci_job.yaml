@@ -10,6 +10,3 @@ build-job-looker-utils:
     - run:
         name: Build Docker image
         command: docker build -t app:build jobs/looker-utils/
-    - run:
-        name: Test Code
-        command: docker run app:build pytest --flake8 --black

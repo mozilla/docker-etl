@@ -19,12 +19,12 @@ def setup_sdk(client_id, client_secret, instance) -> methods.Looker40SDK:
 
 @click.group()
 @click.option(
-    "--client_id", "--client-id", envvar="LOOKER_API_CLIENT_ID", required=True
+    "--client_id", "--client-id", envvar="LOOKER_CLIENT_ID", required=True
 )
 @click.option(
     "--client_secret",
     "--client-secret",
-    envvar="LOOKER_API_CLIENT_SECRET",
+    envvar="LOOKER_CLIENT_SECRET",
     required=True,
 )
 @click.option(
