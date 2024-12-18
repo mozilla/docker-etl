@@ -31,8 +31,8 @@ def setup_sdk(client_id, client_secret, instance) -> methods.Looker40SDK:
 @click.pass_context
 def cli(ctx: dict, client_id: str, client_secret: str, instance_uri: str):
     sdk = setup_sdk(client_id, client_secret, instance_uri)
+    ctx.ensure_object(dict)
     ctx.obj["SDK"] = sdk
-    pass
 
 
 @cli.command()
