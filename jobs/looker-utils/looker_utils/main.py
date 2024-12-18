@@ -89,4 +89,4 @@ def delete_branches(ctx, project, inactive_days, exclude):
 
 
 if __name__ == "__main__":
-    cli(obj={})
+    cli()
