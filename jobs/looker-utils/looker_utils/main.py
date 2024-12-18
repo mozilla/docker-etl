@@ -18,9 +18,7 @@ def setup_sdk(client_id, client_secret, instance) -> methods.Looker40SDK:
 
 
 @click.group()
-@click.option(
-    "--client_id", "--client-id", envvar="LOOKER_CLIENT_ID", required=True
-)
+@click.option("--client_id", "--client-id", envvar="LOOKER_CLIENT_ID", required=True)
 @click.option(
     "--client_secret",
     "--client-secret",
@@ -45,8 +43,8 @@ def cli(ctx: dict, client_id: str, client_secret: str, instance_uri: str):
     default=["spoke-default", "looker-hub"],
 )
 @click.option(
-    "--n_days",
-    "--n-days",
+    "--inactive_days",
+    "--inactive-days",
     help="Delete branches that haven't been updated within the last n days",
     default=180,
 )
@@ -65,9 +63,11 @@ def cli(ctx: dict, client_id: str, client_secret: str, instance_uri: str):
     ],
 )
 @click.pass_context
-def delete_branches(ctx, project, n_days, exclude):
+def delete_branches(ctx, project, inactive_days, exclude):
     sdk = ctx.obj["SDK"]
-    date_cutoff = datetime.now().replace(tzinfo=timezone.utc) - timedelta(days=n_days)
+    date_cutoff = datetime.now().replace(tzinfo=timezone.utc) - timedelta(
+        days=inactive_days
+    )
 
     for lookml_project in project:
         branches = sdk.all_git_branches(project_id=lookml_project)
@@ -81,11 +81,11 @@ def delete_branches(ctx, project, n_days, exclude):
                 and branch.name not in exclude
             ):
                 print(
-                    f"Deleting branch {branch.name} {lookml_project}, last commit on {commit_date}"
+                    f"{branch.name} in {lookml_project}, last commit on {commit_date}"
                 )
-                sdk.delete_git_branch(
-                    project_id=lookml_project, branch_name=branch.name
-                )
+                # sdk.delete_git_branch(
+                #     project_id=lookml_project, branch_name=branch.name
+                # )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 FROM python:3.8
-MAINTAINER REPLACE ME <replaceme@mozilla.com>
+MAINTAINER Anna Scholtz <ascholtz@mozilla.com>
 
 # https://github.com/mozilla-services/Dockerflow/blob/master/docs/building-container.md
 ARG USER_ID="10001"
