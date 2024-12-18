@@ -20,7 +20,7 @@ from fxci_etl.config import Config
 
 
 class BigQueryLoader:
-    CHUNK_SIZE = 25000
+    CHUNK_SIZE = 5000
 
     def __init__(self, config: Config, table_type: str):
         self.config = config
