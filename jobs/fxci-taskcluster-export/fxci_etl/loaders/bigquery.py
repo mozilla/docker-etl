@@ -13,13 +13,14 @@ from google.cloud.bigquery import (
     TimePartitioning,
     TimePartitioningType,
 )
+from loguru import logger
 
 from fxci_etl.schemas import Record, get_record_cls, generate_schema
 from fxci_etl.config import Config
 
 
 class BigQueryLoader:
-    CHUNK_SIZE = 25000
+    CHUNK_SIZE = 5000
 
     def __init__(self, config: Config, table_type: str):
         self.config = config
@@ -57,7 +58,7 @@ class BigQueryLoader:
         bq = self.config.bigquery
         self.table_name = f"{bq.project}.{bq.dataset}.{getattr(bq.tables, table_type)}"
 
-        print(f"Ensuring table {self.table_name} exists.")
+        logger.debug(f"Ensuring table {self.table_name} exists.")
 
         schema_cls = get_record_cls(table_type)
         schema = generate_schema(schema_cls)
@@ -82,7 +83,9 @@ class BigQueryLoader:
         if not records:
             return
 
-        print(f"Deleting records in '{self.table_name}' for partition '{submission_date}'")
+        logger.info(
+            f"Deleting records in '{self.table_name}' for partition '{submission_date}'"
+        )
         job = self.client.query(
             dedent(
                 f"""
@@ -117,14 +120,13 @@ class BigQueryLoader:
             except NotFound:
                 pass
 
-        print(
-            f"Attempting to insert {len(records)} records into table '{self.table_name}'"
-        )
+        logger.info(f"{len(records)} records to insert into table '{self.table_name}'")
 
         # There's a 10MB limit on the `insert_rows` request, submit rows in
         # batches to avoid exceeding it.
         errors = []
         for batch in batched(records, self.CHUNK_SIZE):
+            logger.debug(f"Inserting batch of {len(batch)} records")
             errors.extend(
                 self.client.insert_rows(
                     self.table, [asdict(row) for row in batch], retry=False
@@ -132,11 +134,13 @@ class BigQueryLoader:
             )
 
         if errors:
-            print("The following records failed:")
+            logger.error("The following records failed:")
             pprint(errors)
 
         num_inserted = len(records) - len(errors)
-        print(f"Inserted {num_inserted} records in table '{self.table_name}'")
+        logger.info(
+            f"Successfully inserted {num_inserted} records in table '{self.table_name}'"
+        )
 
         if use_backup:
             self._record_backup.upload_from_string(json.dumps(errors))

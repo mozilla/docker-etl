@@ -34,7 +34,6 @@ class PulseDrainCommand(ConfigCommand):
 
         callbacks = [BigQueryHandler(config)]
         for queue in config.pulse.queues:
-            self.line(f"Draining queue {queue}")
             drain(config, queue, callbacks)
         return 0
 
