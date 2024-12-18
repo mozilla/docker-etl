@@ -10,6 +10,7 @@ import dacite
 from google.cloud import storage
 from google.cloud.exceptions import NotFound
 from kombu import Message
+from loguru import logger
 
 from fxci_etl.config import Config
 from fxci_etl.loaders.bigquery import BigQueryLoader
@@ -45,8 +46,10 @@ class PulseHandler(ABC):
         bucket = storage_client.bucket(config.storage.bucket)
         self._event_backup = bucket.blob(f"failed-pulse-events-{self.name}.json")
         self._buffer: list[Event] = []
+        self._count = 0
 
     def __call__(self, data: dict[str, Any], message: Message) -> None:
+        self._count += 1
         message.ack()
         event = Event(data, message)
         self._buffer.append(event)
@@ -64,7 +67,7 @@ class PulseHandler(ABC):
             try:
                 self.process_event(event)
             except Exception:
-                print(f"Error processing event in {self.name} handler:")
+                logger.error(f"Error processing event in {self.name} handler:")
                 pprint(event, indent=2)
                 traceback.print_exc()
                 failed.append(event.to_dict())
@@ -145,6 +148,7 @@ class BigQueryHandler(PulseHandler):
                 raise
 
     def on_processing_complete(self):
+        logger.info(f"Processed {self._count} pulse events")
         if self.task_records:
             task_loader = BigQueryLoader(self.config, "tasks")
             task_loader.insert(self.task_records)

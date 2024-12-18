@@ -1,4 +1,5 @@
 from kombu import Connection, Exchange, Queue
+from loguru import logger
 
 from fxci_etl.config import Config
 from fxci_etl.pulse.handler import BigQueryHandler, PulseHandler
@@ -37,19 +38,21 @@ def get_consumer(
     )
 
     consumer = connection.Consumer(queue, auto_declare=False, callbacks=callbacks)
-    consumer.queues[0].queue_declare()
+    qinfo = consumer.queues[0].queue_declare()
+    logger.debug(f"{qinfo.message_count} pending messages")
     consumer.queues[0].queue_bind()
     return consumer
 
 
 def drain(config: Config, name: str, callbacks: list[PulseHandler]):
+    logger.info(f"Draining pulse queue {name}")
     with get_connection(config) as connection:
         with get_consumer(config, connection, name, callbacks) as consumer:
             while True:
                 try:
                     connection.drain_events(timeout=1)
                 except TimeoutError:
-                    count = consumer.queues[0].queue_declare().message_count
+                    count = consumer.queues[0].queue_declare(passive=True).message_count
                     if count < 100:
                         break
 
