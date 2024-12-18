@@ -83,9 +83,9 @@ def delete_branches(ctx, project, inactive_days, exclude):
                 print(
                     f"{branch.name} in {lookml_project}, last commit on {commit_date}"
                 )
-                # sdk.delete_git_branch(
-                #     project_id=lookml_project, branch_name=branch.name
-                # )
+                sdk.delete_git_branch(
+                    project_id=lookml_project, branch_name=branch.name
+                )
 
 
 if __name__ == "__main__":
