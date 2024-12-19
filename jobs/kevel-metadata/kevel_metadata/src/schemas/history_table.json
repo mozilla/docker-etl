@@ -1,0 +1,177 @@
+[
+    {
+        "name": "submission_date",
+        "mode": "NULLABLE",
+        "type": "DATE",
+        "description": "Date of the metadata export from pocket",
+        "fields": []
+    },
+    {
+        "name": "ad_id",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "advertiser_id",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Unique ID for the advertiser",
+        "fields": []
+    },
+    {
+        "name": "advertiser_name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "all_site_ids",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "all_site_names",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "campaign_id",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "ID for the ad campaign",
+        "fields": []
+    },
+    {
+        "name": "campaign_name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "content_url",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "creative_id",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "creative_title",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "creative_url",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "flight_id",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "SPOC ID",
+        "fields": []
+    },
+    {
+        "name": "flight_name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "image_url",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "price",
+        "mode": "NULLABLE",
+        "type": "FLOAT",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "rate_type",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "site_id",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "site_id_count",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "site_name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "ID for the ad site URL",
+        "fields": []
+    },
+    {
+        "name": "targeted_against_default_site",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "targeted_against_default_zone",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "zone_id",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "Pocket page placement ID",
+        "fields": []
+    },
+    {
+        "name": "zone_id_count",
+        "mode": "NULLABLE",
+        "type": "INTEGER",
+        "description": "",
+        "fields": []
+    },
+    {
+        "name": "zone_name",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "",
+        "fields": []
+    }
+]
