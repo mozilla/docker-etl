@@ -69,6 +69,9 @@ def delete_branches(ctx, project, inactive_days, exclude):
         days=inactive_days
     )
 
+    # switch to dev mode
+    sdk.update_session({"workspace_id":"dev"})
+
     for lookml_project in project:
         branches = sdk.all_git_branches(project_id=lookml_project)
 
@@ -83,6 +86,7 @@ def delete_branches(ctx, project, inactive_days, exclude):
                 print(
                     f"{branch.name} in {lookml_project}, last commit on {commit_date}"
                 )
+                
                 sdk.delete_git_branch(
                     project_id=lookml_project, branch_name=branch.name
                 )
