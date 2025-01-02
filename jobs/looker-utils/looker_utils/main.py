@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import click
 import looker_sdk
 from looker_sdk import methods40 as methods
+from looker_sdk.sdk.api40 import models
 
 
 def setup_sdk(client_id, client_secret, instance) -> methods.Looker40SDK:
@@ -70,7 +71,7 @@ def delete_branches(ctx, project, inactive_days, exclude):
     )
 
     # switch to dev mode
-    sdk.update_session({"workspace_id":"dev"})
+    sdk.update_session(models.WriteApiSession(workspace_id="dev"))
 
     for lookml_project in project:
         branches = sdk.all_git_branches(project_id=lookml_project)
