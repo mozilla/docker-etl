@@ -473,36 +473,46 @@ def set_site_status(xm_site_id, status):
         raise Exception(response.content)
 
 
-def add_new_sites(wd_sites, xm_sites, xm_sites_inactive):
+def add_new_sites(wd_sites, xm_sites, xm_sites_inactive, limit):
     logger.info("Adding new sites to XMatters")
     xm_sites_in_wd = {}
+    num_changes = 0
     for wd_site in wd_sites:
         if wd_site in xm_sites:
             logger.debug("WD site %s found in XMatters! No action." % wd_site)
             xm_sites_in_wd[wd_site] = 1
         elif wd_site in xm_sites_inactive:
-            logger.info("WD site %s INACTIVE in XMatters! Reactivating." % wd_site)
-            set_site_active(xm_sites_inactive[wd_site])
+            if num_changes < limit:
+                logger.info("WD site %s INACTIVE in XMatters! Reactivating." % wd_site)
+                set_site_active(xm_sites_inactive[wd_site])
+                num_changes += 1
         else:
-            logger.info(
-                "WD site %s NOT found in XMatters! Adding to XMatters." % wd_site
-            )
-            add_site(wd_sites[wd_site])
-
+            if num_changes < limit:
+                logger.info(
+                    "WD site %s NOT found in XMatters! Adding to XMatters." % wd_site
+                )
+                add_site(wd_sites[wd_site])
+                num_changes += 1
+                
+    logger.info(f"Number of added or activated sites:{num_changes}")
     return xm_sites_in_wd
 
 
-def delete_sites(xm_sites, xm_sites_in_wd):
+def delete_sites(xm_sites, xm_sites_in_wd, limit):
     logger.info("\n")
     logger.info("Deleting empty sites from XMatters")
+    num_changes = 0
     for site in xm_sites:
-        if site not in xm_sites_in_wd and site != "Mountain View Office":
-            logger.info(
-                "Site %s not in WorkDay. INACTIVATING %s from XMatters"
-                % (site, xm_sites[site])
-            )
-            set_site_inactive(xm_sites[site])
-
+        if site not in xm_sites_in_wd and site not in ["Default Site", "Mountain View Office"]:
+            if num_changes < limit:
+                logger.info(
+                    "Site %s not in WorkDay. INACTIVATING %s from XMatters"
+                    % (site, xm_sites[site])
+                )                
+                set_site_inactive(xm_sites[site])
+                num_changes +=1
+  
+    logger.info(f"Number of sites that were inactivated:{num_changes}")
     return True
 
 
@@ -539,15 +549,7 @@ def update_user(wd_user, xm_user, xm_sites):
         headers = {
             "Content-Type": "application/json",
             "Authorization": "Bearer " + get_access_token(),
-        }
-
-    manager_name = ""
-    if "Worker_s_Manager" in wd_user:
-        manager_name = (
-            wd_user["Worker_s_Manager"][0]["User_Manager_Preferred_First_Name"]
-            + " "
-            + wd_user["Worker_s_Manager"][0]["User_Manager_Preferred_Last_Name"]
-        )
+        } 
     site_key = (
         wd_user.get("User_Home_Country", "")
         + ":"
@@ -562,15 +564,10 @@ def update_user(wd_user, xm_user, xm_sites):
             wd_user.get("User_Preferred_Last_Name", "[NO LAST NAME]")
         ),
         "site": xm_sites[site_key],
-        "properties": {
-            "Cost Center": wd_user.get("User_Cost_Center", ""),
-            "Manager": manager_name,
-            "Manager Email": wd_user.get("User_Manager_Email_Address", ""),
-            "Functional Group": wd_user.get("User_Functional_Group", ""),
+        "properties": {                      
             "Home City": wd_user.get("User_Home_City", ""),
             "Home Country": wd_user.get("User_Home_Country", ""),
-            "Home Zipcode": wd_user.get("User_Home_Postal_Code", "")[:20],
-            "Work Location": wd_user.get("User_Work_Location", ""),
+            "Home Zipcode": wd_user.get("User_Home_Postal_Code", "")[:20]
         },
     }
 
@@ -615,14 +612,6 @@ def add_user(wd_user, xm_sites):
             "Content-Type": "application/json",
             "Authorization": "Bearer " + get_access_token(),
         }
-
-    manager_name = ""
-    if "Worker_s_Manager" in wd_user:
-        manager_name = (
-            wd_user["Worker_s_Manager"][0]["User_Manager_Preferred_First_Name"]
-            + " "
-            + wd_user["Worker_s_Manager"][0]["User_Manager_Preferred_Last_Name"]
-        )
     site_key = (
         wd_user.get("User_Home_Country", "")
         + ":"
@@ -642,14 +631,9 @@ def add_user(wd_user, xm_sites):
         "roles": ["Standard User"],
         "supervisors": [_config.supervisor_id],
         "properties": {
-            "Cost Center": wd_user.get("User_Cost_Center", ""),
-            "Manager": manager_name,
-            "Manager Email": wd_user.get("User_Manager_Email_Address", ""),
-            "Functional Group": wd_user.get("User_Functional_Group", ""),
             "Home City": wd_user.get("User_Home_City", ""),
             "Home Country": wd_user.get("User_Home_Country", ""),
-            "Home Zipcode": wd_user.get("User_Home_Postal_Code", "")[:20],
-            "Work Location": wd_user.get("User_Work_Location", ""),
+            "Home Zipcode": wd_user.get("User_Home_Postal_Code", "")[:20]
         },
     }
 
@@ -718,15 +702,22 @@ def actual_person_delete(target):
         raise Exception(response.content)
 
 
-def delete_users(xm_users, users_seen_in_wd):
+def delete_users(xm_users, users_seen_in_wd, limit):
     logger.info("\n")
     logger.info("Deleting old users from XMatters")
+    num_changes = 0
     for user in xm_users:
         if not re.search("@", user):
             # let's just skip any usernames that don't look like emails
             continue
         if user not in users_seen_in_wd:
-            logger.info("User %s not seen in workday, will delete from xmatters" % user)
-            actual_person_delete(user)
-
+            
+            if num_changes < limit:
+                logger.info("User %s not seen in workday, will delete from xmatters" % user)
+                actual_person_delete(user)
+                num_changes +=1
+            else:
+                logger.info("User %s not seen in workday" % user)
+            
+    logger.info(f"Number of deleted users:{num_changes}")
     return True

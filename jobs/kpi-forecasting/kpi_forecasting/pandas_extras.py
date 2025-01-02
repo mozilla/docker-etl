@@ -26,4 +26,32 @@ def aggregate_to_period(
 
     x = df.copy(deep=True)
     x[date_col] = pd.to_datetime(x[date_col]).dt.to_period(period[0]).dt.to_timestamp()
-    return x.groupby(date_col).agg(aggregation).reset_index()
+
+    # treat numeric and string types separately
+    x_string = x.select_dtypes(include=["datetime64", object])
+    x_numeric = x.select_dtypes(include=["float", "int", "datetime64"])
+
+    if set(x_string.columns) | set(x_numeric.columns) != set(x.columns):
+        missing_columns = set(x.columns) - (
+            set(x_string.columns) | set(x_numeric.columns)
+        )
+        missing_columns_str = ",".join(missing_columns)
+        raise ValueError(
+            f"Columns do not have string or numeric type: {missing_columns_str}"
+        )
+
+    x_numeric_agg = x_numeric.groupby(date_col).agg(aggregation).reset_index()
+
+    # all values of x_string should be the same because it is just the dimensions
+    x_string_agg = x_string.drop_duplicates().reset_index(drop=True)
+
+    if len(x_string_agg) != len(x_numeric_agg):
+        raise ValueError(
+            "String and Numeric dataframes have different length, likely due to strings not being unique up to aggregation"
+        )
+
+    # unique preseves order so we should be fine to concat
+    output_df = pd.concat(
+        [x_numeric_agg, x_string_agg.drop(columns=[date_col])], axis=1
+    )
+    return output_df

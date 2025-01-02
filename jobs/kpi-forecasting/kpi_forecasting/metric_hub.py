@@ -1,12 +1,9 @@
 import pandas as pd
 
 from dataclasses import dataclass
-from datetime import datetime
-from dotmap import DotMap
 from google.cloud import bigquery
 from mozanalysis.config import ConfigLoader
 from textwrap import dedent
-from typing import Dict
 
 from kpi_forecasting.utils import parse_end_date
 
@@ -38,7 +35,7 @@ class MetricHub:
     app_name: str
     slug: str
     start_date: str
-    segments: DotMap = None
+    segments: dict = None
     where: str = None
     end_date: str = None
     alias: str = None

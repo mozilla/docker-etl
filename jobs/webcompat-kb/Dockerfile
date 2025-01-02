@@ -1,4 +1,4 @@
-FROM python:3.8
+FROM python:3.12
 MAINTAINER <kberezina@mozilla.com>
 
 # https://github.com/mozilla-services/Dockerflow/blob/master/docs/building-container.md
@@ -14,12 +14,10 @@ WORKDIR ${HOME}
 
 RUN pip install --upgrade pip
 
-COPY requirements.txt requirements.txt
-RUN pip install -r requirements.txt
-
 COPY . .
 
 RUN pip install .
+RUN pip install .[test]
 
 # Drop root and change ownership of the application folder to the user
 RUN chown -R ${USER_ID}:${GROUP_ID} ${HOME}

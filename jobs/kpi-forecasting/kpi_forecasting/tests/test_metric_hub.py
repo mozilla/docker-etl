@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timezone
+import re
 
 from pandas import to_datetime
 from kpi_forecasting.metric_hub import MetricHub
@@ -11,12 +12,12 @@ def test_metrichub_for_dau_kpi():
         slug="mobile_daily_active_users_v1",
         start_date="2024-01-01",
     )
-    now = to_datetime(datetime.utcnow()).date()
+    now = to_datetime(datetime.now(timezone.utc).replace(tzinfo=None)).date()
 
     query = test_metric_hub.query()
-    query_where = f"WHERE submission_date BETWEEN '2024-01-01' AND '{now}'\n GROUP BY"
+    query_where = f"WHERE submission_date BETWEEN '2024-01-01' AND '{now}'\nGROUP BY"
 
-    assert query_where in query
+    assert re.sub(r"[\n\t\s]*", "", query_where) in re.sub(r"[\n\t\s]*", "", query)
     assert "\n    AND" not in query
 
 
@@ -29,7 +30,7 @@ def test_metrichub_with_where():
     )
 
     query = test_metric_hub.query()
-    assert f"\n    AND {test_metric_hub.where}" in query
+    assert f"\n    {test_metric_hub.where}" in query
 
 
 def test_metrichub_with_segments():
@@ -41,7 +42,10 @@ def test_metrichub_with_segments():
     )
 
     query = test_metric_hub.query()
-    assert "segment1 AS test_segment1,\n     segment2 AS test_segment2" in query
+    include_segment_no_whitespace = re.sub(
+        r"[\n\t\s]*", "", "segment1 AS test_segment1, segment2 AS test_segment2"
+    )
+    assert include_segment_no_whitespace in re.sub(r"[\n\t\s]*", "", query)
 
 
 def test_metrichub_with_segments_and_where():
@@ -54,8 +58,16 @@ def test_metrichub_with_segments_and_where():
     )
 
     query = test_metric_hub.query()
-    assert f"\n    AND {test_metric_hub.where}" in query
-    assert "segment1 AS test_segment1,\n     segment2 AS test_segment2" in query
+    query_no_whitespace = re.sub(r"[\n\t\s]*", "", query)
+    assert re.sub(r"[\n\t\s]*", "", test_metric_hub.where) in query_no_whitespace
+    assert (
+        re.sub(
+            r"[\n\t\s]*",
+            "",
+            "segment1 AS test_segment1,\n     segment2 AS test_segment2",
+        )
+        in query_no_whitespace
+    )
 
 
 def test_metrichub_no_end_date():
@@ -64,7 +76,7 @@ def test_metrichub_no_end_date():
         slug="mobile_daily_active_users_v1",
         start_date="2024-01-01",
     )
-    now = to_datetime(datetime.utcnow()).date()
+    now = to_datetime(datetime.now(timezone.utc).replace(tzinfo=None)).date()
 
     assert test_metric_hub.end_date == now
 
@@ -76,7 +88,7 @@ def test_metrichub_last_complete_month():
         start_date="2024-01-01",
         end_date="last complete month",
     )
-    now = to_datetime(datetime.utcnow())
+    now = to_datetime(datetime.now(timezone.utc).replace(tzinfo=None)).date()
     prev_date = previous_period_last_date("last complete month", now)
 
     assert test_metric_hub.end_date == to_datetime(prev_date).date()

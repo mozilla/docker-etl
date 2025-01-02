@@ -14,13 +14,6 @@ sys.path.append(os.path.dirname(os.path.realpath(__file__)) + "/..")
 
 
 def user_data_matches(wd_user, xm_user):
-    manager_name = ""
-    if "Worker_s_Manager" in wd_user:
-        manager_name = (
-            wd_user["Worker_s_Manager"][0]["User_Manager_Preferred_First_Name"]
-            + " "
-            + wd_user["Worker_s_Manager"][0]["User_Manager_Preferred_Last_Name"]
-        )
     site_key = (
         wd_user.get("User_Home_Country", "")
         + ":"
@@ -42,42 +35,6 @@ def user_data_matches(wd_user, xm_user):
         elif site_key != xm_user["site"]["name"]:
             logger.info(
                 "MISMATCH (site name): %s <-> %s" % (site_key, xm_user["site"]["name"])
-            )
-            return False
-        elif (
-            wd_user.get("User_Manager_Email_Address", "")
-            != xm_user["properties"]["Manager Email"]
-        ):
-            logger.info(
-                "MISMATCH (manager email): %s <-> %s"
-                % (
-                    wd_user["User_Manager_Email_Address"],
-                    xm_user["properties"]["Manager Email"],
-                )
-            )
-            return False
-        elif manager_name != xm_user["properties"]["Manager"]:
-            logger.info(
-                "MISMATCH (manager name): %s <-> %s"
-                % (manager_name, xm_user["properties"]["Manager"])
-            )
-            return False
-        elif wd_user["User_Cost_Center"] != xm_user["properties"]["Cost Center"]:
-            logger.info(
-                "MISMATCH (cost center): %s <-> %s"
-                % (wd_user["User_Cost_Center"], xm_user["properties"]["Cost Center"])
-            )
-            return False
-        elif (
-            wd_user.get("User_Functional_Group", "")
-            != xm_user["properties"]["Functional Group"]
-        ):
-            logger.info(
-                "MISMATCH (functional group): %s <-> %s"
-                % (
-                    wd_user["User_Functional_Group"],
-                    xm_user["properties"]["Functional Group"],
-                )
             )
             return False
         elif wd_user.get("User_Home_City", "") != xm_user["properties"]["Home City"]:
@@ -107,15 +64,6 @@ def user_data_matches(wd_user, xm_user):
                 )
             )
             return False
-        elif wd_user["User_Work_Location"] != xm_user["properties"]["Work Location"]:
-            logger.info(
-                "MISMATCH (Work Location): %s <-> %s"
-                % (
-                    wd_user["User_Work_Location"],
-                    xm_user["properties"]["Work Location"],
-                )
-            )
-            return False
         else:
             return True
     except KeyError:
@@ -123,9 +71,10 @@ def user_data_matches(wd_user, xm_user):
         return False
 
 
-def iterate_thru_wd_users(wd_users, xm_users, xm_sites):
+def iterate_thru_wd_users(wd_users, xm_users, xm_sites, limit):
     wd_users_seen = {}
     xm_add_users = []
+    num_changes = 0
     for user in wd_users:
         if "User_Email_Address" not in user:
             logger.info(
@@ -139,7 +88,7 @@ def iterate_thru_wd_users(wd_users, xm_users, xm_sites):
             )
             continue
         elif not re.search(
-            "(?:mozilla.com|mozillafoundation.org|getpocket.com)$",
+            "(?:mozilla.com|mozillafoundation.org)$",
             user["User_Email_Address"],
         ):
             logger.info(
@@ -151,11 +100,13 @@ def iterate_thru_wd_users(wd_users, xm_users, xm_sites):
         wd_users_seen[user["User_Email_Address"]] = 1
         if user["User_Email_Address"] in xm_users:
             logger.debug("User %s found in XM" % user["User_Email_Address"])
-            if not user_data_matches(user, xm_users[user["User_Email_Address"]]):
-                logger.debug("USER DATA NO MATCHES!")
-                XMatters.update_user(
-                    user, xm_users[user["User_Email_Address"]], xm_sites
-                )
+            if not user_data_matches(user, xm_users[user["User_Email_Address"]]):                
+                if num_changes < limit:
+                    logger.debug("USER DATA NO MATCHES!")
+                    XMatters.update_user(
+                        user, xm_users[user["User_Email_Address"]], xm_sites
+                    )
+                    num_changes +=1
             else:
                 logger.debug("%s good" % user["User_Email_Address"])
         else:
@@ -163,7 +114,9 @@ def iterate_thru_wd_users(wd_users, xm_users, xm_sites):
             # XMatters.add_user(user, xm_sites)
             xm_add_users.append(user)
             # time.sleep(5)
-
+         
+   
+    logger.info(f"Number of updated users:{num_changes}")
     return wd_users_seen, xm_add_users
 
 
@@ -206,14 +159,15 @@ if __name__ == "__main__":
         type=str,
         default="info",
     )
+     
     parser.add_argument(
-        "-f",
-        "--force",
-        action="store_true",
-        help="force changes even if there are a lot",
-
+        "-m",
+        "--max_limit", 
+        action="store",
+        type=int,
+        help="limit the number of changes in Everfi",        
+        default=20
     )
-
     args = parser.parse_args()
 
     Util.set_up_logging(args.level)
@@ -224,62 +178,71 @@ if __name__ == "__main__":
 
     # get all sites in xmatters
     xm_sites, xm_sites_inactive = XMatters.get_all_sites()
+    
 
     # get all users from workday
     wd_users = Workday.get_users()
+    
 
     # get the new style (zipcodes) sites from the user list
     wd_sites = get_wd_sites_from_users(wd_users)
 
+    logger.info(f"Number of XMatters sites: {len(xm_sites)}")
+    logger.info(f"Number of Workday sites: {len(wd_sites)}")
+    logger.info(f"Number of Workday users: {len(wd_users)}")
+
     #  # get list of sites from workday users
     #  wd_sites = Workday.get_sites()
 
-    sites_percentage = len(xm_sites) / len(wd_sites)
-    if sites_percentage > 1.1 or sites_percentage < 0.9:
-        logger.critical(
-            "The number of sites in Workday vs XMatters is \
-                 different by more than 10%% (%.02f%%)."
-            % (abs(100 - sites_percentage * 100))
-        )
-        logger.critical("Stopping unless --force")
-        if not args.force:
-            exit(42)
+    # sites_percentage = len(xm_sites) / len(wd_sites)
+    # if sites_percentage > 1.1 or sites_percentage < 0.9:
+    #     logger.critical(
+    #         "The number of sites in Workday vs XMatters is \
+    #              different by more than 10%% (%.02f%%)."
+    #         % (abs(100 - sites_percentage * 100))
+    #     )
+    #     logger.critical("Stopping unless --force")
+    #     if not args.force:
+    #         exit(42)
 
     # add_task any sites in workday that aren't in xmatters to xmatters
-    xm_sites_in_wd = XMatters.add_new_sites(wd_sites, xm_sites, xm_sites_inactive)
+    xm_sites_in_wd = XMatters.add_new_sites(wd_sites, xm_sites, xm_sites_inactive, args.max_limit)
 
     # delete any sites NOT in workday that ARE in xmatters
-    XMatters.delete_sites(xm_sites, xm_sites_in_wd)
+    XMatters.delete_sites(xm_sites, xm_sites_in_wd, args.max_limit)
 
     # re-get all sites in xmatters
     xm_sites, xm_sites_inactive = XMatters.get_all_sites()
 
     # get all users from xmatters
     xm_users = XMatters.get_all_people()
-
-    users_percentage = len(xm_users) / len(wd_users)
-    if users_percentage > 1.1 or users_percentage < 0.9:
-        logger.critical(
-            "The number of users in Workday vs XMatters is \
-            different by more than 10%% (%.02f%%)."
-            % (abs(100 - users_percentage * 100))
-        )
-        logger.critical("Stopping unless --force")
-        if not args.force:
-            exit(42)
+    logger.info(f"Number of XMatters users: {len(xm_users)}")
+    # users_percentage = len(xm_users) / len(wd_users)
+    # if users_percentage > 1.1 or users_percentage < 0.9:
+    #     logger.critical(
+    #         "The number of users in Workday vs XMatters is \
+    #         different by more than 10%% (%.02f%%)."
+    #         % (abs(100 - users_percentage * 100))
+    #     )
+    #     logger.critical("Stopping unless --force")
+    #     if not args.force:
+    #         exit(42)
 
     # iterate thru users in workday:
     #   if not in xmatters, add_task to xmatters
     #   if data doesn't match xmatters, update xmatters
     #   mark-as-seen in xmatters
     users_seen_in_workday, xm_add_users = iterate_thru_wd_users(wd_users,
-                                                                xm_users, xm_sites)
+                                                                xm_users, xm_sites,
+                                                                args.max_limit)
 
     # iterate through xmatters users who aren't marked-as-seen
     #   remove from xmatters
-    XMatters.delete_users(xm_users, users_seen_in_workday)
+    XMatters.delete_users(xm_users, users_seen_in_workday, args.max_limit)
 
-    for user in xm_add_users:
+    for user in xm_add_users[:args.max_limit]:
+        logger.info(f"Adding user: {user['User_Email_Address']}")
         XMatters.add_user(user, xm_sites)
 
+    logger.info(f"Number of users added:{len(xm_add_users[:args.max_limit])}")
     logger.info("Finished.")

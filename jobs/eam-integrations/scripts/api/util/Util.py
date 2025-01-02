@@ -1,5 +1,6 @@
 import logging
 import re
+import boto3
 
 from .secrets_util import config as util_config
 
@@ -28,7 +29,10 @@ def set_up_logging(level):
     elif re.match("^crit", level, flags=re.IGNORECASE):
         log_level = logging.CRITICAL
     logging.basicConfig(
-        format="[%(asctime)s] %(name)s [%(levelname)s]: %(message)s", level=log_level
+        format="%(asctime)s:\t%(name)s.%(funcName)s()[%(filename)s:%(lineno)s]:\t%(levelname)s: %(message)s",
+        level=log_level,
+        encoding="utf-8",
+        # format="[%(asctime)s] %(name)s [%(levelname)s]: %(message)s", level=log_level
     )
 
 
@@ -42,3 +46,22 @@ def postal_to_coords_and_timezone(loc):
     else:
         tz = None
     return (coords, tz)
+
+def verify_email_identity():
+    ses_client = boto3.client("ses", region_name="us-west-2")
+    response = ses_client.verify_email_identity(
+        EmailAddress="jmoscon@mozilla.com"
+    )
+def send_email(source, destination, subject, body):
+    client = boto3.client("ses", region_name="us-west-2")
+    client.send_email(
+        Source=source,
+        Destination={
+            "ToAddresses": destination,
+            "CcAddresses": [],
+        },
+        Message={
+            "Subject": {"Data": subject, "Charset": "UTF-8"},
+            "Body": {"Html": {"Data": body, "Charset": "UTF-8"}},
+        },
+)
