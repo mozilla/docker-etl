@@ -260,6 +260,19 @@ jobs:
           command: docker run app:build pytest --ruff --ruff-format
 
 
+  build-job-looker-utils:
+    docker:
+      - image: << pipeline.parameters.git-image >>
+    steps:
+      - checkout
+      - compare-branch:
+          pattern: ^jobs/looker-utils/
+      - setup_remote_docker:
+          version: << pipeline.parameters.docker-version >>
+      - run:
+          name: Build Docker image
+          command: docker build -t app:build jobs/looker-utils/
+
   build-job-mozaggregator2bq:
     docker:
       - image: << pipeline.parameters.git-image >>
@@ -546,6 +559,20 @@ workflows:
             branches:
               only: main
 
+
+  job-looker-utils:
+    jobs:
+      - build-job-looker-utils
+      - gcp-gcr/build-and-push-image:
+          context: data-eng-airflow-gcr
+          docker-context: jobs/looker-utils/
+          path: jobs/looker-utils/
+          image: looker-utils_docker_etl
+          requires:
+            - build-job-looker-utils
+          filters:
+            branches:
+              only: main
 
   job-mozaggregator2bq:
     jobs:
