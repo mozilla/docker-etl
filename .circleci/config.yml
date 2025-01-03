@@ -243,6 +243,19 @@ jobs:
           command: docker build -t app:build jobs/influxdb-to-bigquery/
 
 
+  build-job-kevel-metadata:
+    docker:
+      - image: << pipeline.parameters.git-image >>
+    steps:
+      - checkout
+      - compare-branch:
+          pattern: ^jobs/kevel-metadata/
+      - setup_remote_docker:
+          version: << pipeline.parameters.docker-version >>
+      - run:
+          name: Build Docker image
+          command: docker build -t app:build jobs/kevel-metadata/
+
   build-job-kpi-forecasting:
     docker:
       - image: << pipeline.parameters.git-image >>
@@ -514,7 +527,6 @@ workflows:
             branches:
               only: main
 
-
   job-fxci-taskcluster-export:
     jobs:
       - build-job-fxci-taskcluster-export
@@ -544,6 +556,20 @@ workflows:
             branches:
               only: main
 
+
+  kevel-metadata:
+    jobs:
+      - build-job-kevel-metadata
+      - gcp-gcr/build-and-push-image:
+          context: data-eng-airflow-gcr
+          docker-context: jobs/kevel-metadata/
+          path: jobs/kevel-metadata/
+          image: kevel-metadata_docker_etl
+          requires:
+            - build-job-kevel-metadata
+          filters:
+            branches:
+              only: main
 
   job-kpi-forecasting:
     jobs:
