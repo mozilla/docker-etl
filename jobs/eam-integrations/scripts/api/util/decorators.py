@@ -1,5 +1,16 @@
 import functools
+import time
 
+
+def wait(secs):
+     def decorator(func):
+         def wrapper(*args, **kwargs):
+             print("sleep....")
+             time.sleep(secs)
+             print("...sleep")
+             return func(*args, **kwargs)
+         return wrapper
+     return decorator
 
 def cache_pickle(func):
     @functools.wraps(func)

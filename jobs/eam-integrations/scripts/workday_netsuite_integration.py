@@ -3,6 +3,7 @@ import logging
 import re
 import sys
 from datetime import datetime
+import json
 
 from workday_netsuite.api.workday import WorkDayRaaService, Worker, InternationalTransfer
 from workday_netsuite.api.netsuite import NetSuiteRestlet
@@ -12,6 +13,8 @@ from workday_netsuite.api.netsuite import NetSuiteRestletException
 
 def fix_none(x):
     return '' if (not x or x=='- None -') else x.strip()
+
+
 class Workday:
     def __init__(self,) -> None:
         self.workday_service = WorkDayRaaService()
@@ -22,6 +25,7 @@ class Workday:
         worker['State'] = 'Pennsylvania'
         worker['City'] = 'Downingtown'
         worker['Primary_Address'] = '430 Creekside Drive'
+        worker['Country'] = 'Canada'
         return worker
     
     def add_create_employee_test(self, worker):
@@ -35,10 +39,11 @@ class Workday:
         worker['Country'] = "United States of America"
         return worker
     
+
     def get_international_transfers(self, ns_workers):
         #2024-01-01-08
         today = datetime.today() 
-        start_date = f"{today.year}-01-01"
+        start_date = f"{today.year-1}-01-01"
         end_date = f"{today.year}-12-31"
         wd_data = self.workday_service.get_international_transfers(start_date,end_date)
         worker_list = []
@@ -46,8 +51,9 @@ class Workday:
         for worker in wd_data["Report_Entry"]:
             intern_transfer = InternationalTransfer(**worker)
             ns_worker = ns_workers.get(intern_transfer.Employee_ID,'')
-            if self.mapping.map_country(intern_transfer.New_Country) != ns_worker.get('Country'):
-                worker_list.append(InternationalTransfer(**worker))
+            if ns_worker:
+                if self.mapping.map_country(intern_transfer.New_Country) != ns_worker.get('Country'):
+                    worker_list.append(InternationalTransfer(**worker))
         
         return worker_list
     
@@ -60,41 +66,105 @@ class Workday:
         for worker in wd_data["Report_Entry"]:
             worker['Cost_Center_ID'] = worker.pop('Cost_Center_-_ID')
             
-            #Update test
-            if worker["Employee_ID"] =='200841':
-                worker['Employee_Type'] = 'Student Worker (Fixed Term)'
-                worker['First_Name'] = 'Ronald1'
-                worker['Last_Name'] = 'Mman1'
-                worker['Primary_Address'] = '111 Westsite Village Loop '
+            # add new manager + employee
+            # if worker['Employee_ID'] =='205032':
+            #     from copy import deepcopy
+            #     new_manager = deepcopy(worker)
+                
+            #     create manager #########################
+            #     new_manager['Employee_ID'] ='20503200'
+            #     new_manager['First_Name'] = 'MFN'
+            #     new_manager['Last_Name'] = 'MLN'
+            #     new_manager['Preferred_Full_Name'] = 'ManagerFirstName ManagerLastName'
+            #     worker_list.append(Worker(**new_manager))
+            #     worker_dict[new_manager['Employee_ID']] = new_manager
+            #     wd_comp[new_manager['Employee_ID']] = self.build_comparison_string(new_manager)
+
+            #     create employee  #########################
+            #     new_employee = deepcopy(worker)
+            #     new_employee['Employee_ID'] ='2050320011'
+            #     new_employee['First_Name'] = 'Emf'
+            #     new_employee['Last_Name'] = 'Eml'
+            #     new_employee['Manager_ID'] = '20503200'
+            #     new_employee['Preferred_Full_Name'] = 'EmployeeFirstName EmployeeLastName'
+
+            #     worker_list.append(Worker(**new_employee))
+            #     worker_dict[new_employee['Employee_ID']] = new_employee
+            #     wd_comp[new_employee['Employee_ID']] = self.build_comparison_string(new_employee)
+
+            #add new
+            if worker['Employee_ID'] =='211187':
+                worker['Employee_Type'] = 'Independent Contractor'
+                worker['Employee_ID'] ='123418'
+                worker['First_Name'] = 'JULIO11122'
+                worker['Last_Name'] = 'MOSCON222233'
+                worker['Primary_Address'] = '2333 Westsite'
                 worker['City'] = 'Windermere'
-                worker['State'] = 'Berlin'
-                worker['Postal'] = '12131'
-                worker['Most_Recent_Hire_Date'] = '2024-11-01'
-                worker['Manager_ID'] = 'E201024'
-                #worker['Country'] = 'Germany'
-                worker['Product'] = 'Relay'
-                worker['Cost_Center_ID'] = '14400 - Enterprise Application Management'
-                worker['termination_date'] = '2019-10-22'
-                worker['Employee_Status'] = '2'
+                worker['State'] = 'FL'
+                worker['Postal'] = '282822'              
+                worker['Manager_ID'] = '211187'
+                worker['Company'] = 'Moz 2008 Corporation (Australia)'
+                worker['Country'] = 'Australia'
+                worker['Product'] = ''
+
+
+            #rehire 
+            if worker['Employee_ID'] =='210909':
+                worker['Most_Recent_Hire_Date'] = '2024-12-27'
+                worker['Employee_Type'] = 'Independent Contractor'
+
+            # #Update test
+            if worker["Employee_ID"] =='211187':                
+                worker['First_Name'] = 'Emily2'
+                worker['Last_Name'] = "Lowndes2"
+                worker['Preferred_Full_Name'] = 'Emily .'
+                # worker['Primary_Address'] = '4444 Westsite Village Loop'
+                # worker['City'] = 'Miami'
+                # worker['State'] = 'FL'
+                # worker['Postal'] = '42422'
+                # worker['Most_Recent_Hire_Date'] = '2024-12-01'
+                # worker['Manager_ID'] = '208105' 
+                # worker['Product'] = 'Monitor'
+                # worker['Cost_Center_ID'] = '27000'
+                # worker['Employee_Status'] = '1'
 
             # Terminated employee
-            if worker['Employee_ID'] == '205716':
+            if worker['Employee_ID'] == '208782':
                 worker['Employee_Status']= '2'
-                worker['termination_date'] = '2024-10-21'
+                worker['termination_date'] = '2024-12-27'
 
-             #200837 international transfer
-            if worker['Employee_ID'] == '200837':
-                # update address test
-                worker = self.add_update_address_test(worker=worker)
+            # Update
+            # if worker['Employee_ID'] == '201586':
+            #     worker['Most_Recent_Hire_Date'] = '2024-11-02'
+            #     worker['Product'] = 'Monitor'
+            #     worker['Employee_Type'] = 'Contractor'
+            #     worker['Cost_Center_ID'] = '27000'
+            #     worker['Primary_Address'] = '333 Westsite23 Village2 Loop2'
+            #     worker['City'] = 'Orlando'
+            #     worker['State'] = 'NY'
+            #     worker['Postal'] = '41333'                
                 
-                # create employee test
-                from copy import deepcopy
-                new_worker = deepcopy(worker)
-                worker2 = self.add_create_employee_test(worker=new_worker)
-                worker2 = self.add_international_transfer_test(worker=worker2)
-                worker_list.append(Worker(**worker2))
-                worker_dict[worker2['Employee_ID']] = worker2
-                wd_comp[worker2['Employee_ID']] = self.build_comparison_string(worker2)
+            # # international transfer
+            if worker['Employee_ID'] == '123418':
+                worker['Country'] = "United States"
+                worker['Primary_Address'] = '333 NYC'
+                worker['City'] = 'NYC'
+                worker['State'] = 'NY'
+                worker['Postal'] = '42422' 
+
+            #  #200837 international transfer
+            # if worker['Employee_ID'] == 'E101261':
+            #     # update address test
+            #     worker = self.add_update_address_test(worker=worker)
+                
+            #     # create employee test
+            #     from copy import deepcopy
+            #     new_worker = deepcopy(worker)
+            #     worker2 = self.add_create_employee_test(worker=new_worker)
+            #     worker2 = self.add_international_transfer_test(worker=worker2)
+            #     worker_list.append(Worker(**worker2))
+            #     worker_dict[worker2['Employee_ID']] = worker2
+            #     wd_comp[worker2['Employee_ID']] = self.build_comparison_string(worker2)
 
             worker_list.append(Worker(**worker))
             worker_dict[worker['Employee_ID']] = worker
@@ -104,10 +174,25 @@ class Workday:
     
     def build_comparison_string(self, wd_worker):
             ns_country = self.mapping.map_country(wd_worker.get('Country',''))
-            if wd_worker.get('Employee_ID','') == 200013:
-                print("a")
-            state = wd_worker.get('State','') if ns_country!="Canada" else wd_worker.get('Province','')
+            #Try Province if State is empty
+            state = wd_worker.get('State','') if wd_worker.get('State','').strip()!="" else wd_worker.get('Province','')
             company = self.mapping.map_company(ns_country)
+
+            if wd_worker.get('Employee_ID')=='210297':
+                print('s')
+            if not wd_worker.get('Preferred_Full_Name'):
+                First_Name = wd_worker.get('First_Name')
+                Last_Name = wd_worker.get('Last_Name')
+            else:
+                 # check if there are Chinese chars
+                if re.findall(r'[\u4e00-\u9fff]+', wd_worker.get('Preferred_Full_Name')):
+                    First_Name = wd_worker.get('First_Name')
+                    Last_Name = wd_worker.get('Last_Name')
+                else:
+
+                    First_Name = (' ').join(wd_worker.get('Preferred_Full_Name').split(' ')[0:-1])
+                    Last_Name = wd_worker.get('Preferred_Full_Name').split(' ')[-1]
+ 
             return (
                 wd_worker.get('Employee_ID','')
                 + "|" 
@@ -119,19 +204,17 @@ class Workday:
                 + "|"
                 + wd_worker.get('Manager_ID','')
                 + "|"
-                + wd_worker.get('Cost_Center_ID','')              
-                + "|"
-                + wd_worker.get('Product','')    
+                + wd_worker.get('Cost_Center_ID','')    
                 + "|"
                 + wd_worker.get('primaryWorkEmail','')
                 + "|"
-                + wd_worker.get('First_Name','')   
+                + First_Name
                 + "|"
-                + wd_worker.get('Last_Name','') 
+                + Last_Name
                 + "|"
                 + self.mapping.map_country(wd_worker.get('Country',''))
-                + "|"
-                + wd_worker.get('termination_date','') 
+                # + "|"
+                # + wd_worker.get('termination_date','') 
                 + "|"
                 + wd_worker.get('Employee_Status','') 
                 + "|"
@@ -147,12 +230,17 @@ class Workday:
                 + "|"
                 + self.mapping.map_currency(ns_country)
                 + "|"
-                + str(self.mapping.map_class(wd_worker.get('Product','')))
+                + str(self.mapping.product_class_map_dict.get(wd_worker.get('Product','')))
                                  
             )
 
 class DataMapping():
-
+    def __init__(self):
+ 
+        ret = NetSuiteRestlet().get_product_class_mapping()
+        self.product_class_map_dict = {x.get('externalId'):x.get('internalId') 
+                                      for x in ret.data}
+        
     def map_country_codes(self, ns_country):
         ditct = {
             'Albania': 'AL',
@@ -277,29 +365,58 @@ class DataMapping():
             return "Czech Republic"
         else:
             return country
-    def map_company(self, country):
+        
+    def map_company_id(self, company):
+            dict = {
+	                'Moz 2008 Corporation (Australia)':'27',
+					'Mozilla Corporation':'1',
+					'MZ Denmark ApS, Belgium Branch':'22',
+					'MZ Canada Internet ULC (Canada)':'30',
+					'Mozilla Corporation':'1',
+					'MZ Denmark ApS, filall Finland':'24',
+					'MZ Denmark (France)':'32',
+					'MZ Denmark GmbH (Germany)':'33',
+					'Mozilla Corporation':'1',
+					'Mozilla Corporation':'1',
+					'MZ Netherlands B.V.':'41',
+					'Moz 2008 Corporation (New Zealand)':'26',
+					'MZ Denmark ApS':'35',
+					'MZ Denmark ApS, Sucursal en Espana (Spain)':'36',
+					'MZ Denmark ApS Danmark) filial (Sweden)':'37',		
+					'Moz 2008 Corporation (Taiwan)':'28',		
+					'MZ Denmark (UK)':'38',
+					'Mozilla Corporation':'1',		
+					'MZ Denmark ApS':'21',
+                }
+            return dict.get(company,'')
+
+    def map_company(self, country, index=1):
         dict = {
-            'Australia':'Moz 2008 Corporation (Australia)',
-            'Austria':'Mozilla Corporation',
-            'Belgium':'MZ Denmark ApS, Belgium Branch',
-            'Canada':'MZ Canada Internet ULC (Canada)',
-            'Czech Republic':'Mozilla Corporation',
-            'Finland':'MZ Denmark ApS, filall Finland',
-            'France':'MZ Denmark (France)',
-            'Germany':'MZ Denmark GmbH (Germany)',
-            'Greece':'Mozilla Corporation',
-            'Italy':'Mozilla Corporation',
-            'Netherlands':'MZ Netherlands B.V.',
-            'New Zealand':'Moz 2008 Corporation (New Zealand)',
-            'Poland':'MZ Denmark ApS',
-            'Spain':'Denmark ApS, Sucursal en Espana (Spain)',
-            'Sweden':'MZ Denmark ApS Danmark) filial (Sweden)',		
-            'Taiwan':'Moz 2008 Corporation (Taiwan)',		
-            'United Kingdom':'MZ Denmark (UK)',
-            'United States':'Mozilla Corporation',		
-            'Denmark':'MZ Denmark ApS',
+            'Australia':('Moz 2008 Corporation (Australia)','27'),
+            'Austria':('Mozilla Corporation','1'),
+            'Belgium':('MZ Denmark ApS, Belgium Branch','22'),
+            'Canada':('MZ Canada Internet ULC (Canada)','30'),
+            'Czech Republic':('Mozilla Corporation','1'),
+            'Finland':('MZ Denmark ApS, filall Finland','24'),
+            'France':('MZ Denmark (France)','32'),
+            'Germany':('MZ Denmark GmbH (Germany)','33'),
+            'Greece':('Mozilla Corporation','1'),
+            'Italy':('Mozilla Corporation','1'),
+            'Netherlands':('MZ Netherlands B.V.','41'),
+            'New Zealand':('Moz 2008 Corporation (New Zealand)','26'),
+            'Poland':('MZ Denmark ApS','21'),
+            'Spain':('Denmark ApS, Sucursal en Espana (Spain)','36'),
+            'Sweden':('MZ Denmark ApS Danmark) filial (Sweden)','37'),		
+            'Taiwan':('Moz 2008 Corporation (Taiwan)','28'),		
+            'United Kingdom':('MZ Denmark (UK)','38'),
+            'United States':('Mozilla Corporation','1'),		
+            'Denmark':('MZ Denmark ApS','21'),
             }
-        return dict.get(country,'')
+        ret = dict.get(country,'')
+        if not ret:
+            return ''
+        
+        return ret[index]
     
     def map_payment_method(self, country):
         mcountry = self.map_country(country)
@@ -339,7 +456,7 @@ class DataMapping():
             return "USD"
         else:
             return None
-
+        
     def map_class(self, product):
 
         if product == "Advertising": return 8
@@ -396,7 +513,12 @@ class NetSuite():
         self.ns_restlet = NetSuiteRestlet()
         self.mapping = DataMapping()
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.error_lst = []
 
+    def get_product_class_map(self, product):
+        return self.mapping.product_class_map_dict.get(product,'')
+        
+    
     def format_date(self, date_str):
         try:
             data_lst = date_str.split('/')
@@ -414,6 +536,8 @@ class NetSuite():
                 # external_id = re.findall(r'^\d+',ns_worker.get('Employee ID'))[0]
             else:
                 external_id= fix_none(ns_worker.get('External ID',''))
+                
+            external_id = self.extract_employee_id(ns_worker.get('Employee ID'))
             return (
                 external_id
                 + "|"
@@ -423,11 +547,9 @@ class NetSuite():
                 + "|"
                 + fix_none(ns_worker.get('Company',''))
                 + "|"
-                + fix_none(ns_worker.get('Manager ID',''))
+                + fix_none(self.extract_employee_id((ns_worker.get('Manager ID',''))))
                 + "|"
                 + fix_none(ns_worker.get('Cost Center ID',''))
-                + "|"
-                + fix_none(ns_worker.get('Product','').split(':')[-1].strip())
                 + "|"
                 + fix_none(ns_worker.get('Email - Primary Work',''))
                 + "|"
@@ -436,8 +558,8 @@ class NetSuite():
                 + fix_none(ns_worker.get('Last Name',''))
                 + "|"
                 + fix_none(ns_worker.get('Country',''))
-                + "|"
-                + self.format_date(fix_none(ns_worker.get('Termination Date','')))
+                # + "|"
+                # + self.format_date(fix_none(ns_worker.get('Termination Date','')))
                 + "|"
                 + fix_none('1' if ns_worker.get("Employee Status - Active?",'')=="Actively Employed" else '2')
                 + "|"
@@ -456,6 +578,7 @@ class NetSuite():
                 + ns_worker.get("Class")
                 
             )
+
     def extract_employee_id(self,employee_id):
         if employee_id=='E101374 - Mark Hammond':
             print('s')
@@ -470,7 +593,9 @@ class NetSuite():
     def get_employees(self):
         def fixEmployeeID(ns_worker):
             import re
-            if '208454' in ns_worker.get('Employee ID',''):
+            return self.extract_employee_id(ns_worker.get('Employee ID'))
+         
+            if '200164' in ns_worker.get('Employee ID',''):
                 print('s')
             if '__RANDOM_ID__' in fix_none(ns_worker.get('External ID','')):
                 #return fix_none(ns_worker.get('Employee ID')).split(' ')[0].strip()
@@ -494,29 +619,67 @@ class NetSuite():
     def compare_users(self, wd_comp, ns_comp):
         import numpy as np
 
-        add_list = []
-        del_list = []
-        upd_list = []
-        int_transfer_list = []
+        add_list = []        
+        upd_list = []        
         wd_users_emails = list(wd_comp.keys())
         ns_users_emails = list(ns_comp.keys())
-        add_list = np.setdiff1d(wd_users_emails, ns_users_emails)
-        del_list = np.setdiff1d(ns_users_emails, wd_users_emails)
+        add_list = np.setdiff1d(wd_users_emails, ns_users_emails)   
+        del_list = np.setdiff1d(ns_users_emails, wd_users_emails)     
         intersect_list = np.intersect1d(wd_users_emails, ns_users_emails)
 
         for upd_email in intersect_list:
             if wd_comp.get(upd_email,'') != ns_comp.get(upd_email,''):
                 upd_list.append(upd_email)
-            
-            wd_country = wd_comp.get(upd_email,'').split('|')[10]
-            ns_country = ns_comp.get(upd_email,'').split('|')[10]
-            if wd_country != ns_country:
-                int_transfer_list.append(upd_email)
 
-        return add_list, del_list, upd_list,int_transfer_list
-
+        return add_list,  upd_list, del_list
     
-
+    def post_error_report(self, operation):
+        output_data = None
+        
+        for record in self.error_lst:
+            employees_data = record[0].get('employees', [])
+            error_description = record[1]
+            row_id = record[2]
+            
+            for employee in employees_data:                
+                output_data = [{
+                    "row_id": row_id,
+                    "error_description": error_description,
+                    "operation": operation,  
+                    "External ID": employee.get("External ID"),
+                    "Employee ID": employee.get("Employee ID"),
+                    "Last Name": employee.get("Last Name"),
+                    "First Name": employee.get("First Name"),
+                    "Original Hire Date": employee.get("Original Hire Date"),
+                    "Most Recent Hire Date": employee.get("Most Recent Hire Date"),
+                    "Termination Date": employee.get("Termination Date"),
+                    "Employee Type": employee.get("Employee Type"),
+                    "Employee Status - Active?": employee.get("Employee Status - Active?"),
+                    "Email - Primary Work": employee.get("Email - Primary Work"),
+                    "Manager ID": employee.get("Manager ID"),
+                    "Cost Center - ID": employee.get("Cost Center - ID"),
+                    "Address1": employee.get("Address1"),
+                    "Address2": employee.get("Address2"),
+                    "State": employee.get("State"),
+                    "City": employee.get("City"),
+                    "Zipcode": employee.get("Zipcode"),
+                    "Country": employee.get("Country"),
+                    "CountryName": employee.get("CountryName"),
+                    "Company": employee.get("Company"),
+                    "DEFAULT CURRENCY FOR EXP. REPORT": employee.get("DEFAULT CURRENCY FOR EXP. REPORT"),
+                    "Payment Method": employee.get("Payment Method"),
+                    "Class": employee.get("Class", ""),  
+                    "newEmployee": employee.get("newEmployee"),
+                    "Rehire": employee.get("Rehire"),
+                    "InternationalTransfer": employee.get("InternationalTransfer"),
+                    "oldCountryCode": employee.get("oldCountryCode"),
+                    "oldCountryName": employee.get("oldCountryName")
+                }]
+                ret = self.ns_restlet.post_error_report(output_data)
+                 
+        self.error_lst = []
+        
+       
     def update(self, wd_workers,
                workers_dict, max_limit,
                newEmployee = False,
@@ -524,32 +687,52 @@ class NetSuite():
                internationalTransfer = False,
                ns_workers = None,
                wd_comp=None,
-               ns_comp=None,
-               error_lst=[]):
+               ns_comp=None
+               ):
         import time
-
-        for i, wd_worker in enumerate(wd_workers):
-            start = time.time()
+        time_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        for i, wd_worker in enumerate(wd_workers):            
             ns_country = self.mapping.map_country(wd_worker.Country)
-                     
+            
+            if not wd_worker.Preferred_Full_Name:
+                First_Name = wd_worker.First_Name
+                Last_Name = wd_worker.Last_Name
+            else:
+                # check if there are Chinese chars
+                if re.findall(r'[\u4e00-\u9fff]+', wd_worker.Preferred_Full_Name):
+                    First_Name = wd_worker.First_Name
+                    Last_Name = wd_worker.Last_Name
+                else:
+                    First_Name = (' ').join(wd_worker.Preferred_Full_Name.split(' ')[0:-1])
+                    Last_Name = wd_worker.Preferred_Full_Name.split(' ')[-1]
+
+            #set new contractors' product as 27
+            if newEmployee and wd_worker.Employee_Type in ['Elance Contractor', 
+                                                           'Independent Contractor',
+                                                           'Vendor']:
+                class_ = 27 #Business Support
+            else:
+                class_ = self.get_product_class_map(wd_worker.Product)
+                
             # print(wd_comp[wd_worker.Employee_ID])
             # print(ns_comp[wd_worker.Employee_ID])
             employee_data = {
                     "employees": [
                         {
                             "External ID": wd_worker.Employee_ID,
-                            "Employee ID": f"{wd_worker.Employee_ID} - {wd_worker.First_Name} {wd_worker.Last_Name}",
-                            "Last Name": wd_worker.Last_Name,
-                            "First Name": wd_worker.First_Name,
+                            "Employee ID": f"{wd_worker.Employee_ID}",
+                            "Last Name": Last_Name,
+                            "First Name": First_Name,
+                            "Legal Name": f"{wd_worker.First_Name} {wd_worker.Last_Name}",
                             "Original Hire Date": wd_worker.Most_Recent_Hire_Date,
                             "Most Recent Hire Date": wd_worker.Most_Recent_Hire_Date,
                             "Termination Date": wd_worker.termination_date if not reHire else None,
-                            "Employee Type": wd_worker.Employee_Type,
+                            "Employee Type": wd_worker.Employee_Type,                                                                                 
                             "Employee Status - Active?": 'Actively Employed' if wd_worker.Employee_Status=='1'else 'Terminated'  ,
                             "Email - Primary Work": wd_worker.primaryWorkEmail,
-                            "Manager ID": wd_worker.Manager_ID,
+                            "Manager ID": None if wd_worker.Manager_ID==wd_worker.Employee_ID else wd_worker.Manager_ID,
                             "Cost Center - ID": wd_worker.Cost_Center_ID,
-                            "Product": wd_worker.Product,
+                            #"Product": wd_worker.Product,
                             "Address1": wd_worker.Primary_Address,
                             "Address2": None,
                             "State": wd_worker.State if wd_worker.State else wd_worker.Province,
@@ -560,7 +743,7 @@ class NetSuite():
                             "Company": self.mapping.map_company(ns_country),
                             "DEFAULT CURRENCY FOR EXP. REPORT": self.mapping.map_currency(ns_country),
                             "Payment Method": self.mapping.map_payment_method(ns_country),
-                            "Class": self.mapping.map_class(wd_worker.Product),
+                            "Class": class_,
                             "newEmployee" : newEmployee,
                             "Rehire" : True if reHire else None,
                             "InternationalTransfer" : True if internationalTransfer else None, 
@@ -574,10 +757,17 @@ class NetSuite():
             try:
                 ret = self.ns_restlet.update(employee_data)
                 if ret:
-                    error_lst.append((employee_data,ret))
-                end = time.time()
-                print(end - start)
-
+                    if internationalTransfer:
+                        # try to resubmit as multiple international transfer
+                        employee_data['employees'][0]['InternationalTransfer'] = False
+                        employee_data['employees'][0]['multipleInternationalTransfer'] = True
+                        ret = self.ns_restlet.update(employee_data)
+                        if ret:                            
+                            self.error_lst.append((employee_data,ret,time_stamp))
+                            self.logger.info(f"Error while oding multiple international transfer. Employee ID:{wd_worker.Employee_ID}  error:{ret}")    
+                    else:                 
+                        self.error_lst.append((employee_data,ret,time_stamp))
+                        self.logger.info(f"Error while updating Employee ID:{wd_worker.Employee_ID}  error:{ret}")    
                 
             except NetSuiteRestletException as e:
                 self.logger.info(f"Employee ID:{wd_worker.Employee_ID} ")
@@ -586,10 +776,10 @@ class NetSuite():
             except Exception as e:
                 self.logger.info(f"error {e}")
                 continue
+ 
+        return
 
-
-        return error_lst
-
+    
 class WorkdayToNetsuiteIntegration():
     """Integration class for syncing data from Workday to Netsuite.
 
@@ -602,17 +792,49 @@ class WorkdayToNetsuiteIntegration():
         self.netsuite = NetSuite()
 
         self.logger = logging.getLogger(self.__class__.__name__)
-
-    def run(self, max_limit):
-        #tests
-        Util.verify_email_identity()
-        Util.send_email(source="mcastelluccio@data.mozaws.net",
-                        destination=["jmoscon@mozilla.com"],
-                        subject="Test", body="email test")
-        return
-        """Run all the steps of the integration"""
+ 
+    def compare_dates(self, date1: str, date2: str) -> bool:
+        # Convert both strings to datetime objects
+        date1_obj = datetime.strptime(date1, "%Y-%m-%d")
+        date2_obj = datetime.strptime(date2, "%Y-%m-%d")
+        if not date2_obj: # date2 expected to be the termination date
+            return True
         
-        error_lst = []
+        return date1_obj > date2_obj
+    
+    def transform_data(self, input_tuple):
+        result = []
+        for index, (employee_data, error_description, timestamp) in enumerate(input_tuple, start=1):
+            # Concatenate the timestamp with the row number
+            row_id = f"{timestamp}_{index}"
+            
+            # Create the dictionary with required keys and values
+            result.append(
+                {'row_id': row_id,'error_description': error_description}| employee_data['employees'][0]
+            )
+        return self.convert_to_json(result)
+     
+    def convert_to_json(self, data, filename="output.json"):
+        """
+        Converts a Python data structure to JSON and saves it to a specified file.
+
+        Parameters:
+        - data (list): The Python data structure to convert, typically a list of dictionaries.
+        - filename (str): The name of the file to save the JSON data (default is "output.json").
+        """
+        try:
+            with open(filename, 'w', encoding='utf-8') as file:
+                json.dump(data, file, indent=4, ensure_ascii=False)
+            print(f"Data successfully saved to {filename}")
+        except Exception as e:
+            print(f"An error occurred while saving to JSON: {e}")
+
+    
+    
+    def run(self, max_limit):
+
+        """Run all the steps of the integration"""
+         
         # ========================================================
         # Step 1: Getting Workday Data
         # ========================================================
@@ -657,33 +879,38 @@ class WorkdayToNetsuiteIntegration():
         # Step 3: Compare Workday and Netsuite data
         # ========================================================
         self.logger.info("Step 3: Compare Workday and Netsuite data")
-        add_list, del_list, upd_list, int_transfer_list = self.netsuite.compare_users(wd_comp=wd_comp, ns_comp=ns_comp)
+        add_list, upd_list, _ = self.netsuite.compare_users(wd_comp=wd_comp, ns_comp=ns_comp)
 
+        # remove terminated employees from add_list
+        terminated = [x.Employee_ID for x in wd_workers if x.Employee_Status=='2']
+        add_list = [x for x in add_list if x not in terminated]
+
+        # add terminated records to update
+        upd_list = upd_list + terminated
         # ========================================================
         #  Step 4: Add rehires
         # ========================================================
         # find rehires
         try:
             # diff_hire_dates that are in the add_list
-            rehires = [x for x in wd_workers 
-                                if x.Most_Recent_Hire_Date != x.Original_Hire_Date
-                                and x.Employee_ID in add_list]
-            rehires = []
-            
-            error_lst = self.netsuite.update(wd_workers=rehires,
+            rehires = [x for x in wd_workers if self.compare_dates(x.Most_Recent_Hire_Date, x.Original_Hire_Date)
+                        and x.Employee_ID in add_list and x.Employee_Status=='1']
+            self.netsuite.update(wd_workers=rehires,
                                 workers_dict=workers_dict,
                                 max_limit=max_limit,
                                 newEmployee=False,
                                 reHire=True,
                                 ns_workers=ns_workers,
                                 wd_comp=wd_comp, 
-                                ns_comp=ns_comp,
-                                error_lst=error_lst
+                                ns_comp=ns_comp 
                                 )      
+            self.netsuite.post_error_report( "Adding rehires")
         except (APIAdaptorException, Exception) as e:
             self.logger.error(str(e))
             self.logger.critical("Failed on Step 4: Add rehires")
              
+        
+        
         
         # ========================================================
         # Step 5: Add new employees
@@ -692,16 +919,29 @@ class WorkdayToNetsuiteIntegration():
             self.logger.info("Step 4: Add new employees")
             # remove the rehires from the add_list
             add_list = [x for x in add_list if x not in [x.Employee_ID for x in rehires]]
-            wd_workers_add = [x for x in wd_workers if x.Employee_ID in add_list]
-            wd_workers_add = [x for x in wd_workers_add if x.Employee_ID == '282828']
-            # wd_workers_add = []
-            error_lst = self.netsuite.update(wd_workers=wd_workers_add,
+            wd_workers_add = [x for x in wd_workers if x.Employee_ID in add_list and
+                                                    x.Employee_Status =='1']
+            # Add managers first
+            wd_workers_add_managers = [x for x in wd_workers_add if x.Employee_ID 
+                                        in [x.Manager_ID for x in wd_workers_add]]            
+            self.netsuite.update(wd_workers=wd_workers_add_managers,
+                                            workers_dict=workers_dict,
+                                            max_limit=max_limit,
+                                            newEmployee=True,
+                                            ns_workers=ns_workers                                            
+                                            )
+            self.netsuite.post_error_report("Adding new managers")
+            
+            # Adding non managers
+            wd_workers_add = [x for x in wd_workers_add if x.Employee_ID 
+                            not in [x.Manager_ID for x in wd_workers_add]]            
+            self.netsuite.update(wd_workers=wd_workers_add,
                                 workers_dict=workers_dict,
                                 max_limit=max_limit,
                                 newEmployee=True,
-                                ns_workers=ns_workers,
-                                error_lst=error_lst
+                                ns_workers=ns_workers                                
                                 )
+            self.netsuite.post_error_report("Adding new employees")
         except (APIAdaptorException, Exception) as e:
             self.logger.error(str(e))
             self.logger.critical("Failed on Step 5: Add new employees")
@@ -709,45 +949,42 @@ class WorkdayToNetsuiteIntegration():
         # ========================================================
         # Step 6: International Transfers
         # ========================================================
-        # try:
-        #     self.logger.info("Step 6: International Transfers")
-        #     ret = self.workday.get_international_transfers(ns_workers)
+        try:
+            self.logger.info("Step 6: International Transfers")
+            ret = self.workday.get_international_transfers(ns_workers)
 
-        #     wd_workers_upd = [x for x in wd_workers if x.Employee_ID in [x.Employee_ID for x in ret]] 
-        #     # wd_workers_upd = [x for x in wd_workers_upd if x.Employee_ID == '282828']
-        #     wd_workers_upd = []
-        #     error_lst = self.netsuite.update(wd_workers=wd_workers_upd,
-        #                         workers_dict=workers_dict,
-        #                         max_limit=max_limit,
-        #                         newEmployee=False,
-        #                         internationalTransfer=True,
-        #                         ns_workers=ns_workers,
-        #                         wd_comp=wd_comp, 
-        #                         ns_comp=ns_comp,
-        #                         error_lst=error_lst
-        #                         )
-        # except (APIAdaptorException, Exception) as e:
-        #     self.logger.error(str(e))
-        #     self.logger.critical("Failed on Step 6: International Transfers")
+            wd_workers_upd = [x for x in wd_workers if x.Employee_ID in [x.Employee_ID for x in ret]]
+            self.netsuite.update(wd_workers=wd_workers_upd,
+                                workers_dict=workers_dict,
+                                max_limit=max_limit,
+                                newEmployee=False,
+                                internationalTransfer=True,
+                                ns_workers=ns_workers,
+                                wd_comp=wd_comp, 
+                                ns_comp=ns_comp            
+                                )
+            self.netsuite.post_error_report("International Transfers")
+            
+        except (APIAdaptorException, Exception) as e:
+            self.logger.error(str(e))
+            self.logger.critical("Failed on Step 6: International Transfers")
 
         # ========================================================
         # Step 7: Update employees
         # ========================================================
-
         try:
-            self.logger.info("Step 5: Update employees")
-            wd_workers_upd = [x for x in wd_workers if x.Employee_ID in upd_list]
-            wd_workers_upd = [x for x in wd_workers if x.Employee_ID == '200841']
-            
-            error_lst = self.netsuite.update(wd_workers=wd_workers_upd,
+            self.logger.info("Step 7: Update employees")
+            wd_workers_upd = [x for x in wd_workers if x.Employee_ID in upd_list] 
+            self.netsuite.update(wd_workers=wd_workers_upd,
                                 workers_dict=workers_dict,
                                 max_limit=max_limit,
                                 newEmployee=False,
                                 ns_workers=ns_workers,
                                 wd_comp=wd_comp, 
-                                ns_comp=ns_comp,
-                                error_lst=error_lst
+                                ns_comp=ns_comp
                                 )
+            self.netsuite.post_error_report("Updating employess")
+            
         except (APIAdaptorException, Exception) as e:
             self.logger.error(str(e))
             self.logger.critical("Failed on Step 7: Update employees")
@@ -755,7 +992,75 @@ class WorkdayToNetsuiteIntegration():
         
         self.logger.info("End of Integration.")
 
-def new_func(__name__, WorkdayToNetsuiteIntegration):
+def compare_and_save_data(wd_workers, upd_list, terminated, wd_comp, ns_comp):
+            data = []
+            wd_workers_upd = [x for x in wd_workers if x.Employee_ID in upd_list]
+            wd_workers_upd = [x for x in wd_workers_upd if x.Employee_ID not in terminated]
+            for i, wd_worker in enumerate(wd_workers_upd): 
+                
+                print("---------------------------------------")
+                print(wd_comp[wd_worker.Employee_ID])
+                print(ns_comp[wd_worker.Employee_ID])                
+                # Input strings
+                string1 = wd_comp[wd_worker.Employee_ID]
+                string2 = ns_comp[wd_worker.Employee_ID]
+
+                # Split the strings by '|'
+                list1 = string1.split('|')
+                list2 = string2.split('|')
+
+                # Compare the lists
+                differences1 = [""]*20
+                differences1[0] = wd_worker.Employee_ID                
+                differences1[1] = "workday"
+                differences2 = [""]*20
+                differences2[0] = wd_worker.Employee_ID
+                differences2[1] = "netsuite"
+                
+                for index, (item1, item2) in enumerate(zip(list1, list2)):
+                    if item1 != item2:
+                        #differences.append((index, item1, item2))
+                        differences1[index+2] = item1
+                        differences2[index+2] = item2
+
+                data.append(differences1)
+                data.append(differences2)            
+
+            csv_file_path = 'employees_upd.csv'  # Path to save the CSV file
+            data_to_csv(data, csv_file_path)
+            
+def data_to_csv(data, csv_file_path):
+    import numpy as np
+    """
+    Converts a data structure to a CSV file using numpy with specific column names.
+
+    Args:
+        data (list of lists): The data to be written to the CSV file. Each inner list is a row of data.
+        csv_file_path (str): Path to save the CSV file.
+    """
+    # Define the column names dictionary
+    column_names_dict = {0:"external_id", 1:"Employee Type", 2:"Original Hire Date", 3:"Company",
+                    4:"Manager ID", 5:"Cost Center", 6:"Email", 7:"First Name", 8:"Last Name",
+                    9:"Country", 10:"Employ Status", 11:"Address 1",
+                    12:"State", 13:"City", 14:"Zipcode", 15:"Default Currency", 16:"Payment Method",
+                    17:"Class"}
+
+    # Extract column names from the dictionary
+    column_names = [column_names_dict[i] for i in range(len(column_names_dict))]
+    column_names = ["employee ID", "source"] + column_names
+    
+    # Convert the data to a numpy array
+    data_array = np.array(data,dtype="object")
+
+    # Prepend the column names to the data
+    data_with_headers = np.vstack([column_names, data_array])
+
+    # Save the data to a CSV file
+    np.savetxt(csv_file_path, data_with_headers, fmt='%s', delimiter='|',encoding='utf-8')
+    
+    print(f"CSV file created successfully at: {csv_file_path}")
+    
+def main(__name__, WorkdayToNetsuiteIntegration):
     parser = ArgumentParser(description="Slack Channels Integration ")
 
     parser.add_argument(
@@ -793,4 +1098,4 @@ def new_func(__name__, WorkdayToNetsuiteIntegration):
     WD.run(args.max_limit)
 
 if __name__ == "__main__":
-    new_func(__name__, WorkdayToNetsuiteIntegration)
+    main(__name__, WorkdayToNetsuiteIntegration)
