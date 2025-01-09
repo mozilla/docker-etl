@@ -40,17 +40,16 @@ class Worker:
 
 @dataclass
 class InternationalTransfer:
-    Full_Name: Optional[str]
-    New_Country: Optional[str]
-    Employee_Type: Optional[str]
-    Old_Country: Optional[str]
-    Employee_ID: Optional[str]
-    Manager: Optional[str]
-    Intl_Transfer_Date: Optional[str]
-
+    Full_Name: Optional[str] = None
+    New_Country: Optional[str] = None
+    Employee_Type: Optional[str] = None
+    Old_Country: Optional[str] = None
+    Employee_ID: Optional[str] = None
+    Manager: Optional[str] = None
+    Intl_Transfer_Date: Optional[str] = None
 @dataclass
 class Report:
-    Report_Entry: Optional[List[InternationalTransfer]]
+    Report_Entry: Optional[List[InternationalTransfer]] = None
 
 
 class WorkDayRaaService():

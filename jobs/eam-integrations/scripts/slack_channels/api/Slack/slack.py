@@ -1,13 +1,31 @@
 import os
 from api.util import APIAdaptor
 from .secrets import config
+import time
+from api.util.decorators import wait
 
+def retry(count):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            for _ in range(count):
+                try:
+                    ret = func(*args, **kwargs)
+                    return ret
+
+                except Exception as e:
+                    print('retry except')
+                    if 'ratelimited' in e.args[0].get('error'):
+                        time.sleep(1)
+                        continue
+        return wrapper
+    return decorator
 
 class SlackAPI:
     def __init__(self):
         self.api_adapter = APIAdaptor(host=config['slack_host'])
         self._token = config['slack_token']
 
+    @retry(3)
     def get_conversations_list(self, types):
         channels_dict = {}
         params = {'limit': 100,
@@ -38,6 +56,7 @@ class SlackAPI:
 
         return channels_dict
 
+    @retry(3)
     def get_conversations_history(self, params):
         
         headers = {'Authorization': f'Bearer {self._token }'}
@@ -47,6 +66,7 @@ class SlackAPI:
                                     headers=headers,
                                     params=params)
 
+    @retry(3)
     def conversations_archive(self, channel_id):
         params = {'channel': channel_id}
         headers = {'Authorization': f'Bearer {self._token }'}
@@ -55,17 +75,16 @@ class SlackAPI:
         return self.api_adapter.post(endpoint=endpoint,
                                      headers=headers,
                                      params=params)
-
+    @retry(3)
     def conversations_delete(self, channel_id):
         params = {'channel_id': channel_id}
         headers = {'Authorization': f'Bearer {self._token }'}
         endpoint = "api/admin.conversations.delete"
-
         return self.api_adapter.post(endpoint=endpoint,
-                                     headers=headers,
-                                     params=params)
-
-
+                                            headers=headers,
+                                            params=params)
+        
+    @retry(3)
     def join_channel(self, channel_id):
         params = {'channel': channel_id}
         endpoint = "api/conversations.join"
@@ -74,7 +93,7 @@ class SlackAPI:
         return self.api_adapter.post(endpoint=endpoint,
                                      headers=headers,
                                      params=params)
-
+    @retry(3)
     def chat_post_message(self, channel_id, text):
         params = {'channel': channel_id,
                   'text': text}
