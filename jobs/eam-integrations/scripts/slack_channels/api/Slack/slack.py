@@ -83,20 +83,7 @@ class SlackAPI:
         return self.api_adapter.post(endpoint=endpoint,
                                             headers=headers,
                                             params=params)
-    
-    
-        # for _ in range(3):
-        #     try:
-        #         ret = self.api_adapter.post(endpoint=endpoint,
-        #                                     headers=headers,
-        #                                     params=params)
-        #         return ret
-        #     except Exception as e:
-        #         if 'ratelimited' in e.args[0].get('error'):
-        #             continue
-        #         else:
-        #             return ret
-
+        
     @retry(3)
     def join_channel(self, channel_id):
         params = {'channel': channel_id}
