@@ -4,12 +4,18 @@ import re
 import sys
 from datetime import datetime
 import json
+from enum import Enum
 
 from workday_netsuite.api.workday import WorkDayRaaService, Worker, InternationalTransfer
 from workday_netsuite.api.netsuite import NetSuiteRestlet
 from api.util import Util, APIAdaptorException
 from workday_netsuite.api.netsuite import NetSuiteRestletException
 
+class Operations(Enum):
+    update_employee = 1
+    add_new_hire = 2
+    add_new_manager = 3    
+    internationa_transfer = 5
 
 def fix_none(x):
     return '' if (not x or x=='- None -') else x.strip()
@@ -64,108 +70,14 @@ class Workday:
         worker_list = []
         wd_comp = {}
         for worker in wd_data["Report_Entry"]:
-            worker['Cost_Center_ID'] = worker.pop('Cost_Center_-_ID')
-            
-            # add new manager + employee
-            # if worker['Employee_ID'] =='205032':
-            #     from copy import deepcopy
-            #     new_manager = deepcopy(worker)
-                
-            #     create manager #########################
-            #     new_manager['Employee_ID'] ='20503200'
-            #     new_manager['First_Name'] = 'MFN'
-            #     new_manager['Last_Name'] = 'MLN'
-            #     new_manager['Preferred_Full_Name'] = 'ManagerFirstName ManagerLastName'
-            #     worker_list.append(Worker(**new_manager))
-            #     worker_dict[new_manager['Employee_ID']] = new_manager
-            #     wd_comp[new_manager['Employee_ID']] = self.build_comparison_string(new_manager)
-
-            #     create employee  #########################
-            #     new_employee = deepcopy(worker)
-            #     new_employee['Employee_ID'] ='2050320011'
-            #     new_employee['First_Name'] = 'Emf'
-            #     new_employee['Last_Name'] = 'Eml'
-            #     new_employee['Manager_ID'] = '20503200'
-            #     new_employee['Preferred_Full_Name'] = 'EmployeeFirstName EmployeeLastName'
-
-            #     worker_list.append(Worker(**new_employee))
-            #     worker_dict[new_employee['Employee_ID']] = new_employee
-            #     wd_comp[new_employee['Employee_ID']] = self.build_comparison_string(new_employee)
-
-            #add new
-            if worker['Employee_ID'] =='211187':
-                worker['Employee_Type'] = 'Independent Contractor'
-                worker['Employee_ID'] ='123418'
-                worker['First_Name'] = 'JULIO11122'
-                worker['Last_Name'] = 'MOSCON222233'
-                worker['Primary_Address'] = '2333 Westsite'
-                worker['City'] = 'Windermere'
-                worker['State'] = 'FL'
-                worker['Postal'] = '282822'              
-                worker['Manager_ID'] = '211187'
-                worker['Company'] = 'Moz 2008 Corporation (Australia)'
-                worker['Country'] = 'Australia'
-                worker['Product'] = ''
-
-
-            #rehire 
-            if worker['Employee_ID'] =='210909':
-                worker['Most_Recent_Hire_Date'] = '2024-12-27'
-                worker['Employee_Type'] = 'Independent Contractor'
-
-            # #Update test
-            if worker["Employee_ID"] =='211187':                
-                worker['First_Name'] = 'Emily2'
-                worker['Last_Name'] = "Lowndes2"
-                worker['Preferred_Full_Name'] = 'Emily .'
-                # worker['Primary_Address'] = '4444 Westsite Village Loop'
-                # worker['City'] = 'Miami'
-                # worker['State'] = 'FL'
-                # worker['Postal'] = '42422'
-                # worker['Most_Recent_Hire_Date'] = '2024-12-01'
-                # worker['Manager_ID'] = '208105' 
-                # worker['Product'] = 'Monitor'
-                # worker['Cost_Center_ID'] = '27000'
-                # worker['Employee_Status'] = '1'
-
-            # Terminated employee
-            if worker['Employee_ID'] == '208782':
-                worker['Employee_Status']= '2'
-                worker['termination_date'] = '2024-12-27'
-
-            # Update
-            # if worker['Employee_ID'] == '201586':
-            #     worker['Most_Recent_Hire_Date'] = '2024-11-02'
-            #     worker['Product'] = 'Monitor'
-            #     worker['Employee_Type'] = 'Contractor'
-            #     worker['Cost_Center_ID'] = '27000'
-            #     worker['Primary_Address'] = '333 Westsite23 Village2 Loop2'
-            #     worker['City'] = 'Orlando'
-            #     worker['State'] = 'NY'
-            #     worker['Postal'] = '41333'                
-                
-            # # international transfer
-            if worker['Employee_ID'] == '123418':
-                worker['Country'] = "United States"
+            if worker['Employee_ID'] == '211345':
+                worker['Country'] = "Canada"
                 worker['Primary_Address'] = '333 NYC'
                 worker['City'] = 'NYC'
                 worker['State'] = 'NY'
-                worker['Postal'] = '42422' 
-
-            #  #200837 international transfer
-            # if worker['Employee_ID'] == 'E101261':
-            #     # update address test
-            #     worker = self.add_update_address_test(worker=worker)
-                
-            #     # create employee test
-            #     from copy import deepcopy
-            #     new_worker = deepcopy(worker)
-            #     worker2 = self.add_create_employee_test(worker=new_worker)
-            #     worker2 = self.add_international_transfer_test(worker=worker2)
-            #     worker_list.append(Worker(**worker2))
-            #     worker_dict[worker2['Employee_ID']] = worker2
-            #     wd_comp[worker2['Employee_ID']] = self.build_comparison_string(worker2)
-
+                worker['Postal'] = '42422'
+                            
+            worker['Cost_Center_ID'] = worker.pop('Cost_Center_-_ID')
             worker_list.append(Worker(**worker))
             worker_dict[worker['Employee_ID']] = worker
             wd_comp[worker['Employee_ID']] = self.build_comparison_string(worker)
@@ -671,7 +583,7 @@ class NetSuite():
                     "Class": employee.get("Class", ""),  
                     "newEmployee": employee.get("newEmployee"),
                     "Rehire": employee.get("Rehire"),
-                    "InternationalTransfer": employee.get("InternationalTransfer"),
+                    "InternationalTransfer": False if not employee.get("InternationalTransfer") else employee.get("InternationalTransfer"),
                     "oldCountryCode": employee.get("oldCountryCode"),
                     "oldCountryName": employee.get("oldCountryName")
                 }]
@@ -681,7 +593,7 @@ class NetSuite():
         
        
     def update(self, wd_workers,
-               workers_dict, max_limit,
+               workers_dict, 
                newEmployee = False,
                reHire = False,
                internationalTransfer = False,
@@ -834,7 +746,12 @@ class WorkdayToNetsuiteIntegration():
     def run(self, max_limit):
 
         """Run all the steps of the integration"""
-         
+        operations = [
+                Operations.update_employee,
+                #Operations.add_new_manager,
+                #Operations.add_new_hire,
+                #Operations.internationa_transfer,                
+                ]
         # ========================================================
         # Step 1: Getting Workday Data
         # ========================================================
@@ -848,13 +765,6 @@ class WorkdayToNetsuiteIntegration():
             self.logger.critical("Failed on Step 1: Getting Workday Data")
             sys.exit(1)
 
-        # import csv
-        # with open('wd_workers.csv', 'w', newline='',encoding="utf-8") as myfile:
-        #     wr = csv.writer(myfile, quoting=csv.QUOTE_ALL)
-        #     wr.writerow(wd_workers[0].__dict__.keys())
-        #     for work in wd_workers:
-        #         wr.writerow(work.__dict__.values())
-
         # ========================================================
         # Step 2: Getting NetSuite Data
         # ========================================================
@@ -866,14 +776,6 @@ class WorkdayToNetsuiteIntegration():
             self.logger.error(str(e))
             self.logger.critical("Failed on Step 2: Getting NetSuite Data")
             sys.exit(1)
-
-        # import csv
-        # with open('ns_workers.csv', 'w', newline='',encoding="utf-8") as myfile:
-        #     wr = csv.writer(myfile, quoting=csv.QUOTE_ALL)
-        #     wr.writerow(ns_workers[0].keys())
-        #     for work in ns_workers:
-        #         wr.writerow(work.values())
-        # self.netsuite.map_data(wd_workers, workers_dict, max_limit)
 
         # ========================================================
         # Step 3: Compare Workday and Netsuite data
@@ -890,58 +792,59 @@ class WorkdayToNetsuiteIntegration():
         # ========================================================
         #  Step 4: Add rehires
         # ========================================================
-        # find rehires
+        
         try:
             # diff_hire_dates that are in the add_list
             rehires = [x for x in wd_workers if self.compare_dates(x.Most_Recent_Hire_Date, x.Original_Hire_Date)
-                        and x.Employee_ID in add_list and x.Employee_Status=='1']
-            self.netsuite.update(wd_workers=rehires,
-                                workers_dict=workers_dict,
-                                max_limit=max_limit,
-                                newEmployee=False,
-                                reHire=True,
-                                ns_workers=ns_workers,
-                                wd_comp=wd_comp, 
-                                ns_comp=ns_comp 
-                                )      
-            self.netsuite.post_error_report( "Adding rehires")
+                        and x.Employee_ID in add_list and x.Employee_Status=='1']            
+            if Operations.add_new_hire in operations:
+                self.logger.critical("Step 4: Add rehires")
+                self.netsuite.update(wd_workers=rehires[:max_limit],
+                                    workers_dict=workers_dict,                                    
+                                    newEmployee=False,
+                                    reHire=True,
+                                    ns_workers=ns_workers,
+                                    wd_comp=wd_comp, 
+                                    ns_comp=ns_comp 
+                                    )      
+                self.netsuite.post_error_report( "Adding rehires")
         except (APIAdaptorException, Exception) as e:
             self.logger.error(str(e))
             self.logger.critical("Failed on Step 4: Add rehires")
              
-        
-        
-        
         # ========================================================
         # Step 5: Add new employees
         # ========================================================
         try:
-            self.logger.info("Step 4: Add new employees")
+            
             # remove the rehires from the add_list
             add_list = [x for x in add_list if x not in [x.Employee_ID for x in rehires]]
             wd_workers_add = [x for x in wd_workers if x.Employee_ID in add_list and
                                                     x.Employee_Status =='1']
             # Add managers first
             wd_workers_add_managers = [x for x in wd_workers_add if x.Employee_ID 
-                                        in [x.Manager_ID for x in wd_workers_add]]            
-            self.netsuite.update(wd_workers=wd_workers_add_managers,
-                                            workers_dict=workers_dict,
-                                            max_limit=max_limit,
-                                            newEmployee=True,
-                                            ns_workers=ns_workers                                            
-                                            )
-            self.netsuite.post_error_report("Adding new managers")
-            
+                                        in [x.Manager_ID for x in wd_workers_add]]    
+            if Operations.add_new_manager in operations:
+                self.logger.info("Step 4: Add new employees")
+                self.netsuite.update(wd_workers=wd_workers_add_managers[:max_limit],
+                                                workers_dict=workers_dict,                                                
+                                                newEmployee=True,
+                                                ns_workers=ns_workers                                            
+                                                )
+                self.netsuite.post_error_report("Adding new managers")  
+
             # Adding non managers
             wd_workers_add = [x for x in wd_workers_add if x.Employee_ID 
                             not in [x.Manager_ID for x in wd_workers_add]]            
-            self.netsuite.update(wd_workers=wd_workers_add,
-                                workers_dict=workers_dict,
-                                max_limit=max_limit,
-                                newEmployee=True,
-                                ns_workers=ns_workers                                
-                                )
-            self.netsuite.post_error_report("Adding new employees")
+            
+            if Operations.add_new_hire in operations:
+                self.netsuite.update(wd_workers=wd_workers_add[:max_limit],
+                                    workers_dict=workers_dict,                                    
+                                    newEmployee=True,
+                                    ns_workers=ns_workers                                
+                                    )
+                self.netsuite.post_error_report("Adding new employees")
+                
         except (APIAdaptorException, Exception) as e:
             self.logger.error(str(e))
             self.logger.critical("Failed on Step 5: Add new employees")
@@ -949,21 +852,19 @@ class WorkdayToNetsuiteIntegration():
         # ========================================================
         # Step 6: International Transfers
         # ========================================================
-        try:
-            self.logger.info("Step 6: International Transfers")
+        try:            
             ret = self.workday.get_international_transfers(ns_workers)
-
             wd_workers_upd = [x for x in wd_workers if x.Employee_ID in [x.Employee_ID for x in ret]]
-            self.netsuite.update(wd_workers=wd_workers_upd,
-                                workers_dict=workers_dict,
-                                max_limit=max_limit,
-                                newEmployee=False,
-                                internationalTransfer=True,
-                                ns_workers=ns_workers,
-                                wd_comp=wd_comp, 
-                                ns_comp=ns_comp            
-                                )
-            self.netsuite.post_error_report("International Transfers")
+            if Operations.internationa_transfer in operations:
+                self.logger.info("Step 6: International Transfers")
+                self.netsuite.update(wd_workers=wd_workers_upd[:max_limit],                                    
+                                    newEmployee=False,
+                                    internationalTransfer=True,
+                                    ns_workers=ns_workers,
+                                    wd_comp=wd_comp, 
+                                    ns_comp=ns_comp            
+                                    )
+                self.netsuite.post_error_report("International Transfers")
             
         except (APIAdaptorException, Exception) as e:
             self.logger.error(str(e))
@@ -973,17 +874,18 @@ class WorkdayToNetsuiteIntegration():
         # Step 7: Update employees
         # ========================================================
         try:
-            self.logger.info("Step 7: Update employees")
+            
             wd_workers_upd = [x for x in wd_workers if x.Employee_ID in upd_list] 
-            self.netsuite.update(wd_workers=wd_workers_upd,
-                                workers_dict=workers_dict,
-                                max_limit=max_limit,
-                                newEmployee=False,
-                                ns_workers=ns_workers,
-                                wd_comp=wd_comp, 
-                                ns_comp=ns_comp
-                                )
-            self.netsuite.post_error_report("Updating employess")
+            if Operations.update_employee in operations:
+                self.logger.info("Step 7: Update employees")
+                self.netsuite.update(wd_workers=wd_workers_upd[:max_limit],
+                                    workers_dict=workers_dict,                                    
+                                    newEmployee=False,
+                                    ns_workers=ns_workers,
+                                    wd_comp=wd_comp, 
+                                    ns_comp=ns_comp
+                                    )
+                self.netsuite.post_error_report("Updating employes")
             
         except (APIAdaptorException, Exception) as e:
             self.logger.error(str(e))
@@ -1078,7 +980,7 @@ def main(__name__, WorkdayToNetsuiteIntegration):
         action="store",
         type=int,
         help="limit the number of changes",
-        default=40
+        default=1
     )
     args = None
     args = parser.parse_args()
