@@ -465,9 +465,6 @@ class NetSuite():
             )
 
     def extract_employee_id(self,employee_id):
-        if employee_id=='E101374 - Mark Hammond':
-            print('s')
-
         _employee_id = re.findall(r'^\d+',employee_id)
                 
         if len(_employee_id)>0:
