@@ -28,19 +28,21 @@ class Workday:
         self.mapping = DataMapping()
 
 
-    def get_international_transfers(self, ns_workers):
+    def get_international_transfers(self, ns_workers,workers_dict):
         today = datetime.today() 
-        start_date = f"{today.year-1}-01-01"
-        end_date = f"{today.year}-12-31"
+        start_date = f"{today.year-2}-01-01"
+        end_date = datetime.today().strftime('%Y-%m-%d')
         wd_data = self.workday_service.get_international_transfers(start_date,end_date)
         worker_list = []
         #check if the employee in NetSuite was already transfered 
         for worker in wd_data["Report_Entry"]:
             intern_transfer = InternationalTransfer(**worker)
             ns_worker = ns_workers.get(intern_transfer.Employee_ID,'')
+            wd_worker = workers_dict.get(intern_transfer.Employee_ID,'') 
             if ns_worker:
-                if self.mapping.map_country(intern_transfer.New_Country) != ns_worker.get('Country'):
+                if self.mapping.map_company(wd_worker.get('Country','')) != ns_worker.get('Company'):
                     worker_list.append(InternationalTransfer(**worker))
+
         
         return worker_list
     
@@ -64,8 +66,6 @@ class Workday:
             state = wd_worker.get('State','') if wd_worker.get('State','').strip()!="" else wd_worker.get('Province','')
             company = self.mapping.map_company(ns_country)
 
-            if wd_worker.get('Employee_ID')=='210297':
-                print('s')
             if not wd_worker.get('Preferred_Full_Name'):
                 First_Name = wd_worker.get('First_Name')
                 Last_Name = wd_worker.get('Last_Name')
@@ -80,43 +80,41 @@ class Workday:
                     Last_Name = wd_worker.get('Preferred_Full_Name').split(' ')[-1]
  
             return (
-                wd_worker.get('Employee_ID','')
+                fix_none(wd_worker.get('Employee_ID',''))
                 + "|" 
-                + wd_worker.get('Employee_Type','')
+                + fix_none(wd_worker.get('Employee_Type',''))
                 + "|" 
-                + wd_worker.get('Most_Recent_Hire_Date','')
+                + fix_none(wd_worker.get('Most_Recent_Hire_Date',''))
                 + "|"
-                + company
+                + fix_none(company)
                 + "|"
-                + wd_worker.get('Manager_ID','')
+                + fix_none(wd_worker.get('Manager_ID',''))
                 + "|"
-                + wd_worker.get('Cost_Center_ID','')    
+                + fix_none(wd_worker.get('Cost_Center_ID',''))
                 + "|"
-                + wd_worker.get('primaryWorkEmail','')
+                + fix_none(wd_worker.get('primaryWorkEmail',''))
                 + "|"
-                + First_Name
+                + fix_none(First_Name)
                 + "|"
-                + Last_Name
+                + fix_none(Last_Name)
                 + "|"
-                + self.mapping.map_country(wd_worker.get('Country',''))
-                # + "|"
-                # + wd_worker.get('termination_date','') 
+                + fix_none(self.mapping.map_country(wd_worker.get('Country','')))
                 + "|"
-                + wd_worker.get('Employee_Status','') 
+                + fix_none(wd_worker.get('Employee_Status',''))
                 + "|"
-                + wd_worker.get('Primary_Address','') 
+                + fix_none(wd_worker.get('Primary_Address',''))
                 + "|"
-                + state
+                + fix_none(state)
                 + "|"
-                + wd_worker.get('City','') 
+                + fix_none(wd_worker.get('City',''))
                 + "|"
-                + wd_worker.get('Postal','')
+                + fix_none(wd_worker.get('Postal',''))
                 + "|"
-                + self.mapping.map_payment_method(ns_country)
+                + fix_none(self.mapping.map_payment_method(ns_country))
                 + "|"
-                + self.mapping.map_currency(ns_country)
+                + fix_none(self.mapping.map_currency(ns_country))
                 + "|"
-                + str(self.mapping.product_class_map_dict.get(wd_worker.get('Product','')))
+                + fix_none(str(self.mapping.product_class_map_dict.get(wd_worker.get('Product',''))))
                                  
             )
 
@@ -254,27 +252,27 @@ class DataMapping():
         
     def map_company_id(self, company):
             dict = {
-	                'Moz 2008 Corporation (Australia)':'27',
-					'Mozilla Corporation':'1',
-					'MZ Denmark ApS, Belgium Branch':'22',
-					'MZ Canada Internet ULC (Canada)':'30',
-					'Mozilla Corporation':'1',
-					'MZ Denmark ApS, filall Finland':'24',
-					'MZ Denmark (France)':'32',
-					'MZ Denmark GmbH (Germany)':'33',
-					'Mozilla Corporation':'1',
-					'Mozilla Corporation':'1',
-					'MZ Netherlands B.V.':'41',
-					'Moz 2008 Corporation (New Zealand)':'26',
-					'MZ Denmark ApS':'35',
-					'MZ Denmark ApS, Sucursal en Espana (Spain)':'36',
-					'MZ Denmark ApS Danmark) filial (Sweden)':'37',		
-					'Moz 2008 Corporation (Taiwan)':'28',		
-					'MZ Denmark (UK)':'38',
-					'Mozilla Corporation':'1',		
-					'MZ Denmark ApS':'21',
+	                'Moz 2008 Corporation (Australia)'.upper():'27',
+					'Mozilla Corporation'.upper():'1',
+					'MZ Denmark ApS, Belgium Branch'.upper():'22',
+					'MZ Canada Internet ULC (Canada)'.upper():'30',
+					'Mozilla Corporation'.upper():'1',
+					'MZ Denmark ApS, filall Finland'.upper():'24',
+					'MZ Denmark (France)'.upper():'32',
+					'MZ Denmark GmbH (Germany)'.upper():'33',
+					'Mozilla Corporation'.upper():'1',
+					'Mozilla Corporation'.upper():'1',
+					'MZ Netherlands B.V.'.upper():'41',
+					'Moz 2008 Corporation (New Zealand)'.upper():'26',
+					'MZ Denmark ApS'.upper():'35',
+					'MZ Denmark ApS, Sucursal en Espana (Spain)'.upper():'36',
+					'MZ Denmark ApS Danmark) filial (Sweden)'.upper():'37',		
+					'Moz 2008 Corporation (Taiwan)'.upper():'28',		
+					'MZ Denmark (UK)'.upper():'38',
+					'Mozilla Corporation'.upper():'1',		
+					'MZ Denmark ApS'.upper():'21',
                 }
-            return dict.get(company,'')
+            return dict.get(company.upper(),'')
 
     def map_company(self, country, index=1):
         dict = {
@@ -295,7 +293,8 @@ class DataMapping():
             'Sweden':('MZ Denmark ApS Danmark) filial (Sweden)','37'),		
             'Taiwan':('Moz 2008 Corporation (Taiwan)','28'),		
             'United Kingdom':('MZ Denmark (UK)','38'),
-            'United States':('Mozilla Corporation','1'),		
+            'United States':('Mozilla Corporation','1'),
+            'United States of America':('Mozilla Corporation','1'),
             'Denmark':('MZ Denmark ApS','21'),
             }
         ret = dict.get(country,'')
@@ -308,7 +307,7 @@ class DataMapping():
         mcountry = self.map_country(country)
         if mcountry in ["Belgium","Finland", "France", "Germany",
                         "Netherlands","Poland", "Spain", "Sweden",
-                        "Denmark","Canada"]:
+                        "Denmark", "Canada"]:
             return "SEPA"
         elif mcountry in ["Austria", "Czech Republic","Greece", "Italy",
                             "United States"]:
@@ -480,28 +479,12 @@ class NetSuite():
         def fixEmployeeID(ns_worker):
             import re
             return self.extract_employee_id(ns_worker.get('Employee ID'))
-         
-            if '200164' in ns_worker.get('Employee ID',''):
-                print('s')
-            if '__RANDOM_ID__' in fix_none(ns_worker.get('External ID','')):
-                #return fix_none(ns_worker.get('Employee ID')).split(' ')[0].strip()
-                return self.extract_employee_id(ns_worker.get('Employee ID'))
-                employee_id = re.findall(r'^\d+',ns_worker.get('Employee ID'))
-                
-                if len(employee_id)>0:
-                    return fix_none(employee_id[0])     
-                else: 
-                    return fix_none(ns_worker.get('Employee ID')).split(' ')[0].strip()            
-                return fix_none(re.findall(r'^\d+',ns_worker.get('Employee ID'))[0])
-            else:
-                return fix_none(ns_worker.get('External ID',''))
- 
+        
         ret = self.ns_restlet.get_employees()
-        #ret_active = [x for x in ret.data if x.get('Employee Status - Active?')=='Actively Employed']
+        
         ret_active = {fixEmployeeID(x):x for x in ret.data if x.get('Employee Status - Active?')=='Actively Employed'}
         return ret_active, {fixEmployeeID(x):self.build_comparison_string(x) for x in ret_active.values()}
-        #return ret.data, {x.get('External ID'):self.build_comparison_string(x) for x in ret.data}
-
+        
     def compare_users(self, wd_comp, ns_comp):
         import numpy as np
 
@@ -647,7 +630,10 @@ class NetSuite():
                 ret = self.ns_restlet.update(employee_data)                
                 if len(ret)==0:
                     num_updates+=1
-                        
+                else:                 
+                    self.error_lst.append((employee_data,ret,time_stamp))
+                    self.logger.info(f"Error while updating Employee ID:{wd_worker.Employee_ID}  error:{ret}") 
+                       
                 if num_updates>=max_limit:
                     break
             except NetSuiteRestletException as e:
@@ -717,10 +703,10 @@ class WorkdayToNetsuiteIntegration():
         """Run all the steps of the integration"""
         operations = [
                 Operations.update_employee,
-                #Operations.rehired,
-                #Operations.add_new_manager,
-                #Operations.add_new_hire,
-                #Operations.international_transfer,                
+                Operations.rehired,
+                Operations.add_new_manager,
+                Operations.add_new_hire,
+                Operations.international_transfer,
                 ]
         # ========================================================
         # Step 1: Getting Workday Data
@@ -830,7 +816,7 @@ class WorkdayToNetsuiteIntegration():
         # Step 6: International Transfers
         # ========================================================
         try:            
-            ret = self.workday.get_international_transfers(ns_workers)
+            ret = self.workday.get_international_transfers(ns_workers, workers_dict)
             wd_workers_upd = [x for x in wd_workers if x.Employee_ID in [x.Employee_ID for x in ret]]
             
             if Operations.international_transfer in operations:
@@ -855,7 +841,9 @@ class WorkdayToNetsuiteIntegration():
         # Step 7: Update employees
         # ========================================================
         try:
+            # compare_and_save_data(wd_workers, upd_list, terminated, wd_comp, ns_comp)
             wd_workers_upd = [x for x in wd_workers if x.Employee_ID in upd_list] 
+            # wd_workers_upd = [x for x in wd_workers_upd if x.Employee_ID == '205032']
             if Operations.update_employee in operations:
                 self.logger.info("Step 7: Update employees")
                 self.netsuite.update(wd_workers=wd_workers_upd,
@@ -962,7 +950,7 @@ def main(__name__, WorkdayToNetsuiteIntegration):
         action="store",
         type=int,
         help="limit the number of changes",
-        default=1
+        default=5
     )
     args = None
     args = parser.parse_args()
