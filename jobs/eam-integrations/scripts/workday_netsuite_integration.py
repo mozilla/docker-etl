@@ -627,6 +627,7 @@ class NetSuite():
                 ret = self.ns_restlet.update(employee_data)                
                 if len(ret)==0:
                     num_updates+=1
+                    self.error_lst.append((employee_data,'success',time_stamp))
                 else:                 
                     self.error_lst.append((employee_data,ret,time_stamp))
                     self.logger.info(f"Error while updating Employee ID:{wd_worker.Employee_ID}  error:{ret}") 
