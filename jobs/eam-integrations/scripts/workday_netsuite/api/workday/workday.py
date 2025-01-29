@@ -114,6 +114,7 @@ class WorkDayRaaService():
         result = requests.get(link.format(end_date=end_date, begin_date=begin_date),
                               auth=(self.config['username'],
                                     self.config['password']),
-                              timeout=self.config['timeout'])
-        
+                              timeout=self.config['timeout'])        
+        self.logger.info('WorkDay response: %s', result.text)
+        self.logger.info('link: %s', link.format(end_date=end_date, begin_date=begin_date))
         return json.loads(result.text)
