@@ -9,6 +9,7 @@ authors = [
   {name = "Mozilla Corporation"}
 ]
 version = "0.1.0"
+requires-python = ">=3.12"
 classifiers = [
     "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
     "Programming Language :: Python :: Implementation :: CPython",

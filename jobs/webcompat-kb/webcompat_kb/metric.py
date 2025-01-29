@@ -1,5 +1,4 @@
 import argparse
-import json
 import logging
 from datetime import date
 
@@ -65,9 +64,7 @@ def update_metric_history(
             logging.info("Metrics history recorded")
             logging.info(f"Loaded {len(rows)} rows into {table}")
     else:
-        logging.info(
-            f"Skipping writes, would have written:\n{rows}"
-        )
+        logging.info(f"Skipping writes, would have written:\n{rows}")
 
 
 class MetricJob(EtlJob):

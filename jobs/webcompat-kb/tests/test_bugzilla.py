@@ -43,6 +43,8 @@ SAMPLE_BUGS = {
             "keywords": [],
             "url": "",
             "whiteboard": "",
+            "cf_webcompat_priority": "---",
+            "cf_webcompat_score": "---",
         },
         {
             "component": "Knowledge Base",
@@ -72,6 +74,8 @@ SAMPLE_BUGS = {
             "keywords": [],
             "url": "",
             "whiteboard": "",
+            "cf_webcompat_priority": "---",
+            "cf_webcompat_score": "---",
         },
         {
             "component": "Knowledge Base",
@@ -98,6 +102,8 @@ SAMPLE_BUGS = {
             "keywords": [],
             "url": "",
             "whiteboard": "",
+            "cf_webcompat_priority": "---",
+            "cf_webcompat_score": "---",
         },
     ]
 }
@@ -164,6 +170,8 @@ SAMPLE_BREAKAGE_BUGS = {
             "severity": "--",
             "priority": "--",
             "assigned_to": "nobody@mozilla.org",
+            "cf_webcompat_priority": "---",
+            "cf_webcompat_score": "---",
         },
         {
             "id": 222222,
@@ -179,6 +187,8 @@ SAMPLE_BREAKAGE_BUGS = {
             "severity": "--",
             "priority": "--",
             "assigned_to": "nobody@mozilla.org",
+            "cf_webcompat_priority": "---",
+            "cf_webcompat_score": "---",
         },
         {
             "whiteboard": "",
@@ -200,6 +210,8 @@ SAMPLE_BREAKAGE_BUGS = {
             "component": "JavaScript Engine",
             "id": 444444,
             "assigned_to": "nobody@mozilla.org",
+            "cf_webcompat_priority": "P3",
+            "cf_webcompat_score": "2",
         },
     ]
 }
@@ -220,6 +232,8 @@ SAMPLE_ETP_BUGS = {
             "see_also": ["https://github.com/webcompat/web-bugs/issues/139647"],
             "product": "Web Compatibility",
             "status": "NEW",
+            "cf_webcompat_priority": "---",
+            "cf_webcompat_score": "---",
         },
         {
             "see_also": ["https://github.com/webcompat/web-bugs/issues/142250"],
@@ -238,6 +252,8 @@ SAMPLE_ETP_BUGS = {
             "depends_on": [1101005, 1797458],
             "creation_time": "2024-10-01T08:50:58Z",
             "url": "https://my.farys.be/myfarys/",
+            "cf_webcompat_priority": "---",
+            "cf_webcompat_score": "---",
         },
         {
             "see_also": [],
@@ -252,6 +268,8 @@ SAMPLE_ETP_BUGS = {
             "depends_on": [1101005, 1122334],
             "url": "https://www.ryanair.com/gb/en/lp/chat",
             "creation_time": "2024-10-30T15:04:41Z",
+            "cf_webcompat_priority": "---",
+            "cf_webcompat_score": "---",
         },
     ]
 }
@@ -1655,6 +1673,8 @@ def test_convert_bug_data(bz):
                 ],
             },
             "whiteboard": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
         },
         {
             "assigned_to": None,
@@ -1683,6 +1703,8 @@ def test_convert_bug_data(bz):
                 ],
             },
             "whiteboard": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
         },
         {
             "assigned_to": None,
@@ -1700,6 +1722,8 @@ def test_convert_bug_data(bz):
             "url": "",
             "user_story": "",
             "whiteboard": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
         },
     ]
     for bug, expected in zip(SAMPLE_BUGS.values(), expected_data):
@@ -1732,6 +1756,8 @@ def test_unify_etp_dependencies(bz):
                 "see_also": ["https://github.com/webcompat/web-bugs/issues/139647"],
                 "product": "Web Compatibility",
                 "status": "NEW",
+                "cf_webcompat_priority": "---",
+                "cf_webcompat_score": "---",
             },
             {
                 "see_also": ["https://github.com/webcompat/web-bugs/issues/142250"],
@@ -1750,6 +1776,8 @@ def test_unify_etp_dependencies(bz):
                 "depends_on": [1101005, 1797458],
                 "creation_time": "2024-10-01T08:50:58Z",
                 "url": "https://my.farys.be/myfarys/",
+                "cf_webcompat_priority": "---",
+                "cf_webcompat_score": "---",
             },
             {
                 "see_also": [],
@@ -1764,6 +1792,8 @@ def test_unify_etp_dependencies(bz):
                 "depends_on": [1101005],
                 "url": "https://www.ryanair.com/gb/en/lp/chat",
                 "creation_time": "2024-10-30T15:04:41Z",
+                "cf_webcompat_priority": "---",
+                "cf_webcompat_score": "---",
             },
         ]
     }
