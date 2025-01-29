@@ -283,6 +283,8 @@ class BugzillaToBigQuery:
             "last_change_time",
             "whiteboard",
             "creator",
+            "cf_webcompat_priority",
+            "cf_webcompat_score",
         ]
 
         headers = {}
@@ -625,6 +627,11 @@ class BugzillaToBigQuery:
         assigned_to = (
             bug["assigned_to"] if bug["assigned_to"] != "nobody@mozilla.org" else None
         )
+        webcompat_priority = (
+            bug["cf_webcompat_priority"]
+            if bug["cf_webcompat_priority"] != "---"
+            else None
+        )
 
         return {
             "number": bug["id"],
@@ -642,6 +649,8 @@ class BugzillaToBigQuery:
             "user_story": user_story,
             "resolved_time": resolved,
             "whiteboard": bug["whiteboard"],
+            "webcompat_priority": webcompat_priority,
+            "webcompat_score": extract_int_from_field(bug["cf_webcompat_score"]),
         }
 
     def update_bugs(self, bugs: BugsById) -> None:
@@ -665,6 +674,8 @@ class BugzillaToBigQuery:
                 bigquery.SchemaField("user_story", "JSON"),
                 bigquery.SchemaField("resolved_time", "TIMESTAMP"),
                 bigquery.SchemaField("whiteboard", "STRING"),
+                bigquery.SchemaField("webcompat_priority", "STRING"),
+                bigquery.SchemaField("webcompat_score", "INTEGER"),
             ],
             write_disposition="WRITE_TRUNCATE",
         )
