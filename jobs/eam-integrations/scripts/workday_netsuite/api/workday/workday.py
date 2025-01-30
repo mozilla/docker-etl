@@ -97,17 +97,6 @@ class WorkDayRaaService():
         
         return json.loads(result.text)
     
-        worker_dict = {}
-        wd_data = json.loads(result.text)
-        worker_list = []
-        wd_comp ={}
-        for worker in wd_data["Report_Entry"]:
-            worker['Cost_Center_ID'] = worker.pop('Cost_Center_-_ID')
-            worker_list.append(Worker(**worker))
-            worker_dict[worker['Employee_ID']] = worker
-            wd_comp[worker['Employee_ID']] = self.build_comparison_string(worker)
-        return worker_list,worker_dict, wd_comp
-    
     def get_international_transfers(self, begin_date, end_date):
         self.logger.info('Getting listing of workers from WorkDay.')
         link = self.config['links']['wd_international_transfers_link']
@@ -115,6 +104,4 @@ class WorkDayRaaService():
                               auth=(self.config['username'],
                                     self.config['password']),
                               timeout=self.config['timeout'])        
-        self.logger.info('WorkDay response: %s', result.text)
-        self.logger.info('link: %s', link.format(end_date=end_date, begin_date=begin_date))
         return json.loads(result.text)

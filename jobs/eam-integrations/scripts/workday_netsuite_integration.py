@@ -948,7 +948,7 @@ def main(__name__, WorkdayToNetsuiteIntegration):
         action="store",
         type=int,
         help="limit the number of changes",
-        default=5
+        default=10
     )
     args = None
     args = parser.parse_args()
