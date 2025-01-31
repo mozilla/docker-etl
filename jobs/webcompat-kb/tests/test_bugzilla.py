@@ -8,7 +8,6 @@ from webcompat_kb.base import get_client
 from webcompat_kb.bugzilla import BugzillaToBigQuery
 from webcompat_kb.bugzilla import extract_int_from_field
 from webcompat_kb.bugzilla import parse_string_to_json
-from webcompat_kb.bugzilla import parse_datetime_str
 from webcompat_kb.bugzilla import RELATION_CONFIG, LINK_FIELDS, ETP_RELATION_CONFIG
 
 SAMPLE_BUGS = {
@@ -1728,11 +1727,6 @@ def test_convert_bug_data(bz):
     ]
     for bug, expected in zip(SAMPLE_BUGS.values(), expected_data):
         assert bz.convert_bug_data(bug) == expected
-
-
-def test_parse_datetime():
-    result = parse_datetime_str("2024-06-11T16:35:50Z")
-    assert result == datetime(2024, 6, 11, 16, 35, 50, tzinfo=timezone.utc)
 
 
 def test_unify_etp_dependencies(bz):

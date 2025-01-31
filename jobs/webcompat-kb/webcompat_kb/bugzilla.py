@@ -1,7 +1,6 @@
 import argparse
 import logging
 import os
-import requests
 import re
 import time
 from typing import (
@@ -15,8 +14,9 @@ from typing import (
     Union,
     cast,
 )
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
+import bugdantic
 from google.cloud import bigquery
 
 from .base import EtlJob
@@ -43,7 +43,7 @@ class BugFetchError(Exception):
     pass
 
 
-BUGZILLA_API = "https://bugzilla.mozilla.org/rest"
+BUGZILLA_URL = "https://bugzilla.mozilla.org/"
 
 OTHER_BROWSER = ["bugs.chromium.org", "bugs.webkit.org", "crbug.com"]
 STANDARDS_ISSUES = ["github.com/w3c", "github.com/whatwg", "github.com/wicg"]
@@ -236,10 +236,6 @@ def parse_string_to_json(input_string: str) -> Union[str, Mapping[str, Any]]:
     return result_dict
 
 
-def parse_datetime_str(s: str) -> datetime:
-    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-
-
 class BugzillaToBigQuery:
     def __init__(
         self,
@@ -249,19 +245,17 @@ class BugzillaToBigQuery:
         write: bool,
         include_history: bool,
     ):
+        bz_config = bugdantic.BugzillaConfig(
+            BUGZILLA_URL, bugzilla_api_key, allow_writes=write
+        )
+        self.bz_client = bugdantic.Bugzilla(bz_config)
         self.client = client
         self.bq_dataset_id = bq_dataset_id
-        self.bugzilla_api_key = bugzilla_api_key
         self.history_fetch_completed = include_history
         self.write = write
         self.include_history = include_history
 
-    def fetch_bugs(
-        self, params: Optional[dict[str, Any]] = None
-    ) -> tuple[bool, MutBugsById]:
-        if params is None:
-            params = {}
-
+    def fetch_bugs(self, params: dict[str, str]) -> tuple[bool, MutBugsById]:
         fields = [
             "id",
             "summary",
@@ -287,18 +281,12 @@ class BugzillaToBigQuery:
             "cf_webcompat_score",
         ]
 
-        headers = {}
-        if self.bugzilla_api_key:
-            headers = {"X-Bugzilla-API-Key": self.bugzilla_api_key}
-
-        url = f"{BUGZILLA_API}/bug"
-        params["include_fields"] = ",".join(fields)
-
         try:
-            response = requests.get(url, params=params, headers=headers)
-            response.raise_for_status()
-            result = response.json()
-            data = {bug["id"]: bug for bug in result["bugs"]}
+            bugs = self.bz_client.search(query=params, include_fields=fields)
+            data: MutBugsById = {}
+            for bug in bugs:
+                assert bug.id is not None
+                data[bug.id] = bug.to_dict()
             fetch_completed = True
         except Exception as e:
             logging.error(f"Error: {e}")
@@ -785,23 +773,9 @@ class BugzillaToBigQuery:
         if not bug_id:
             raise ValueError("No bug id provided")
 
-        params = {}
-
-        if last_import_time:
-            params["new_since"] = last_import_time.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        headers = {}
-
-        if self.bugzilla_api_key:
-            headers = {"X-Bugzilla-API-Key": self.bugzilla_api_key}
-
-        url = f"{BUGZILLA_API}/bug/{bug_id}/history"
-
         try:
-            response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            result = response.json()
-            return result["bugs"][0]
+            history = self.bz_client.bug_history(bug_id, new_since=last_import_time)
+            return history.to_dict()
         except Exception as e:
             logging.error(f"Error: {e}")
             self.history_fetch_completed = False
@@ -886,18 +860,12 @@ class BugzillaToBigQuery:
         return result
 
     def extract_flattened_history(
-        self,
-        records: Iterable[bigquery.Row | Mapping[str, Any]],
-        is_existing: bool = False,
+        self, records: Iterable[bigquery.Row | Mapping[str, Any]]
     ) -> set[HistoryRow]:
         history_set = set()
         for record in records:
             changes = record["changes"]
             change_time = record["change_time"]
-
-            # Convert BQ timestamp to string to match bugzilla format
-            if is_existing:
-                change_time = change_time.strftime("%Y-%m-%dT%H:%M:%SZ")
 
             for change in changes:
                 history_row = HistoryRow(
@@ -943,7 +911,7 @@ class BugzillaToBigQuery:
         if not existing_records:
             return history_updates
 
-        existing_history = self.extract_flattened_history(existing_records, True)
+        existing_history = self.extract_flattened_history(existing_records)
         new_history = self.extract_flattened_history(history_updates)
 
         diff = new_history - existing_history
@@ -998,7 +966,7 @@ class BugzillaToBigQuery:
         return {
             bug["id"]
             for bug in all_bugs.values()
-            if parse_datetime_str(bug["last_change_time"]) > last_import_time
+            if bug["last_change_time"] > last_import_time
         }
 
     def get_imported_ids(self) -> set[int]:
@@ -1020,7 +988,7 @@ class BugzillaToBigQuery:
 
         for record in history:
             bug_id = record["number"]
-            timestamp = parse_datetime_str(record["change_time"])
+            timestamp = record["change_time"]
 
             for change in record["changes"]:
                 if "keywords" in change["field_name"]:
@@ -1300,11 +1268,9 @@ class BugzillaToBigQuery:
             self.update_relations(rels, RELATION_CONFIG)
             self.update_relations(etp_rels, ETP_RELATION_CONFIG)
 
-            last_change_time_max = parse_datetime_str(
-                max(all_bugs.values(), key=lambda x: x["last_change_time"])[
-                    "last_change_time"
-                ]
-            )
+            last_change_time_max = max(
+                all_bugs.values(), key=lambda x: x["last_change_time"]
+            )["last_change_time"]
 
             self.record_import_run(
                 start_time,
