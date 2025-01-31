@@ -38,7 +38,7 @@ SAMPLE_BUGS = {
             "id": 1835339,
             "summary": "Missing implementation of textinput event",
             "assigned_to": "test@example.org",
-            "creation_time": "2000-07-25T13:50:04Z",
+            "creation_time": datetime.fromisoformat("2000-07-25T13:50:04Z"),
             "keywords": [],
             "url": "",
             "whiteboard": "",
@@ -69,7 +69,7 @@ SAMPLE_BUGS = {
             "cf_user_story": "url:webminidisc.com/*\r\nurl:app.webadb.com/*\r\nurl:www.numworks.com/*\r\nurl:webadb.github.io/*\r\nurl:www.stemplayer.com/*\r\nurl:wootility.io/*\r\nurl:python.microbit.org/*\r\nurl:flash.android.com/*",  # noqa
             "status": "NEW",
             "assigned_to": "nobody@mozilla.org",
-            "creation_time": "2000-07-25T13:50:04Z",
+            "creation_time": datetime.fromisoformat("2000-07-25T13:50:04Z"),
             "keywords": [],
             "url": "",
             "whiteboard": "",
@@ -97,7 +97,7 @@ SAMPLE_BUGS = {
             "cf_user_story": "",
             "status": "NEW",
             "assigned_to": "nobody@mozilla.org",
-            "creation_time": "2000-07-25T13:50:04Z",
+            "creation_time": datetime.fromisoformat("2000-07-25T13:50:04Z"),
             "keywords": [],
             "url": "",
             "whiteboard": "",
@@ -197,10 +197,10 @@ SAMPLE_BREAKAGE_BUGS = {
             "depends_on": [999999],
             "summary": "Example core site report and platform bug",
             "resolution": "",
-            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_change_time": datetime.fromisoformat("2024-05-27T15:07:03Z"),
             "keywords": ["webcompat:platform-bug", "webcompat:site-report"],
             "priority": "P3",
-            "creation_time": "2024-03-21T16:40:27Z",
+            "creation_time": datetime.fromisoformat("2024-03-21T16:40:27Z"),
             "cf_user_story": "",
             "status": "NEW",
             "blocks": [],
@@ -227,7 +227,7 @@ SAMPLE_ETP_BUGS = {
             "resolution": "",
             "blocks": [1101005],
             "depends_on": [1875061],
-            "creation_time": "2024-07-30T07:37:28Z",
+            "creation_time": datetime.fromisoformat("2024-07-30T07:37:28Z"),
             "see_also": ["https://github.com/webcompat/web-bugs/issues/139647"],
             "product": "Web Compatibility",
             "status": "NEW",
@@ -249,7 +249,7 @@ SAMPLE_ETP_BUGS = {
             "component": "Privacy: Site Reports",
             "blocks": [],
             "depends_on": [1101005, 1797458],
-            "creation_time": "2024-10-01T08:50:58Z",
+            "creation_time": datetime.fromisoformat("2024-10-01T08:50:58Z"),
             "url": "https://my.farys.be/myfarys/",
             "cf_webcompat_priority": "---",
             "cf_webcompat_score": "---",
@@ -266,7 +266,7 @@ SAMPLE_ETP_BUGS = {
             "resolution": "",
             "depends_on": [1101005, 1122334],
             "url": "https://www.ryanair.com/gb/en/lp/chat",
-            "creation_time": "2024-10-30T15:04:41Z",
+            "creation_time": datetime.fromisoformat("2024-10-30T15:04:41Z"),
             "cf_webcompat_priority": "---",
             "cf_webcompat_score": "---",
         },
@@ -311,7 +311,7 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = {
                 "https://webcompat.com/issues/38315",
                 "https://webcompat.com/issues/35647",
             ],
-            "creation_time": "2014-11-18T16:11:29Z",
+            "creation_time": datetime.fromisoformat("2014-11-18T16:11:29Z"),
             "summary": "[meta] ETP Strict mode or Private Browsing mode tracking protection breakage",
             "url": "",
             "id": 1101005,
@@ -333,7 +333,7 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = {
             "resolution": "",
             "blocks": [1101005, 1773684, 1921943],
             "summary": "[meta] Email Tracking Breakage",
-            "creation_time": "2022-10-26T09:33:25Z",
+            "creation_time": datetime.fromisoformat("2022-10-26T09:33:25Z"),
             "see_also": [],
             "component": "Privacy: Anti-Tracking",
             "url": "",
@@ -351,7 +351,7 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = {
         {
             "status": "NEW",
             "resolution": "",
-            "creation_time": "2024-01-17T13:40:16Z",
+            "creation_time": datetime.fromisoformat("2024-01-17T13:40:16Z"),
             "see_also": [
                 "https://bugzilla.mozilla.org/show_bug.cgi?id=1869326",
                 "https://bugzilla.mozilla.org/show_bug.cgi?id=1872855",
@@ -382,7 +382,7 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = {
         {
             "status": "NEW",
             "resolution": "",
-            "creation_time": "2024-01-17T13:40:16Z",
+            "creation_time": datetime.fromisoformat("2024-01-17T13:40:16Z"),
             "see_also": [],
             "url": "",
             "keywords": [],
@@ -407,10 +407,10 @@ SAMPLE_CORE_AS_KB_BUGS = {
             "depends_on": [],
             "summary": "Consider adding support for Error.captureStackTrace",
             "resolution": "",
-            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_change_time": datetime.fromisoformat("2024-05-27T15:07:03Z"),
             "keywords": ["parity-chrome", "parity-safari", "webcompat:platform-bug"],
             "priority": "P3",
-            "creation_time": "2024-03-21T16:40:27Z",
+            "creation_time": datetime.fromisoformat("2024-03-21T16:40:27Z"),
             "cf_user_story": "",
             "status": "NEW",
             "blocks": [1539848, 1729514, 1896383],
@@ -431,9 +431,9 @@ SAMPLE_CORE_AS_KB_BUGS = {
             "status": "NEW",
             "cf_user_story": "",
             "priority": "P3",
-            "creation_time": "2024-04-30T14:04:23Z",
+            "creation_time": datetime.fromisoformat("2024-04-30T14:04:23Z"),
             "keywords": ["webcompat:platform-bug"],
-            "last_change_time": "2024-05-14T15:19:21Z",
+            "last_change_time": datetime.fromisoformat("2024-05-14T15:19:21Z"),
             "id": 1894244,
             "component": "DOM: Window and Location",
             "cf_last_resolved": None,
@@ -449,10 +449,10 @@ SAMPLE_CORE_AS_KB_BUGS = {
             "depends_on": [999999],
             "summary": "Example core site report and platform bug",
             "resolution": "",
-            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_change_time": datetime.fromisoformat("2024-05-27T15:07:03Z"),
             "keywords": ["webcompat:platform-bug", "webcompat:site-report"],
             "priority": "P3",
-            "creation_time": "2024-03-21T16:40:27Z",
+            "creation_time": datetime.fromisoformat("2024-03-21T16:40:27Z"),
             "cf_user_story": "",
             "status": "NEW",
             "blocks": [],
@@ -488,7 +488,7 @@ SAMPLE_HISTORY = [
                         "added": "webcompat:needs-diagnosis",
                     },
                 ],
-                "when": "2023-05-01T17:41:18Z",
+                "when": datetime.fromisoformat("2023-05-01T17:41:18Z"),
                 "who": "example",
             }
         ],
@@ -507,7 +507,7 @@ SAMPLE_HISTORY = [
                     {"removed": "--", "added": "S4", "field_name": "severity"},
                 ],
                 "who": "example",
-                "when": "2023-03-18T16:58:27Z",
+                "when": datetime.fromisoformat("2023-03-18T16:58:27Z"),
             },
             {
                 "changes": [
@@ -522,7 +522,7 @@ SAMPLE_HISTORY = [
                         "added": "example@example.com",
                     },
                 ],
-                "when": "2023-06-01T10:00:00Z",
+                "when": datetime.fromisoformat("2023-06-01T10:00:00Z"),
                 "who": "example",
             },
         ],
@@ -530,7 +530,13 @@ SAMPLE_HISTORY = [
     {
         "id": 1536484,
         "alias": None,
-        "history": [{"changes": [], "when": "2023-07-01T12:00:00Z", "who": "example"}],
+        "history": [
+            {
+                "changes": [],
+                "when": datetime.fromisoformat("2023-07-01T12:00:00Z"),
+                "who": "example",
+            }
+        ],
     },
     {
         "id": 1536485,
@@ -549,7 +555,7 @@ SAMPLE_HISTORY = [
                         "added": "webcompat:platform-bug",
                     },
                 ],
-                "when": "2023-05-01T14:00:00Z",
+                "when": datetime.fromisoformat("2023-05-01T14:00:00Z"),
                 "who": "example",
             },
             {
@@ -560,7 +566,7 @@ SAMPLE_HISTORY = [
                         "added": "RESOLVED",
                     }
                 ],
-                "when": "2023-08-01T14:00:00Z",
+                "when": datetime.fromisoformat("2023-08-01T14:00:00Z"),
                 "who": "example",
             },
         ],
@@ -597,7 +603,7 @@ MISSING_KEYWORDS_HISTORY = [
         "history": [
             {
                 "who": "someone@example.com",
-                "when": "2024-05-13T16:03:18Z",
+                "when": datetime.fromisoformat("2024-05-13T16:03:18Z"),
                 "changes": [
                     {
                         "field_name": "cf_user_story",
@@ -620,13 +626,13 @@ MISSING_KEYWORDS_HISTORY = [
             },
             {
                 "who": "someone@example.com",
-                "when": "2024-05-21T17:17:52Z",
+                "when": datetime.fromisoformat("2024-05-21T17:17:52Z"),
                 "changes": [
                     {"removed": "", "field_name": "cc", "added": "someone@example.com"}
                 ],
             },
             {
-                "when": "2024-05-21T17:22:20Z",
+                "when": datetime.fromisoformat("2024-05-21T17:22:20Z"),
                 "changes": [
                     {"field_name": "depends_on", "added": "1886820", "removed": ""}
                 ],
@@ -645,7 +651,7 @@ MISSING_KEYWORDS_HISTORY = [
                         "removed": "",
                     },
                 ],
-                "when": "2024-05-27T15:07:33Z",
+                "when": datetime.fromisoformat("2024-05-27T15:07:33Z"),
                 "who": "someone@example.com",
             },
             {
@@ -653,13 +659,13 @@ MISSING_KEYWORDS_HISTORY = [
                 "changes": [
                     {"field_name": "depends_on", "added": "1876368", "removed": ""}
                 ],
-                "when": "2024-06-05T19:25:37Z",
+                "when": datetime.fromisoformat("2024-06-05T19:25:37Z"),
             },
             {
                 "changes": [
                     {"added": "someone@example.com", "field_name": "cc", "removed": ""}
                 ],
-                "when": "2024-06-09T02:49:27Z",
+                "when": datetime.fromisoformat("2024-06-09T02:49:27Z"),
                 "who": "someone@example.com",
             },
             {
@@ -671,7 +677,7 @@ MISSING_KEYWORDS_HISTORY = [
                         "removed": "webcompat:needs-sitepatch",
                     }
                 ],
-                "when": "2024-06-11T16:34:22Z",
+                "when": datetime.fromisoformat("2024-06-11T16:34:22Z"),
             },
         ],
         "alias": None,
@@ -688,7 +694,7 @@ MISSING_KEYWORDS_HISTORY = [
                         "removed": "webcompat:needs-diagnosis",
                     }
                 ],
-                "when": "2024-06-11T16:34:22Z",
+                "when": datetime.fromisoformat("2024-06-11T16:34:22Z"),
             },
         ],
         "alias": None,
@@ -717,7 +723,7 @@ MISSING_KEYWORDS_BUGS = {
             },
             "status": "NEW",
             "depends_on": [1886128],
-            "creation_time": "2024-05-23T16:40:29Z",
+            "creation_time": datetime.fromisoformat("2024-05-23T16:40:29Z"),
         },
         {
             "component": "Site Reports",
@@ -737,7 +743,7 @@ MISSING_KEYWORDS_BUGS = {
             },
             "resolution": "",
             "summary": "www.unimarc.cl - Buttons not working",
-            "creation_time": "2024-05-13T13:02:11Z",
+            "creation_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
         },
         {
             "id": 222222,
@@ -759,7 +765,7 @@ MISSING_KEYWORDS_BUGS = {
                 "real_name": "Sample",
             },
             "creator": "name@example.com",
-            "creation_time": "2024-05-13T13:02:11Z",
+            "creation_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
             "keywords": [],
         },
     ]
@@ -788,7 +794,7 @@ REMOVED_READDED_BUGS = {
                 "real_name": "Sample",
             },
             "creator": "name@example.com",
-            "creation_time": "2024-05-13T13:02:11Z",
+            "creation_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
             "keywords": ["webcompat:needs-diagnosis"],
         }
     ]
@@ -806,7 +812,7 @@ REMOVED_READDED_HISTORY = [
                         "removed": "webcompat:needs-diagnosis",
                     }
                 ],
-                "when": "2024-06-11T16:34:22Z",
+                "when": datetime.fromisoformat("2024-06-11T16:34:22Z"),
             },
             {
                 "who": "someone@example.com",
@@ -817,7 +823,7 @@ REMOVED_READDED_HISTORY = [
                         "removed": "",
                     }
                 ],
-                "when": "2024-06-15T16:34:22Z",
+                "when": datetime.fromisoformat("2024-06-15T16:34:22Z"),
             },
             {
                 "who": "someone@example.com",
@@ -828,7 +834,7 @@ REMOVED_READDED_HISTORY = [
                         "removed": "",
                     }
                 ],
-                "when": "2024-07-11T16:34:22Z",
+                "when": datetime.fromisoformat("2024-07-11T16:34:22Z"),
             },
             {
                 "who": "someone@example.com",
@@ -839,7 +845,7 @@ REMOVED_READDED_HISTORY = [
                         "removed": "webcompat:needs-sitepatch",
                     }
                 ],
-                "when": "2024-07-14T16:34:22Z",
+                "when": datetime.fromisoformat("2024-07-14T16:34:22Z"),
             },
             {
                 "who": "someone@example.com",
@@ -850,7 +856,7 @@ REMOVED_READDED_HISTORY = [
                         "removed": "webcompat:needs-diagnosis",
                     }
                 ],
-                "when": "2024-09-11T16:34:22Z",
+                "when": datetime.fromisoformat("2024-09-11T16:34:22Z"),
             },
             {
                 "who": "someone@example.com",
@@ -861,7 +867,7 @@ REMOVED_READDED_HISTORY = [
                         "removed": "",
                     }
                 ],
-                "when": "2024-12-11T16:34:22Z",
+                "when": datetime.fromisoformat("2024-12-11T16:34:22Z"),
             },
         ],
         "alias": None,
@@ -881,18 +887,18 @@ KEYWORDS_AND_STATUS = [
                     },
                 ],
                 "who": "someone@example.com",
-                "when": "2018-05-02T18:25:47Z",
+                "when": datetime.fromisoformat("2018-05-02T18:25:47Z"),
             },
             {
                 "changes": [
                     {"added": "RESOLVED", "removed": "NEW", "field_name": "status"}
                 ],
-                "when": "2024-05-16T10:58:15Z",
+                "when": datetime.fromisoformat("2024-05-16T10:58:15Z"),
                 "who": "someone@example.com",
             },
             {
                 "who": "someone@example.com",
-                "when": "2024-06-03T14:44:48Z",
+                "when": datetime.fromisoformat("2024-06-03T14:44:48Z"),
                 "changes": [
                     {
                         "removed": "RESOLVED",
@@ -907,7 +913,7 @@ KEYWORDS_AND_STATUS = [
                 ],
             },
             {
-                "when": "2016-01-14T14:01:36Z",
+                "when": datetime.fromisoformat("2016-01-14T14:01:36Z"),
                 "who": "someone@example.com",
                 "changes": [
                     {
@@ -1110,9 +1116,18 @@ def test_get_bugs_updated_since_last_import(bz):
     all_bugs = {
         item["id"]: item
         for item in [
-            {"id": 1, "last_change_time": "2023-04-01T10:00:00Z"},
-            {"id": 2, "last_change_time": "2023-04-02T11:30:00Z"},
-            {"id": 3, "last_change_time": "2023-04-03T09:45:00Z"},
+            {
+                "id": 1,
+                "last_change_time": datetime.fromisoformat("2023-04-01T10:00:00Z"),
+            },
+            {
+                "id": 2,
+                "last_change_time": datetime.fromisoformat("2023-04-02T11:30:00Z"),
+            },
+            {
+                "id": 3,
+                "last_change_time": datetime.fromisoformat("2023-04-03T09:45:00Z"),
+            },
         ]
     }
 
@@ -1127,7 +1142,7 @@ def test_filter_bug_history_changes(bz):
         {
             "number": 1536482,
             "who": "example",
-            "change_time": "2023-05-01T17:41:18Z",
+            "change_time": datetime.fromisoformat("2023-05-01T17:41:18Z"),
             "changes": [
                 {
                     "field_name": "keywords",
@@ -1139,7 +1154,7 @@ def test_filter_bug_history_changes(bz):
         {
             "number": 1536483,
             "who": "example",
-            "change_time": "2023-06-01T10:00:00Z",
+            "change_time": datetime.fromisoformat("2023-06-01T10:00:00Z"),
             "changes": [
                 {
                     "field_name": "status",
@@ -1151,7 +1166,7 @@ def test_filter_bug_history_changes(bz):
         {
             "number": 1536485,
             "who": "example",
-            "change_time": "2023-05-01T14:00:00Z",
+            "change_time": datetime.fromisoformat("2023-05-01T14:00:00Z"),
             "changes": [
                 {
                     "removed": "",
@@ -1163,7 +1178,7 @@ def test_filter_bug_history_changes(bz):
         {
             "number": 1536485,
             "who": "example",
-            "change_time": "2023-08-01T14:00:00Z",
+            "change_time": datetime.fromisoformat("2023-08-01T14:00:00Z"),
             "changes": [
                 {"removed": "ASSIGNED", "field_name": "status", "added": "RESOLVED"}
             ],
@@ -1183,7 +1198,7 @@ def test_create_synthetic_history(bz):
         {
             "number": 1898563,
             "who": "name@example.com",
-            "change_time": "2024-05-23T16:40:29Z",
+            "change_time": datetime.fromisoformat("2024-05-23T16:40:29Z"),
             "changes": [
                 {
                     "added": "webcompat:needs-diagnosis, webcompat:needs-sitepatch",
@@ -1195,7 +1210,7 @@ def test_create_synthetic_history(bz):
         {
             "number": 222222,
             "who": "name@example.com",
-            "change_time": "2024-05-13T13:02:11Z",
+            "change_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
             "changes": [
                 {
                     "added": "webcompat:needs-diagnosis",
@@ -1217,7 +1232,7 @@ def test_create_synthetic_history_removed_readded(bz):
         {
             "number": 333333,
             "who": "name@example.com",
-            "change_time": "2024-05-13T13:02:11Z",
+            "change_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
             "changes": [
                 {
                     "added": "webcompat:needs-diagnosis",
@@ -1329,7 +1344,7 @@ def test_filter_only_unsaved_changes(mock_get_existing, bz):
         {
             "number": 1896383,
             "who": "someone@example.com",
-            "change_time": "2024-05-13T16:03:18Z",
+            "change_time": datetime.fromisoformat("2024-05-13T16:03:18Z"),
             "changes": [
                 {
                     "removed": "",
@@ -1341,7 +1356,7 @@ def test_filter_only_unsaved_changes(mock_get_existing, bz):
         {
             "number": 222222,
             "who": "someone@example.com",
-            "change_time": "2024-06-11T16:34:22Z",
+            "change_time": datetime.fromisoformat("2024-06-11T16:34:22Z"),
             "changes": [
                 {
                     "field_name": "keywords",
@@ -1429,7 +1444,7 @@ def test_filter_only_unsaved_changes_empty(mock_get_existing, bz):
         {
             "number": 1896383,
             "who": "someone@example.com",
-            "change_time": "2024-05-13T16:03:18Z",
+            "change_time": datetime.fromisoformat("2024-05-13T16:03:18Z"),
             "changes": [
                 {
                     "removed": "",
@@ -1441,7 +1456,7 @@ def test_filter_only_unsaved_changes_empty(mock_get_existing, bz):
         {
             "number": 1896383,
             "who": "someone@example.com",
-            "change_time": "2024-05-27T15:07:33Z",
+            "change_time": datetime.fromisoformat("2024-05-27T15:07:33Z"),
             "changes": [
                 {
                     "removed": "webcompat:needs-diagnosis",
@@ -1453,7 +1468,7 @@ def test_filter_only_unsaved_changes_empty(mock_get_existing, bz):
         {
             "number": 1896383,
             "who": "someone@example.com",
-            "change_time": "2024-06-11T16:34:22Z",
+            "change_time": datetime.fromisoformat("2024-06-11T16:34:22Z"),
             "changes": [
                 {
                     "field_name": "keywords",
@@ -1465,7 +1480,7 @@ def test_filter_only_unsaved_changes_empty(mock_get_existing, bz):
         {
             "number": 222222,
             "who": "someone@example.com",
-            "change_time": "2024-06-11T16:34:22Z",
+            "change_time": datetime.fromisoformat("2024-06-11T16:34:22Z"),
             "changes": [
                 {
                     "field_name": "keywords",
@@ -1510,7 +1525,7 @@ def test_filter_only_unsaved_changes_synthetic(mock_get_existing, bz):
         {
             "number": 222222,
             "who": "name@example.com",
-            "change_time": "2024-05-13T13:02:11Z",
+            "change_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
             "changes": [
                 {
                     "added": "webcompat:needs-diagnosis",
@@ -1602,14 +1617,14 @@ def test_kb_bugs_from_platform_bugs(bz):
                 "depends_on": [],
                 "summary": "Consider adding support for Error.captureStackTrace",
                 "resolution": "",
-                "last_change_time": "2024-05-27T15:07:03Z",
+                "last_change_time": datetime.fromisoformat("2024-05-27T15:07:03Z"),
                 "keywords": [
                     "parity-chrome",
                     "parity-safari",
                     "webcompat:platform-bug",
                 ],
                 "priority": "P3",
-                "creation_time": "2024-03-21T16:40:27Z",
+                "creation_time": datetime.fromisoformat("2024-03-21T16:40:27Z"),
                 "cf_user_story": "",
                 "status": "NEW",
                 "blocks": [1896383],
@@ -1627,10 +1642,10 @@ def test_kb_bugs_from_platform_bugs(bz):
                 "depends_on": [],
                 "summary": "Example core site report and platform bug",
                 "resolution": "",
-                "last_change_time": "2024-05-27T15:07:03Z",
+                "last_change_time": datetime.fromisoformat("2024-05-27T15:07:03Z"),
                 "keywords": ["webcompat:platform-bug", "webcompat:site-report"],
                 "priority": "P3",
-                "creation_time": "2024-03-21T16:40:27Z",
+                "creation_time": datetime.fromisoformat("2024-03-21T16:40:27Z"),
                 "cf_user_story": "",
                 "status": "NEW",
                 "blocks": [],
@@ -1648,7 +1663,7 @@ def test_convert_bug_data(bz):
         {
             "assigned_to": "test@example.org",
             "component": "Knowledge Base",
-            "creation_time": "2000-07-25T13:50:04Z",
+            "creation_time": datetime.fromisoformat("2000-07-25T13:50:04Z"),
             "keywords": [],
             "number": 1835339,
             "priority": None,
@@ -1678,7 +1693,7 @@ def test_convert_bug_data(bz):
         {
             "assigned_to": None,
             "component": "Knowledge Base",
-            "creation_time": "2000-07-25T13:50:04Z",
+            "creation_time": datetime.fromisoformat("2000-07-25T13:50:04Z"),
             "keywords": [],
             "number": 1835416,
             "priority": None,
@@ -1708,7 +1723,7 @@ def test_convert_bug_data(bz):
         {
             "assigned_to": None,
             "component": "Knowledge Base",
-            "creation_time": "2000-07-25T13:50:04Z",
+            "creation_time": datetime.fromisoformat("2000-07-25T13:50:04Z"),
             "keywords": [],
             "number": 111111,
             "priority": None,
@@ -1746,7 +1761,7 @@ def test_unify_etp_dependencies(bz):
                 "resolution": "",
                 "blocks": [],
                 "depends_on": [1101005, 1875061],
-                "creation_time": "2024-07-30T07:37:28Z",
+                "creation_time": datetime.fromisoformat("2024-07-30T07:37:28Z"),
                 "see_also": ["https://github.com/webcompat/web-bugs/issues/139647"],
                 "product": "Web Compatibility",
                 "status": "NEW",
@@ -1768,7 +1783,7 @@ def test_unify_etp_dependencies(bz):
                 "component": "Privacy: Site Reports",
                 "blocks": [],
                 "depends_on": [1101005, 1797458],
-                "creation_time": "2024-10-01T08:50:58Z",
+                "creation_time": datetime.fromisoformat("2024-10-01T08:50:58Z"),
                 "url": "https://my.farys.be/myfarys/",
                 "cf_webcompat_priority": "---",
                 "cf_webcompat_score": "---",
@@ -1785,7 +1800,7 @@ def test_unify_etp_dependencies(bz):
                 "resolution": "",
                 "depends_on": [1101005],
                 "url": "https://www.ryanair.com/gb/en/lp/chat",
-                "creation_time": "2024-10-30T15:04:41Z",
+                "creation_time": datetime.fromisoformat("2024-10-30T15:04:41Z"),
                 "cf_webcompat_priority": "---",
                 "cf_webcompat_score": "---",
             },
