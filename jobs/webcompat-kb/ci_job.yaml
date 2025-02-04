@@ -12,7 +12,7 @@ build-job-webcompat-kb:
         command: docker build -t app:build jobs/webcompat-kb/
     - run:
         name: Mypy
-        command: docker run app:build mypy -m webcompat_kb
+        command: docker run app:build mypy webcompat_kb
     - run:
         name: Test Code
         command: docker run app:build pytest --ruff --ruff-format

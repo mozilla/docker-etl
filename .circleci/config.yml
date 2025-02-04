@@ -139,6 +139,7 @@ jobs:
           name: Test Code
           command: docker run app:build python3 -m pytest
 
+
   build-job-dap-collector-ppa-prod:
     docker:
       - image: << pipeline.parameters.git-image >>
@@ -154,6 +155,7 @@ jobs:
       - run:
           name: Test Code
           command: docker run app:build python3 -m pytest
+
 
   build-job-desktop-mobile-mau-2020:
     docker:
@@ -273,6 +275,7 @@ jobs:
           name: Build Docker image
           command: docker build -t app:build jobs/looker-utils/
 
+
   build-job-mozaggregator2bq:
     docker:
       - image: << pipeline.parameters.git-image >>
@@ -372,7 +375,7 @@ jobs:
           command: docker build -t app:build jobs/webcompat-kb/
       - run:
           name: Mypy
-          command: docker run app:build mypy -m webcompat_kb
+          command: docker run app:build mypy webcompat_kb
       - run:
           name: Test Code
           command: docker run app:build pytest --ruff --ruff-format
@@ -513,7 +516,6 @@ workflows:
           filters:
             branches:
               only: main
-
 
   job-fxci-taskcluster-export:
     jobs:
