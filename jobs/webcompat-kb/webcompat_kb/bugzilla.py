@@ -799,6 +799,14 @@ class BugzillaToBigQuery:
 
         return history
 
+    def serialize_history_entry(self, entry: BugHistoryEntry) -> dict[str, Any]:
+        return {
+            "number": entry["number"],
+            "who": entry["who"],
+            "change_time": entry["change_time"].isoformat(),
+            "changes": entry["changes"],
+        }
+
     def update_history(self, records: list[BugHistoryEntry]) -> None:
         if not records:
             return
@@ -826,9 +834,7 @@ class BugzillaToBigQuery:
         history_table = f"{self.bq_dataset_id}.bugs_history"
 
         job = self.client.load_table_from_json(
-            (
-                dict(item) for item in records
-            ),  # Noop dict->dict converstion now to type check
+            (self.serialize_history_entry(item) for item in records),
             history_table,
             job_config=job_config,
         )
