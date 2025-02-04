@@ -198,7 +198,7 @@ LINK_FIELDS = ["other_browser_issues", "standards_issues", "standards_positions"
 PLATFORM_RELATION_CONFIG = {key: RELATION_CONFIG[key] for key in LINK_FIELDS}
 
 
-def extract_int_from_field(field: str) -> Optional[int]:
+def extract_int_from_field(field: Optional[str]) -> Optional[int]:
     if field:
         if field.lower() in FIELD_MAP:
             return FIELD_MAP[field.lower()]
@@ -616,8 +616,8 @@ class BugzillaToBigQuery:
             bug["assigned_to"] if bug["assigned_to"] != "nobody@mozilla.org" else None
         )
         webcompat_priority = (
-            bug["cf_webcompat_priority"]
-            if bug["cf_webcompat_priority"] != "---"
+            bug.get("cf_webcompat_priority")
+            if bug.get("cf_webcompat_priority") != "---"
             else None
         )
 
@@ -630,15 +630,15 @@ class BugzillaToBigQuery:
             "component": bug["component"],
             "severity": extract_int_from_field(bug["severity"]),
             "priority": extract_int_from_field(bug["priority"]),
-            "creation_time": bug["creation_time"],
+            "creation_time": bug["creation_time"].isoformat(),
             "assigned_to": assigned_to,
             "keywords": bug["keywords"],
             "url": bug["url"],
             "user_story": user_story,
-            "resolved_time": resolved,
+            "resolved_time": resolved.isoformat() if resolved is not None else None,
             "whiteboard": bug["whiteboard"],
             "webcompat_priority": webcompat_priority,
-            "webcompat_score": extract_int_from_field(bug["cf_webcompat_score"]),
+            "webcompat_score": extract_int_from_field(bug.get("cf_webcompat_score")),
         }
 
     def update_bugs(self, bugs: BugsById) -> None:
@@ -799,6 +799,14 @@ class BugzillaToBigQuery:
 
         return history
 
+    def serialize_history_entry(self, entry: BugHistoryEntry) -> dict[str, Any]:
+        return {
+            "number": entry["number"],
+            "who": entry["who"],
+            "change_time": entry["change_time"].isoformat(),
+            "changes": entry["changes"],
+        }
+
     def update_history(self, records: list[BugHistoryEntry]) -> None:
         if not records:
             return
@@ -826,9 +834,7 @@ class BugzillaToBigQuery:
         history_table = f"{self.bq_dataset_id}.bugs_history"
 
         job = self.client.load_table_from_json(
-            (
-                dict(item) for item in records
-            ),  # Noop dict->dict converstion now to type check
+            (self.serialize_history_entry(item) for item in records),
             history_table,
             job_config=job_config,
         )

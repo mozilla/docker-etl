@@ -1663,7 +1663,7 @@ def test_convert_bug_data(bz):
         {
             "assigned_to": "test@example.org",
             "component": "Knowledge Base",
-            "creation_time": datetime.fromisoformat("2000-07-25T13:50:04Z"),
+            "creation_time": "2000-07-25T13:50:04+00:00",
             "keywords": [],
             "number": 1835339,
             "priority": None,
@@ -1693,7 +1693,7 @@ def test_convert_bug_data(bz):
         {
             "assigned_to": None,
             "component": "Knowledge Base",
-            "creation_time": datetime.fromisoformat("2000-07-25T13:50:04Z"),
+            "creation_time": "2000-07-25T13:50:04+00:00",
             "keywords": [],
             "number": 1835416,
             "priority": None,
@@ -1723,7 +1723,7 @@ def test_convert_bug_data(bz):
         {
             "assigned_to": None,
             "component": "Knowledge Base",
-            "creation_time": datetime.fromisoformat("2000-07-25T13:50:04Z"),
+            "creation_time": "2000-07-25T13:50:04+00:00",
             "keywords": [],
             "number": 111111,
             "priority": None,
