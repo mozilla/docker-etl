@@ -93,10 +93,27 @@ class Tasks(Record):
     task_group_id: BigQueryTypes.STRING
     task_id: BigQueryTypes.STRING
     task_queue_id: BigQueryTypes.STRING
-    tags: list[Tag]
+    # No longer used. Kept for backwards compatibility with older records.
+    tags: Optional[list[Tag]]
 
     def __str__(self):
         return self.task_id
+
+
+@dataclass
+class Tags(Record):
+    task_id: BigQueryTypes.STRING
+    created_for_user: Optional[BigQueryTypes.STRING]
+    kind: Optional[BigQueryTypes.STRING]
+    label: Optional[BigQueryTypes.STRING]
+    os: Optional[BigQueryTypes.STRING]
+    owned_by: Optional[BigQueryTypes.STRING]
+    project: Optional[BigQueryTypes.STRING]
+    trust_domain: Optional[BigQueryTypes.STRING]
+    worker_implementation: Optional[BigQueryTypes.STRING]
+
+    def __str__(self):
+        return f"{self.task_id} tags"
 
 
 @dataclass
@@ -121,7 +138,7 @@ def get_record_cls(table_type: str) -> Type[Record]:
     Returns:
         Type[Record]: The record class for the corresponding table.
     """
-    assert table_type in ("tasks", "runs", "metrics")
+    assert table_type in ("tasks", "tags", "runs", "metrics")
     for name, obj in globals().items():
         if name.lower() == table_type and issubclass(obj, Record):
             return obj
