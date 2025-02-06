@@ -1,5 +1,6 @@
 import base64
 import json
+import re
 import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -14,7 +15,7 @@ from loguru import logger
 
 from fxci_etl.config import Config
 from fxci_etl.loaders.bigquery import BigQueryLoader
-from fxci_etl.schemas import Record, Runs, Tasks
+from fxci_etl.schemas import Record, Runs, Tasks, Tags
 
 
 @dataclass
@@ -92,6 +93,22 @@ class BigQueryHandler(PulseHandler):
         self.task_records: list[Record] = []
         self.run_records: list[Record] = []
 
+        self._convert_camel_case_re = re.compile(r"(?<!^)(?=[A-Z])")
+        self._known_tags = set(Tags.__annotations__.keys()) - {"key", "value"}
+
+    def _normalize_tag(self, tag: str) -> str | None:
+        """Tags are not well standardized and can be in camel case, snake case,
+        separated by dashes or even spaces. Ensure they all get normalized to
+        snake case.
+
+        If the normalization results in a known tag, return it. Otherwise return
+        None.
+        """
+        tag = tag.replace("-", "_").replace(" ", "_")
+        tag = self._convert_camel_case_re.sub("_", tag).lower()
+        if tag in self._known_tags:
+            return tag
+
     def process_event(self, event):
         data = event.data
 
@@ -129,16 +146,17 @@ class BigQueryHandler(PulseHandler):
             try:
                 task_record = {
                     "scheduler_id": status["schedulerId"],
-                    "tags": [],
+                    "tags": {},
                     "task_group_id": status["taskGroupId"],
                     "task_id": status["taskId"],
                     "task_queue_id": status["taskQueueId"],
                 }
                 # Tags can be missing if the run is in the exception state.
-                if "task" in data and "tags" in data["task"]:
-                    task_record["tags"] = [
-                        {"key": k, "value": v} for k, v in data["task"]["tags"].items()
-                    ]
+                if tags := data.get("task", {}).get("tags"):
+                    for key, value in tags.items():
+                        if key := self._normalize_tag(key):
+                            task_record["tags"][key] = value
+
                 self.task_records.append(
                     Tasks.from_dict(task_record)
                 )

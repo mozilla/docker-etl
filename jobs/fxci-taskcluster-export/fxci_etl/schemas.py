@@ -82,9 +82,18 @@ class Runs(Record):
 
 
 @dataclass
-class Tag:
-    key: BigQueryTypes.STRING
-    value: BigQueryTypes.STRING
+class Tags:
+    created_for_user: Optional[BigQueryTypes.STRING]
+    kind: Optional[BigQueryTypes.STRING]
+    label: Optional[BigQueryTypes.STRING]
+    os: Optional[BigQueryTypes.STRING]
+    owned_by: Optional[BigQueryTypes.STRING]
+    project: Optional[BigQueryTypes.STRING]
+    trust_domain: Optional[BigQueryTypes.STRING]
+    worker_implementation: Optional[BigQueryTypes.STRING]
+    # No longer used. Kept for backwards compatibility with older records.
+    key: Optional[BigQueryTypes.STRING]
+    value: Optional[BigQueryTypes.STRING]
 
 
 @dataclass
@@ -93,7 +102,7 @@ class Tasks(Record):
     task_group_id: BigQueryTypes.STRING
     task_id: BigQueryTypes.STRING
     task_queue_id: BigQueryTypes.STRING
-    tags: list[Tag]
+    tags: Tags
 
     def __str__(self):
         return self.task_id
