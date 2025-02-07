@@ -29,13 +29,14 @@ def generate_schema(cls):
         if origin is Union and type(None) in args:
             mode = "NULLABLE"
             _type = [arg for arg in args if arg is not type(None)][0]
-
-        elif origin is list:
-            mode = "REPEATED"
-            _type = args[0]
-
+            origin = get_origin(_type)
+            args = get_args(_type)
         else:
             mode = "REQUIRED"
+
+        if origin is list:
+            mode = "REPEATED"
+            _type = args[0]
 
         if is_dataclass(_type):
             nested_schema = generate_schema(_type)
