@@ -33,6 +33,12 @@ def get_parser() -> argparse.ArgumentParser:
         help="Don't write updates to BigQuery",
     )
 
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Drop into debugger if there's an exception",
+    )
+
     for job_cls in ALL_JOBS.values():
         job_cls.add_arguments(parser)
 
@@ -74,12 +80,7 @@ def set_default_args(parser: argparse.ArgumentParser, args: argparse.Namespace) 
         sys.exit(1)
 
 
-def main() -> None:
-    logging.basicConfig()
-
-    parser = get_parser()
-    args = parser.parse_args()
-    logging.getLogger().setLevel(logging.getLevelNamesMapping()[args.log_level.upper()])
+def run(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     set_default_args(parser, args)
 
     jobs = {job_name: ALL_JOBS[job_name]() for job_name in args.jobs}
@@ -92,6 +93,27 @@ def main() -> None:
     for job_name, job in jobs.items():
         logging.info(f"Running job {job_name}")
         job.main(client, args)
+
+
+def main() -> None:
+    logging.basicConfig()
+
+    parser = get_parser()
+    args = parser.parse_args()
+    logging.getLogger().setLevel(logging.getLevelNamesMapping()[args.log_level.upper()])
+
+    try:
+        run(parser, args)
+    except Exception:
+        if args.debug:
+            import traceback
+
+            traceback.print_exc()
+            import pdb
+
+            pdb.post_mortem()
+        else:
+            raise
 
 
 if __name__ == "__main__":
