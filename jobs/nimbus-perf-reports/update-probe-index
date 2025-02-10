@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+import json
+import os
+import sys
+import requests
+
+probeIndexFile = os.path.join("lib", "probe-index.json")
+
+def get_url(url):
+  response = requests.get(url)
+  if response.ok:
+    values = response.json()
+    return values
+  else:
+    print(f"Failed to retrieve {url}: {response.status_code}")
+    sys.exit(1)
+
+if __name__ == "__main__":
+
+  probe_index = {
+    "glean": {},
+    "legacy": {}
+  }
+
+  # Collect all legacy probes
+  channel="release"
+  legacy_metrics = get_url(f"https://probeinfo.telemetry.mozilla.org/firefox/{channel}/main/all_probes")
+  for metric in legacy_metrics:
+    metric_type = metric.split("/")[0]
+    if metric_type != "histogram":
+      continue
+
+    metric_name = metric.split("/")[1]
+    metric_info = legacy_metrics[metric]["history"][channel][-1]
+    probe_index["legacy"][metric_name] = metric_info
+    probe_index["legacy"][metric_name]["repos"] = "legacy"
+
+  # Collect all glean probes
+  glean_repositories_url = "https://probeinfo.telemetry.mozilla.org/glean/repositories"
+  glean_repos = get_url(glean_repositories_url)
+  for i,repo in enumerate(glean_repos):
+    name = glean_repos[i]["name"]
+    metrics = get_url(f"https://probeinfo.telemetry.mozilla.org/glean/{name}/metrics")
+    for metric in metrics:
+      metric_sql_name = metric.replace(".", "_")
+      if metric_sql_name not in probe_index["glean"]:
+        probe_index["glean"][metric_sql_name] = metrics[metric]["history"][-1]
+        probe_index["glean"][metric_sql_name]["repos"] = []
+
+      probe_index["glean"][metric_sql_name]["repos"].append(name)
+
+      if "telemetry_mirror" in metrics[metric]["history"][-1]:
+        mirror = metrics[metric]["history"][-1]["telemetry_mirror"]
+        # Update mirror in the legacy probes.
+        if mirror in probe_index["legacy"]:
+          probe_index["legacy"]["glean_mirror"] = metric_sql_name
+
+  with open(probeIndexFile, 'w') as f:
+    json.dump(probe_index, f, indent=2)
+
