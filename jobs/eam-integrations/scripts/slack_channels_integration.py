@@ -99,6 +99,7 @@ class SlackIntegration:
         num_deleted = 0
         num_archived = 0
         num_warnings = 0
+        
         operations = [
                       #Operations.delete_no_members_no_msgs,
                       Operations.warning_msg,
@@ -115,8 +116,11 @@ class SlackIntegration:
         # ==================================================================================
         self.logger.info("1 - Getting all Slack channels (public channels only).")
 
-        lst_msg_secs = 60*60*24*166 # 166 days
-        lst_msg_secs = 2
+
+        ts_07_days = 60*60*24*7
+        lst_msg_secs = 60*60*24*173 # 173 days
+        archived_secs = 60*60*24*30
+                
         try:
             non_archived, archived, integration_report, channels_dict = self._slack.get_conversations_list(lst_msg_secs)
 
@@ -139,7 +143,7 @@ class SlackIntegration:
         #                    Six months is our message retention period.
         # ==================================================================================
         self.logger.info("2 - Selecting non-archived channels")
-        msg_archived = """This channel will be archived in 14 days due to inactivity and deleted 30 days after archiving. To keep the channel active a member will need to post a message. Members must unarchive the channel within the 30 day period and post a message to keep the channel active. Note: A channel cannot be restored after it is deleted."""
+        msg_archived = """This channel will be archived in 7 days due to inactivity and deleted 30 days after archiving. To keep the channel active a member will need to post a message. Members must unarchive the channel within the 30 day period and post a message to keep the channel active. Note: A channel cannot be restored after it is deleted."""
 
         for channel_id in non_archived[:max_limit]:
             try:
@@ -190,9 +194,8 @@ class SlackIntegration:
                 # TODO put user in a data structure
                 if (msgs[0].get('user')=='U07MZF1V34Y') and msgs[0].get('text')==msg_archived:
                     # Archive channel if ts >= 14 days
-                    ts_14_days = 60*60*24*14
-                    ts_14_days = 1
-                    if (self._slack.is_ts_older_than(days=ts_14_days, unix_timestamp=ts)):
+
+                    if (self._slack.is_ts_older_than(days=ts_07_days, unix_timestamp=ts)):
                         if Operations.archive in operations:
                             r = self._slack.conversations_archive(channel_id)
                             self.logger.info(f'The channel {channels_dict[channel_id].get("name")} was archived') 
@@ -224,8 +227,7 @@ class SlackIntegration:
         #     Business Rule: For archived channels: Select channels that have been archived 
         #     for at least one month and delete them.
         # ==================================================================================
-        archived_secs = 60*60*24*30
-        archived_secs = 1
+
         for channel_id in archived[:max_limit]:
             try:
 
