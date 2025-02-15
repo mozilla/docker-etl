@@ -1,5 +1,6 @@
 import base64
 import json
+import re
 import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -14,7 +15,7 @@ from loguru import logger
 
 from fxci_etl.config import Config
 from fxci_etl.loaders.bigquery import BigQueryLoader
-from fxci_etl.schemas import Record, Runs, Tasks
+from fxci_etl.schemas import Record, Runs, Tasks, Tags
 
 
 @dataclass
@@ -90,7 +91,24 @@ class BigQueryHandler(PulseHandler):
     def __init__(self, config: Config, **kwargs: Any):
         super().__init__(config, **kwargs)
         self.task_records: list[Record] = []
+        self.tag_records: list[Record] = []
         self.run_records: list[Record] = []
+
+        self._convert_camel_case_re = re.compile(r"(?<!^)(?=[A-Z])")
+        self._known_tags = set(Tags.__annotations__.keys())
+
+    def _normalize_tag(self, tag: str) -> str | None:
+        """Tags are not well standardized and can be in camel case, snake case,
+        separated by dashes or even spaces. Ensure they all get normalized to
+        snake case.
+
+        If the normalization results in a known tag, return it. Otherwise return
+        None.
+        """
+        tag = tag.replace("-", "_").replace(" ", "_")
+        tag = self._convert_camel_case_re.sub("_", tag).lower()
+        if tag in self._known_tags:
+            return tag
 
     def process_event(self, event):
         data = event.data
@@ -125,20 +143,14 @@ class BigQueryHandler(PulseHandler):
         )
 
         if data["runId"] == 0:
-            # Only insert the task record for run 0 to avoid duplicate records.
+            # Only insert the task / tag records for run 0 to avoid duplicate records.
             try:
                 task_record = {
                     "scheduler_id": status["schedulerId"],
-                    "tags": [],
                     "task_group_id": status["taskGroupId"],
                     "task_id": status["taskId"],
                     "task_queue_id": status["taskQueueId"],
                 }
-                # Tags can be missing if the run is in the exception state.
-                if "task" in data and "tags" in data["task"]:
-                    task_record["tags"] = [
-                        {"key": k, "value": v} for k, v in data["task"]["tags"].items()
-                    ]
                 self.task_records.append(
                     Tasks.from_dict(task_record)
                 )
@@ -147,12 +159,29 @@ class BigQueryHandler(PulseHandler):
                 self.run_records.pop()
                 raise
 
+            # Tags can be missing if the run is in the exception state.
+            if tags := data.get("task", {}).get("tags"):
+                tag_record = {"task_id": status["taskId"]}
+
+                for key, value in tags.items():
+                    if key := self._normalize_tag(key):
+                        tag_record[key] = value
+
+                self.tag_records.append(
+                    Tags.from_dict(tag_record)
+                )
+
     def on_processing_complete(self):
         logger.info(f"Processed {self._count} pulse events")
         if self.task_records:
             task_loader = BigQueryLoader(self.config, "tasks")
             task_loader.insert(self.task_records)
             self.task_records = []
+
+        if self.tag_records:
+            run_loader = BigQueryLoader(self.config, "tags")
+            run_loader.insert(self.tag_records)
+            self.tag_records = []
 
         if self.run_records:
             run_loader = BigQueryLoader(self.config, "runs")

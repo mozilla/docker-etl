@@ -40,6 +40,7 @@ class PulseConfig:
 class BigQueryTableConfig:
     metrics: str = "worker_metrics_v1"
     tasks: str = "tasks_v1"
+    tags: str = "task_tags_v1"
     runs: str = "task_runs_v1"
 
 
