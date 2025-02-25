@@ -91,9 +91,6 @@ class Tags:
     project: Optional[BigQueryTypes.STRING]
     trust_domain: Optional[BigQueryTypes.STRING]
     worker_implementation: Optional[BigQueryTypes.STRING]
-    # No longer used. Kept for backwards compatibility with older records.
-    key: Optional[BigQueryTypes.STRING]
-    value: Optional[BigQueryTypes.STRING]
 
 
 @dataclass
