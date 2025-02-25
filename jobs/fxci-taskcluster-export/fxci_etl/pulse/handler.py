@@ -94,7 +94,7 @@ class BigQueryHandler(PulseHandler):
         self.run_records: list[Record] = []
 
         self._convert_camel_case_re = re.compile(r"(?<!^)(?=[A-Z])")
-        self._known_tags = set(Tags.__annotations__.keys()) - {"key", "value"}
+        self._known_tags = set(Tags.__annotations__.keys())
 
     def _normalize_tag(self, tag: str) -> str | None:
         """Tags are not well standardized and can be in camel case, snake case,
