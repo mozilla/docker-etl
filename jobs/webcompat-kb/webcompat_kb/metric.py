@@ -10,61 +10,63 @@ from .base import EtlJob
 def update_metric_history(
     client: bigquery.Client, bq_dataset_id: str, write: bool
 ) -> None:
-    metrics_table = f"{bq_dataset_id}.webcompat_topline_metric"
-    history_table = f"{bq_dataset_id}.webcompat_topline_metric_history"
 
-    history_schema = [
-        bigquery.SchemaField("recorded_date", "DATE", mode="REQUIRED"),
-        bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
-        bigquery.SchemaField("bug_count", "INTEGER", mode="REQUIRED"),
-        bigquery.SchemaField("needs_diagnosis_score", "NUMERIC", mode="REQUIRED"),
-        bigquery.SchemaField("platform_score", "NUMERIC", mode="REQUIRED"),
-        bigquery.SchemaField("not_supported_score", "NUMERIC", mode="REQUIRED"),
-        bigquery.SchemaField("total_score", "NUMERIC", mode="REQUIRED"),
-    ]
+    for suffix in ["global_1000", "sightline", "all"]:
+        metrics_table = f"{bq_dataset_id}.webcompat_topline_metric_{suffix}"
+        history_table = f"{bq_dataset_id}.webcompat_topline_metric_{suffix}_history"
 
-    client.create_table(
-        bigquery.Table(f"{client.project}.{history_table}", history_schema),
-        exists_ok=True,
-    )
+        history_schema = [
+            bigquery.SchemaField("recorded_date", "DATE", mode="REQUIRED"),
+            bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
+            bigquery.SchemaField("bug_count", "INTEGER", mode="REQUIRED"),
+            bigquery.SchemaField("needs_diagnosis_score", "NUMERIC", mode="REQUIRED"),
+            bigquery.SchemaField("platform_score", "NUMERIC", mode="REQUIRED"),
+            bigquery.SchemaField("not_supported_score", "NUMERIC", mode="REQUIRED"),
+            bigquery.SchemaField("total_score", "NUMERIC", mode="REQUIRED"),
+        ]
 
-    query = f"""
-            SELECT recorded_date
-            FROM `{history_table}`
-            ORDER BY recorded_date DESC
-            LIMIT 1
-        """
+        client.create_table(
+            bigquery.Table(f"{client.project}.{history_table}", history_schema),
+            exists_ok=True,
+        )
 
-    rows = list(client.query(query).result())
+        query = f"""
+                SELECT recorded_date
+                FROM `{history_table}`
+                ORDER BY recorded_date DESC
+                LIMIT 1
+            """
 
-    today = date.today()
+        rows = list(client.query(query).result())
 
-    if rows and rows[0]["recorded_date"] >= today:
-        # We've already recorded historic data today
-        logging.info("Already recorded historic data today, skipping")
-        return
+        today = date.today()
 
-    query = f"""
-            SELECT *
-            FROM `{metrics_table}`
-        """
-    rows = list(dict(row.items()) for row in client.query(query).result())
-    for row in rows:
-        row["recorded_date"] = today
+        if rows and rows[0]["recorded_date"] >= today:
+            # We've already recorded historic data today
+            logging.info(f"Already recorded historic data in {history_table} today, skipping")
+            continue
 
-    if write:
-        logging.info(f"Writing to {history_table} table")
+        query = f"""
+                SELECT *
+                FROM `{metrics_table}`
+            """
+        rows = list(dict(row.items()) for row in client.query(query).result())
+        for row in rows:
+            row["recorded_date"] = today
 
-        table = client.get_table(history_table)
-        errors = client.insert_rows(table, rows)
+        if write:
+            logging.info(f"Writing to {history_table} table")
 
-        if errors:
-            logging.error(errors)
+            table = client.get_table(history_table)
+            errors = client.insert_rows(table, rows)
+
+            if errors:
+                logging.error(errors)
+            else:
+                logging.info("Metrics history recorded")
+                logging.info(f"Loaded {len(rows)} rows into {table}")
         else:
-            logging.info("Metrics history recorded")
-            logging.info(f"Loaded {len(rows)} rows into {table}")
-    else:
-        logging.info(f"Skipping writes, would have written:\n{rows}")
+            logging.info(f"Skipping writes, would have written:\n{rows}")
 
 
 class MetricJob(EtlJob):
