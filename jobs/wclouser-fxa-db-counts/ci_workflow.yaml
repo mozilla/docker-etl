@@ -1,0 +1,13 @@
+job-wclouser-fxa-db-counts:
+  jobs:
+    - build-job-wclouser-fxa-db-counts
+    - gcp-gcr/build-and-push-image:
+        context: data-eng-airflow-gcr
+        docker-context: jobs/wclouser-fxa-db-counts/
+        path: jobs/wclouser-fxa-db-counts/
+        image: wclouser-fxa-db-counts_docker_etl
+        requires:
+          - build-job-wclouser-fxa-db-counts
+        filters:
+          branches:
+            only: main
