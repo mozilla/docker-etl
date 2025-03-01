@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<head>
+<title>{{title}}</title>
+<style>
+div.title {
+    margin-top: 30px;
+    margin-bottom: 30px;
+    font-weight: bold;
+    font-size: 20px;
+}
+div.container {
+    margin-left: 10%;
+    margin-right: 10%;
+    margin-top: 30px;
+    margin-bottom: 30px;
+    width: 80%;
+}
+body {
+  color: #000000;
+  background: #ffffff;
+  font-family: 'Open Sans',sans-serif;
+  padding: 0;
+  margin: 0;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+.experiment-table {
+    width:100%;
+    border: double;
+    border-color: black;
+    text-align:center;
+    padding:($half-spacing-unit * 1.5) 20;
+    font-size: 14px;
+}
+.experiment-table td {
+    padding: 10px;
+}
+.experiment-table tr {
+    border-bottom: 1px solid #dddddd;
+    border-bottom-style: hidden;
+    border-top-style: hidden;
+    &:nth-of-type(odd) {
+    	background:#ececec;
+    }
+}
+.experiment-table th {
+    background-color: gray;
+    width:30%;
+    height:14px;
+    color: #ffffff;
+    text-align:center;
+    padding: 10px;
+    font-weight: bold;
+}
+.other-table {
+    width:100%;
+    border: double;
+    border-color: black;
+    text-align:center;
+    table-layout: auto,
+    padding:($half-spacing-unit * 1.5) 10;
+    font-size: 14px;
+}
+.other-table td {
+    padding: 10px;
+    border-bottom-style: hidden;
+    border-top-style: hidden;
+}
+.other-table th {
+    background-color: gray;
+    height:14px;
+    color: #ffffff;
+    text-align:center;
+    padding: 10px;
+    font-weight: bold;
+}
+</style>
+</head>
+<body>
+  <div class="container">
+  <div class="title">Experiment Reports:</div>
+  <table border="1" cellspacing="0" cellpadding="0" class="experiment-table">
+    <thead>
+      <tr>
+        <th>
+          Name
+        </th>
+        <th>
+          StartDate
+        </th>
+        <th>
+          EndDate
+        </th>
+        <th>
+          Channel
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for report in experiment_reports %}
+      <tr>
+        <td>
+          <a href="{{report.slug}}.html">{{report.slug}}</a>
+        </td>
+        <td>
+          {{report.startDate}}
+        </td>
+        <td>
+          {{report.endDate}}
+        </td>
+        <td>
+          {{report.channel}}
+        </td>
+      </tr>
+      {% endfor %}
+  </table>
+
+  <div class="title">Other Reports:</div>
+  <table border="1" cellspacing="0" cellpadding="0" class="other-table">
+    <colgroup>
+       <col span="1" style="width: 40%;">
+       <col span="1" style="width: 15%;">
+       <col span="1" style="width: 15%;">
+       <col span="1" style="width: 15%;">
+       <col span="1" style="width: 15%;">
+    </colgroup>
+
+    <thead>
+      <tr>
+        <th>
+          Name
+        </th>
+        <th>
+          Branch
+        </th>
+        <th width=100px>
+          StartDate
+        </th>
+        <th width=100px>
+          EndDate
+        </th>
+        <th>
+          Channel
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for report in other_reports %}
+      <tr>
+        <td style="{{report.style}}; border-bottom-style: solid;" rowspan={{report.branchlen}}>
+          <a href="{{report.slug}}.html">{{report.slug}}</a>
+        </td>
+        {% for branch in report.branches %}
+          {% if branch.last == True %} 
+              <td style="{{report.style}}; border-bottom-style: solid;">
+                {{branch.name}}
+              </td>
+              <td style="{{report.style}}; border-bottom-style: solid;">
+                {{branch.startDate}}
+              </td>
+              <td style="{{report.style}}; border-bottom-style: solid;">
+                {{branch.endDate}}
+              </td>
+              <td style="{{report.style}}; border-bottom-style: solid;">
+                {{branch.channel}}
+              </td>
+          {% else %}
+              <td style="{{report.style}};">
+                {{branch.name}}
+              </td>
+              <td style="{{report.style}}">
+                {{branch.startDate}}
+              </td>
+              <td style="{{report.style}}">
+                {{branch.endDate}}
+              </td>
+              <td style="{{report.style}}">
+                {{branch.channel}}
+              </td>
+          {% endif %}
+        </tr>
+        <tr>
+        {% endfor %}
+        </tr>
+      {% endfor %}
+  </table>
+
+  </div>
+</body>
+
