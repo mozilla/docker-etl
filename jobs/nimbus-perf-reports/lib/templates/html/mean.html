@@ -1,0 +1,194 @@
+{% autoescape off %}
+<div class="chart"><canvas height="250px" id="{{segment}}-{{metric}}-mean"></canvas></div>
+<script>
+  ctx = document.getElementById('{{segment}}-{{metric}}-mean');
+
+
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: {{branches}},
+      datasets: [
+        {
+          data: [
+{% for dataset in datasets %}
+            {
+              x: "{{dataset.branch}}",
+              y: {{dataset.mean}},
+              {% if dataset.uplift %}
+              uplift: {{dataset.uplift}}
+              {% endif %}
+            },
+{% endfor %}
+          ],
+        },
+      ]
+    },
+    options: {
+      animation: false,
+      maintainAspectRatio: false,
+      responsive: true,
+      plugins: {
+          crosshair: { zoom: {enabled: false } },
+          datalabels: {
+            anchor: 'end',
+            align: 'top',
+            formatter: (n) => {
+                return n.hasOwnProperty('uplift') 
+                  ?  n.y.toFixed(2) + "  (" + (n.uplift > 0 ? "+" : "") + n.uplift.toFixed(1) + ")%" 
+                  :  n.y.toFixed(2);
+            },
+            font: {
+              weight: 'bold',
+                size: 14
+            }
+          },
+          legend: {
+              display: false,
+              position: 'top',
+            },
+          title: {
+              display: true,
+              text: ["{{metric}} mean", "segment: {{segment}}"]
+            }
+      },
+      scales: {
+        y: {
+          grace: '25%',
+          beginAtZero: true,
+          title: {
+            text: "Mean",
+            display: true
+          }
+        },
+        x: {
+          type: "category",
+        }
+      },
+    }
+  });
+</script>
+
+<table border="1" cellspacing="0" cellpadding="0" class="stat-table">
+  <thead>
+    <tr> 
+      <th>
+        branch
+      </th>
+      <th>
+        n
+      </th>
+      <th>
+        mean
+      </th>
+      <th>
+        stddev
+      </th>
+      <th>
+        uplift(%)
+      </th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for dataset in datasets %}
+    <tr>
+      <td>
+        {% if dataset.control == True %}
+        {{dataset.branch}} (control)
+        {% else %}
+        {{dataset.branch}}
+        {% endif %}
+      </td>
+      <td>
+        {{dataset.n}}
+      </td>
+      <td>
+        {{dataset.mean}}
+      </td>
+      <td>
+        {{dataset.std}}
+      </td>
+      <td>
+        {{dataset.uplift}}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<table border="1" cellspacing="0" cellpadding="0" class="stat-table">
+  <thead>
+    <tr> 
+      <th rowspan=2>
+        <div class="tooltip">branch
+          <span class="tooltiptext">All results compared against control.</span>
+        </div>
+      </th>
+      <th colspan=2>
+        <div class="tooltip">t-test
+          <span class="tooltiptext">Student t-test statistic.</span>
+        </div>
+      </th>
+      <th colspan=2>
+        <div class="tooltip">mwu
+          <span class="tooltiptext">Mann-Whitney U test statistic.</span>
+        </div>
+      </th>
+      <th colspan=2>
+        <div class="tooltip">ks
+          <span class="tooltiptext">Kolmogorov-Smirnov test statistic.</span>
+        </div>
+      </th>
+    </tr>
+    <tr>
+      <th>
+        effect
+      </th>
+      <th>
+        p-value
+      </th>
+      <th>
+        effect
+      </th>
+      <th>
+        p-value
+      </th>
+      <th>
+        effect
+      </th>
+      <th>
+        p-value
+      </th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for dataset in datasets %}
+    {% if dataset.control == False %}
+    <tr>
+      <td>
+        {{dataset.branch}}
+      </td>
+      <td>
+        {{dataset.ttest.effect}}
+      </td>
+      <td>
+        {{dataset.ttest.pval}}
+      </td>
+      <td>
+        {{dataset.mwu.effect}}
+      </td>
+      <td>
+        {{dataset.mwu.pval}}
+      </td>
+      <td>
+        {{dataset.ks.effect}}
+      </td>
+      <td>
+        {{dataset.ks.pval}}
+      </td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+  </tbody>
+</table>
+{% endautoescape %}
