@@ -40,6 +40,7 @@ test = [
 
 [project.scripts]
 webcompat-etl = "webcompat_kb.main:main"
+webcompat-create-test-dataset = "webcompat_kb.utils:create_test_dataset"
 
 [tool.pytest]
 testpaths = ["tests"]
