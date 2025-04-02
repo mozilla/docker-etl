@@ -244,6 +244,7 @@ class BugzillaToBigQuery:
         bugzilla_api_key: Optional[str],
         write: bool,
         include_history: bool,
+        recreate_history: bool,
     ):
         bz_config = bugdantic.BugzillaConfig(
             BUGZILLA_URL, bugzilla_api_key, allow_writes=write
@@ -254,6 +255,7 @@ class BugzillaToBigQuery:
         self.history_fetch_completed = include_history
         self.write = write
         self.include_history = include_history
+        self.recreate_history = recreate_history
 
     def fetch_bugs(self, params: dict[str, str]) -> tuple[bool, MutBugsById]:
         fields = [
@@ -807,10 +809,14 @@ class BugzillaToBigQuery:
             "changes": entry["changes"],
         }
 
-    def update_history(self, records: list[BugHistoryEntry]) -> None:
-        if not records:
+    def update_history(
+        self, records: list[BugHistoryEntry], recreate: bool = False
+    ) -> None:
+        if not records and not recreate:
+            logging.info("No history records to update")
             return
 
+        write_disposition = "WRITE_APPEND" if not recreate else "WRITE_TRUNCATE"
         job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
             schema=[
@@ -828,7 +834,7 @@ class BugzillaToBigQuery:
                     ],
                 ),
             ],
-            write_disposition="WRITE_APPEND",
+            write_disposition=write_disposition,
         )
 
         history_table = f"{self.bq_dataset_id}.bugs_history"
@@ -1098,13 +1104,16 @@ class BugzillaToBigQuery:
         return self.build_missing_history(bugs_without_history)
 
     def fetch_history_for_new_bugs(
-        self, all_bugs: BugsById
-    ) -> tuple[list[BugHistoryEntry], set[int]]:
-        only_unsaved_changes = []
+        self, all_bugs: BugsById, recreate: bool = False
+    ) -> tuple[list[BugHistoryEntry], set[int], bool]:
+        only_unsaved_changes: list[BugHistoryEntry] = []
 
-        existing_ids = self.get_imported_ids()
         all_ids = set(all_bugs.keys())
-        new_ids = all_ids - existing_ids
+        if not recreate:
+            existing_ids = self.get_imported_ids()
+            new_ids = all_ids - existing_ids
+        else:
+            new_ids = all_ids
 
         logging.info(f"Fetching new bugs history: {list(new_ids)}")
 
@@ -1251,7 +1260,9 @@ class BugzillaToBigQuery:
         kb_ids = list(kb_data.keys())
 
         if self.include_history:
-            history_changes = self.fetch_bug_history(all_bugs)
+            history_changes, history_fetch_completed = self.fetch_bug_history(
+                all_bugs, self.recreate_history
+            )
         else:
             logging.info("Not updating bug history")
             history_changes = []
@@ -1268,7 +1279,7 @@ class BugzillaToBigQuery:
             etp_rels = self.build_relations(etp_data, ETP_RELATION_CONFIG)
 
         if self.write:
-            self.update_history(history_changes)
+            self.update_history(history_changes, self.recreate_history)
             self.update_bugs(all_bugs)
             self.update_kb_ids(kb_ids)
             self.update_relations(rels, RELATION_CONFIG)
@@ -1309,6 +1320,11 @@ class BugzillaJob(EtlJob):
             default=True,
             help="Don't read or update bug history",
         )
+        group.add_argument(
+            "--bugzilla-recreate-history",
+            action="store_true",
+            help="Re-read bug history from scratch",
+        )
 
     def main(self, client: bigquery.Client, args: argparse.Namespace) -> None:
         bz_bq = BugzillaToBigQuery(
@@ -1317,6 +1333,7 @@ class BugzillaJob(EtlJob):
             args.bugzilla_api_key,
             args.write,
             args.bugzilla_include_history,
+            args.bugzilla_recreate_history,
         )
 
         bz_bq.run()
