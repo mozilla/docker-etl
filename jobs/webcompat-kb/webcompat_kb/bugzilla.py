@@ -1297,7 +1297,7 @@ class BugzillaJob(EtlJob):
         group = parser.add_argument_group(
             title="Bugzilla", description="Bugzilla import arguments"
         )
-        parser.add_argument(
+        group.add_argument(
             "--bugzilla-api-key",
             help="Bugzilla API key",
             default=os.environ.get("BUGZILLA_API_KEY"),
