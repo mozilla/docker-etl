@@ -950,7 +950,8 @@ class BugzillaToBigQuery:
                 relevant_changes = [
                     change
                     for change in record.get("changes", [])
-                    if change.get("field_name") in ["keywords", "status"]
+                    if change.get("field_name")
+                    in ["keywords", "status", "url", "cf_user_story"]
                 ]
 
                 if relevant_changes:
