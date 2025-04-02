@@ -431,7 +431,7 @@ class BugzillaToBigQuery:
         all_bugs: dict[int, Bug] = {}
 
         for category, filter_config in FILTER_CONFIG.items():
-            logging.info(f"Fetching {category.replace('_', ' ').title()} bugs")
+            logging.info(f"Fetching {category} bugs")
             completed, fetched_bugs[category] = self.fetch_bugs(filter_config)
             all_bugs.update(fetched_bugs[category])
             if not completed:
