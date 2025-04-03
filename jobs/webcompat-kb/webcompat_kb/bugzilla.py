@@ -1299,7 +1299,10 @@ class BugzillaToBigQuery:
             etp_rels = self.build_relations(etp_data, ETP_RELATION_CONFIG)
 
         if self.write:
-            self.update_history(history_changes, self.recreate_history)
+            if history_fetch_completed:
+                self.update_history(history_changes, self.recreate_history)
+            elif self.include_history:
+                logging.warning("Failed to fetch bug history, not updating")
             self.update_bugs(all_bugs)
             self.update_kb_ids(kb_ids)
             self.update_relations(rels, RELATION_CONFIG)
