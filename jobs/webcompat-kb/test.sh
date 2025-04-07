@@ -4,7 +4,7 @@ set -ex
 
 if [ -x "$(command -v uv)" ]; then
     uv sync --extra=test
-    uv run mypy -m webcompat_kb
+    uv run mypy webcompat_kb
     uv run pytest --ruff --ruff-format .
 else
     if [ ! -d "_venv" ]; then
@@ -15,7 +15,7 @@ else
     pip install -e .
     pip install .[test]
 
-    mypy -m webcompat_kb
+    mypy webcompat_kb
     pytest --ruff --ruff-format .
 fi
 
