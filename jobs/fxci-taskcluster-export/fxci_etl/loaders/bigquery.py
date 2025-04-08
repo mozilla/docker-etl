@@ -63,14 +63,23 @@ class BigQueryLoader:
         schema_cls = get_record_cls(table_type)
         schema = generate_schema(schema_cls)
 
-        partition = TimePartitioning(
-            type_=TimePartitioningType.DAY,
-            field="submission_date",
-            require_partition_filter=True,
-        )
-        table = Table(self.table_name, schema=schema)
-        table.time_partitioning = partition
-        self.client.create_table(table, exists_ok=True)
+        try:
+            table = self.client.get_table(self.table_name)
+
+            # Table exists, validate the schema
+            if schema != table.schema:
+                raise Exception(f"Schema mismatch detected for {self.table_name}!")
+
+        except NotFound:
+            # Table doesn't exist, create it
+            table = Table(self.table_name, schema=schema)
+            table.time_partitioning = TimePartitioning(
+                type_=TimePartitioningType.DAY,
+                field="submission_date",
+                require_partition_filter=True,
+            )
+            self.client.create_table(table)
+
         return table
 
     def replace(self, submission_date: str, records: list[Record] | Record):
