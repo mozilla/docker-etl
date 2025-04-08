@@ -1,0 +1,198 @@
+{% autoescape off %}
+<div class="chart"><canvas id="{{segment}}_{{metric}}_pdf"></canvas>
+<button onclick="{{segment}}_{{metric}}_pdf_chart.resetZoom()">Reset Zoom</button>
+</div>
+<script>
+  ctx = document.getElementById('{{segment}}_{{metric}}_pdf');
+
+  data = {
+      labels: {{values}},
+      datasets: [
+{% for dataset in datasets %}
+      {
+          label: "{{dataset.branch}}",
+          data: {{dataset.density}},
+          borderWidth: 2
+      },
+{% endfor %}
+      ]
+  };
+
+  var {{segment}}_{{metric}}_pdf_chart = new Chart(ctx, {
+    type: 'line',
+    data,
+    options: {
+      animation: false,
+      responsive: true,
+      plugins: {
+          zoom: zoomOptions,
+          tooltip: {
+              mode: 'interpolate',
+              intersect: false
+          },
+          crosshair: {
+            line: {
+              color: '#F66',  // crosshair line color
+              width: 1        // crosshair line width
+            }
+          },
+          datalabels: { display: false },
+          legend: {
+              display: true,
+              position: 'top',
+            },
+          title: {
+              display: true,
+              text: ["{{metric}} pdf", "segment: {{segment}}"]
+            }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: {
+            text: "Density",
+            display: true
+          }
+        },
+        x: {
+          ticks: {
+            maxTicksLimit: 10
+          }
+        }
+      },
+      elements: {
+        point:{
+          radius: 0
+        }
+      }
+    }
+  });
+</script>
+
+<div class="chart"><canvas id="{{segment}}_{{metric}}_cdf"></canvas>
+<button onclick="{{segment}}_{{metric}}_cdf_chart.resetZoom()">Reset Zoom</button>
+</div>
+<script>
+  ctx = document.getElementById('{{segment}}_{{metric}}_cdf');
+
+  data = {
+      labels: {{values}},
+      datasets: [
+{% for dataset in datasets %}
+      {
+          label: "{{dataset.branch}}",
+          data: {{dataset.cdf}},
+          borderWidth: 2
+      },
+{% endfor %}
+      ]
+  };
+
+  var {{segment}}_{{metric}}_cdf_chart = new Chart(ctx, {
+    type: 'line',
+    data,
+    options: {
+      animation: false,
+      responsive: true,
+      plugins: {
+          zoom: zoomOptions,
+          tooltip: {
+              mode: 'interpolate',
+              intersect: false
+          },
+          crosshair: {
+            sync: {
+              enabled: false
+            },
+          },
+          datalabels: { display: false },
+          annotation: {
+              annotations: {
+                  q25: {
+                      type: 'line',
+                      yMin: 0.25,
+                      yMax: 0.25,
+                      borderWidth: 1,
+                      borderColor: 'orange',
+                      label: {
+                          display: true,
+                          content: '25th',
+                          position: 'end',
+                          color: 'black', 
+                          yAdjust: -5,
+                          backgroundColor: 'transparent',
+                          font: {
+                            size: 12
+                          }
+                      }
+                    },
+                  q50: {
+                      type: 'line',
+                      yMin: 0.5,
+                      yMax: 0.5,
+                      borderWidth: 1,
+                      borderColor: 'magenta',
+                      label: {
+                          display: true,
+                          content: 'median',
+                          position: 'end',
+                          color: 'black', 
+                          yAdjust: -5,
+                          backgroundColor: 'transparent',
+                          font: {
+                            size: 12
+                          }
+                      }
+                    },
+                  q75: {
+                      type: 'line',
+                      yMin: 0.75,
+                      yMax: 0.75,
+                      borderWidth: 1,
+                      borderColor: 'green',
+                      label: {
+                          display: true,
+                          content: '75th',
+                          position: 'end',
+                          color: 'black', 
+                          yAdjust: -5,
+                          backgroundColor: 'transparent',
+                          font: {
+                            size: 12
+                          }
+                      }
+                    },
+                }
+          },
+          legend: {
+              display: true,
+              position: 'top',
+            },
+          title: {
+              display: true,
+              text: ["{{metric}} cdf", "segment: {{segment}}"]
+            }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: {
+            text: "CDF",
+            display: true
+          }
+        },
+        x: {
+          ticks: {
+            maxTicksLimit: 10
+          }
+        }
+      },
+      elements: {
+        point:{
+          radius: 0
+        }
+      }
+    }
+  });
+</script>
+{% endautoescape %}
