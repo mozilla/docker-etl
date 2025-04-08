@@ -3,7 +3,7 @@ import logging
 import sys
 
 # These imports are required to populate ALL_JOBS
-from . import bugzilla, crux, metric  # noqa: F401
+from . import bugzilla, crux, metric, metric_changes  # noqa: F401
 from .base import ALL_JOBS, VALID_PROJECT_ID, VALID_DATASET_ID, get_client
 
 
@@ -31,6 +31,10 @@ def get_parser() -> argparse.ArgumentParser:
         action="store_false",
         default=True,
         help="Don't write updates to BigQuery",
+    )
+
+    parser.add_argument(
+        "--pdb", action="store_true", help="Drop into debugger on execption"
     )
 
     for job_cls in ALL_JOBS.values():
@@ -79,19 +83,32 @@ def main() -> None:
 
     parser = get_parser()
     args = parser.parse_args()
-    logging.getLogger().setLevel(logging.getLevelNamesMapping()[args.log_level.upper()])
-    set_default_args(parser, args)
 
-    jobs = {job_name: ALL_JOBS[job_name]() for job_name in args.jobs}
+    try:
+        logging.getLogger().setLevel(
+            logging.getLevelNamesMapping()[args.log_level.upper()]
+        )
+        set_default_args(parser, args)
 
-    for job_name, job in jobs.items():
-        job.set_default_args(parser, args)
+        jobs = {job_name: ALL_JOBS[job_name]() for job_name in args.jobs}
 
-    client = get_client(args.bq_project_id)
+        for job_name, job in jobs.items():
+            job.set_default_args(parser, args)
 
-    for job_name, job in jobs.items():
-        logging.info(f"Running job {job_name}")
-        job.main(client, args)
+        client = get_client(args.bq_project_id)
+
+        for job_name, job in jobs.items():
+            logging.info(f"Running job {job_name}")
+            job.main(client, args)
+    except Exception:
+        if args.pdb:
+            import pdb
+            import traceback
+
+            traceback.print_exc()
+            pdb.post_mortem()
+        else:
+            raise
 
 
 if __name__ == "__main__":
