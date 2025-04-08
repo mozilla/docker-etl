@@ -1,14 +1,39 @@
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch
-from google.cloud.bigquery import Row
+from typing import Any, Mapping
 
 import pytest
+from bugdantic.bugzilla import History
 
 from webcompat_kb.base import get_client
+from webcompat_kb.bugzilla import BugHistoryChange, BugHistoryEntry
 from webcompat_kb.bugzilla import BugzillaToBigQuery
 from webcompat_kb.bugzilla import extract_int_from_field
 from webcompat_kb.bugzilla import parse_string_to_json
 from webcompat_kb.bugzilla import RELATION_CONFIG, LINK_FIELDS, ETP_RELATION_CONFIG
+
+
+def to_history(data: list[dict[str, Any]]) -> Mapping[int, list[History]]:
+    return {
+        item["id"]: [History.model_validate(entry) for entry in item["history"]]
+        for item in data
+    }
+
+
+def to_history_entry(data: list[dict[str, Any]]) -> list[BugHistoryEntry]:
+    rv = []
+    for item in data:
+        changes = [BugHistoryChange(**change) for change in item["changes"]]
+        rv.append(
+            BugHistoryEntry(
+                number=item["number"],
+                who=item["who"],
+                change_time=item["change_time"],
+                changes=changes,
+            )
+        )
+    return rv
+
 
 SAMPLE_BUGS = {
     item["id"]: item
@@ -38,6 +63,7 @@ SAMPLE_BUGS = {
             "id": 1835339,
             "summary": "Missing implementation of textinput event",
             "assigned_to": "test@example.org",
+            "creator": "nobody@mozilla.org",
             "creation_time": datetime.fromisoformat("2000-07-25T13:50:04Z"),
             "keywords": [],
             "url": "",
@@ -69,6 +95,7 @@ SAMPLE_BUGS = {
             "cf_user_story": "url:webminidisc.com/*\r\nurl:app.webadb.com/*\r\nurl:www.numworks.com/*\r\nurl:webadb.github.io/*\r\nurl:www.stemplayer.com/*\r\nurl:wootility.io/*\r\nurl:python.microbit.org/*\r\nurl:flash.android.com/*",  # noqa
             "status": "NEW",
             "assigned_to": "nobody@mozilla.org",
+            "creator": "nobody@mozilla.org",
             "creation_time": datetime.fromisoformat("2000-07-25T13:50:04Z"),
             "keywords": [],
             "url": "",
@@ -97,6 +124,7 @@ SAMPLE_BUGS = {
             "cf_user_story": "",
             "status": "NEW",
             "assigned_to": "nobody@mozilla.org",
+            "creator": "nobody@mozilla.org",
             "creation_time": datetime.fromisoformat("2000-07-25T13:50:04Z"),
             "keywords": [],
             "url": "",
@@ -465,242 +493,254 @@ SAMPLE_CORE_AS_KB_BUGS = {
     ]
 }
 
-SAMPLE_HISTORY = [
-    {
-        "id": 1536482,
-        "history": [
-            {
-                "changes": [
-                    {"removed": "--", "field_name": "priority", "added": "P4"},
-                    {
-                        "added": "1464828, 1529973",
-                        "removed": "",
-                        "field_name": "depends_on",
-                    },
-                    {
-                        "field_name": "cf_status_firefox68",
-                        "removed": "affected",
-                        "added": "---",
-                    },
-                    {
-                        "field_name": "keywords",
-                        "removed": "",
-                        "added": "webcompat:needs-diagnosis",
-                    },
-                ],
-                "when": datetime.fromisoformat("2023-05-01T17:41:18Z"),
-                "who": "example",
-            }
-        ],
-    },
-    {
-        "id": 1536483,
-        "history": [
-            {
-                "changes": [
-                    {
-                        "field_name": "cf_user_story",
-                        "added": "@@ -0,0 +1,3 @@\n+platform:linux\r\n+impact:feature-broken\r\n+affects:some\n\\ No newline at end of file\n",  # noqa
-                        "removed": "",
-                    },
-                    {"field_name": "priority", "removed": "--", "added": "P3"},
-                    {"removed": "--", "added": "S4", "field_name": "severity"},
-                ],
-                "who": "example",
-                "when": datetime.fromisoformat("2023-03-18T16:58:27Z"),
-            },
-            {
-                "changes": [
-                    {
-                        "field_name": "status",
-                        "added": "ASSIGNED",
-                        "removed": "UNCONFIRMED",
-                    },
-                    {
-                        "field_name": "cc",
-                        "removed": "",
-                        "added": "example@example.com",
-                    },
-                ],
-                "when": datetime.fromisoformat("2023-06-01T10:00:00Z"),
-                "who": "example",
-            },
-        ],
-    },
-    {
-        "id": 1536484,
-        "alias": None,
-        "history": [
-            {
-                "changes": [],
-                "when": datetime.fromisoformat("2023-07-01T12:00:00Z"),
-                "who": "example",
-            }
-        ],
-    },
-    {
-        "id": 1536485,
-        "alias": None,
-        "history": [
-            {
-                "changes": [
-                    {
-                        "removed": "",
-                        "field_name": "cc",
-                        "added": "someone@example.com",
-                    },
-                    {
-                        "removed": "",
-                        "field_name": "keywords",
-                        "added": "webcompat:platform-bug",
-                    },
-                ],
-                "when": datetime.fromisoformat("2023-05-01T14:00:00Z"),
-                "who": "example",
-            },
-            {
-                "changes": [
-                    {
-                        "removed": "ASSIGNED",
-                        "field_name": "status",
-                        "added": "RESOLVED",
-                    }
-                ],
-                "when": datetime.fromisoformat("2023-08-01T14:00:00Z"),
-                "who": "example",
-            },
-        ],
-    },
-]
+SAMPLE_HISTORY = to_history(
+    [
+        {
+            "id": 1536482,
+            "history": [
+                {
+                    "changes": [
+                        {"removed": "--", "field_name": "priority", "added": "P4"},
+                        {
+                            "added": "1464828, 1529973",
+                            "removed": "",
+                            "field_name": "depends_on",
+                        },
+                        {
+                            "field_name": "cf_status_firefox68",
+                            "removed": "affected",
+                            "added": "---",
+                        },
+                        {
+                            "field_name": "keywords",
+                            "removed": "",
+                            "added": "webcompat:needs-diagnosis",
+                        },
+                    ],
+                    "when": datetime.fromisoformat("2023-05-01T17:41:18Z"),
+                    "who": "example",
+                }
+            ],
+        },
+        {
+            "id": 1536483,
+            "history": [
+                {
+                    "changes": [
+                        {
+                            "field_name": "cf_user_story",
+                            "added": "@@ -0,0 +1,3 @@\n+platform:linux\r\n+impact:feature-broken\r\n+affects:some\n\\ No newline at end of file\n",  # noqa
+                            "removed": "",
+                        },
+                        {"field_name": "priority", "removed": "--", "added": "P3"},
+                        {"removed": "--", "added": "S4", "field_name": "severity"},
+                    ],
+                    "who": "example",
+                    "when": datetime.fromisoformat("2023-03-18T16:58:27Z"),
+                },
+                {
+                    "changes": [
+                        {
+                            "field_name": "status",
+                            "added": "ASSIGNED",
+                            "removed": "UNCONFIRMED",
+                        },
+                        {
+                            "field_name": "cc",
+                            "removed": "",
+                            "added": "example@example.com",
+                        },
+                    ],
+                    "when": datetime.fromisoformat("2023-06-01T10:00:00Z"),
+                    "who": "example",
+                },
+            ],
+        },
+        {
+            "id": 1536484,
+            "alias": None,
+            "history": [
+                {
+                    "changes": [],
+                    "when": datetime.fromisoformat("2023-07-01T12:00:00Z"),
+                    "who": "example",
+                }
+            ],
+        },
+        {
+            "id": 1536485,
+            "alias": None,
+            "history": [
+                {
+                    "changes": [
+                        {
+                            "removed": "",
+                            "field_name": "cc",
+                            "added": "someone@example.com",
+                        },
+                        {
+                            "removed": "",
+                            "field_name": "keywords",
+                            "added": "webcompat:platform-bug",
+                        },
+                    ],
+                    "when": datetime.fromisoformat("2023-05-01T14:00:00Z"),
+                    "who": "example",
+                },
+                {
+                    "changes": [
+                        {
+                            "removed": "ASSIGNED",
+                            "field_name": "status",
+                            "added": "RESOLVED",
+                        }
+                    ],
+                    "when": datetime.fromisoformat("2023-08-01T14:00:00Z"),
+                    "who": "example",
+                },
+            ],
+        },
+    ]
+)
 
-MISSING_KEYWORDS_HISTORY = [
-    {
-        "id": 1898563,
-        "alias": None,
-        "history": [
-            {
-                "when": "2024-05-27T15:10:10Z",
-                "changes": [
-                    {
-                        "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux,android\r\n+impact:blocked\r\n+configuration:general\r\n+affects:all\n",  # noqa
-                        "field_name": "cf_user_story",
-                        "removed": "",
-                    },
-                    {"removed": "--", "field_name": "severity", "added": "S2"},
-                    {
-                        "removed": "",
-                        "added": "name@example.com",
-                        "field_name": "cc",
-                    },
-                    {"added": "P2", "field_name": "priority", "removed": "P1"},
-                    {"removed": "", "added": "1886128", "field_name": "depends_on"},
-                ],
-                "who": "name@example.com",
-            }
-        ],
-    },
-    {
-        "history": [
-            {
-                "who": "someone@example.com",
-                "when": datetime.fromisoformat("2024-05-13T16:03:18Z"),
-                "changes": [
-                    {
-                        "field_name": "cf_user_story",
-                        "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux\r\n+impact:site-broken\r\n+configuration:general\r\n+affects:all\n",  # noqa
-                        "removed": "",
-                    },
-                    {"removed": "P3", "added": "P1", "field_name": "priority"},
-                    {
-                        "removed": "",
-                        "field_name": "keywords",
-                        "added": "webcompat:needs-diagnosis",
-                    },
-                    {"added": "S2", "field_name": "severity", "removed": "--"},
-                    {
-                        "removed": "",
-                        "field_name": "cc",
-                        "added": "someone@example.com",
-                    },
-                ],
-            },
-            {
-                "who": "someone@example.com",
-                "when": datetime.fromisoformat("2024-05-21T17:17:52Z"),
-                "changes": [
-                    {"removed": "", "field_name": "cc", "added": "someone@example.com"}
-                ],
-            },
-            {
-                "when": datetime.fromisoformat("2024-05-21T17:22:20Z"),
-                "changes": [
-                    {"field_name": "depends_on", "added": "1886820", "removed": ""}
-                ],
-                "who": "someone@example.com",
-            },
-            {
-                "changes": [
-                    {
-                        "removed": "webcompat:needs-diagnosis",
-                        "field_name": "keywords",
-                        "added": "webcompat:needs-sitepatch",
-                    },
-                    {
-                        "added": "someone@example.com",
-                        "field_name": "cc",
-                        "removed": "",
-                    },
-                ],
-                "when": datetime.fromisoformat("2024-05-27T15:07:33Z"),
-                "who": "someone@example.com",
-            },
-            {
-                "who": "someone@example.com",
-                "changes": [
-                    {"field_name": "depends_on", "added": "1876368", "removed": ""}
-                ],
-                "when": datetime.fromisoformat("2024-06-05T19:25:37Z"),
-            },
-            {
-                "changes": [
-                    {"added": "someone@example.com", "field_name": "cc", "removed": ""}
-                ],
-                "when": datetime.fromisoformat("2024-06-09T02:49:27Z"),
-                "who": "someone@example.com",
-            },
-            {
-                "who": "someone@example.com",
-                "changes": [
-                    {
-                        "field_name": "keywords",
-                        "added": "webcompat:sitepatch-applied",
-                        "removed": "webcompat:needs-sitepatch",
-                    }
-                ],
-                "when": datetime.fromisoformat("2024-06-11T16:34:22Z"),
-            },
-        ],
-        "alias": None,
-        "id": 1896383,
-    },
-    {
-        "history": [
-            {
-                "who": "someone@example.com",
-                "changes": [
-                    {
-                        "field_name": "keywords",
-                        "added": "",
-                        "removed": "webcompat:needs-diagnosis",
-                    }
-                ],
-                "when": datetime.fromisoformat("2024-06-11T16:34:22Z"),
-            },
-        ],
-        "alias": None,
-        "id": 222222,
-    },
-]
+MISSING_KEYWORDS_HISTORY = to_history(
+    [
+        {
+            "id": 1898563,
+            "alias": None,
+            "history": [
+                {
+                    "when": "2024-05-27T15:10:10Z",
+                    "changes": [
+                        {
+                            "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux,android\r\n+impact:blocked\r\n+configuration:general\r\n+affects:all\n",  # noqa
+                            "field_name": "cf_user_story",
+                            "removed": "",
+                        },
+                        {"removed": "--", "field_name": "severity", "added": "S2"},
+                        {
+                            "removed": "",
+                            "added": "name@example.com",
+                            "field_name": "cc",
+                        },
+                        {"added": "P2", "field_name": "priority", "removed": "P1"},
+                        {"removed": "", "added": "1886128", "field_name": "depends_on"},
+                    ],
+                    "who": "name@example.com",
+                }
+            ],
+        },
+        {
+            "history": [
+                {
+                    "who": "someone@example.com",
+                    "when": datetime.fromisoformat("2024-05-13T16:03:18Z"),
+                    "changes": [
+                        {
+                            "field_name": "cf_user_story",
+                            "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux\r\n+impact:site-broken\r\n+configuration:general\r\n+affects:all\n",  # noqa
+                            "removed": "",
+                        },
+                        {"removed": "P3", "added": "P1", "field_name": "priority"},
+                        {
+                            "removed": "",
+                            "field_name": "keywords",
+                            "added": "webcompat:needs-diagnosis",
+                        },
+                        {"added": "S2", "field_name": "severity", "removed": "--"},
+                        {
+                            "removed": "",
+                            "field_name": "cc",
+                            "added": "someone@example.com",
+                        },
+                    ],
+                },
+                {
+                    "who": "someone@example.com",
+                    "when": datetime.fromisoformat("2024-05-21T17:17:52Z"),
+                    "changes": [
+                        {
+                            "removed": "",
+                            "field_name": "cc",
+                            "added": "someone@example.com",
+                        }
+                    ],
+                },
+                {
+                    "when": datetime.fromisoformat("2024-05-21T17:22:20Z"),
+                    "changes": [
+                        {"field_name": "depends_on", "added": "1886820", "removed": ""}
+                    ],
+                    "who": "someone@example.com",
+                },
+                {
+                    "changes": [
+                        {
+                            "removed": "webcompat:needs-diagnosis",
+                            "field_name": "keywords",
+                            "added": "webcompat:needs-sitepatch",
+                        },
+                        {
+                            "added": "someone@example.com",
+                            "field_name": "cc",
+                            "removed": "",
+                        },
+                    ],
+                    "when": datetime.fromisoformat("2024-05-27T15:07:33Z"),
+                    "who": "someone@example.com",
+                },
+                {
+                    "who": "someone@example.com",
+                    "changes": [
+                        {"field_name": "depends_on", "added": "1876368", "removed": ""}
+                    ],
+                    "when": datetime.fromisoformat("2024-06-05T19:25:37Z"),
+                },
+                {
+                    "changes": [
+                        {
+                            "added": "someone@example.com",
+                            "field_name": "cc",
+                            "removed": "",
+                        }
+                    ],
+                    "when": datetime.fromisoformat("2024-06-09T02:49:27Z"),
+                    "who": "someone@example.com",
+                },
+                {
+                    "who": "someone@example.com",
+                    "changes": [
+                        {
+                            "field_name": "keywords",
+                            "added": "webcompat:sitepatch-applied",
+                            "removed": "webcompat:needs-sitepatch",
+                        }
+                    ],
+                    "when": datetime.fromisoformat("2024-06-11T16:34:22Z"),
+                },
+            ],
+            "alias": None,
+            "id": 1896383,
+        },
+        {
+            "history": [
+                {
+                    "who": "someone@example.com",
+                    "changes": [
+                        {
+                            "field_name": "keywords",
+                            "added": "",
+                            "removed": "webcompat:needs-diagnosis",
+                        }
+                    ],
+                    "when": datetime.fromisoformat("2024-06-11T16:34:22Z"),
+                },
+            ],
+            "alias": None,
+            "id": 222222,
+        },
+    ]
+)
 
 MISSING_KEYWORDS_BUGS = {
     item["id"]: item
@@ -800,134 +840,138 @@ REMOVED_READDED_BUGS = {
     ]
 }
 
-REMOVED_READDED_HISTORY = [
-    {
-        "history": [
-            {
-                "who": "someone@example.com",
-                "changes": [
-                    {
-                        "field_name": "keywords",
-                        "added": "",
-                        "removed": "webcompat:needs-diagnosis",
-                    }
-                ],
-                "when": datetime.fromisoformat("2024-06-11T16:34:22Z"),
-            },
-            {
-                "who": "someone@example.com",
-                "changes": [
-                    {
-                        "field_name": "keywords",
-                        "added": "webcompat:needs-sitepatch",
-                        "removed": "",
-                    }
-                ],
-                "when": datetime.fromisoformat("2024-06-15T16:34:22Z"),
-            },
-            {
-                "who": "someone@example.com",
-                "changes": [
-                    {
-                        "field_name": "keywords",
-                        "added": "webcompat:needs-diagnosis",
-                        "removed": "",
-                    }
-                ],
-                "when": datetime.fromisoformat("2024-07-11T16:34:22Z"),
-            },
-            {
-                "who": "someone@example.com",
-                "changes": [
-                    {
-                        "field_name": "keywords",
-                        "added": "",
-                        "removed": "webcompat:needs-sitepatch",
-                    }
-                ],
-                "when": datetime.fromisoformat("2024-07-14T16:34:22Z"),
-            },
-            {
-                "who": "someone@example.com",
-                "changes": [
-                    {
-                        "field_name": "keywords",
-                        "added": "",
-                        "removed": "webcompat:needs-diagnosis",
-                    }
-                ],
-                "when": datetime.fromisoformat("2024-09-11T16:34:22Z"),
-            },
-            {
-                "who": "someone@example.com",
-                "changes": [
-                    {
-                        "field_name": "keywords",
-                        "added": "webcompat:needs-diagnosis",
-                        "removed": "",
-                    }
-                ],
-                "when": datetime.fromisoformat("2024-12-11T16:34:22Z"),
-            },
-        ],
-        "alias": None,
-        "id": 333333,
-    },
-]
+REMOVED_READDED_HISTORY = to_history(
+    [
+        {
+            "history": [
+                {
+                    "who": "someone@example.com",
+                    "changes": [
+                        {
+                            "field_name": "keywords",
+                            "added": "",
+                            "removed": "webcompat:needs-diagnosis",
+                        }
+                    ],
+                    "when": datetime.fromisoformat("2024-06-11T16:34:22Z"),
+                },
+                {
+                    "who": "someone@example.com",
+                    "changes": [
+                        {
+                            "field_name": "keywords",
+                            "added": "webcompat:needs-sitepatch",
+                            "removed": "",
+                        }
+                    ],
+                    "when": datetime.fromisoformat("2024-06-15T16:34:22Z"),
+                },
+                {
+                    "who": "someone@example.com",
+                    "changes": [
+                        {
+                            "field_name": "keywords",
+                            "added": "webcompat:needs-diagnosis",
+                            "removed": "",
+                        }
+                    ],
+                    "when": datetime.fromisoformat("2024-07-11T16:34:22Z"),
+                },
+                {
+                    "who": "someone@example.com",
+                    "changes": [
+                        {
+                            "field_name": "keywords",
+                            "added": "",
+                            "removed": "webcompat:needs-sitepatch",
+                        }
+                    ],
+                    "when": datetime.fromisoformat("2024-07-14T16:34:22Z"),
+                },
+                {
+                    "who": "someone@example.com",
+                    "changes": [
+                        {
+                            "field_name": "keywords",
+                            "added": "",
+                            "removed": "webcompat:needs-diagnosis",
+                        }
+                    ],
+                    "when": datetime.fromisoformat("2024-09-11T16:34:22Z"),
+                },
+                {
+                    "who": "someone@example.com",
+                    "changes": [
+                        {
+                            "field_name": "keywords",
+                            "added": "webcompat:needs-diagnosis",
+                            "removed": "",
+                        }
+                    ],
+                    "when": datetime.fromisoformat("2024-12-11T16:34:22Z"),
+                },
+            ],
+            "alias": None,
+            "id": 333333,
+        },
+    ]
+)
 
-KEYWORDS_AND_STATUS = [
-    {
-        "history": [
-            {
-                "changes": [
-                    {
-                        "added": "parity-chrome, parity-edge, parity-ie",
-                        "field_name": "keywords",
-                        "removed": "",
-                    },
-                ],
-                "who": "someone@example.com",
-                "when": datetime.fromisoformat("2018-05-02T18:25:47Z"),
-            },
-            {
-                "changes": [
-                    {"added": "RESOLVED", "removed": "NEW", "field_name": "status"}
-                ],
-                "when": datetime.fromisoformat("2024-05-16T10:58:15Z"),
-                "who": "someone@example.com",
-            },
-            {
-                "who": "someone@example.com",
-                "when": datetime.fromisoformat("2024-06-03T14:44:48Z"),
-                "changes": [
-                    {
-                        "removed": "RESOLVED",
-                        "field_name": "status",
-                        "added": "REOPENED",
-                    },
-                    {
-                        "field_name": "keywords",
-                        "removed": "",
-                        "added": "webcompat:platform-bug",
-                    },
-                ],
-            },
-            {
-                "when": datetime.fromisoformat("2016-01-14T14:01:36Z"),
-                "who": "someone@example.com",
-                "changes": [
-                    {
-                        "added": "NEW",
-                        "removed": "UNCONFIRMED",
-                        "field_name": "status",
-                    }
-                ],
-            },
-        ],
-        "alias": None,
-        "id": 1239595,
-    },
-]
+KEYWORDS_AND_STATUS = to_history(
+    [
+        {
+            "history": [
+                {
+                    "changes": [
+                        {
+                            "added": "parity-chrome, parity-edge, parity-ie",
+                            "field_name": "keywords",
+                            "removed": "",
+                        },
+                    ],
+                    "who": "someone@example.com",
+                    "when": datetime.fromisoformat("2018-05-02T18:25:47Z"),
+                },
+                {
+                    "changes": [
+                        {"added": "RESOLVED", "removed": "NEW", "field_name": "status"}
+                    ],
+                    "when": datetime.fromisoformat("2024-05-16T10:58:15Z"),
+                    "who": "someone@example.com",
+                },
+                {
+                    "who": "someone@example.com",
+                    "when": datetime.fromisoformat("2024-06-03T14:44:48Z"),
+                    "changes": [
+                        {
+                            "removed": "RESOLVED",
+                            "field_name": "status",
+                            "added": "REOPENED",
+                        },
+                        {
+                            "field_name": "keywords",
+                            "removed": "",
+                            "added": "webcompat:platform-bug",
+                        },
+                    ],
+                },
+                {
+                    "when": datetime.fromisoformat("2016-01-14T14:01:36Z"),
+                    "who": "someone@example.com",
+                    "changes": [
+                        {
+                            "added": "NEW",
+                            "removed": "UNCONFIRMED",
+                            "field_name": "status",
+                        }
+                    ],
+                },
+            ],
+            "alias": None,
+            "id": 1239595,
+        },
+    ]
+)
 
 
 @pytest.fixture(scope="module")
@@ -947,6 +991,7 @@ def bz(mock_bq, mock_auth_default):
         bugzilla_api_key="placeholder_key",
         write=False,
         include_history=True,
+        recreate_history=False,
     )
 
 
@@ -1138,52 +1183,66 @@ def test_get_bugs_updated_since_last_import(bz):
 
 
 def test_filter_bug_history_changes(bz):
-    expected_result = [
-        {
-            "number": 1536482,
-            "who": "example",
-            "change_time": datetime.fromisoformat("2023-05-01T17:41:18Z"),
-            "changes": [
-                {
-                    "field_name": "keywords",
-                    "removed": "",
-                    "added": "webcompat:needs-diagnosis",
-                }
-            ],
-        },
-        {
-            "number": 1536483,
-            "who": "example",
-            "change_time": datetime.fromisoformat("2023-06-01T10:00:00Z"),
-            "changes": [
-                {
-                    "field_name": "status",
-                    "added": "ASSIGNED",
-                    "removed": "UNCONFIRMED",
-                }
-            ],
-        },
-        {
-            "number": 1536485,
-            "who": "example",
-            "change_time": datetime.fromisoformat("2023-05-01T14:00:00Z"),
-            "changes": [
-                {
-                    "removed": "",
-                    "field_name": "keywords",
-                    "added": "webcompat:platform-bug",
-                }
-            ],
-        },
-        {
-            "number": 1536485,
-            "who": "example",
-            "change_time": datetime.fromisoformat("2023-08-01T14:00:00Z"),
-            "changes": [
-                {"removed": "ASSIGNED", "field_name": "status", "added": "RESOLVED"}
-            ],
-        },
-    ]
+    expected_result = to_history_entry(
+        [
+            {
+                "number": 1536482,
+                "who": "example",
+                "change_time": datetime.fromisoformat("2023-05-01T17:41:18Z"),
+                "changes": [
+                    {
+                        "field_name": "keywords",
+                        "removed": "",
+                        "added": "webcompat:needs-diagnosis",
+                    }
+                ],
+            },
+            {
+                "number": 1536483,
+                "who": "example",
+                "change_time": datetime.fromisoformat("2023-03-18T16:58:27Z"),
+                "changes": [
+                    {
+                        "field_name": "cf_user_story",
+                        "added": "@@ -0,0 +1,3 @@\n+platform:linux\r\n+impact:feature-broken\r\n+affects:some\n\\ No newline at end of file\n",  # noqa
+                        "removed": "",
+                    }
+                ],
+            },
+            {
+                "number": 1536483,
+                "who": "example",
+                "change_time": datetime.fromisoformat("2023-06-01T10:00:00Z"),
+                "changes": [
+                    {
+                        "field_name": "status",
+                        "added": "ASSIGNED",
+                        "removed": "UNCONFIRMED",
+                    }
+                ],
+            },
+            {
+                "number": 1536485,
+                "who": "example",
+                "change_time": datetime.fromisoformat("2023-05-01T14:00:00Z"),
+                "changes": [
+                    {
+                        "removed": "",
+                        "field_name": "keywords",
+                        "added": "webcompat:platform-bug",
+                    }
+                ],
+            },
+            {
+                "number": 1536485,
+                "who": "example",
+                "change_time": datetime.fromisoformat("2023-08-01T14:00:00Z"),
+                "changes": [
+                    {"removed": "ASSIGNED", "field_name": "status", "added": "RESOLVED"}
+                ],
+            },
+        ]
+    )
 
     result, bug_ids = bz.extract_history_fields(SAMPLE_HISTORY)
     assert result == expected_result
@@ -1194,32 +1253,34 @@ def test_create_synthetic_history(bz):
     history, bug_ids = bz.extract_history_fields(MISSING_KEYWORDS_HISTORY)
     result = bz.create_synthetic_history(MISSING_KEYWORDS_BUGS, history)
 
-    expected = [
-        {
-            "number": 1898563,
-            "who": "name@example.com",
-            "change_time": datetime.fromisoformat("2024-05-23T16:40:29Z"),
-            "changes": [
-                {
-                    "added": "webcompat:needs-diagnosis, webcompat:needs-sitepatch",
-                    "field_name": "keywords",
-                    "removed": "",
-                }
-            ],
-        },
-        {
-            "number": 222222,
-            "who": "name@example.com",
-            "change_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
-            "changes": [
-                {
-                    "added": "webcompat:needs-diagnosis",
-                    "field_name": "keywords",
-                    "removed": "",
-                }
-            ],
-        },
-    ]
+    expected = to_history_entry(
+        [
+            {
+                "number": 1898563,
+                "who": "name@example.com",
+                "change_time": datetime.fromisoformat("2024-05-23T16:40:29Z"),
+                "changes": [
+                    {
+                        "added": "webcompat:needs-diagnosis, webcompat:needs-sitepatch",
+                        "field_name": "keywords",
+                        "removed": "",
+                    }
+                ],
+            },
+            {
+                "number": 222222,
+                "who": "name@example.com",
+                "change_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
+                "changes": [
+                    {
+                        "added": "webcompat:needs-diagnosis",
+                        "field_name": "keywords",
+                        "removed": "",
+                    }
+                ],
+            },
+        ]
+    )
 
     assert result == expected
 
@@ -1228,20 +1289,22 @@ def test_create_synthetic_history_removed_readded(bz):
     history, bug_ids = bz.extract_history_fields(REMOVED_READDED_HISTORY)
     result = bz.create_synthetic_history(REMOVED_READDED_BUGS, history)
 
-    expected = [
-        {
-            "number": 333333,
-            "who": "name@example.com",
-            "change_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
-            "changes": [
-                {
-                    "added": "webcompat:needs-diagnosis",
-                    "field_name": "keywords",
-                    "removed": "",
-                }
-            ],
-        }
-    ]
+    expected = to_history_entry(
+        [
+            {
+                "number": 333333,
+                "who": "name@example.com",
+                "change_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
+                "changes": [
+                    {
+                        "added": "webcompat:needs-diagnosis",
+                        "field_name": "keywords",
+                        "removed": "",
+                    }
+                ],
+            }
+        ]
+    )
 
     assert result == expected
 
@@ -1302,132 +1365,143 @@ def test_is_removed_earliest(bz):
 
 @patch("webcompat_kb.bugzilla.BugzillaToBigQuery.get_existing_history_records_by_ids")
 def test_filter_only_unsaved_changes(mock_get_existing, bz):
-    schema = {"number": 0, "who": 1, "change_time": 2, "changes": 3}
-
-    mock_get_existing.return_value = [
-        Row(
-            (
-                1896383,
-                "someone@example.com",
-                datetime(2024, 5, 27, 15, 7, 33, tzinfo=timezone.utc),
-                [
+    mock_get_existing.return_value = to_history_entry(
+        [
+            {
+                "number": 1896383,
+                "who": "someone@example.com",
+                "change_time": datetime(2024, 5, 27, 15, 7, 33, tzinfo=timezone.utc),
+                "changes": [
                     {
                         "field_name": "keywords",
                         "added": "webcompat:needs-sitepatch",
                         "removed": "webcompat:needs-diagnosis",
                     }
                 ],
-            ),
-            schema,
-        ),
-        Row(
-            (
-                1896383,
-                "someone@example.com",
-                datetime(2024, 6, 11, 16, 34, 22, tzinfo=timezone.utc),
-                [
+            },
+            {
+                "number": 1896383,
+                "who": "someone@example.com",
+                "change_time": datetime(2024, 6, 11, 16, 34, 22, tzinfo=timezone.utc),
+                "changes": [
                     {
                         "field_name": "keywords",
                         "added": "webcompat:sitepatch-applied",
                         "removed": "webcompat:needs-sitepatch",
                     }
                 ],
-            ),
-            schema,
-        ),
-    ]
+            },
+        ]
+    )
 
     history, bug_ids = bz.extract_history_fields(MISSING_KEYWORDS_HISTORY)
     result = bz.filter_only_unsaved_changes(history, bug_ids)
 
-    expected = [
-        {
-            "number": 1896383,
-            "who": "someone@example.com",
-            "change_time": datetime.fromisoformat("2024-05-13T16:03:18Z"),
-            "changes": [
-                {
-                    "removed": "",
-                    "field_name": "keywords",
-                    "added": "webcompat:needs-diagnosis",
-                }
-            ],
-        },
-        {
-            "number": 222222,
-            "who": "someone@example.com",
-            "change_time": datetime.fromisoformat("2024-06-11T16:34:22Z"),
-            "changes": [
-                {
-                    "field_name": "keywords",
-                    "added": "",
-                    "removed": "webcompat:needs-diagnosis",
-                }
-            ],
-        },
-    ]
+    expected = to_history_entry(
+        [
+            {
+                "number": 1898563,
+                "who": "name@example.com",
+                "change_time": datetime.fromisoformat("2024-05-27T15:10:10Z"),
+                "changes": [
+                    {
+                        "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux,android\r\n+impact:blocked\r\n+configuration:general\r\n+affects:all\n",  # noqa
+                        "field_name": "cf_user_story",
+                        "removed": "",
+                    },
+                ],
+            },
+            {
+                "number": 1896383,
+                "who": "someone@example.com",
+                "change_time": datetime.fromisoformat("2024-05-13T16:03:18Z"),
+                "changes": [
+                    {
+                        "field_name": "cf_user_story",
+                        "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux\r\n+impact:site-broken\r\n+configuration:general\r\n+affects:all\n",  # noqa
+                        "removed": "",
+                    },
+                    {
+                        "removed": "",
+                        "field_name": "keywords",
+                        "added": "webcompat:needs-diagnosis",
+                    },
+                ],
+            },
+            {
+                "number": 222222,
+                "who": "someone@example.com",
+                "change_time": datetime.fromisoformat("2024-06-11T16:34:22Z"),
+                "changes": [
+                    {
+                        "field_name": "keywords",
+                        "added": "",
+                        "removed": "webcompat:needs-diagnosis",
+                    }
+                ],
+            },
+        ]
+    )
 
-    result.sort(key=lambda item: item["number"])
-    expected.sort(key=lambda item: item["number"])
+    result.sort(key=lambda item: item.number)
+    expected.sort(key=lambda item: item.number)
 
     assert result == expected
 
 
 @patch("webcompat_kb.bugzilla.BugzillaToBigQuery.get_existing_history_records_by_ids")
 def test_filter_only_unsaved_changes_multiple_changes(mock_get_existing, bz):
-    schema = {"number": 0, "who": 1, "change_time": 2, "changes": 3}
-
-    mock_get_existing.return_value = [
-        Row(
-            (
-                1239595,
-                "someone@example.com",
-                datetime(2018, 5, 2, 18, 25, 47, tzinfo=timezone.utc),
-                [
+    mock_get_existing.return_value = to_history_entry(
+        [
+            {
+                "number": 1239595,
+                "who": "someone@example.com",
+                "change_time": datetime(2018, 5, 2, 18, 25, 47, tzinfo=timezone.utc),
+                "changes": [
                     {
                         "field_name": "keywords",
                         "added": "parity-chrome, parity-edge, parity-ie",
                         "removed": "",
                     }
                 ],
-            ),
-            schema,
-        ),
-        Row(
-            (
-                1239595,
-                "someone@example.com",
-                datetime(2016, 1, 14, 14, 1, 36, tzinfo=timezone.utc),
-                [{"field_name": "status", "added": "NEW", "removed": "UNCONFIRMED"}],
-            ),
-            schema,
-        ),
-        Row(
-            (
-                1239595,
-                "someone@example.com",
-                datetime(2024, 5, 16, 10, 58, 15, tzinfo=timezone.utc),
-                [{"field_name": "status", "added": "RESOLVED", "removed": "NEW"}],
-            ),
-            schema,
-        ),
-    ]
+            },
+            {
+                "number": 1239595,
+                "who": "someone@example.com",
+                "change_time": datetime(2016, 1, 14, 14, 1, 36, tzinfo=timezone.utc),
+                "changes": [
+                    {"field_name": "status", "added": "NEW", "removed": "UNCONFIRMED"}
+                ],
+            },
+            {
+                "number": 1239595,
+                "who": "someone@example.com",
+                "change_time": datetime(2024, 5, 16, 10, 58, 15, tzinfo=timezone.utc),
+                "changes": [
+                    {"field_name": "status", "added": "RESOLVED", "removed": "NEW"}
+                ],
+            },
+        ]
+    )
 
     history, bug_ids = bz.extract_history_fields(KEYWORDS_AND_STATUS)
     result = bz.filter_only_unsaved_changes(history, bug_ids)
-    changes = result[0]["changes"]
+    changes = result[0].changes
 
     expected_changes = [
-        {
-            "field_name": "keywords",
-            "added": "webcompat:platform-bug",
-            "removed": "",
-        },
-        {"field_name": "status", "added": "REOPENED", "removed": "RESOLVED"},
+        BugHistoryChange(**item)
+        for item in [
+            {
+                "field_name": "keywords",
+                "added": "webcompat:platform-bug",
+                "removed": "",
+            },
+            {"field_name": "status", "added": "REOPENED", "removed": "RESOLVED"},
+        ]
     ]
 
-    changes.sort(key=lambda item: item["field_name"])
-    expected_changes.sort(key=lambda item: item["field_name"])
+    changes.sort(key=lambda item: item.field_name)
+    expected_changes.sort(key=lambda item: item.field_name)
 
     assert len(result) == 1
     assert changes == expected_changes
@@ -1440,56 +1514,75 @@ def test_filter_only_unsaved_changes_empty(mock_get_existing, bz):
     history, bug_ids = bz.extract_history_fields(MISSING_KEYWORDS_HISTORY)
     result = bz.filter_only_unsaved_changes(history, bug_ids)
 
-    expected = [
-        {
-            "number": 1896383,
-            "who": "someone@example.com",
-            "change_time": datetime.fromisoformat("2024-05-13T16:03:18Z"),
-            "changes": [
-                {
-                    "removed": "",
-                    "field_name": "keywords",
-                    "added": "webcompat:needs-diagnosis",
-                }
-            ],
-        },
-        {
-            "number": 1896383,
-            "who": "someone@example.com",
-            "change_time": datetime.fromisoformat("2024-05-27T15:07:33Z"),
-            "changes": [
-                {
-                    "removed": "webcompat:needs-diagnosis",
-                    "field_name": "keywords",
-                    "added": "webcompat:needs-sitepatch",
-                }
-            ],
-        },
-        {
-            "number": 1896383,
-            "who": "someone@example.com",
-            "change_time": datetime.fromisoformat("2024-06-11T16:34:22Z"),
-            "changes": [
-                {
-                    "field_name": "keywords",
-                    "added": "webcompat:sitepatch-applied",
-                    "removed": "webcompat:needs-sitepatch",
-                }
-            ],
-        },
-        {
-            "number": 222222,
-            "who": "someone@example.com",
-            "change_time": datetime.fromisoformat("2024-06-11T16:34:22Z"),
-            "changes": [
-                {
-                    "field_name": "keywords",
-                    "added": "",
-                    "removed": "webcompat:needs-diagnosis",
-                }
-            ],
-        },
-    ]
+    expected = to_history_entry(
+        [
+            {
+                "number": 1898563,
+                "who": "name@example.com",
+                "change_time": datetime.fromisoformat("2024-05-27T15:10:10Z"),
+                "changes": [
+                    {
+                        "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux,android\r\n+impact:blocked\r\n+configuration:general\r\n+affects:all\n",
+                        "field_name": "cf_user_story",
+                        "removed": "",
+                    }
+                ],
+            },
+            {
+                "number": 1896383,
+                "who": "someone@example.com",
+                "change_time": datetime.fromisoformat("2024-05-13T16:03:18Z"),
+                "changes": [
+                    {
+                        "field_name": "cf_user_story",
+                        "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux\r\n+impact:site-broken\r\n+configuration:general\r\n+affects:all\n",
+                        "removed": "",
+                    },
+                    {
+                        "removed": "",
+                        "field_name": "keywords",
+                        "added": "webcompat:needs-diagnosis",
+                    },
+                ],
+            },
+            {
+                "number": 1896383,
+                "who": "someone@example.com",
+                "change_time": datetime.fromisoformat("2024-05-27T15:07:33Z"),
+                "changes": [
+                    {
+                        "removed": "webcompat:needs-diagnosis",
+                        "field_name": "keywords",
+                        "added": "webcompat:needs-sitepatch",
+                    }
+                ],
+            },
+            {
+                "number": 1896383,
+                "who": "someone@example.com",
+                "change_time": datetime.fromisoformat("2024-06-11T16:34:22Z"),
+                "changes": [
+                    {
+                        "field_name": "keywords",
+                        "added": "webcompat:sitepatch-applied",
+                        "removed": "webcompat:needs-sitepatch",
+                    }
+                ],
+            },
+            {
+                "number": 222222,
+                "who": "someone@example.com",
+                "change_time": datetime.fromisoformat("2024-06-11T16:34:22Z"),
+                "changes": [
+                    {
+                        "field_name": "keywords",
+                        "added": "",
+                        "removed": "webcompat:needs-diagnosis",
+                    }
+                ],
+            },
+        ]
+    )
 
     assert result == expected
 
@@ -1499,42 +1592,41 @@ def test_filter_only_unsaved_changes_synthetic(mock_get_existing, bz):
     history, bug_ids = bz.extract_history_fields(MISSING_KEYWORDS_HISTORY)
     s_history = bz.create_synthetic_history(MISSING_KEYWORDS_BUGS, history)
 
-    schema = {"number": 0, "who": 1, "change_time": 2, "changes": 3}
-
-    mock_get_existing.return_value = [
-        Row(
-            (
-                1898563,
-                "name@example.com",
-                datetime(2024, 5, 23, 16, 40, 29, tzinfo=timezone.utc),
-                [
+    mock_get_existing.return_value = to_history_entry(
+        [
+            {
+                "number": 1898563,
+                "who": "name@example.com",
+                "change_time": datetime(2024, 5, 23, 16, 40, 29, tzinfo=timezone.utc),
+                "changes": [
                     {
                         "field_name": "keywords",
                         "added": "webcompat:needs-diagnosis, webcompat:needs-sitepatch",  # noqa
                         "removed": "",
                     }
                 ],
-            ),
-            schema,
-        )
-    ]
+            },
+        ]
+    )
 
     result = bz.filter_only_unsaved_changes(s_history, bug_ids)
 
-    expected = [
-        {
-            "number": 222222,
-            "who": "name@example.com",
-            "change_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
-            "changes": [
-                {
-                    "added": "webcompat:needs-diagnosis",
-                    "field_name": "keywords",
-                    "removed": "",
-                }
-            ],
-        }
-    ]
+    expected = to_history_entry(
+        [
+            {
+                "number": 222222,
+                "who": "name@example.com",
+                "change_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
+                "changes": [
+                    {
+                        "added": "webcompat:needs-diagnosis",
+                        "field_name": "keywords",
+                        "removed": "",
+                    }
+                ],
+            }
+        ]
+    )
 
     assert result == expected
 
@@ -1664,6 +1756,7 @@ def test_convert_bug_data(bz):
             "assigned_to": "test@example.org",
             "component": "Knowledge Base",
             "creation_time": "2000-07-25T13:50:04+00:00",
+            "creator": "nobody@mozilla.org",
             "keywords": [],
             "number": 1835339,
             "priority": None,
@@ -1686,6 +1779,7 @@ def test_convert_bug_data(bz):
                     "book.ersthelfer.tv/*",
                 ],
             },
+            "user_story_raw": "url:cmcreg.bancosantander.es/*\r\nurl:new.reddit.com/*\r\nurl:web.whatsapp.com/*\r\nurl:facebook.com/*\r\nurl:twitter.com/*\r\nurl:reddit.com/*\r\nurl:mobilevikings.be/*\r\nurl:book.ersthelfer.tv/*",
             "whiteboard": "",
             "webcompat_priority": None,
             "webcompat_score": None,
@@ -1694,6 +1788,7 @@ def test_convert_bug_data(bz):
             "assigned_to": None,
             "component": "Knowledge Base",
             "creation_time": "2000-07-25T13:50:04+00:00",
+            "creator": "nobody@mozilla.org",
             "keywords": [],
             "number": 1835416,
             "priority": None,
@@ -1716,6 +1811,7 @@ def test_convert_bug_data(bz):
                     "flash.android.com/*",
                 ],
             },
+            "user_story_raw": "url:webminidisc.com/*\r\nurl:app.webadb.com/*\r\nurl:www.numworks.com/*\r\nurl:webadb.github.io/*\r\nurl:www.stemplayer.com/*\r\nurl:wootility.io/*\r\nurl:python.microbit.org/*\r\nurl:flash.android.com/*",
             "whiteboard": "",
             "webcompat_priority": None,
             "webcompat_score": None,
@@ -1724,6 +1820,7 @@ def test_convert_bug_data(bz):
             "assigned_to": None,
             "component": "Knowledge Base",
             "creation_time": "2000-07-25T13:50:04+00:00",
+            "creator": "nobody@mozilla.org",
             "keywords": [],
             "number": 111111,
             "priority": None,
@@ -1735,6 +1832,7 @@ def test_convert_bug_data(bz):
             "title": "Test bug",
             "url": "",
             "user_story": "",
+            "user_story_raw": "",
             "whiteboard": "",
             "webcompat_priority": None,
             "webcompat_score": None,
