@@ -91,6 +91,9 @@ class Tags:
     project: Optional[BigQueryTypes.STRING]
     trust_domain: Optional[BigQueryTypes.STRING]
     worker_implementation: Optional[BigQueryTypes.STRING]
+    test_suite: Optional[BigQueryTypes.STRING]
+    test_platform: Optional[BigQueryTypes.STRING]
+    test_variant: Optional[BigQueryTypes.STRING]
 
 
 @dataclass
