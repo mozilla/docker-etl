@@ -9,4 +9,4 @@ google-cloud-bigquery==3.19.0
 selenium==4.29.0
 webdriver-manager==4.0.2
 py==1.11.0
-flake8==5.0.4
+flake8==4.0.1
