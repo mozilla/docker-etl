@@ -66,4 +66,5 @@ COPY . /app
 WORKDIR /app
 
 # Run your script
-CMD ["python", "extensions/main.py"]
+# CMD ["python", "extensions/main.py"] 
+# Commented out since we will run the command from airflow with the passed in --date {{ ds }}
