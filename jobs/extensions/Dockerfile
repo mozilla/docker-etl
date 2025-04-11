@@ -21,22 +21,30 @@ RUN apt-get update && apt-get install -y \
     curl \
     gnupg \
     ca-certificates \
-    fonts-liberation \
+    libglib2.0-0 \
+    libgconf-2-4 \
+    libfontconfig1 \
+    libxss1 \
+    libappindicator1 \
     libappindicator3-1 \
+    libxrandr2 \
     libasound2 \
-    libatk-bridge2.0-0 \
     libatk1.0-0 \
+    libatk-bridge2.0-0 \
     libcups2 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxi6 \
+    libxtst6 \
+    fonts-liberation \
+    libdbus-glib-1-2 \
     libdbus-1-3 \
     libgdk-pixbuf2.0-0 \
     libnspr4 \
     libnss3 \
     libx11-xcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    xdg-utils \
     libu2f-udev \
+    xdg-utils \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 

@@ -55,9 +55,10 @@ def get_unique_links_from_webpage(url, base_url, links_to_ignore, links_to_not_p
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
     options.add_argument("--window-size=1920,1080")
+    options.add_argument("--no-sandbox")
 
     driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()), options=options
+        service=Service("/usr/local/bin/chromedriver"), options=options
     )
     driver.get(url)
 
@@ -217,8 +218,9 @@ def get_links_from_non_detail_page(
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
     options.add_argument("--window-size=1920,1080")
+    options.add_argument("--no-sandbox")
     driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()), options=options
+       service=Service("/usr/local/bin/chromedriver"), options=options
     )
     wait = WebDriverWait(driver, 10)
     # Get the URL and wait 2 seconds
