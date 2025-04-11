@@ -65,5 +65,5 @@ USER ${USER_ID}
 COPY . /app
 WORKDIR /app
 
-# Run your script (adjust if needed)
+# Run your script
 CMD ["python", "extensions/main.py"]
