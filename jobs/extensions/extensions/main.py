@@ -56,6 +56,7 @@ def get_unique_links_from_webpage(url, base_url, links_to_ignore, links_to_not_p
     options.add_argument("--headless=new")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
 
     driver = webdriver.Chrome(
         service=Service("/usr/local/bin/chromedriver"), options=options
@@ -219,6 +220,7 @@ def get_links_from_non_detail_page(
     options.add_argument("--headless=new")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
     driver = webdriver.Chrome(
        service=Service("/usr/local/bin/chromedriver"), options=options
     )
