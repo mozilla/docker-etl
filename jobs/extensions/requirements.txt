@@ -11,3 +11,4 @@ webdriver-manager==4.0.2
 py==1.11.0
 flake8==4.0.1
 undetected-chromedriver
+google-cloud-storage==2.15.0
