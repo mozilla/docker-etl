@@ -8,12 +8,10 @@ from argparse import ArgumentParser
 from google.cloud import bigquery
 from urllib.parse import urljoin
 import time
-from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.webdriver import WebDriver as ChromiumDriver
 
@@ -34,10 +32,10 @@ LIST_OF_LINKS_TO_IGNORE = [
     "https://support.google.com/accounts?hl=en-US&p=account_iph",
     "https://support.google.com/accounts?p=signin_privatebrowsing&hl=en-US",
     "https://ssl.gstatic.com/chrome/webstore/intl/en-US/gallery_tos.html",
-    "https://support.google.com/chrome_webstore/answer" +
-    "/12225786?p=cws_reviews_results&hl=en-US",
-    "https://www.google.com/chrome/?brand=GGRF&utm_source=google.com" +
-    "&utm_medium=material-callout&utm_campaign=cws&utm_keyword=GGRF",
+    "https://support.google.com/chrome_webstore/answer"
+    + "/12225786?p=cws_reviews_results&hl=en-US",
+    "https://www.google.com/chrome/?brand=GGRF&utm_source=google.com"
+    + "&utm_medium=material-callout&utm_campaign=cws&utm_keyword=GGRF",
     "./",
 ]
 
@@ -216,7 +214,6 @@ def check_if_load_more_button_present(webpage_soup):
 def get_links_from_non_detail_page(
     url, list_of_links_already_processed, max_clicks, links_to_ignore_list
 ):
-
     # Initialize a driver
     options = Options()
     options.binary_location = "/usr/bin/chromium"
@@ -226,9 +223,7 @@ def get_links_from_non_detail_page(
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
 
-    driver = ChromiumDriver(
-        service=Service("/usr/bin/chromedriver"), options=options
-    )
+    driver = ChromiumDriver(service=Service("/usr/bin/chromedriver"), options=options)
 
     wait = WebDriverWait(driver, 10)
     # Get the URL and wait 2 seconds
@@ -249,8 +244,7 @@ def get_links_from_non_detail_page(
             print(f"[{click_count+1}] Clicked 'Load more'")
             time.sleep(2)
             click_count += 1
-        except Exception as e:
-            print(f"Error: {e}")
+        except Exception:
             print("No more 'Load more' button or timeout.")
             break
 
@@ -506,7 +500,6 @@ def main():
 
                 # Append the data scraped to results_df
                 results_df = pd.concat([results_df, detail_page_results_df])
-                print("Added data to results_df")
 
                 # Add the detail page link to links already processed
                 links_already_processed.add(current_link)
@@ -545,9 +538,8 @@ def main():
                     # Append the data scraped to results_df
                     results_df = pd.concat([results_df, detail_page_results_df])
 
-                except Exception as e:
+                except Exception:
                     print(f"Failed to process detail page: {detail_link}")
-                    print("Error:", e)
                 links_already_processed.add(detail_link)
             print("Done looping through detail links found.")
 
@@ -560,13 +552,14 @@ def main():
                 else:
                     print("Processing non_detail_link: ", non_detail_link)
                     # Try again to get the detail links
-                    next_level_detail_links_found, next_level_non_detail_links_found = (
-                        get_links_from_non_detail_page(
-                            non_detail_link,
-                            links_already_processed,
-                            MAX_CLICKS,
-                            LIST_OF_LINKS_TO_IGNORE,
-                        )
+                    (
+                        next_level_detail_links_found,
+                        next_level_non_detail_links_found,
+                    ) = get_links_from_non_detail_page(
+                        non_detail_link,
+                        links_already_processed,
+                        MAX_CLICKS,
+                        LIST_OF_LINKS_TO_IGNORE,
                     )
 
                     for next_level_detail_link_found in next_level_detail_links_found:
@@ -579,9 +572,8 @@ def main():
                             )
                             # Append the data scraped to results_df
                             results_df = pd.concat([results_df, detail_page_results_df])
-                        except Exception as e:
+                        except Exception:
                             print(f"Failed to process: {next_level_detail_link_found}")
-                            print("Error:", e)
 
                         links_already_processed.add(next_level_detail_link_found)
 
@@ -607,8 +599,9 @@ def main():
     client = bigquery.Client(TARGET_PROJECT)
 
     # If data already ran for this date, delete out
-    delete_query = f"""DELETE FROM `moz-fx-data-shared-prod.external_derived.chrome_extensions_v1`
-  WHERE submission_date = '{logical_dag_date_string}'"""
+    delete_query = f"""DELETE FROM
+`moz-fx-data-shared-prod.external_derived.chrome_extensions_v1`
+WHERE submission_date = '{logical_dag_date_string}'"""
     del_job = client.query(delete_query)
     del_job.result()
 
