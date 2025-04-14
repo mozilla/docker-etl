@@ -16,7 +16,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.webdriver import WebDriver as ChromiumDriver
-import undetected_chromedriver as uc
 
 # Main website for Chrome Webstore
 CHROME_WEBSTORE_URL = "https://chromewebstore.google.com"
