@@ -14,6 +14,9 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.webdriver import WebDriver as ChromiumDriver
+import undetected_chromedriver as uc
 
 # Main website for Chrome Webstore
 CHROME_WEBSTORE_URL = "https://chromewebstore.google.com"
@@ -52,15 +55,15 @@ MAX_CLICKS = 30  # Max load more button clicks
 
 def get_unique_links_from_webpage(url, base_url, links_to_ignore, links_to_not_process):
     """Get unique links from the web page"""
-    options = webdriver.ChromeOptions()
+    options = Options()
+    options.binary_location = "/usr/bin/chromium"
     options.add_argument("--headless=new")
-    options.add_argument("--window-size=1920,1080")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--window-size=1920,1080")
 
-    driver = webdriver.Chrome(
-        service=Service("/usr/local/bin/chromedriver"), options=options
-    )
+    driver = ChromiumDriver(service=Service("/usr/bin/chromedriver"), options=options)
+
     driver.get(url)
 
     time.sleep(3)  # Wait for JS to load content
@@ -216,14 +219,18 @@ def get_links_from_non_detail_page(
 ):
 
     # Initialize a driver
-    options = webdriver.ChromeOptions()
+    options = Options()
+    options.binary_location = "/usr/bin/chromium"
     options.add_argument("--headless=new")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    driver = webdriver.Chrome(
-       service=Service("/usr/local/bin/chromedriver"), options=options
+    options.add_argument("--window-size=1920,1080")
+
+    driver = ChromiumDriver(
+        service=Service("/usr/bin/chromedriver"), options=options
     )
+
     wait = WebDriverWait(driver, 10)
     # Get the URL and wait 2 seconds
     driver.get(url)
