@@ -1,0 +1,15 @@
+build-job-extensions:
+  docker:
+    - image: << pipeline.parameters.git-image >>
+  steps:
+    - checkout
+    - compare-branch:
+        pattern: ^jobs/extensions/
+    - setup_remote_docker:
+        version: << pipeline.parameters.docker-version >>
+    - run:
+        name: Build Docker image
+        command: docker build -t app:build jobs/extensions/
+    - run:
+        name: Test Code
+        command: docker run app:build pytest --flake8 --black
