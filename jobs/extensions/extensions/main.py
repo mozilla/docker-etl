@@ -45,7 +45,7 @@ TARGET_TABLE = "moz-fx-data-shared-prod.external_derived.chrome_extensions_v1"
 GCS_BUCKET = "gs://moz-fx-data-prod-external-data/"
 RESULTS_FPATH = "CHROME_EXTENSIONS/chrome_extensions_%s.csv"
 TIMEOUT_IN_SECONDS = 10
-MAX_CLICKS = 33  # Max load more button clicks
+MAX_CLICKS = 35  # Max load more button clicks
 
 # --------------DEFINE REUSABLE FUNCTIONS------------------------
 
