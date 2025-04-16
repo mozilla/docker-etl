@@ -187,6 +187,7 @@ def initialize_results_df():
             "developer_phone",
             "extension_updated_date",
             "category",
+            "trader_status",
         ]
     )
     return results_df
@@ -304,6 +305,7 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
     developer_website = None
     developer_phone = None
     extension_updated_date = None
+    trader_status = None
 
     # Get the soup from the current link
     current_link_soup = get_soup_from_webpage(
@@ -346,6 +348,10 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
             match = re.search(pattern, div)
             if match:
                 number_of_users = match.group(0).split(" ")[0].replace(",", "")
+        if "Non-trader" == div:
+            trader_status = "Non-trader"
+        if "Trader" == div:
+            trader_status = "Trader"
 
     # Loop through divs
     for index, div in enumerate(divs_from_current_link_soup):
@@ -422,6 +428,7 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
             "developer_phone": [developer_phone],
             "extension_updated_date": [extension_updated_date],
             "category": [category],
+            "trader_status": [trader_status],
         }
     )
 
@@ -590,7 +597,9 @@ def main():
     print(f"Scraped {len(results_df)} rows from {len(links_already_processed)} pages.")
 
     # Write data to CSV in GCS
-    final_results_fpath = GCS_BUCKET + RESULTS_FPATH % (logical_dag_date_string)
+    final_results_fpath = GCS_BUCKET + RESULTS_FPATH % (
+        logical_dag_date_string
+    )  # TEMP FOR TESTING
     results_df.to_csv(final_results_fpath, index=False)
     print("Results written to: ", str(final_results_fpath))
 
@@ -633,6 +642,11 @@ WHERE submission_date = '{logical_dag_date_string}'"""
                 },
                 {
                     "name": "category",
+                    "type": "STRING",
+                    "mode": "NULLABLE",
+                },
+                {
+                    "name": "trader_status",
                     "type": "STRING",
                     "mode": "NULLABLE",
                 },
