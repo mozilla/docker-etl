@@ -175,6 +175,31 @@ def get_category_from_soup(webpage_soup):
     return category
 
 
+def get_verified_domain(soup):
+    """Input: soup
+    Output: verified_domain string if found, else None"""
+
+    target_text = "Created by the owner of the listed website. The publisher has a good record with no history of violations."
+
+    # Find the tag that contains the exact text
+    target_container = soup.find(
+        lambda tag: tag.name in ["div", "span"]
+        and target_text in tag.get_text(strip=True)
+    )
+
+    if not target_container:
+        return None
+
+    # Look for all <a> tags after this element
+    for a in target_container.find_all_next("a"):
+        href = a.get("href", "")
+        # Return the first non-Google-support href
+        if not href.startswith("https://support.google.com/chrome_webstore"):
+            return href
+
+    return None
+
+
 def initialize_results_df():
     """Returns a dataframe with 0 rows with the desired format"""
     results_df = pd.DataFrame(
@@ -196,6 +221,7 @@ def initialize_results_df():
             "category",
             "trader_status",
             "featured",
+            "verified_domain",
         ]
     )
     return results_df
@@ -422,6 +448,7 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
                         developer_email = developer_email_and_phone
 
     category = get_category_from_soup(current_link_soup)
+    verified_domain = get_verified_domain(current_link_soup)
 
     # Put the results into a dataframe
     curr_link_results_df = pd.DataFrame(
@@ -443,6 +470,7 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
             "category": [category],
             "trader_status": [trader_status],
             "featured": [featured],
+            "verified_domain": [verified_domain],
         }
     )
 
@@ -665,6 +693,11 @@ WHERE submission_date = '{logical_dag_date_string}'"""
                 {
                     "name": "featured",
                     "type": "BOOLEAN",
+                    "mode": "NULLABLE",
+                },
+                {
+                    "name": "verified_domain",
+                    "type": "STRING",
                     "mode": "NULLABLE",
                 },
             ],
