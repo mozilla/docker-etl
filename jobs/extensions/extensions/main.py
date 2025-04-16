@@ -597,9 +597,7 @@ def main():
     print(f"Scraped {len(results_df)} rows from {len(links_already_processed)} pages.")
 
     # Write data to CSV in GCS
-    final_results_fpath = GCS_BUCKET + RESULTS_FPATH % (
-        logical_dag_date_string
-    )  # TEMP FOR TESTING
+    final_results_fpath = GCS_BUCKET + RESULTS_FPATH % (logical_dag_date_string)
     results_df.to_csv(final_results_fpath, index=False)
     print("Results written to: ", str(final_results_fpath))
 
