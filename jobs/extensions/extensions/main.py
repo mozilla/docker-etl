@@ -140,6 +140,13 @@ def get_divs_from_soup(webpage_soup):
     return divs
 
 
+def get_spans_from_soup(webpage_soup):
+    """Input: Webpage Soup
+    Output: List of Span Elements Found"""
+    spans = [span.text for span in webpage_soup.find_all("span")]
+    return spans
+
+
 def get_website_url_from_soup(webpage_soup):
     """Input: Webpage Soup
     Output: Website URL (str) if found, otherwise return None"""
@@ -188,6 +195,7 @@ def initialize_results_df():
             "extension_updated_date",
             "category",
             "trader_status",
+            "featured",
         ]
     )
     return results_df
@@ -306,6 +314,7 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
     developer_phone = None
     extension_updated_date = None
     trader_status = None
+    featured = False
 
     # Get the soup from the current link
     current_link_soup = get_soup_from_webpage(
@@ -317,6 +326,7 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
     headers_from_current_link_soup = get_h1_headers_from_soup(current_link_soup)
     h2_headers_from_current_link_soup = get_h2_headers_from_soup(current_link_soup)
     divs_from_current_link_soup = get_divs_from_soup(current_link_soup)
+    spans_from_current_link_soup = get_spans_from_soup(current_link_soup)
 
     # Get the developer website URL
     developer_website = get_website_url_from_soup(current_link_soup)
@@ -350,8 +360,11 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
                 number_of_users = match.group(0).split(" ")[0].replace(",", "")
         if "Non-trader" == div:
             trader_status = "Non-trader"
-        if "Trader" == div:
-            trader_status = "Trader"
+
+    # Loop through spans
+    for span in spans_from_current_link_soup:
+        if "Featured" == span.strip():
+            featured = True
 
     # Loop through divs
     for index, div in enumerate(divs_from_current_link_soup):
@@ -429,6 +442,7 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
             "extension_updated_date": [extension_updated_date],
             "category": [category],
             "trader_status": [trader_status],
+            "featured": [featured],
         }
     )
 
@@ -646,6 +660,11 @@ WHERE submission_date = '{logical_dag_date_string}'"""
                 {
                     "name": "trader_status",
                     "type": "STRING",
+                    "mode": "NULLABLE",
+                },
+                {
+                    "name": "featured",
+                    "type": "BOOLEAN",
                     "mode": "NULLABLE",
                 },
             ],
