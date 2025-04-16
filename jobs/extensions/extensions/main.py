@@ -188,6 +188,7 @@ def initialize_results_df():
             "extension_updated_date",
             "category",
             "trader_status",
+            "featured"
         ]
     )
     return results_df
@@ -306,6 +307,7 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
     developer_phone = None
     extension_updated_date = None
     trader_status = None
+    featured = False
 
     # Get the soup from the current link
     current_link_soup = get_soup_from_webpage(
@@ -352,6 +354,8 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
             trader_status = "Non-trader"
         if "Trader" == div:
             trader_status = "Trader"
+        if "Featured" == div:
+            featured = True
 
     # Loop through divs
     for index, div in enumerate(divs_from_current_link_soup):
@@ -429,6 +433,7 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
             "extension_updated_date": [extension_updated_date],
             "category": [category],
             "trader_status": [trader_status],
+            "featured": [featured]
         }
     )
 
@@ -646,6 +651,11 @@ WHERE submission_date = '{logical_dag_date_string}'"""
                 {
                     "name": "trader_status",
                     "type": "STRING",
+                    "mode": "NULLABLE",
+                },
+                {
+                    "name": "featured",
+                    "type": "BOOLEAN",
                     "mode": "NULLABLE",
                 },
             ],
