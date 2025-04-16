@@ -519,11 +519,6 @@ def main():
                     current_date=logical_dag_date_string,
                 )
 
-                # TEMP FOR TESTING
-                print("detail_page_results_df")
-                print(detail_page_results_df)
-                # TEMP FOR TESTING
-
                 # Append the data scraped to results_df
                 results_df = pd.concat([results_df, detail_page_results_df])
 
