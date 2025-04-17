@@ -176,7 +176,7 @@ def get_category_from_soup(webpage_soup):
 
 
 def get_verified_domain(soup):
-    """Input: soup
+    """Input: soup  (Class bs4.BeautifulSoup)
     Output: verified_domain string if found, else None"""
 
     target_text = "Created by the owner of the listed website. The publisher has a good record with no history of violations."
