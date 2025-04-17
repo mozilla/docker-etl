@@ -1,30 +1,52 @@
+import tempfile
+from collections import defaultdict
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 import pytest
-from bugdantic.bugzilla import History
+import bugdantic.bugzilla
 
 from webcompat_kb.base import get_client
-from webcompat_kb.bugzilla import BugHistoryChange, BugHistoryEntry
-from webcompat_kb.bugzilla import BugzillaToBigQuery
-from webcompat_kb.bugzilla import extract_int_from_field
-from webcompat_kb.bugzilla import parse_string_to_json
-from webcompat_kb.bugzilla import RELATION_CONFIG, LINK_FIELDS, ETP_RELATION_CONFIG
+from webcompat_kb.bugzilla import (
+    Bug,
+    BugHistoryChange,
+    BugHistoryEntry,
+    BugHistoryUpdater,
+    EXTERNAL_LINK_CONFIGS,
+    PropertyHistory,
+    extract_int_from_field,
+    get_etp_breakage_reports,
+    get_kb_bug_core_bugs,
+    get_kb_bug_site_report,
+    group_bugs,
+    load_bugs,
+    parse_user_story,
+    write_bugs,
+)
 
 
-def to_history(data: list[dict[str, Any]]) -> Mapping[int, list[History]]:
+def to_bugs_by_id(data: Iterable[dict[str, Any]]) -> Mapping[int, Bug]:
+    return {bug_data["id"]: Bug.from_json(bug_data) for bug_data in data}
+
+
+def to_history(
+    data: list[dict[str, Any]],
+) -> Mapping[int, list[bugdantic.bugzilla.History]]:
     return {
-        item["id"]: [History.model_validate(entry) for entry in item["history"]]
+        item["id"]: [
+            bugdantic.bugzilla.History.model_validate(entry)
+            for entry in item["history"]
+        ]
         for item in data
     }
 
 
-def to_history_entry(data: list[dict[str, Any]]) -> list[BugHistoryEntry]:
-    rv = []
+def to_history_entry(data: list[dict[str, Any]]) -> dict[int, BugHistoryEntry]:
+    rv = defaultdict(list)
     for item in data:
         changes = [BugHistoryChange(**change) for change in item["changes"]]
-        rv.append(
+        rv[item["number"]].append(
             BugHistoryEntry(
                 number=item["number"],
                 who=item["who"],
@@ -35,10 +57,22 @@ def to_history_entry(data: list[dict[str, Any]]) -> list[BugHistoryEntry]:
     return rv
 
 
-SAMPLE_BUGS = {
-    item["id"]: item
-    for item in [
+SAMPLE_KB_BUGS = to_bugs_by_id(
+    [
         {
+            "assigned_to": "test@example.org",
+            "blocks": [],
+            "component": "Knowledge Base",
+            "creation_time": "2000-07-25T13:50:04Z",
+            "creator": "nobody@mozilla.org",
+            "depends_on": [903746],
+            "id": 1835339,
+            "keywords": [],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
+            "product": "Web Compatibility",
+            "resolution": "",
             "see_also": [
                 "https://github.com/webcompat/web-bugs/issues/13503",
                 "https://github.com/webcompat/web-bugs/issues/91682",
@@ -47,34 +81,33 @@ SAMPLE_BUGS = {
                 "https://bugzilla.mozilla.org/show_bug.cgi?id=1739489",
                 "https://bugzilla.mozilla.org/show_bug.cgi?id=1739791",
                 "https://github.com/webcompat/web-bugs/issues/109064",
-                "https://github.com/mozilla-extensions/webcompat-addon/blob/5b391018e847a1eb30eba4784c86acd1c638ed26/src/injections/js/bug1739489-draftjs-beforeinput.js",  # noqa
+                "https://github.com/mozilla-extensions/webcompat-addon/blob/5b391018e847a1eb30eba4784c86acd1c638ed26/src/injections/js/bug1739489-draftjs-beforeinput.js",
                 "https://github.com/webcompat/web-bugs/issues/112848",
                 "https://github.com/webcompat/web-bugs/issues/117039",
             ],
-            "cf_user_story": "url:cmcreg.bancosantander.es/*\r\nurl:new.reddit.com/*\r\nurl:web.whatsapp.com/*\r\nurl:facebook.com/*\r\nurl:twitter.com/*\r\nurl:reddit.com/*\r\nurl:mobilevikings.be/*\r\nurl:book.ersthelfer.tv/*",  # noqa
-            "severity": "--",
-            "priority": "--",
-            "depends_on": [903746],
-            "component": "Knowledge Base",
-            "product": "Web Compatibility",
-            "resolution": "",
+            "severity": None,
             "status": "NEW",
-            "blocks": [],
-            "id": 1835339,
             "summary": "Missing implementation of textinput event",
-            "assigned_to": "test@example.org",
-            "creator": "nobody@mozilla.org",
-            "creation_time": datetime.fromisoformat("2000-07-25T13:50:04Z"),
-            "keywords": [],
             "url": "",
+            "user_story": "url:cmcreg.bancosantander.es/*\r\nurl:new.reddit.com/*\r\nurl:web.whatsapp.com/*\r\nurl:facebook.com/*\r\nurl:twitter.com/*\r\nurl:reddit.com/*\r\nurl:mobilevikings.be/*\r\nurl:book.ersthelfer.tv/*",  # noqa
+            "webcompat_priority": None,
+            "webcompat_score": None,
             "whiteboard": "",
-            "cf_webcompat_priority": "---",
-            "cf_webcompat_score": "---",
         },
         {
+            "assigned_to": "nobody@mozilla.org",
+            "blocks": [],
             "component": "Knowledge Base",
-            "product": "Web Compatibility",
+            "creation_time": "2000-07-25T13:50:04Z",
+            "creator": "nobody@mozilla.org",
             "depends_on": [],
+            "id": 1835416,
+            "keywords": [],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
+            "product": "Web Compatibility",
+            "resolution": "",
             "see_also": [
                 "https://github.com/webcompat/web-bugs/issues/100260",
                 "https://github.com/webcompat/web-bugs/issues/22829",
@@ -86,27 +119,29 @@ SAMPLE_BUGS = {
                 "https://github.com/webcompat/web-bugs/issues/122127",
                 "https://github.com/webcompat/web-bugs/issues/120886",
             ],
-            "summary": "Sites breaking due to the lack of WebUSB support",
-            "id": 1835416,
-            "blocks": [],
-            "resolution": "",
-            "priority": "--",
-            "severity": "--",
-            "cf_user_story": "url:webminidisc.com/*\r\nurl:app.webadb.com/*\r\nurl:www.numworks.com/*\r\nurl:webadb.github.io/*\r\nurl:www.stemplayer.com/*\r\nurl:wootility.io/*\r\nurl:python.microbit.org/*\r\nurl:flash.android.com/*",  # noqa
+            "severity": None,
             "status": "NEW",
-            "assigned_to": "nobody@mozilla.org",
-            "creator": "nobody@mozilla.org",
-            "creation_time": datetime.fromisoformat("2000-07-25T13:50:04Z"),
-            "keywords": [],
+            "summary": "Sites breaking due to the lack of WebUSB support",
             "url": "",
+            "user_story": "url:webminidisc.com/*\r\nurl:app.webadb.com/*\r\nurl:www.numworks.com/*\r\nurl:webadb.github.io/*\r\nurl:www.stemplayer.com/*\r\nurl:wootility.io/*\r\nurl:python.microbit.org/*\r\nurl:flash.android.com/*",  # noqa
+            "webcompat_priority": None,
+            "webcompat_score": None,
             "whiteboard": "",
-            "cf_webcompat_priority": "---",
-            "cf_webcompat_score": "---",
         },
         {
+            "assigned_to": "nobody@mozilla.org",
+            "blocks": [222222, 1734557],
             "component": "Knowledge Base",
-            "product": "Web Compatibility",
+            "creation_time": "2000-07-25T13:50:04Z",
+            "creator": "nobody@mozilla.org",
             "depends_on": [555555],
+            "id": 111111,
+            "keywords": [],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
+            "product": "Web Compatibility",
+            "resolution": "",
             "see_also": [
                 "https://crbug.com/606208",
                 "https://github.com/whatwg/html/issues/1896",
@@ -115,39 +150,34 @@ SAMPLE_BUGS = {
                 "https://github.com/mozilla/standards-positions/issues/20",
                 "https://github.com/WebKit/standards-positions/issues/186",
             ],
-            "summary": "Test bug",
-            "id": 111111,
-            "blocks": [222222, 1734557],
-            "resolution": "",
-            "priority": "--",
-            "severity": "--",
-            "cf_user_story": "",
+            "severity": None,
             "status": "NEW",
-            "assigned_to": "nobody@mozilla.org",
-            "creator": "nobody@mozilla.org",
-            "creation_time": datetime.fromisoformat("2000-07-25T13:50:04Z"),
-            "keywords": [],
+            "summary": "Test bug",
             "url": "",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
             "whiteboard": "",
-            "cf_webcompat_priority": "---",
-            "cf_webcompat_score": "---",
         },
     ]
-}
+)
 
-SAMPLE_CORE_BUGS = {
-    item["id"]: item
-    for item in [
+SAMPLE_CORE_BUGS = to_bugs_by_id(
+    [
         {
-            "id": 903746,
-            "severity": "--",
-            "priority": "--",
-            "cf_user_story": "",
-            "depends_on": [],
-            "status": "UNCONFIRMED",
-            "product": "Core",
+            "assigned_to": "nobody@mozilla.org",
             "blocks": [1754236, 1835339],
             "component": "DOM: Events",
+            "creation_time": "2000-07-25T13:50:04Z",
+            "creator": "nobody@mozilla.org",
+            "depends_on": [],
+            "id": 903746,
+            "keywords": [],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
+            "product": "Core",
+            "resolution": "",
             "see_also": [
                 "https://bugzilla.mozilla.org/show_bug.cgi?id=1739489",
                 "https://bugzilla.mozilla.org/show_bug.cgi?id=1739791",
@@ -158,153 +188,204 @@ SAMPLE_CORE_BUGS = {
                 "https://github.com/webcompat/web-bugs/issues/117039",
                 "https://github.com/w3c/uievents/issues/353",
             ],
-            "resolution": "",
+            "severity": None,
+            "status": "UNCONFIRMED",
             "summary": "Missing textinput event",
-            "assigned_to": "nobody@mozilla.org",
+            "url": "",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
         },
         {
-            "id": 555555,
-            "severity": "--",
-            "priority": "--",
-            "cf_user_story": "",
+            "assigned_to": "nobody@mozilla.org",
+            "blocks": [111111],
+            "component": "Test",
+            "creation_time": "2000-07-25T13:50:04Z",
+            "creator": "nobody@mozilla.org",
             "depends_on": [],
-            "status": "UNCONFIRMED",
+            "id": 555555,
+            "keywords": [],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
             "product": "Core",
+            "resolution": "",
+            "see_also": ["https://mozilla.github.io/standards-positions/#testposition"],
+            "severity": None,
+            "status": "UNCONFIRMED",
+            "summary": "Test Core bug",
+            "url": "",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
+        },
+        {
+            "assigned_to": "nobody@mozilla.org",
             "blocks": [],
             "component": "Test",
-            "see_also": ["https://mozilla.github.io/standards-positions/#testposition"],
+            "creation_time": "2000-07-25T13:50:04Z",
+            "creator": "nobody@mozilla.org",
+            "depends_on": [],
+            "id": 999999,
+            "keywords": [],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
+            "product": "Core",
             "resolution": "",
-            "summary": "Test Core bug",
-            "assigned_to": "nobody@mozilla.org",
+            "see_also": [],
+            "severity": None,
+            "status": "NEW",
+            "summary": "Another Test Core bug",
+            "url": "",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
         },
     ]
-}
+)
 
-SAMPLE_BREAKAGE_BUGS = {
-    item["id"]: item
-    for item in [
+SAMPLE_BREAKAGE_BUGS = to_bugs_by_id(
+    [
         {
-            "id": 1734557,
-            "product": "Web Compatibility",
-            "cf_user_story": "url:angusnicneven.com/*",
+            "assigned_to": "nobody@mozilla.org",
             "blocks": [],
+            "component": "Site Reports",
+            "creation_time": "2000-07-25T13:50:04Z",
+            "creator": "nobody@mozilla.org",
+            "depends_on": [111111],
+            "id": 1734557,
+            "keywords": [],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
+            "product": "Web Compatibility",
+            "resolution": "",
+            "see_also": [],
+            "severity": None,
             "status": "ASSIGNED",
             "summary": "Javascript causes infinite scroll because event.path is undefined",
-            "resolution": "",
-            "depends_on": [111111],
-            "see_also": [],
-            "component": "Desktop",
-            "severity": "--",
-            "priority": "--",
-            "assigned_to": "nobody@mozilla.org",
-            "cf_webcompat_priority": "---",
-            "cf_webcompat_score": "---",
+            "url": "",
+            "user_story": "url:angusnicneven.com/*",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
         },
         {
-            "id": 222222,
-            "product": "Web Compatibility",
-            "cf_user_story": "url:example.com/*",
+            "assigned_to": "nobody@mozilla.org",
             "blocks": [],
+            "component": "Site Reports",
+            "creation_time": "2000-07-25T13:50:04Z",
+            "creator": "nobody@mozilla.org",
+            "depends_on": [111111],
+            "id": 222222,
+            "keywords": [],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
+            "product": "Web Compatibility",
+            "resolution": "",
+            "see_also": [],
+            "severity": None,
             "status": "ASSIGNED",
             "summary": "Test breakage bug",
-            "resolution": "",
-            "depends_on": [111111],
-            "see_also": [],
-            "component": "Desktop",
-            "severity": "--",
-            "priority": "--",
-            "assigned_to": "nobody@mozilla.org",
-            "cf_webcompat_priority": "---",
-            "cf_webcompat_score": "---",
-        },
-        {
-            "whiteboard": "",
-            "see_also": [],
-            "severity": "S3",
-            "product": "Core",
-            "depends_on": [999999],
-            "summary": "Example core site report and platform bug",
-            "resolution": "",
-            "last_change_time": datetime.fromisoformat("2024-05-27T15:07:03Z"),
-            "keywords": ["webcompat:platform-bug", "webcompat:site-report"],
-            "priority": "P3",
-            "creation_time": datetime.fromisoformat("2024-03-21T16:40:27Z"),
-            "cf_user_story": "",
-            "status": "NEW",
-            "blocks": [],
             "url": "",
-            "cf_last_resolved": None,
-            "component": "JavaScript Engine",
-            "id": 444444,
-            "assigned_to": "nobody@mozilla.org",
-            "cf_webcompat_priority": "P3",
-            "cf_webcompat_score": "2",
+            "user_story": "url:example.com/*",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
         },
     ]
-}
+)
 
-SAMPLE_ETP_BUGS = {
-    item["id"]: item
-    for item in [
+SAMPLE_ETP_BUGS = to_bugs_by_id(
+    [
         {
-            "url": "https://gothamist.com/",
-            "summary": "gothamist.com - The comments are not displayed with ETP set to Strict",
+            "assigned_to": "nobody@mozilla.org",
+            "blocks": [1101005],
+            "component": "Privacy: Site Reports",
+            "creation_time": "2024-07-30T07:37:28Z",
+            "creator": "nobody@mozilla.org",
+            "depends_on": [1875061],
             "id": 1910548,
             "keywords": ["priv-webcompat", "webcompat:site-report"],
-            "component": "Privacy: Site Reports",
-            "resolution": "",
-            "blocks": [1101005],
-            "depends_on": [1875061],
-            "creation_time": datetime.fromisoformat("2024-07-30T07:37:28Z"),
-            "see_also": ["https://github.com/webcompat/web-bugs/issues/139647"],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
             "product": "Web Compatibility",
+            "resolution": "",
+            "see_also": ["https://github.com/webcompat/web-bugs/issues/139647"],
+            "severity": None,
             "status": "NEW",
-            "cf_webcompat_priority": "---",
-            "cf_webcompat_score": "---",
+            "summary": "gothamist.com - The comments are not displayed with ETP set to Strict",
+            "url": "https://gothamist.com/",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
         },
         {
-            "see_also": ["https://github.com/webcompat/web-bugs/issues/142250"],
+            "assigned_to": "nobody@mozilla.org",
+            "blocks": [],
+            "component": "Privacy: Site Reports",
+            "creation_time": "2024-10-01T08:50:58Z",
+            "creator": "nobody@mozilla.org",
+            "depends_on": [1101005, 1797458],
             "id": 1921943,
-            "summary": "my.farys.be - Login option is missing with ETP set to STRICT",
-            "product": "Web Compatibility",
             "keywords": [
                 "priv-webcompat",
                 "webcompat:platform-bug",
                 "webcompat:site-report",
             ],
-            "status": "NEW",
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
+            "product": "Web Compatibility",
             "resolution": "",
-            "component": "Privacy: Site Reports",
-            "blocks": [],
-            "depends_on": [1101005, 1797458],
-            "creation_time": datetime.fromisoformat("2024-10-01T08:50:58Z"),
+            "see_also": ["https://github.com/webcompat/web-bugs/issues/142250"],
+            "severity": None,
+            "status": "NEW",
+            "summary": "my.farys.be - Login option is missing with ETP set to STRICT",
             "url": "https://my.farys.be/myfarys/",
-            "cf_webcompat_priority": "---",
-            "cf_webcompat_score": "---",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
         },
         {
-            "see_also": [],
-            "summary": "ryanair.com - The form to start a chat does not load with ETP set to STRICT",
-            "id": 1928102,
-            "product": "Web Compatibility",
-            "status": "NEW",
-            "keywords": ["webcompat:site-report"],
+            "assigned_to": "nobody@mozilla.org",
             "blocks": [],
             "component": "Privacy: Site Reports",
-            "resolution": "",
+            "creation_time": "2024-10-30T15:04:41Z",
+            "creator": "nobody@mozilla.org",
             "depends_on": [1101005, 1122334],
+            "id": 1928102,
+            "keywords": ["webcompat:site-report"],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
+            "product": "Web Compatibility",
+            "resolution": "",
+            "see_also": [],
+            "severity": None,
+            "status": "NEW",
+            "summary": "ryanair.com - The form to start a chat does not load with ETP set to STRICT",
             "url": "https://www.ryanair.com/gb/en/lp/chat",
-            "creation_time": datetime.fromisoformat("2024-10-30T15:04:41Z"),
-            "cf_webcompat_priority": "---",
-            "cf_webcompat_score": "---",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
         },
     ]
-}
+)
 
-SAMPLE_ETP_DEPENDENCIES_BUGS = {
-    item["id"]: item
-    for item in [
+SAMPLE_ETP_DEPENDENCIES_BUGS = to_bugs_by_id(
+    [
         {
+            "assigned_to": "nobody@mozilla.org",
             "blocks": [
                 1526695,
                 1903311,
@@ -312,8 +393,25 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = {
                 1903340,
                 1903345,
             ],
+            "component": "Privacy: Anti-Tracking",
+            "creation_time": "2014-11-18T16:11:29Z",
+            "creator": "nobody@mozilla.org",
+            "depends_on": [
+                1400025,
+                1446243,
+                1465962,
+                1470298,
+                1470301,
+                1486425,
+                1627322,
+            ],
+            "id": 1101005,
+            "keywords": ["meta", "webcompat:platform-bug"],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
+            "product": "Core",
             "resolution": "",
-            "status": "NEW",
             "see_also": [
                 "https://webcompat.com/issues/2999",
                 "https://webcompat.com/issues/10020",
@@ -339,35 +437,21 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = {
                 "https://webcompat.com/issues/38315",
                 "https://webcompat.com/issues/35647",
             ],
-            "creation_time": datetime.fromisoformat("2014-11-18T16:11:29Z"),
+            "severity": None,
+            "status": "NEW",
             "summary": "[meta] ETP Strict mode or Private Browsing mode tracking protection breakage",
             "url": "",
-            "id": 1101005,
-            "component": "Privacy: Anti-Tracking",
-            "depends_on": [
-                1400025,
-                1446243,
-                1465962,
-                1470298,
-                1470301,
-                1486425,
-                1627322,
-            ],
-            "keywords": ["meta", "webcompat:platform-bug"],
-            "product": "Core",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
         },
         {
-            "status": "NEW",
-            "resolution": "",
+            "assigned_to": "nobody@mozilla.org",
             "blocks": [1101005, 1773684, 1921943],
-            "summary": "[meta] Email Tracking Breakage",
-            "creation_time": datetime.fromisoformat("2022-10-26T09:33:25Z"),
-            "see_also": [],
             "component": "Privacy: Anti-Tracking",
-            "url": "",
-            "id": 1797458,
-            "product": "Core",
-            "keywords": ["meta"],
+            "creation_time": "2022-10-26T09:33:25Z",
+            "creator": "nobody@mozilla.org",
             "depends_on": [
                 1796560,
                 1799094,
@@ -375,23 +459,25 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = {
                 1800007,
                 1803127,
             ],
+            "id": 1797458,
+            "keywords": ["meta"],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
+            "product": "Core",
+            "resolution": "",
+            "see_also": [],
+            "severity": None,
+            "status": "NEW",
+            "summary": "[meta] Email Tracking Breakage",
+            "url": "",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
         },
         {
-            "status": "NEW",
-            "resolution": "",
-            "creation_time": datetime.fromisoformat("2024-01-17T13:40:16Z"),
-            "see_also": [
-                "https://bugzilla.mozilla.org/show_bug.cgi?id=1869326",
-                "https://bugzilla.mozilla.org/show_bug.cgi?id=1872855",
-                "https://bugzilla.mozilla.org/show_bug.cgi?id=1874855",
-                "https://bugzilla.mozilla.org/show_bug.cgi?id=1878855",
-                "https://bugzilla.mozilla.org/show_bug.cgi?id=1428122",
-                "https://bugzilla.mozilla.org/show_bug.cgi?id=1892176",
-            ],
-            "url": "",
-            "keywords": ["meta"],
-            "product": "Core",
-            "depends_on": [1884676, 1906418, 1894615],
+            "assigned_to": "nobody@mozilla.org",
             "blocks": [
                 1101005,
                 1901474,
@@ -403,95 +489,145 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = {
                 1916183,
                 1916443,
             ],
-            "summary": "[meta] ETP breakage for webpages that have Disqus comment section",
             "component": "Privacy: Anti-Tracking",
+            "creation_time": "2024-01-17T13:40:16Z",
+            "creator": "nobody@mozilla.org",
+            "depends_on": [1884676, 1906418, 1894615],
             "id": 1875061,
+            "keywords": ["meta"],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
+            "product": "Core",
+            "resolution": "",
+            "see_also": [
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1869326",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1872855",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1874855",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1878855",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1428122",
+                "https://bugzilla.mozilla.org/show_bug.cgi?id=1892176",
+            ],
+            "severity": None,
+            "status": "NEW",
+            "summary": "[meta] ETP breakage for webpages that have Disqus comment section",
+            "url": "",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
         },
         {
-            "status": "NEW",
-            "resolution": "",
-            "creation_time": datetime.fromisoformat("2024-01-17T13:40:16Z"),
-            "see_also": [],
-            "url": "",
-            "keywords": [],
-            "product": "Core",
-            "depends_on": [444444, 555555],
+            "assigned_to": "nobody@mozilla.org",
             "blocks": [],
-            "summary": "Sample non meta ETP dependency",
             "component": "Privacy: Anti-Tracking",
+            "creation_time": "2024-01-17T13:40:16Z",
+            "creator": "nobody@mozilla.org",
+            "depends_on": [444444, 555555],
             "id": 1122334,
-        },
-    ]
-}
-
-SAMPLE_CORE_AS_KB_BUGS = {
-    item["id"]: item
-    for item in [
-        {
-            "whiteboard": "",
-            "see_also": ["https://bugzilla.mozilla.org/show_bug.cgi?id=1740472"],
-            "severity": "S3",
+            "keywords": [],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
             "product": "Core",
-            "depends_on": [],
-            "summary": "Consider adding support for Error.captureStackTrace",
             "resolution": "",
-            "last_change_time": datetime.fromisoformat("2024-05-27T15:07:03Z"),
-            "keywords": ["parity-chrome", "parity-safari", "webcompat:platform-bug"],
-            "priority": "P3",
-            "creation_time": datetime.fromisoformat("2024-03-21T16:40:27Z"),
-            "cf_user_story": "",
-            "status": "NEW",
-            "blocks": [1539848, 1729514, 1896383],
-            "url": "",
-            "cf_last_resolved": None,
-            "component": "JavaScript Engine",
-            "id": 1886820,
-            "assigned_to": "nobody@mozilla.org",
-        },
-        {
-            "depends_on": [1896672],
-            "product": "Core",
-            "severity": "S2",
-            "see_also": ["https://bugzilla.mozilla.org/show_bug.cgi?id=1863217"],
-            "whiteboard": "",
-            "resolution": "",
-            "summary": "Popup blocker is too strict when opening new windows",
-            "status": "NEW",
-            "cf_user_story": "",
-            "priority": "P3",
-            "creation_time": datetime.fromisoformat("2024-04-30T14:04:23Z"),
-            "keywords": ["webcompat:platform-bug"],
-            "last_change_time": datetime.fromisoformat("2024-05-14T15:19:21Z"),
-            "id": 1894244,
-            "component": "DOM: Window and Location",
-            "cf_last_resolved": None,
-            "url": "",
-            "blocks": [1656444, 1835339, 222222],
-            "assigned_to": "nobody@mozilla.org",
-        },
-        {
-            "whiteboard": "",
             "see_also": [],
-            "severity": "S3",
-            "product": "Core",
-            "depends_on": [999999],
-            "summary": "Example core site report and platform bug",
-            "resolution": "",
-            "last_change_time": datetime.fromisoformat("2024-05-27T15:07:03Z"),
-            "keywords": ["webcompat:platform-bug", "webcompat:site-report"],
-            "priority": "P3",
-            "creation_time": datetime.fromisoformat("2024-03-21T16:40:27Z"),
-            "cf_user_story": "",
+            "severity": None,
             "status": "NEW",
-            "blocks": [],
+            "summary": "Sample non meta ETP dependency",
             "url": "",
-            "cf_last_resolved": None,
-            "component": "JavaScript Engine",
-            "id": 444444,
-            "assigned_to": "nobody@mozilla.org",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
         },
     ]
-}
+)
+
+SAMPLE_CORE_AS_KB_BUGS = to_bugs_by_id(
+    [
+        {
+            "assigned_to": "nobody@mozilla.org",
+            "blocks": [1539848, 1729514, 1896383],
+            "component": "JavaScript Engine",
+            "creation_time": "2024-03-21T16:40:27Z",
+            "creator": "nobody@mozilla.org",
+            "depends_on": [],
+            "id": 1886820,
+            "keywords": ["parity-chrome", "parity-safari", "webcompat:platform-bug"],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": 3,
+            "product": "Core",
+            "resolution": "",
+            "see_also": ["https://bugzilla.mozilla.org/show_bug.cgi?id=1740472"],
+            "severity": 3,
+            "status": "NEW",
+            "summary": "Consider adding support for Error.captureStackTrace",
+            "url": "",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
+        },
+        {
+            "assigned_to": "nobody@mozilla.org",
+            "blocks": [1656444, 1835339, 222222],
+            "component": "DOM: Window and Location",
+            "creation_time": "2024-04-30T14:04:23Z",
+            "creator": "nobody@mozilla.org",
+            "depends_on": [1896672],
+            "id": 1894244,
+            "keywords": ["webcompat:platform-bug"],
+            "last_change_time": "2024-05-14T15:19:21Z",
+            "last_resolved": None,
+            "priority": 3,
+            "product": "Core",
+            "resolution": "",
+            "see_also": ["https://bugzilla.mozilla.org/show_bug.cgi?id=1863217"],
+            "severity": 2,
+            "status": "NEW",
+            "summary": "Popup blocker is too strict when opening new windows",
+            "url": "",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
+        },
+        {
+            "assigned_to": "nobody@mozilla.org",
+            "blocks": [],
+            "component": "JavaScript Engine",
+            "creation_time": "2024-03-21T16:40:27Z",
+            "creator": "nobody@mozilla.org",
+            "depends_on": [999999],
+            "id": 444444,
+            "keywords": ["webcompat:platform-bug", "webcompat:site-report"],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": 3,
+            "product": "Core",
+            "resolution": "",
+            "see_also": [],
+            "severity": 3,
+            "status": "NEW",
+            "summary": "Example core site report and platform bug",
+            "url": "",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
+        },
+    ]
+)
+
+SAMPLE_ALL_BUGS = {**SAMPLE_KB_BUGS}
+SAMPLE_ALL_BUGS.update(SAMPLE_CORE_BUGS)
+SAMPLE_ALL_BUGS.update(SAMPLE_BREAKAGE_BUGS)
+SAMPLE_ALL_BUGS.update(SAMPLE_CORE_AS_KB_BUGS)
+SAMPLE_ALL_BUGS.update(SAMPLE_ETP_BUGS)
+SAMPLE_ALL_BUGS.update(SAMPLE_ETP_DEPENDENCIES_BUGS)
+
 
 SAMPLE_HISTORY = to_history(
     [
@@ -517,7 +653,7 @@ SAMPLE_HISTORY = to_history(
                             "added": "webcompat:needs-diagnosis",
                         },
                     ],
-                    "when": datetime.fromisoformat("2023-05-01T17:41:18Z"),
+                    "when": "2023-05-01T17:41:18Z",
                     "who": "example",
                 }
             ],
@@ -536,7 +672,7 @@ SAMPLE_HISTORY = to_history(
                         {"removed": "--", "added": "S4", "field_name": "severity"},
                     ],
                     "who": "example",
-                    "when": datetime.fromisoformat("2023-03-18T16:58:27Z"),
+                    "when": "2023-03-18T16:58:27Z",
                 },
                 {
                     "changes": [
@@ -551,7 +687,7 @@ SAMPLE_HISTORY = to_history(
                             "added": "example@example.com",
                         },
                     ],
-                    "when": datetime.fromisoformat("2023-06-01T10:00:00Z"),
+                    "when": "2023-06-01T10:00:00Z",
                     "who": "example",
                 },
             ],
@@ -562,7 +698,7 @@ SAMPLE_HISTORY = to_history(
             "history": [
                 {
                     "changes": [],
-                    "when": datetime.fromisoformat("2023-07-01T12:00:00Z"),
+                    "when": "2023-07-01T12:00:00Z",
                     "who": "example",
                 }
             ],
@@ -584,7 +720,7 @@ SAMPLE_HISTORY = to_history(
                             "added": "webcompat:platform-bug",
                         },
                     ],
-                    "when": datetime.fromisoformat("2023-05-01T14:00:00Z"),
+                    "when": "2023-05-01T14:00:00Z",
                     "who": "example",
                 },
                 {
@@ -595,7 +731,7 @@ SAMPLE_HISTORY = to_history(
                             "added": "RESOLVED",
                         }
                     ],
-                    "when": datetime.fromisoformat("2023-08-01T14:00:00Z"),
+                    "when": "2023-08-01T14:00:00Z",
                     "who": "example",
                 },
             ],
@@ -634,7 +770,7 @@ MISSING_KEYWORDS_HISTORY = to_history(
             "history": [
                 {
                     "who": "someone@example.com",
-                    "when": datetime.fromisoformat("2024-05-13T16:03:18Z"),
+                    "when": "2024-05-13T16:03:18Z",
                     "changes": [
                         {
                             "field_name": "cf_user_story",
@@ -657,7 +793,7 @@ MISSING_KEYWORDS_HISTORY = to_history(
                 },
                 {
                     "who": "someone@example.com",
-                    "when": datetime.fromisoformat("2024-05-21T17:17:52Z"),
+                    "when": "2024-05-21T17:17:52Z",
                     "changes": [
                         {
                             "removed": "",
@@ -667,7 +803,7 @@ MISSING_KEYWORDS_HISTORY = to_history(
                     ],
                 },
                 {
-                    "when": datetime.fromisoformat("2024-05-21T17:22:20Z"),
+                    "when": "2024-05-21T17:22:20Z",
                     "changes": [
                         {"field_name": "depends_on", "added": "1886820", "removed": ""}
                     ],
@@ -686,7 +822,7 @@ MISSING_KEYWORDS_HISTORY = to_history(
                             "removed": "",
                         },
                     ],
-                    "when": datetime.fromisoformat("2024-05-27T15:07:33Z"),
+                    "when": "2024-05-27T15:07:33Z",
                     "who": "someone@example.com",
                 },
                 {
@@ -694,7 +830,7 @@ MISSING_KEYWORDS_HISTORY = to_history(
                     "changes": [
                         {"field_name": "depends_on", "added": "1876368", "removed": ""}
                     ],
-                    "when": datetime.fromisoformat("2024-06-05T19:25:37Z"),
+                    "when": "2024-06-05T19:25:37Z",
                 },
                 {
                     "changes": [
@@ -704,7 +840,7 @@ MISSING_KEYWORDS_HISTORY = to_history(
                             "removed": "",
                         }
                     ],
-                    "when": datetime.fromisoformat("2024-06-09T02:49:27Z"),
+                    "when": "2024-06-09T02:49:27Z",
                     "who": "someone@example.com",
                 },
                 {
@@ -716,7 +852,7 @@ MISSING_KEYWORDS_HISTORY = to_history(
                             "removed": "webcompat:needs-sitepatch",
                         }
                     ],
-                    "when": datetime.fromisoformat("2024-06-11T16:34:22Z"),
+                    "when": "2024-06-11T16:34:22Z",
                 },
             ],
             "alias": None,
@@ -733,7 +869,7 @@ MISSING_KEYWORDS_HISTORY = to_history(
                             "removed": "webcompat:needs-diagnosis",
                         }
                     ],
-                    "when": datetime.fromisoformat("2024-06-11T16:34:22Z"),
+                    "when": "2024-06-11T16:34:22Z",
                 },
             ],
             "alias": None,
@@ -742,103 +878,140 @@ MISSING_KEYWORDS_HISTORY = to_history(
     ]
 )
 
-MISSING_KEYWORDS_BUGS = {
-    item["id"]: item
-    for item in [
+MISSING_KEYWORDS_INITIAL = to_history_entry(
+    [
         {
-            "creator": "name@example.com",
-            "see_also": ["https://github.com/webcompat/web-bugs/issues/135636"],
-            "id": 1898563,
-            "component": "Site Reports",
-            "keywords": ["webcompat:needs-diagnosis", "webcompat:needs-sitepatch"],
-            "resolution": "",
-            "summary": "mylotto.co.nz - Website not supported on Firefox",
-            "product": "Web Compatibility",
-            "creator_detail": {
-                "real_name": "Sample",
-                "id": 111111,
-                "nick": "sample",
-                "email": "name@example.com",
-                "name": "name@example.com",
-            },
-            "status": "NEW",
-            "depends_on": [1886128],
-            "creation_time": datetime.fromisoformat("2024-05-23T16:40:29Z"),
+            "number": 1898563,
+            "who": "name@example.com",
+            "change_time": datetime.fromisoformat("2024-05-23T16:40:29Z"),
+            "changes": [
+                {
+                    "added": "webcompat:needs-diagnosis, webcompat:needs-sitepatch",
+                    "field_name": "keywords",
+                    "removed": "",
+                }
+            ],
         },
         {
+            "number": 222222,
+            "who": "name@example.com",
+            "change_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
+            "changes": [
+                {
+                    "added": "webcompat:needs-diagnosis",
+                    "field_name": "keywords",
+                    "removed": "",
+                }
+            ],
+        },
+    ]
+)
+
+MISSING_KEYWORDS_BUGS = to_bugs_by_id(
+    [
+        {
+            "assigned_to": "nobody@mozilla.org",
+            "blocks": [],
             "component": "Site Reports",
-            "keywords": ["webcompat:sitepatch-applied"],
-            "see_also": ["https://github.com/webcompat/web-bugs/issues/136865"],
-            "id": 1896383,
+            "creation_time": "2024-05-23T16:40:29Z",
+            "creator": "name@example.com",
+            "depends_on": [1886128],
+            "id": 1898563,
+            "keywords": ["webcompat:needs-diagnosis", "webcompat:needs-sitepatch"],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
+            "product": "Web Compatibility",
+            "resolution": "",
+            "see_also": ["https://github.com/webcompat/web-bugs/issues/135636"],
+            "severity": None,
+            "status": "NEW",
+            "summary": "mylotto.co.nz - Website not supported on Firefox",
+            "url": "",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
+        },
+        {
+            "assigned_to": "nobody@mozilla.org",
+            "blocks": [],
+            "component": "Site Reports",
+            "creation_time": "2024-05-13T13:02:11Z",
             "creator": "name@example.com",
             "depends_on": [1886820, 1876368],
-            "status": "NEW",
+            "id": 1896383,
+            "keywords": ["webcompat:sitepatch-applied"],
+            "last_change_time": "2024-06-11T16:34:22Z",
+            "last_resolved": None,
+            "priority": None,
             "product": "Web Compatibility",
-            "creator_detail": {
-                "name": "name@example.com",
-                "id": 111111,
-                "email": "name@example.com",
-                "nick": "sample",
-                "real_name": "Sample",
-            },
             "resolution": "",
+            "see_also": ["https://github.com/webcompat/web-bugs/issues/136865"],
+            "severity": None,
+            "status": "NEW",
             "summary": "www.unimarc.cl - Buttons not working",
-            "creation_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
+            "url": "",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
         },
         {
-            "id": 222222,
-            "product": "Web Compatibility",
+            "assigned_to": "nobody@mozilla.org",
             "blocks": [],
+            "component": "Desktop",
+            "creation_time": "2024-05-13T13:02:11Z",
+            "creator": "name@example.com",
+            "depends_on": [111111],
+            "id": 222222,
+            "keywords": [],
+            "last_change_time": "2024-06-11T16:34:22Z",
+            "last_resolved": None,
+            "priority": None,
+            "product": "Web Compatibility",
+            "resolution": "",
+            "see_also": [],
+            "severity": None,
             "status": "ASSIGNED",
             "summary": "Test breakage bug",
-            "resolution": "",
-            "depends_on": [111111],
-            "see_also": [],
-            "component": "Desktop",
-            "severity": "--",
-            "priority": "--",
-            "creator_detail": {
-                "name": "name@example.com",
-                "id": 111111,
-                "email": "name@example.com",
-                "nick": "sample",
-                "real_name": "Sample",
-            },
-            "creator": "name@example.com",
-            "creation_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
-            "keywords": [],
+            "url": "",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
         },
     ]
-}
+)
 
-REMOVED_READDED_BUGS = {
-    item["id"]: item
-    for item in [
+REMOVED_READDED_BUGS = to_bugs_by_id(
+    [
         {
-            "id": 333333,
-            "product": "Web Compatibility",
+            "assigned_to": "nobody@mozilla.org",
             "blocks": [],
+            "component": "Desktop",
+            "creation_time": "2024-05-13T13:02:11Z",
+            "creator": "name@example.com",
+            "depends_on": [111111],
+            "id": 333333,
+            "keywords": ["webcompat:needs-diagnosis"],
+            "last_change_time": "2024-05-27T15:07:03Z",
+            "last_resolved": None,
+            "priority": None,
+            "product": "Web Compatibility",
+            "resolution": "",
+            "see_also": [],
+            "severity": None,
             "status": "ASSIGNED",
             "summary": "Test breakage bug",
-            "resolution": "",
-            "depends_on": [111111],
-            "see_also": [],
-            "component": "Desktop",
-            "severity": "--",
-            "priority": "--",
-            "creator_detail": {
-                "name": "name@example.com",
-                "id": 111111,
-                "email": "name@example.com",
-                "nick": "sample",
-                "real_name": "Sample",
-            },
-            "creator": "name@example.com",
-            "creation_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
-            "keywords": ["webcompat:needs-diagnosis"],
+            "url": "",
+            "user_story": "",
+            "webcompat_priority": None,
+            "webcompat_score": None,
+            "whiteboard": "",
         }
     ]
-}
+)
 
 REMOVED_READDED_HISTORY = to_history(
     [
@@ -853,7 +1026,7 @@ REMOVED_READDED_HISTORY = to_history(
                             "removed": "webcompat:needs-diagnosis",
                         }
                     ],
-                    "when": datetime.fromisoformat("2024-06-11T16:34:22Z"),
+                    "when": "2024-06-11T16:34:22Z",
                 },
                 {
                     "who": "someone@example.com",
@@ -864,7 +1037,7 @@ REMOVED_READDED_HISTORY = to_history(
                             "removed": "",
                         }
                     ],
-                    "when": datetime.fromisoformat("2024-06-15T16:34:22Z"),
+                    "when": "2024-06-15T16:34:22Z",
                 },
                 {
                     "who": "someone@example.com",
@@ -875,7 +1048,7 @@ REMOVED_READDED_HISTORY = to_history(
                             "removed": "",
                         }
                     ],
-                    "when": datetime.fromisoformat("2024-07-11T16:34:22Z"),
+                    "when": "2024-07-11T16:34:22Z",
                 },
                 {
                     "who": "someone@example.com",
@@ -886,7 +1059,7 @@ REMOVED_READDED_HISTORY = to_history(
                             "removed": "webcompat:needs-sitepatch",
                         }
                     ],
-                    "when": datetime.fromisoformat("2024-07-14T16:34:22Z"),
+                    "when": "2024-07-14T16:34:22Z",
                 },
                 {
                     "who": "someone@example.com",
@@ -897,7 +1070,7 @@ REMOVED_READDED_HISTORY = to_history(
                             "removed": "webcompat:needs-diagnosis",
                         }
                     ],
-                    "when": datetime.fromisoformat("2024-09-11T16:34:22Z"),
+                    "when": "2024-09-11T16:34:22Z",
                 },
                 {
                     "who": "someone@example.com",
@@ -908,7 +1081,7 @@ REMOVED_READDED_HISTORY = to_history(
                             "removed": "",
                         }
                     ],
-                    "when": datetime.fromisoformat("2024-12-11T16:34:22Z"),
+                    "when": "2024-12-11T16:34:22Z",
                 },
             ],
             "alias": None,
@@ -930,18 +1103,18 @@ KEYWORDS_AND_STATUS = to_history(
                         },
                     ],
                     "who": "someone@example.com",
-                    "when": datetime.fromisoformat("2018-05-02T18:25:47Z"),
+                    "when": "2018-05-02T18:25:47Z",
                 },
                 {
                     "changes": [
                         {"added": "RESOLVED", "removed": "NEW", "field_name": "status"}
                     ],
-                    "when": datetime.fromisoformat("2024-05-16T10:58:15Z"),
+                    "when": "2024-05-16T10:58:15Z",
                     "who": "someone@example.com",
                 },
                 {
                     "who": "someone@example.com",
-                    "when": datetime.fromisoformat("2024-06-03T14:44:48Z"),
+                    "when": "2024-06-03T14:44:48Z",
                     "changes": [
                         {
                             "removed": "RESOLVED",
@@ -956,7 +1129,7 @@ KEYWORDS_AND_STATUS = to_history(
                     ],
                 },
                 {
-                    "when": datetime.fromisoformat("2016-01-14T14:01:36Z"),
+                    "when": "2016-01-14T14:01:36Z",
                     "who": "someone@example.com",
                     "changes": [
                         {
@@ -977,35 +1150,32 @@ KEYWORDS_AND_STATUS = to_history(
 @pytest.fixture(scope="module")
 @patch("webcompat_kb.base.google.auth.default")
 @patch("webcompat_kb.base.bigquery.Client")
-def bz(mock_bq, mock_auth_default):
+def bq_client(mock_bq, mock_auth_default):
     mock_credentials = Mock()
     mock_project_id = "placeholder_id"
     mock_auth_default.return_value = (mock_credentials, mock_project_id)
     mock_bq.return_value = Mock()
 
     mock_bq.return_value = Mock()
-    client = get_client(mock_project_id)
-    return BugzillaToBigQuery(
-        client=client,
-        bq_dataset_id="placeholder_dataset",
-        bugzilla_api_key="placeholder_key",
-        write=False,
-        include_history=True,
-        recreate_history=False,
-    )
+    get_client(mock_project_id)
+
+
+@pytest.fixture(scope="module")
+def history_updater(bq_client):
+    return BugHistoryUpdater(bq_client, "test", None)
 
 
 def test_extract_int_from_field():
     field = extract_int_from_field("P3")
     assert field == 3
 
-    field = extract_int_from_field("critical")
+    field = extract_int_from_field("critical", value_map={"critical": 1})
     assert field == 1
 
     field = extract_int_from_field("--")
     assert field is None
 
-    field = extract_int_from_field("N/A")
+    field = extract_int_from_field("N/A", value_map={"n/a": None})
     assert field is None
 
     field = extract_int_from_field("")
@@ -1015,279 +1185,170 @@ def test_extract_int_from_field():
     assert field is None
 
 
-def test_process_relations_with_no_bugs(bz):
-    result = bz.process_relations({}, RELATION_CONFIG)
-    expected = ({}, {"core": set(), "breakage": set()})
-    assert result == expected
+def test_group_bugs():
+    site_reports, etp_reports, kb_bugs, platform_bugs = group_bugs(SAMPLE_ALL_BUGS)
+    assert site_reports == {222222, 444444, 1734557}
+    assert etp_reports == set(SAMPLE_ETP_BUGS.keys())
+    assert kb_bugs == set(SAMPLE_KB_BUGS.keys()) | set(
+        SAMPLE_CORE_AS_KB_BUGS.keys()
+    ) | {444444, 999999, 1101005}
+    assert platform_bugs == set(SAMPLE_CORE_BUGS.keys()) | set(
+        SAMPLE_CORE_AS_KB_BUGS.keys()
+    ) | set(SAMPLE_ETP_DEPENDENCIES_BUGS.keys()) | {444444}
 
 
-def test_process_relations(bz):
-    bugs, ids = bz.process_relations(SAMPLE_BUGS, RELATION_CONFIG)
-    expected_processed_bugs = {
+def test_get_kb_bug_site_report():
+    site_reports, _, kb_bugs, _ = group_bugs(SAMPLE_ALL_BUGS)
+
+    kb_bugs_site_reports = get_kb_bug_site_report(
+        SAMPLE_ALL_BUGS, kb_bugs, site_reports
+    )
+    assert kb_bugs_site_reports == {
+        111111: {1734557, 222222},
+        444444: {444444},
+        1894244: {222222},
+    }
+
+
+def test_get_kb_bug_core_bug():
+    _, _, kb_bugs, platform_bugs = group_bugs(SAMPLE_ALL_BUGS)
+
+    kb_bugs_core_bugs = get_kb_bug_core_bugs(SAMPLE_ALL_BUGS, kb_bugs, platform_bugs)
+    assert kb_bugs_core_bugs == {111111: {555555}, 1835339: {903746}}
+
+
+def test_get_etp_breakage_reports():
+    _, etp_bugs, _, _ = group_bugs(SAMPLE_ALL_BUGS)
+
+    etp_links = get_etp_breakage_reports(SAMPLE_ALL_BUGS, etp_bugs)
+
+    assert etp_links == {
+        1910548: {1101005, 1875061},
+        1921943: {1101005, 1797458},
+        1928102: {1101005},
+    }
+
+
+def test_get_external_links():
+    _, _, kb_bugs, _ = group_bugs(SAMPLE_ALL_BUGS)
+
+    assert EXTERNAL_LINK_CONFIGS["interventions"].get_links(
+        SAMPLE_ALL_BUGS, kb_bugs
+    ) == {
         1835339: {
-            "core_bugs": [903746],
-            "breakage_reports": [],
-            "interventions": [
-                "https://github.com/mozilla-extensions/webcompat-addon/blob/5b391018e847a1eb30eba4784c86acd1c638ed26/src/injections/js/bug1739489-draftjs-beforeinput.js"  # noqa
-            ],
-            "other_browser_issues": [],
-            "standards_issues": [],
-            "standards_positions": [],
+            "https://github.com/mozilla-extensions/webcompat-addon/blob/5b391018e847a1eb30eba4784c86acd1c638ed26/src/injections/js/bug1739489-draftjs-beforeinput.js"
         },
-        1835416: {
-            "core_bugs": [],
-            "breakage_reports": [],
-            "interventions": [],
-            "other_browser_issues": [],
-            "standards_issues": [],
-            "standards_positions": [
-                "https://mozilla.github.io/standards-positions/#webusb"
-            ],
-        },
+    }
+
+    assert EXTERNAL_LINK_CONFIGS["other_browser_issues"].get_links(
+        SAMPLE_ALL_BUGS, kb_bugs
+    ) == {111111: {"https://crbug.com/606208"}}
+
+    assert EXTERNAL_LINK_CONFIGS["standards_issues"].get_links(
+        SAMPLE_ALL_BUGS, kb_bugs
+    ) == {
+        111111: {"https://github.com/whatwg/html/issues/1896"},
+        1835339: {"https://github.com/w3c/uievents/issues/353"},
+    }
+
+    assert EXTERNAL_LINK_CONFIGS["standards_positions"].get_links(
+        SAMPLE_ALL_BUGS, kb_bugs
+    ) == {
         111111: {
-            "core_bugs": [555555],
-            "breakage_reports": [222222, 1734557],
-            "interventions": [],
-            "other_browser_issues": ["https://crbug.com/606208"],
-            "standards_issues": ["https://github.com/whatwg/html/issues/1896"],
-            "standards_positions": [
-                "https://github.com/mozilla/standards-positions/issues/20",
-                "https://github.com/WebKit/standards-positions/issues/186",
-            ],
+            "https://github.com/mozilla/standards-positions/issues/20",
+            "https://github.com/WebKit/standards-positions/issues/186",
+            "https://mozilla.github.io/standards-positions/#testposition",
         },
+        1835416: {"https://mozilla.github.io/standards-positions/#webusb"},
     }
 
-    expected_bug_ids = {
-        "core": {903746, 555555},
-        "breakage": {222222, 1734557},
-    }
 
-    assert bugs == expected_processed_bugs
-    assert ids == expected_bug_ids
+def test_bugzilla_to_history_entry(history_updater):
+    expected_result = {bug_id: [] for bug_id in SAMPLE_HISTORY}
 
-
-def test_add_breakage_kb_entries(bz):
-    kb_bugs = {
-        bug_id: bug
-        for bug_id, bug in SAMPLE_BREAKAGE_BUGS.items()
-        if bug["product"] != "Web Compatibility"
-    }
-    kb_data, kb_dep_ids = bz.process_relations(kb_bugs, RELATION_CONFIG)
-    assert set(kb_data.keys()) == set(kb_bugs.keys())
-    assert kb_dep_ids["breakage"] == set()
-
-    bz.add_kb_entry_breakage(kb_data, kb_dep_ids, SAMPLE_BREAKAGE_BUGS)
-    assert kb_data[444444]["breakage_reports"] == [444444]
-    assert kb_dep_ids["breakage"] == set(kb_bugs.keys())
-
-
-def test_relations(bz):
-    bugs, _ = bz.process_relations(SAMPLE_BUGS, RELATION_CONFIG)
-    relations = bz.build_relations(bugs, RELATION_CONFIG)
-
-    assert relations["core_bugs"] == [
-        {"knowledge_base_bug": 1835339, "core_bug": 903746},
-        {"knowledge_base_bug": 111111, "core_bug": 555555},
-    ]
-
-    assert relations["breakage_reports"] == [
-        {"knowledge_base_bug": 111111, "breakage_bug": 222222},
-        {"knowledge_base_bug": 111111, "breakage_bug": 1734557},
-    ]
-
-    assert relations["interventions"] == [
-        {
-            "knowledge_base_bug": 1835339,
-            "code_url": "https://github.com/mozilla-extensions/webcompat-addon/blob/5b391018e847a1eb30eba4784c86acd1c638ed26/src/injections/js/bug1739489-draftjs-beforeinput.js",  # noqa
-        }
-    ]
-    assert relations["other_browser_issues"] == [
-        {"knowledge_base_bug": 111111, "issue_url": "https://crbug.com/606208"}
-    ]
-    assert relations["standards_issues"] == [
-        {
-            "knowledge_base_bug": 111111,
-            "issue_url": "https://github.com/whatwg/html/issues/1896",
-        }
-    ]
-    assert relations["standards_positions"] == [
-        {
-            "knowledge_base_bug": 1835416,
-            "discussion_url": "https://mozilla.github.io/standards-positions/#webusb",  # noqa
-        },
-        {
-            "knowledge_base_bug": 111111,
-            "discussion_url": "https://github.com/mozilla/standards-positions/issues/20",  # noqa
-        },
-        {
-            "knowledge_base_bug": 111111,
-            "discussion_url": "https://github.com/WebKit/standards-positions/issues/186",  # noqa
-        },
-    ]
-
-
-def test_add_links(bz):
-    bugs, _ = bz.process_relations(SAMPLE_BUGS, RELATION_CONFIG)
-    core_bugs, _ = bz.process_relations(
-        SAMPLE_CORE_BUGS, {key: RELATION_CONFIG[key] for key in LINK_FIELDS}
+    expected_result.update(
+        to_history_entry(
+            [
+                {
+                    "number": 1536482,
+                    "who": "example",
+                    "change_time": datetime.fromisoformat("2023-05-01T17:41:18Z"),
+                    "changes": [
+                        {
+                            "field_name": "keywords",
+                            "removed": "",
+                            "added": "webcompat:needs-diagnosis",
+                        }
+                    ],
+                },
+                {
+                    "number": 1536483,
+                    "who": "example",
+                    "change_time": datetime.fromisoformat("2023-03-18T16:58:27Z"),
+                    "changes": [
+                        {
+                            "field_name": "cf_user_story",
+                            "added": "@@ -0,0 +1,3 @@\n+platform:linux\r\n+impact:feature-broken\r\n+affects:some\n\\ No newline at end of file\n",  # noqa
+                            "removed": "",
+                        }
+                    ],
+                },
+                {
+                    "number": 1536483,
+                    "who": "example",
+                    "change_time": datetime.fromisoformat("2023-06-01T10:00:00Z"),
+                    "changes": [
+                        {
+                            "field_name": "status",
+                            "added": "ASSIGNED",
+                            "removed": "UNCONFIRMED",
+                        }
+                    ],
+                },
+                {
+                    "number": 1536485,
+                    "who": "example",
+                    "change_time": datetime.fromisoformat("2023-05-01T14:00:00Z"),
+                    "changes": [
+                        {
+                            "removed": "",
+                            "field_name": "keywords",
+                            "added": "webcompat:platform-bug",
+                        }
+                    ],
+                },
+                {
+                    "number": 1536485,
+                    "who": "example",
+                    "change_time": datetime.fromisoformat("2023-08-01T14:00:00Z"),
+                    "changes": [
+                        {
+                            "removed": "ASSIGNED",
+                            "field_name": "status",
+                            "added": "RESOLVED",
+                        }
+                    ],
+                },
+            ]
+        )
     )
 
-    result = bz.add_links(bugs, core_bugs)
-
-    assert result[1835339]["standards_issues"] == [
-        "https://github.com/w3c/uievents/issues/353"
-    ]
-    assert result[111111]["standards_positions"] == [
-        "https://github.com/mozilla/standards-positions/issues/20",
-        "https://github.com/WebKit/standards-positions/issues/186",
-        "https://mozilla.github.io/standards-positions/#testposition",
-    ]
+    entries = history_updater.bugzilla_to_history_entry(SAMPLE_HISTORY)
+    assert entries == expected_result
 
 
-def test_add_links_no_core(bz):
-    bugs, _ = bz.process_relations(SAMPLE_BUGS, RELATION_CONFIG)
-    core_bugs, _ = bz.process_relations(SAMPLE_CORE_BUGS, RELATION_CONFIG)
-
-    result = bz.add_links(bugs, {})
-
-    assert result[1835339]["standards_issues"] == []
-    assert result[111111]["standards_positions"] == [
-        "https://github.com/mozilla/standards-positions/issues/20",
-        "https://github.com/WebKit/standards-positions/issues/186",
-    ]
-
-
-def test_get_bugs_updated_since_last_import(bz):
-    all_bugs = {
-        item["id"]: item
-        for item in [
-            {
-                "id": 1,
-                "last_change_time": datetime.fromisoformat("2023-04-01T10:00:00Z"),
-            },
-            {
-                "id": 2,
-                "last_change_time": datetime.fromisoformat("2023-04-02T11:30:00Z"),
-            },
-            {
-                "id": 3,
-                "last_change_time": datetime.fromisoformat("2023-04-03T09:45:00Z"),
-            },
-        ]
-    }
-
-    last_import_time = datetime(2023, 4, 2, 10, 0, tzinfo=timezone.utc)
-    expected_result = {2, 3}
-    result = bz.get_bugs_updated_since_last_import(all_bugs, last_import_time)
-    assert result == expected_result
-
-
-def test_filter_bug_history_changes(bz):
-    expected_result = to_history_entry(
-        [
-            {
-                "number": 1536482,
-                "who": "example",
-                "change_time": datetime.fromisoformat("2023-05-01T17:41:18Z"),
-                "changes": [
-                    {
-                        "field_name": "keywords",
-                        "removed": "",
-                        "added": "webcompat:needs-diagnosis",
-                    }
-                ],
-            },
-            {
-                "number": 1536483,
-                "who": "example",
-                "change_time": datetime.fromisoformat("2023-03-18T16:58:27Z"),
-                "changes": [
-                    {
-                        "field_name": "cf_user_story",
-                        "added": "@@ -0,0 +1,3 @@\n+platform:linux\r\n+impact:feature-broken\r\n+affects:some\n\\ No newline at end of file\n",  # noqa
-                        "removed": "",
-                    }
-                ],
-            },
-            {
-                "number": 1536483,
-                "who": "example",
-                "change_time": datetime.fromisoformat("2023-06-01T10:00:00Z"),
-                "changes": [
-                    {
-                        "field_name": "status",
-                        "added": "ASSIGNED",
-                        "removed": "UNCONFIRMED",
-                    }
-                ],
-            },
-            {
-                "number": 1536485,
-                "who": "example",
-                "change_time": datetime.fromisoformat("2023-05-01T14:00:00Z"),
-                "changes": [
-                    {
-                        "removed": "",
-                        "field_name": "keywords",
-                        "added": "webcompat:platform-bug",
-                    }
-                ],
-            },
-            {
-                "number": 1536485,
-                "who": "example",
-                "change_time": datetime.fromisoformat("2023-08-01T14:00:00Z"),
-                "changes": [
-                    {"removed": "ASSIGNED", "field_name": "status", "added": "RESOLVED"}
-                ],
-            },
-        ]
+def test_create_initial_history(history_updater):
+    history = history_updater.bugzilla_to_history_entry(MISSING_KEYWORDS_HISTORY)
+    result = history_updater.create_initial_history_entry(
+        MISSING_KEYWORDS_BUGS, history
     )
 
-    result, bug_ids = bz.extract_history_fields(SAMPLE_HISTORY)
-    assert result == expected_result
-    assert bug_ids == {1536482, 1536483, 1536485}
+    assert result == MISSING_KEYWORDS_INITIAL
 
 
-def test_create_synthetic_history(bz):
-    history, bug_ids = bz.extract_history_fields(MISSING_KEYWORDS_HISTORY)
-    result = bz.create_synthetic_history(MISSING_KEYWORDS_BUGS, history)
-
-    expected = to_history_entry(
-        [
-            {
-                "number": 1898563,
-                "who": "name@example.com",
-                "change_time": datetime.fromisoformat("2024-05-23T16:40:29Z"),
-                "changes": [
-                    {
-                        "added": "webcompat:needs-diagnosis, webcompat:needs-sitepatch",
-                        "field_name": "keywords",
-                        "removed": "",
-                    }
-                ],
-            },
-            {
-                "number": 222222,
-                "who": "name@example.com",
-                "change_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
-                "changes": [
-                    {
-                        "added": "webcompat:needs-diagnosis",
-                        "field_name": "keywords",
-                        "removed": "",
-                    }
-                ],
-            },
-        ]
-    )
-
-    assert result == expected
-
-
-def test_create_synthetic_history_removed_readded(bz):
-    history, bug_ids = bz.extract_history_fields(REMOVED_READDED_HISTORY)
-    result = bz.create_synthetic_history(REMOVED_READDED_BUGS, history)
+def test_create_initial_history_removed_readded(history_updater):
+    history = history_updater.bugzilla_to_history_entry(REMOVED_READDED_HISTORY)
+    result = history_updater.create_initial_history_entry(REMOVED_READDED_BUGS, history)
 
     expected = to_history_entry(
         [
@@ -1309,7 +1370,22 @@ def test_create_synthetic_history_removed_readded(bz):
     assert result == expected
 
 
-def test_is_removed_earliest(bz):
+@patch("webcompat_kb.bugzilla.BugHistoryUpdater.bugzilla_fetch_history")
+def test_create_new_bugs_history(mock_bugzilla_fetch_history, history_updater):
+    mock_bugzilla_fetch_history.return_value = (
+        history_updater.bugzilla_to_history_entry(MISSING_KEYWORDS_HISTORY)
+    )
+
+    expected = history_updater.bugzilla_to_history_entry(MISSING_KEYWORDS_HISTORY)
+    for bug_id, update in MISSING_KEYWORDS_INITIAL.items():
+        expected[bug_id].extend(update)
+
+    result = history_updater.new_bugs_history(MISSING_KEYWORDS_BUGS)
+
+    assert result == expected
+
+
+def test_missing_initial_add():
     keyword_map = {
         "added": {
             "webcompat:needs-sitepatch": [
@@ -1331,71 +1407,35 @@ def test_is_removed_earliest(bz):
         },
     }
 
-    is_removed_first_diagnosis = bz.is_removed_earliest(
-        keyword_map["added"]["webcompat:needs-diagnosis"],
-        keyword_map["removed"]["webcompat:needs-diagnosis"],
+    property_histories = defaultdict(PropertyHistory)
+    for action, items in keyword_map.items():
+        for keyword, change_times in items.items():
+            for change_time in change_times:
+                property_histories[keyword].add(change_time, action)
+
+    assert property_histories["webcompat:needs-diagnosis"].missing_initial_add()
+    assert not property_histories["webcompat:needs-sitepatch"].missing_initial_add()
+    removed_first = PropertyHistory()
+    removed_first.add(datetime(2024, 7, 14, 16, 34, 22, tzinfo=timezone.utc), "removed")
+    assert removed_first.missing_initial_add()
+    added_first = PropertyHistory()
+    added_first.add(datetime(2024, 7, 14, 16, 34, 22, tzinfo=timezone.utc), "added")
+    assert not added_first.missing_initial_add()
+    empty_history = PropertyHistory()
+    assert empty_history.missing_initial_add()
+
+
+@patch("webcompat_kb.bugzilla.BugHistoryUpdater.bigquery_last_import")
+@patch("webcompat_kb.bugzilla.BugHistoryUpdater.bugzilla_fetch_history")
+def test_existing_bugs_history(
+    mock_bugzilla_fetch_history, mock_last_import, history_updater
+):
+    mock_last_import.return_value = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    mock_bugzilla_fetch_history.return_value = (
+        history_updater.bugzilla_to_history_entry(MISSING_KEYWORDS_HISTORY)
     )
 
-    is_removed_first_sitepatch = bz.is_removed_earliest(
-        keyword_map["added"]["webcompat:needs-sitepatch"],
-        keyword_map["removed"]["webcompat:needs-sitepatch"],
-    )
-
-    is_removed_first_empty_added = bz.is_removed_earliest(
-        [],
-        [datetime(2024, 7, 14, 16, 34, 22, tzinfo=timezone.utc)],
-    )
-
-    is_removed_first_empty_removed = bz.is_removed_earliest(
-        [datetime(2024, 7, 14, 16, 34, 22, tzinfo=timezone.utc)],
-        [],
-    )
-
-    is_removed_first_empty = bz.is_removed_earliest(
-        [],
-        [],
-    )
-
-    assert is_removed_first_diagnosis
-    assert not is_removed_first_sitepatch
-    assert is_removed_first_empty_added
-    assert not is_removed_first_empty_removed
-    assert not is_removed_first_empty
-
-
-@patch("webcompat_kb.bugzilla.BugzillaToBigQuery.get_existing_history_records_by_ids")
-def test_filter_only_unsaved_changes(mock_get_existing, bz):
-    mock_get_existing.return_value = to_history_entry(
-        [
-            {
-                "number": 1896383,
-                "who": "someone@example.com",
-                "change_time": datetime(2024, 5, 27, 15, 7, 33, tzinfo=timezone.utc),
-                "changes": [
-                    {
-                        "field_name": "keywords",
-                        "added": "webcompat:needs-sitepatch",
-                        "removed": "webcompat:needs-diagnosis",
-                    }
-                ],
-            },
-            {
-                "number": 1896383,
-                "who": "someone@example.com",
-                "change_time": datetime(2024, 6, 11, 16, 34, 22, tzinfo=timezone.utc),
-                "changes": [
-                    {
-                        "field_name": "keywords",
-                        "added": "webcompat:sitepatch-applied",
-                        "removed": "webcompat:needs-sitepatch",
-                    }
-                ],
-            },
-        ]
-    )
-
-    history, bug_ids = bz.extract_history_fields(MISSING_KEYWORDS_HISTORY)
-    result = bz.filter_only_unsaved_changes(history, bug_ids)
+    result = history_updater.existing_bugs_history(MISSING_KEYWORDS_BUGS)
 
     expected = to_history_entry(
         [
@@ -1429,123 +1469,6 @@ def test_filter_only_unsaved_changes(mock_get_existing, bz):
                 ],
             },
             {
-                "number": 222222,
-                "who": "someone@example.com",
-                "change_time": datetime.fromisoformat("2024-06-11T16:34:22Z"),
-                "changes": [
-                    {
-                        "field_name": "keywords",
-                        "added": "",
-                        "removed": "webcompat:needs-diagnosis",
-                    }
-                ],
-            },
-        ]
-    )
-
-    result.sort(key=lambda item: item.number)
-    expected.sort(key=lambda item: item.number)
-
-    assert result == expected
-
-
-@patch("webcompat_kb.bugzilla.BugzillaToBigQuery.get_existing_history_records_by_ids")
-def test_filter_only_unsaved_changes_multiple_changes(mock_get_existing, bz):
-    mock_get_existing.return_value = to_history_entry(
-        [
-            {
-                "number": 1239595,
-                "who": "someone@example.com",
-                "change_time": datetime(2018, 5, 2, 18, 25, 47, tzinfo=timezone.utc),
-                "changes": [
-                    {
-                        "field_name": "keywords",
-                        "added": "parity-chrome, parity-edge, parity-ie",
-                        "removed": "",
-                    }
-                ],
-            },
-            {
-                "number": 1239595,
-                "who": "someone@example.com",
-                "change_time": datetime(2016, 1, 14, 14, 1, 36, tzinfo=timezone.utc),
-                "changes": [
-                    {"field_name": "status", "added": "NEW", "removed": "UNCONFIRMED"}
-                ],
-            },
-            {
-                "number": 1239595,
-                "who": "someone@example.com",
-                "change_time": datetime(2024, 5, 16, 10, 58, 15, tzinfo=timezone.utc),
-                "changes": [
-                    {"field_name": "status", "added": "RESOLVED", "removed": "NEW"}
-                ],
-            },
-        ]
-    )
-
-    history, bug_ids = bz.extract_history_fields(KEYWORDS_AND_STATUS)
-    result = bz.filter_only_unsaved_changes(history, bug_ids)
-    changes = result[0].changes
-
-    expected_changes = [
-        BugHistoryChange(**item)
-        for item in [
-            {
-                "field_name": "keywords",
-                "added": "webcompat:platform-bug",
-                "removed": "",
-            },
-            {"field_name": "status", "added": "REOPENED", "removed": "RESOLVED"},
-        ]
-    ]
-
-    changes.sort(key=lambda item: item.field_name)
-    expected_changes.sort(key=lambda item: item.field_name)
-
-    assert len(result) == 1
-    assert changes == expected_changes
-
-
-@patch("webcompat_kb.bugzilla.BugzillaToBigQuery.get_existing_history_records_by_ids")
-def test_filter_only_unsaved_changes_empty(mock_get_existing, bz):
-    mock_get_existing.return_value = []
-
-    history, bug_ids = bz.extract_history_fields(MISSING_KEYWORDS_HISTORY)
-    result = bz.filter_only_unsaved_changes(history, bug_ids)
-
-    expected = to_history_entry(
-        [
-            {
-                "number": 1898563,
-                "who": "name@example.com",
-                "change_time": datetime.fromisoformat("2024-05-27T15:10:10Z"),
-                "changes": [
-                    {
-                        "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux,android\r\n+impact:blocked\r\n+configuration:general\r\n+affects:all\n",
-                        "field_name": "cf_user_story",
-                        "removed": "",
-                    }
-                ],
-            },
-            {
-                "number": 1896383,
-                "who": "someone@example.com",
-                "change_time": datetime.fromisoformat("2024-05-13T16:03:18Z"),
-                "changes": [
-                    {
-                        "field_name": "cf_user_story",
-                        "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux\r\n+impact:site-broken\r\n+configuration:general\r\n+affects:all\n",
-                        "removed": "",
-                    },
-                    {
-                        "removed": "",
-                        "field_name": "keywords",
-                        "added": "webcompat:needs-diagnosis",
-                    },
-                ],
-            },
-            {
                 "number": 1896383,
                 "who": "someone@example.com",
                 "change_time": datetime.fromisoformat("2024-05-27T15:07:33Z"),
@@ -1554,7 +1477,7 @@ def test_filter_only_unsaved_changes_empty(mock_get_existing, bz):
                         "removed": "webcompat:needs-diagnosis",
                         "field_name": "keywords",
                         "added": "webcompat:needs-sitepatch",
-                    }
+                    },
                 ],
             },
             {
@@ -1587,338 +1510,175 @@ def test_filter_only_unsaved_changes_empty(mock_get_existing, bz):
     assert result == expected
 
 
-@patch("webcompat_kb.bugzilla.BugzillaToBigQuery.get_existing_history_records_by_ids")
-def test_filter_only_unsaved_changes_synthetic(mock_get_existing, bz):
-    history, bug_ids = bz.extract_history_fields(MISSING_KEYWORDS_HISTORY)
-    s_history = bz.create_synthetic_history(MISSING_KEYWORDS_BUGS, history)
-
-    mock_get_existing.return_value = to_history_entry(
-        [
-            {
-                "number": 1898563,
-                "who": "name@example.com",
-                "change_time": datetime(2024, 5, 23, 16, 40, 29, tzinfo=timezone.utc),
-                "changes": [
-                    {
-                        "field_name": "keywords",
-                        "added": "webcompat:needs-diagnosis, webcompat:needs-sitepatch",  # noqa
-                        "removed": "",
-                    }
-                ],
-            },
-        ]
+@patch("webcompat_kb.bugzilla.BugHistoryUpdater.bigquery_last_import")
+@patch("webcompat_kb.bugzilla.BugHistoryUpdater.bugzilla_fetch_history")
+def test_existing_bugs_history_filter_updated(
+    mock_bugzilla_fetch_history, mock_last_import, history_updater
+):
+    mock_last_import.return_value = datetime(2024, 5, 28, tzinfo=timezone.utc)
+    mock_bugzilla_fetch_history.return_value = (
+        history_updater.bugzilla_to_history_entry(MISSING_KEYWORDS_HISTORY)
     )
 
-    result = bz.filter_only_unsaved_changes(s_history, bug_ids)
+    result = history_updater.existing_bugs_history(MISSING_KEYWORDS_BUGS)
 
     expected = to_history_entry(
         [
             {
-                "number": 222222,
-                "who": "name@example.com",
-                "change_time": datetime.fromisoformat("2024-05-13T13:02:11Z"),
+                "number": 1896383,
+                "who": "someone@example.com",
+                "change_time": datetime.fromisoformat("2024-06-11T16:34:22Z"),
                 "changes": [
                     {
-                        "added": "webcompat:needs-diagnosis",
                         "field_name": "keywords",
-                        "removed": "",
+                        "added": "webcompat:sitepatch-applied",
+                        "removed": "webcompat:needs-sitepatch",
                     }
                 ],
-            }
+            },
+            {
+                "number": 222222,
+                "who": "someone@example.com",
+                "change_time": datetime.fromisoformat("2024-06-11T16:34:22Z"),
+                "changes": [
+                    {
+                        "field_name": "keywords",
+                        "added": "",
+                        "removed": "webcompat:needs-diagnosis",
+                    }
+                ],
+            },
         ]
     )
 
     assert result == expected
 
 
-def test_empty_input():
-    assert parse_string_to_json("") == ""
-
-
-def test_null_input():
-    assert parse_string_to_json(None) == ""
-
-
-def test_single_key_value_pair():
-    input_str = "key:value"
-    expected = {"key": "value"}
-    assert parse_string_to_json(input_str) == expected
-
-
-def test_multiple_key_value_pairs():
-    input_str = "key1:value1\nkey2:value2"
-    expected = {"key1": "value1", "key2": "value2"}
-    assert parse_string_to_json(input_str) == expected
-
-
-def test_multiple_values_for_same_key():
-    input_str = "key:value1\r\nkey:value2"
-    expected = {"key": ["value1", "value2"]}
-    assert parse_string_to_json(input_str) == expected
-
-
-def test_mixed_line_breaks():
-    input_str = "key1:value1\r\nkey2:value2\nkey3:value3"
-    expected = {"key1": "value1", "key2": "value2", "key3": "value3"}
-    assert parse_string_to_json(input_str) == expected
-
-
-def test_empty_result():
-    input_str = "\n\n"
-    assert parse_string_to_json(input_str) == ""
-
-
-def test_severity_string():
-    input_str = "platform:linux\r\nimpact:feature-broken\r\naffects:some"
-    expected = {
-        "platform": "linux",
-        "impact": "feature-broken",
-        "affects": "some",
-    }
-    assert parse_string_to_json(input_str) == expected
-
-
-def test_values_with_colon():
-    input_str = "url:http://chatgpt-tokenizer.com/*\r\nurl:excalidraw.com/*\r\nurl:godbolt.org/*\r\nurl:youwouldntsteala.website/*\r\nurl:yandex.ru/images/*"  # noqa
-    expected = {
-        "url": [
-            "http://chatgpt-tokenizer.com/*",
-            "excalidraw.com/*",
-            "godbolt.org/*",
-            "youwouldntsteala.website/*",
-            "yandex.ru/images/*",
-        ]
-    }
-    assert parse_string_to_json(input_str) == expected
-
-
-def test_kb_bugs_from_platform_bugs(bz):
-    core_as_kb_bugs = bz.kb_bugs_from_platform_bugs(
-        SAMPLE_CORE_AS_KB_BUGS, {1835339}, {1896383, 222222}
+def test_missing_records(history_updater):
+    initial_history = history_updater.bugzilla_to_history_entry(
+        MISSING_KEYWORDS_HISTORY
     )
+    new_history = {key: value[:] for key, value in initial_history.items()}
+    for bug_id, update in MISSING_KEYWORDS_INITIAL.items():
+        new_history[bug_id].extend(update)
 
-    assert core_as_kb_bugs == {
-        item["id"]: item
-        for item in [
+    expected = MISSING_KEYWORDS_INITIAL
+
+    result = history_updater.missing_records(initial_history, new_history)
+
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "input,expected",
+    [
+        ("", {}),
+        (None, {}),
+        ("key:value", {"key": "value"}),
+        ("key1:value1\nkey2:value2", {"key1": "value1", "key2": "value2"}),
+        ("key:value1\r\nkey:value2", {"key": ["value1", "value2"]}),
+        (
+            "key1:value1\r\nkey2:value2\nkey3:value3",
+            {"key1": "value1", "key2": "value2", "key3": "value3"},
+        ),
+        ("\n\n", {}),
+        (
+            "platform:linux\r\nimpact:feature-broken\r\naffects:some",
             {
-                "assigned_to": "nobody@mozilla.org",
-                "whiteboard": "",
-                "see_also": ["https://bugzilla.mozilla.org/show_bug.cgi?id=1740472"],
-                "severity": "S3",
-                "product": "Core",
-                "depends_on": [],
-                "summary": "Consider adding support for Error.captureStackTrace",
-                "resolution": "",
-                "last_change_time": datetime.fromisoformat("2024-05-27T15:07:03Z"),
-                "keywords": [
-                    "parity-chrome",
-                    "parity-safari",
-                    "webcompat:platform-bug",
-                ],
-                "priority": "P3",
-                "creation_time": datetime.fromisoformat("2024-03-21T16:40:27Z"),
-                "cf_user_story": "",
-                "status": "NEW",
-                "blocks": [1896383],
-                "url": "",
-                "cf_last_resolved": None,
-                "component": "JavaScript Engine",
-                "id": 1886820,
+                "platform": "linux",
+                "impact": "feature-broken",
+                "affects": "some",
             },
+        ),
+        (
+            "url:http://chatgpt-tokenizer.com/*\r\nurl:excalidraw.com/*\r\nurl:godbolt.org/*\r\nurl:youwouldntsteala.website/*\r\nurl:yandex.ru/images/*",
             {
-                "assigned_to": "nobody@mozilla.org",
-                "whiteboard": "",
-                "see_also": [],
-                "severity": "S3",
-                "product": "Core",
-                "depends_on": [],
-                "summary": "Example core site report and platform bug",
-                "resolution": "",
-                "last_change_time": datetime.fromisoformat("2024-05-27T15:07:03Z"),
-                "keywords": ["webcompat:platform-bug", "webcompat:site-report"],
-                "priority": "P3",
-                "creation_time": datetime.fromisoformat("2024-03-21T16:40:27Z"),
-                "cf_user_story": "",
-                "status": "NEW",
-                "blocks": [],
-                "url": "",
-                "cf_last_resolved": None,
-                "component": "JavaScript Engine",
-                "id": 444444,
-            },
-        ]
-    }
-
-
-def test_convert_bug_data(bz):
-    expected_data = [
-        {
-            "assigned_to": "test@example.org",
-            "component": "Knowledge Base",
-            "creation_time": "2000-07-25T13:50:04+00:00",
-            "creator": "nobody@mozilla.org",
-            "keywords": [],
-            "number": 1835339,
-            "priority": None,
-            "product": "Web Compatibility",
-            "resolution": "",
-            "resolved_time": None,
-            "severity": None,
-            "status": "NEW",
-            "title": "Missing implementation of textinput event",
-            "url": "",
-            "user_story": {
                 "url": [
-                    "cmcreg.bancosantander.es/*",
-                    "new.reddit.com/*",
-                    "web.whatsapp.com/*",
-                    "facebook.com/*",
-                    "twitter.com/*",
-                    "reddit.com/*",
-                    "mobilevikings.be/*",
-                    "book.ersthelfer.tv/*",
-                ],
+                    "http://chatgpt-tokenizer.com/*",
+                    "excalidraw.com/*",
+                    "godbolt.org/*",
+                    "youwouldntsteala.website/*",
+                    "yandex.ru/images/*",
+                ]
             },
-            "user_story_raw": "url:cmcreg.bancosantander.es/*\r\nurl:new.reddit.com/*\r\nurl:web.whatsapp.com/*\r\nurl:facebook.com/*\r\nurl:twitter.com/*\r\nurl:reddit.com/*\r\nurl:mobilevikings.be/*\r\nurl:book.ersthelfer.tv/*",
-            "whiteboard": "",
-            "webcompat_priority": None,
-            "webcompat_score": None,
-        },
-        {
-            "assigned_to": None,
-            "component": "Knowledge Base",
-            "creation_time": "2000-07-25T13:50:04+00:00",
-            "creator": "nobody@mozilla.org",
-            "keywords": [],
-            "number": 1835416,
-            "priority": None,
-            "product": "Web Compatibility",
-            "resolution": "",
-            "resolved_time": None,
-            "severity": None,
-            "status": "NEW",
-            "title": "Sites breaking due to the lack of WebUSB support",
-            "url": "",
-            "user_story": {
-                "url": [
-                    "webminidisc.com/*",
-                    "app.webadb.com/*",
-                    "www.numworks.com/*",
-                    "webadb.github.io/*",
-                    "www.stemplayer.com/*",
-                    "wootility.io/*",
-                    "python.microbit.org/*",
-                    "flash.android.com/*",
-                ],
-            },
-            "user_story_raw": "url:webminidisc.com/*\r\nurl:app.webadb.com/*\r\nurl:www.numworks.com/*\r\nurl:webadb.github.io/*\r\nurl:www.stemplayer.com/*\r\nurl:wootility.io/*\r\nurl:python.microbit.org/*\r\nurl:flash.android.com/*",
-            "whiteboard": "",
-            "webcompat_priority": None,
-            "webcompat_score": None,
-        },
-        {
-            "assigned_to": None,
-            "component": "Knowledge Base",
-            "creation_time": "2000-07-25T13:50:04+00:00",
-            "creator": "nobody@mozilla.org",
-            "keywords": [],
-            "number": 111111,
-            "priority": None,
-            "product": "Web Compatibility",
-            "resolution": "",
-            "resolved_time": None,
-            "severity": None,
-            "status": "NEW",
-            "title": "Test bug",
-            "url": "",
-            "user_story": "",
-            "user_story_raw": "",
-            "whiteboard": "",
-            "webcompat_priority": None,
-            "webcompat_score": None,
-        },
-    ]
-    for bug, expected in zip(SAMPLE_BUGS.values(), expected_data):
-        assert bz.convert_bug_data(bug) == expected
+        ),
+    ],
+)
+def test_parse_user_story(input, expected):
+    assert parse_user_story(input) == expected
 
 
-def test_unify_etp_dependencies(bz):
-    unified_etp_bugs = bz.unify_etp_dependencies(
-        SAMPLE_ETP_BUGS, SAMPLE_ETP_DEPENDENCIES_BUGS
-    )
-
-    assert unified_etp_bugs == {
-        item["id"]: item
-        for item in [
+@pytest.mark.parametrize(
+    "input_data, test_fields",
+    [
+        (
+            {},
             {
-                "url": "https://gothamist.com/",
-                "summary": "gothamist.com - The comments are not displayed with ETP set to Strict",
-                "id": 1910548,
-                "keywords": ["priv-webcompat", "webcompat:site-report"],
-                "component": "Privacy: Site Reports",
-                "resolution": "",
-                "blocks": [],
-                "depends_on": [1101005, 1875061],
-                "creation_time": datetime.fromisoformat("2024-07-30T07:37:28Z"),
-                "see_also": ["https://github.com/webcompat/web-bugs/issues/139647"],
-                "product": "Web Compatibility",
-                "status": "NEW",
-                "cf_webcompat_priority": "---",
-                "cf_webcompat_score": "---",
+                "severity": None,
+                "priority": None,
+                "creation_time": datetime.fromisoformat("2024-03-21T16:40:27Z"),
+                "assigned_to": None,
+                "last_change_time": datetime.fromisoformat("2024-03-22T16:40:27Z"),
+                "webcompat_priority": None,
+                "webcompat_score": None,
             },
-            {
-                "see_also": ["https://github.com/webcompat/web-bugs/issues/142250"],
-                "id": 1921943,
-                "summary": "my.farys.be - Login option is missing with ETP set to STRICT",
-                "product": "Web Compatibility",
-                "keywords": [
-                    "priv-webcompat",
-                    "webcompat:platform-bug",
-                    "webcompat:site-report",
-                ],
-                "status": "NEW",
-                "resolution": "",
-                "component": "Privacy: Site Reports",
-                "blocks": [],
-                "depends_on": [1101005, 1797458],
-                "creation_time": datetime.fromisoformat("2024-10-01T08:50:58Z"),
-                "url": "https://my.farys.be/myfarys/",
-                "cf_webcompat_priority": "---",
-                "cf_webcompat_score": "---",
-            },
-            {
-                "see_also": [],
-                "summary": "ryanair.com - The form to start a chat does not load with ETP set to STRICT",
-                "id": 1928102,
-                "product": "Web Compatibility",
-                "status": "NEW",
-                "keywords": ["webcompat:site-report"],
-                "blocks": [],
-                "component": "Privacy: Site Reports",
-                "resolution": "",
-                "depends_on": [1101005],
-                "url": "https://www.ryanair.com/gb/en/lp/chat",
-                "creation_time": datetime.fromisoformat("2024-10-30T15:04:41Z"),
-                "cf_webcompat_priority": "---",
-                "cf_webcompat_score": "---",
-            },
-        ]
+        ),
+        ({"assigned_to": "test@example.org"}, {"assigned_to": "test@example.org"}),
+        ({"priority": "P1"}, {"priority": 1}),
+        ({"severity": "blocker"}, {"severity": 1}),
+        ({"severity": "minor"}, {"severity": 4}),
+        ({"severity": "S1"}, {"severity": 1}),
+        ({"severity": "N/A"}, {"severity": None}),
+        ({"cf_webcompat_priority": "P1"}, {"webcompat_priority": "P1"}),
+        ({"cf_webcompat_priority": "?"}, {"webcompat_priority": "?"}),
+        ({"cf_webcompat_score": "10"}, {"webcompat_score": 10}),
+    ],
+)
+def test_from_bugzilla(input_data, test_fields):
+    bug_data = {
+        "id": 1,
+        "summary": "Example",
+        "status": "NEW",
+        "resolution": "",
+        "product": "Web Compatibility",
+        "component": "Test",
+        "see_also": [],
+        "depends_on": [],
+        "blocks": [],
+        "priority": "--",
+        "severity": "--",
+        "creation_time": "2024-03-21T16:40:27Z",
+        "assigned_to": "nobody@mozilla.org",
+        "keywords": [],
+        "url": "https://example.test",
+        "cf_user_story": "",
+        "last_resolved": None,
+        "last_change_time": "2024-03-22T16:40:27Z",
+        "whiteboard": "",
+        "creator": "nobody@mozilla.org",
+        "cf_webcompat_priority": "---",
+        "cf_webcompat_score": "---",
     }
+    bug_data.update(input_data)
+    bugzilla_bug = bugdantic.bugzilla.Bug.model_validate(bug_data)
+    bug = Bug.from_bugzilla(bugzilla_bug)
+
+    for attr, expected in test_fields.items():
+        assert getattr(bug, attr) == expected
 
 
-def test_build_etp_relations(bz):
-    unified_etp_bugs = bz.unify_etp_dependencies(
-        SAMPLE_ETP_BUGS, SAMPLE_ETP_DEPENDENCIES_BUGS
-    )
-    etp_data, _ = bz.process_relations(unified_etp_bugs, ETP_RELATION_CONFIG)
-    etp_rels = bz.build_relations(etp_data, ETP_RELATION_CONFIG)
+def test_read_write_data():
+    site_reports, etp_reports, kb_bugs, platform_bugs = group_bugs(SAMPLE_ALL_BUGS)
+    with tempfile.NamedTemporaryFile("w") as f:
+        write_bugs(
+            f.name,
+            SAMPLE_ALL_BUGS,
+            site_reports,
+            etp_reports,
+            kb_bugs,
+            platform_bugs,
+            [],
+            [],
+        )
 
-    assert etp_rels == {
-        "etp_breakage_reports": [
-            {"breakage_bug": 1910548, "etp_meta_bug": 1101005},
-            {"breakage_bug": 1910548, "etp_meta_bug": 1875061},
-            {"breakage_bug": 1921943, "etp_meta_bug": 1101005},
-            {"breakage_bug": 1921943, "etp_meta_bug": 1797458},
-            {"breakage_bug": 1928102, "etp_meta_bug": 1101005},
-        ]
-    }
+        assert load_bugs(None, f.name) == SAMPLE_ALL_BUGS
