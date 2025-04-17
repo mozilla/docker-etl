@@ -10,6 +10,7 @@ from google.cloud import bigquery
 
 from .base import EtlJob
 from .bugzilla import parse_string_to_json
+from .bqhelpers import ensure_table
 
 FIXED_STATES = {"RESOLVED", "VERIFIED"}
 
@@ -60,23 +61,6 @@ class ScoreChange:
     change_time: datetime
     score_delta: float
     reasons: list[str]
-
-
-def ensure_table(client: bigquery.Client, bq_dataset_id: str, recreate: bool) -> None:
-    table_id = f"{client.project}.{bq_dataset_id}.webcompat_topline_metric_changes"
-    table = bigquery.Table(
-        table_id,
-        schema=[
-            bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
-            bigquery.SchemaField("who", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("change_time", "TIMESTAMP", mode="REQUIRED"),
-            bigquery.SchemaField("score_delta", "FLOAT", mode="REQUIRED"),
-            bigquery.SchemaField("reasons", "STRING", mode="REPEATED"),
-        ],
-    )
-    if recreate:
-        client.delete_table(table, not_found_ok=True)
-    client.create_table(table, exists_ok=True)
 
 
 def get_last_recorded_date(client: bigquery.Client, bq_dataset_id: str) -> datetime:
@@ -537,7 +521,16 @@ def insert_score_changes(
 def update_metric_changes(
     client: bigquery.Client, bq_dataset_id: str, write: bool, recreate: bool
 ) -> None:
-    ensure_table(client, bq_dataset_id, recreate)
+    schema = [
+        bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
+        bigquery.SchemaField("who", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("change_time", "TIMESTAMP", mode="REQUIRED"),
+        bigquery.SchemaField("score_delta", "FLOAT", mode="REQUIRED"),
+        bigquery.SchemaField("reasons", "STRING", mode="REPEATED"),
+    ]
+    ensure_table(
+        client, bq_dataset_id, "webcompat_topline_metric_changes", schema, recreate
+    )
     last_recorded_date = get_last_recorded_date(client, bq_dataset_id)
     changes_by_bug = get_bug_changes(client, bq_dataset_id, last_recorded_date)
     current_bug_data = get_bugs(
