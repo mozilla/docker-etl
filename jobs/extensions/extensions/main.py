@@ -15,6 +15,13 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.webdriver import WebDriver as ChromiumDriver
 
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+
 # Main website for Chrome Webstore
 CHROME_WEBSTORE_URL = "https://chromewebstore.google.com"
 
@@ -51,20 +58,17 @@ MAX_CLICKS = 35  # Max load more button clicks
 
 
 def get_unique_links_from_webpage(url, base_url, links_to_ignore, links_to_not_process):
-    """Get unique links from the web page"""
     options = Options()
-    options.binary_location = "/usr/bin/chromium"
+    options.binary_location = "/usr/bin/google-chrome"
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
 
-    driver = ChromiumDriver(service=Service("/usr/bin/chromedriver"), options=options)
-
+    driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=options)
     driver.get(url)
 
     time.sleep(3)  # Wait for JS to load content
-
     soup = BeautifulSoup(driver.page_source, "html.parser")
     driver.quit()
 
@@ -249,31 +253,25 @@ def check_if_load_more_button_present(webpage_soup):
 def get_links_from_non_detail_page(
     url, list_of_links_already_processed, max_clicks, links_to_ignore_list
 ):
-    # Initialize a driver
     options = Options()
-    options.binary_location = "/usr/bin/chromium"
+    options.binary_location = "/usr/bin/google-chrome"
     options.add_argument("--headless=new")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
 
-    driver = ChromiumDriver(service=Service("/usr/bin/chromedriver"), options=options)
-
+    driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=options)
     wait = WebDriverWait(driver, 10)
-    # Get the URL and wait 2 seconds
+
     driver.get(url)
     time.sleep(2)
-    # Initialize click count to 0 clicks
     click_count = 0
 
-    # Click "Load more" until it's gone or max clicks reached
     while click_count < max_clicks:
         try:
             load_more_button = wait.until(
-                EC.element_to_be_clickable(
-                    (By.XPATH, '//button//span[contains(text(), "Load more")]')
-                )
+                EC.element_to_be_clickable((By.XPATH, '//button//span[contains(text(), "Load more")]'))
             )
             driver.execute_script("arguments[0].click();", load_more_button)
             print(f"[{click_count+1}] Clicked 'Load more'")
@@ -283,7 +281,6 @@ def get_links_from_non_detail_page(
             print("No more 'Load more' button or timeout.")
             break
 
-    # Scroll to bottom to trigger lazy loading
     last_height = driver.execute_script("return document.body.scrollHeight")
     while True:
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
@@ -293,10 +290,7 @@ def get_links_from_non_detail_page(
             break
         last_height = new_height
 
-    # Get set of links already processed
     processed_set = set(list_of_links_already_processed)
-
-    # Get all extension card links (those that have '/detail/' in href)
     all_links = driver.find_elements(By.TAG_NAME, "a")
     extension_links = [
         link.get_attribute("href")
@@ -309,13 +303,9 @@ def get_links_from_non_detail_page(
     all_href_links = [
         link.get_attribute("href") for link in all_links if link.get_attribute("href")
     ]
-
     unique_all_links = set(all_href_links)
     unique_non_extension_links = list(
-        unique_all_links
-        - set(unique_extension_links)
-        - processed_set
-        - set(links_to_ignore_list)
+        unique_all_links - set(unique_extension_links) - processed_set - set(links_to_ignore_list)
     )
 
     driver.quit()

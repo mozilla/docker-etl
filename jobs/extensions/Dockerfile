@@ -16,15 +16,13 @@ WORKDIR ${HOME}
 
 RUN pip install --upgrade pip
 
-# Install system dependencies + Chromium
+# Install system dependencies and Google Chrome
 RUN apt-get update && apt-get install -y \
     wget \
     unzip \
     curl \
     gnupg \
     ca-certificates \
-    chromium \
-    chromium-driver \
     fonts-liberation \
     libglib2.0-0 \
     libgconf-2-4 \
@@ -40,7 +38,19 @@ RUN apt-get update && apt-get install -y \
     libxtst6 \
     xdg-utils \
     --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/*
+    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - && \
+    echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
+    apt-get update && \
+    apt-get install -y google-chrome-stable
+
+# Install ChromeDriver that matches the installed Chrome version
+RUN CHROME_VERSION=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+') && \
+    CHROMEDRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROME_VERSION") && \
+    wget -O /tmp/chromedriver.zip "https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip" && \
+    unzip /tmp/chromedriver.zip -d /usr/bin && \
+    rm /tmp/chromedriver.zip && \
+    chmod +x /usr/bin/chromedriver && \
+    google-chrome --version && chromedriver --version
 
 # Install Python packages
 COPY requirements.txt .
