@@ -386,6 +386,8 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
                 number_of_users = match.group(0).split(" ")[0].replace(",", "")
         if "Non-trader" == div:
             trader_status = "Non-trader"
+        if "Trader" == div.strip():
+            trader_status = "Trader"
 
     # Loop through spans
     for span in spans_from_current_link_soup:
