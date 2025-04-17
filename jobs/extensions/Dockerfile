@@ -14,9 +14,6 @@ RUN groupadd --gid ${USER_ID} ${GROUP_ID} && \
 
 WORKDIR ${HOME}
 
-RUN pip install --upgrade pip
-
-# Install system dependencies and Google Chrome
 RUN apt-get update && apt-get install -y \
     wget \
     unzip \
@@ -38,20 +35,12 @@ RUN apt-get update && apt-get install -y \
     libxtst6 \
     xdg-utils \
     --no-install-recommends && \
-    mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg && \
-    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
-    apt-get update && \
-    apt-get install -y google-chrome-stable
+    rm -rf /var/lib/apt/lists/*
 
-# Install ChromeDriver that matches the installed Chrome version
-RUN CHROME_VERSION=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+') && \
-    CHROMEDRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROME_VERSION") && \
-    wget -O /tmp/chromedriver.zip "https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip" && \
-    unzip /tmp/chromedriver.zip -d /usr/bin && \
-    rm /tmp/chromedriver.zip && \
-    chmod +x /usr/bin/chromedriver && \
-    google-chrome --version && chromedriver --version
+# Download and install Google Chrome
+RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
+    dpkg -i google-chrome-stable_current_amd64.deb || apt-get -f install -y && \
+    rm google-chrome-stable_current_amd64.deb
 
 # Install Python packages
 COPY requirements.txt .
