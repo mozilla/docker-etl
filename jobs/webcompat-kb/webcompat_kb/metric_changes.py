@@ -249,7 +249,9 @@ def bugs_historic_states(
                                 for prev_keyword in prev.keywords:
                                     if prev_keyword.lower() == keyword.lower():
                                         prev.keywords.remove(prev_keyword)
-                                        logging.warning(f"Didn't find keyword {keyword} using {prev_keyword}")
+                                        logging.warning(
+                                            f"Didn't find keyword {keyword} using {prev_keyword}"
+                                        )
                                         break
                                 else:
                                     raise
@@ -355,10 +357,8 @@ FROM `{tmp_name}`
         client.delete_table(tmp_name)
 
     for bug_id, computed_scores in rv.items():
-        current_score = current_scores.get(bug_id, 0)
-        if (
-            computed_scores[0] != current_score and states[0].status not in FIXED_STATES
-        ) or bug_id == 1953996:
+        current_score = float(current_scores.get(bug_id, 0))
+        if computed_scores[0] != current_score and states[0].status not in FIXED_STATES:
             history_logging = "\n".join(
                 f"    {score}: {state}"
                 for score, state in zip(computed_scores, historic_states[bug_id])
@@ -505,12 +505,11 @@ def insert_score_changes(
             )
 
     if write:
-        job = client.load_table_from_json(
+        client.load_table_from_json(
             rows,
             changes_table,
             job_config=job_config,
-        )
-        job.result()
+        ).result()
         logging.info(f"Wrote {len(rows)} records into {changes_table}")
     else:
         logging.info("Skipping writes, would have written:")
@@ -532,6 +531,7 @@ def update_metric_changes(
         client, bq_dataset_id, "webcompat_topline_metric_changes", schema, recreate
     )
     last_recorded_date = get_last_recorded_date(client, bq_dataset_id)
+    logging.info(f"Last change time {last_recorded_date}")
     changes_by_bug = get_bug_changes(client, bq_dataset_id, last_recorded_date)
     current_bug_data = get_bugs(
         client, bq_dataset_id, last_recorded_date, iter(changes_by_bug.keys())
