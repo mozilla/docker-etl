@@ -45,7 +45,7 @@ TARGET_TABLE = "moz-fx-data-shared-prod.external_derived.chrome_extensions_v1"
 GCS_BUCKET = "gs://moz-fx-data-prod-external-data/"
 RESULTS_FPATH = "CHROME_EXTENSIONS/chrome_extensions_%s.csv"
 TIMEOUT_IN_SECONDS = 10
-MAX_CLICKS = 35  # Max load more button clicks
+MAX_CLICKS = 40  # Max load more button clicks
 
 # --------------DEFINE REUSABLE FUNCTIONS------------------------
 
@@ -222,6 +222,7 @@ def initialize_results_df():
             "trader_status",
             "featured",
             "verified_domain",
+            "manifest_json",
         ]
     )
     return results_df
@@ -341,6 +342,7 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
     extension_updated_date = None
     trader_status = None
     featured = False
+    manifest_json = None
 
     # Get the soup from the current link
     current_link_soup = get_soup_from_webpage(
@@ -452,6 +454,8 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
     category = get_category_from_soup(current_link_soup)
     verified_domain = get_verified_domain(current_link_soup)
 
+    # NOTE - Still need to add logic for manifest json
+
     # Put the results into a dataframe
     curr_link_results_df = pd.DataFrame(
         {
@@ -473,6 +477,7 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
             "trader_status": [trader_status],
             "featured": [featured],
             "verified_domain": [verified_domain],
+            "manifest_json": [manifest_json],
         }
     )
 
@@ -700,6 +705,11 @@ WHERE submission_date = '{logical_dag_date_string}'"""
                 {
                     "name": "verified_domain",
                     "type": "STRING",
+                    "mode": "NULLABLE",
+                },
+                {
+                    "name": "manifest_json",
+                    "type": "JSON",
                     "mode": "NULLABLE",
                 },
             ],
