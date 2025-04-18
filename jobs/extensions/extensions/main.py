@@ -14,6 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.webdriver import WebDriver as ChromiumDriver
+from selenium import webdriver
 
 # Main website for Chrome Webstore
 CHROME_WEBSTORE_URL = "https://chromewebstore.google.com"
@@ -46,21 +47,45 @@ GCS_BUCKET = "gs://moz-fx-data-prod-external-data/"
 RESULTS_FPATH = "CHROME_EXTENSIONS/chrome_extensions_%s.csv"
 TIMEOUT_IN_SECONDS = 10
 MAX_CLICKS = 40  # Max load more button clicks
+DRIVER_TYP = "Chromium"
+BINARY_LOC = "/usr/bin/chromium"
+DRIVER_PATH = "/usr/bin/chromedriver"
 
 # --------------DEFINE REUSABLE FUNCTIONS------------------------
 
 
-def get_unique_links_from_webpage(url, base_url, links_to_ignore, links_to_not_process):
-    """Get unique links from the web page"""
-    options = Options()
-    options.binary_location = "/usr/bin/chromium"
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--window-size=1920,1080")
+def initialize_driver(driver_type, binary_location, driver_path):
+    """Inputs: Driver type (Chrome or Chromium), binary location, driver path
+    Outputs: A webdriver
+    """
+    if driver_type == "Chromium":
+        options = Options()
+        options.binary_location = binary_location
+        options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--window-size=1920,1080")
+        driver = ChromiumDriver(service=Service(driver_path), options=options)
 
-    driver = ChromiumDriver(service=Service("/usr/bin/chromedriver"), options=options)
+    elif driver_type == "Chrome":
+        options = Options()
+        options.binary_location = binary_location
+        options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--window-size=1920,1080")
+        driver = webdriver.Chrome(service=Service(driver_path), options=options)
 
+    else:
+        raise ValueError("DRIVER_TYPE needs to be either Chrome or Chromium")
+
+    return driver
+
+
+def get_unique_links_from_webpage(
+    url, base_url, links_to_ignore, links_to_not_process, driver
+):
+    """Output: List of links found on webpage"""
     driver.get(url)
 
     time.sleep(3)  # Wait for JS to load content
@@ -248,23 +273,15 @@ def check_if_load_more_button_present(webpage_soup):
 
 
 def get_links_from_non_detail_page(
-    url, list_of_links_already_processed, max_clicks, links_to_ignore_list
+    url, list_of_links_already_processed, max_clicks, links_to_ignore_list, driver
 ):
-    # Initialize a driver
-    options = Options()
-    options.binary_location = "/usr/bin/chromium"
-    options.add_argument("--headless=new")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--window-size=1920,1080")
-
-    driver = ChromiumDriver(service=Service("/usr/bin/chromedriver"), options=options)
-
+    # Wait for the driver to load the page
     wait = WebDriverWait(driver, 10)
+
     # Get the URL and wait 2 seconds
     driver.get(url)
     time.sleep(2)
+
     # Initialize click count to 0 clicks
     click_count = 0
 
@@ -497,12 +514,16 @@ def main():
     links_already_processed = set()
 
     # Get all unique links found on the CHROME_WEBSTORE_URL (excluding links to ignore)
+    driver = initialize_driver(DRIVER_TYP, BINARY_LOC, DRIVER_PATH)
+
     unique_links_on_chrome_webstore_page = get_unique_links_from_webpage(
         url=CHROME_WEBSTORE_URL,
         base_url=CHROME_WEBSTORE_URL,
         links_to_ignore=LIST_OF_LINKS_TO_IGNORE,
         links_to_not_process=links_already_processed,
+        driver=driver,
     )
+
     # Add on the additional link to grab
     unique_links_on_chrome_webstore_page.append(ADDITIONAL_LINK_TO_GRAB)
 
@@ -567,12 +588,16 @@ def main():
             print("Link is not a detail page.")
             # Get the HTML from the non detail page after clicking
             # Load more button, plus update links already processed
+            # Initialize a driver
+            driver = initialize_driver(DRIVER_TYP, BINARY_LOC, DRIVER_PATH)
+
             print("Getting links from the non detail page...")
             detail_links_found, non_detail_links_found = get_links_from_non_detail_page(
                 current_link,
                 links_already_processed,
                 MAX_CLICKS,
                 LIST_OF_LINKS_TO_IGNORE,
+                driver,
             )
 
             # Print # of detail and non detail links found
@@ -607,6 +632,8 @@ def main():
                     print("Already processed, not processing again")
                 else:
                     print("Processing non_detail_link: ", non_detail_link)
+                    # Initialize driver below
+                    driver = initialize_driver(DRIVER_TYP, BINARY_LOC, DRIVER_PATH)
                     # Try again to get the detail links
                     (
                         next_level_detail_links_found,
@@ -616,6 +643,7 @@ def main():
                         links_already_processed,
                         MAX_CLICKS,
                         LIST_OF_LINKS_TO_IGNORE,
+                        driver,
                     )
 
                     for next_level_detail_link_found in next_level_detail_links_found:
