@@ -47,9 +47,9 @@ GCS_BUCKET = "gs://moz-fx-data-prod-external-data/"
 RESULTS_FPATH = "CHROME_EXTENSIONS/chrome_extensions_%s.csv"
 TIMEOUT_IN_SECONDS = 10
 MAX_CLICKS = 40  # Max load more button clicks
-DRIVER_TYP = "Chromium"
-BINARY_LOC = "/usr/bin/chromium"
-DRIVER_PATH = "/usr/bin/chromedriver"
+DRIVER_TYP = "Chrome"  # "Chromium"
+BINARY_LOC = "/usr/bin/google-chrome-stable"  # "/usr/bin/chromium"
+DRIVER_PATH = "/usr/local/bin/chromedriver" ""  # "/usr/bin/chromedriver"
 
 # --------------DEFINE REUSABLE FUNCTIONS------------------------
 
