@@ -54,6 +54,24 @@ DRIVER_PATH = "/usr/local/bin/chromedriver" ""  # "/usr/bin/chromedriver"
 # --------------DEFINE REUSABLE FUNCTIONS------------------------
 
 
+def get_manifest_json(url, driver):
+    """Inputs: URL for a detail page, driver
+    Outputs: Manifest JSON if found, else None"""
+    manifest_json = None
+    driver.get(url)
+    # ADD BELOW LOGIC TO GET MANIFEST
+
+    # Click the add to chrome button
+
+    # Find where the extension location is installed in the container
+
+    # Save the JSON
+
+    # ADD ABOVE LOGIC TO GET MANIFEST
+    driver.quit()
+    return manifest_json
+
+
 def initialize_driver(driver_type, binary_location, driver_path):
     """Inputs: Driver type (Chrome or Chromium), binary location, driver path
     Outputs: A webdriver
@@ -359,7 +377,7 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
     extension_updated_date = None
     trader_status = None
     featured = False
-    manifest_json = None
+    # manifest_json = None
 
     # Get the soup from the current link
     current_link_soup = get_soup_from_webpage(
@@ -471,7 +489,8 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
     category = get_category_from_soup(current_link_soup)
     verified_domain = get_verified_domain(current_link_soup)
 
-    # NOTE - Still need to add logic for manifest json
+    driver = initialize_driver(DRIVER_TYP, BINARY_LOC, DRIVER_PATH)
+    manifest_json = get_manifest_json(url, driver)
 
     # Put the results into a dataframe
     curr_link_results_df = pd.DataFrame(
