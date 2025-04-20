@@ -80,6 +80,9 @@ def get_manifest_json(url, driver):
     driver.execute_script("arguments[0].click();", add_to_chrome_button)
     print("Clicked 'Add to Chrome'")
 
+    # Give time for it to install the extension
+    time.sleep(15)
+
     # Find where the extension location is installed in the container
 
     # Save the JSON
@@ -109,6 +112,7 @@ def initialize_driver(driver_type, binary_location, driver_path):
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--window-size=1920,1080")
+        options.add_argument("--user-data-dir=/tmp/chrome-profile")
         driver = webdriver.Chrome(service=Service(driver_path), options=options)
 
     else:
