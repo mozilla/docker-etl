@@ -54,6 +54,16 @@ DRIVER_PATH = "/usr/local/bin/chromedriver" ""  # "/usr/bin/chromedriver"
 # --------------DEFINE REUSABLE FUNCTIONS------------------------
 
 
+def check_if_add_to_chrome_button_present(webpage_soup):
+    """Input: Webpage Soup
+    Output: Boolean indicating if load more button is on the page"""
+    buttons = webpage_soup.find_all("button")
+    for button in buttons:
+        if "Add to Chrome" in button.get_text(strip=True):
+            return True
+    return False
+
+
 def get_manifest_json(url, driver):
     """Inputs: URL for a detail page, driver
     Outputs: Manifest JSON if found, else None"""
@@ -377,7 +387,6 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
     extension_updated_date = None
     trader_status = None
     featured = False
-    # manifest_json = None
 
     # Get the soup from the current link
     current_link_soup = get_soup_from_webpage(
@@ -489,8 +498,16 @@ def pull_data_from_detail_page(url, timeout_limit, current_date):
     category = get_category_from_soup(current_link_soup)
     verified_domain = get_verified_domain(current_link_soup)
 
-    driver = initialize_driver(DRIVER_TYP, BINARY_LOC, DRIVER_PATH)
-    manifest_json = get_manifest_json(url, driver)
+    add_to_chrome_button_present = check_if_add_to_chrome_button_present(
+        current_link_soup
+    )
+    print("add_to_chrome_button_present")
+    print(add_to_chrome_button_present)
+    if add_to_chrome_button_present:
+        driver = initialize_driver(DRIVER_TYP, BINARY_LOC, DRIVER_PATH)
+        manifest_json = get_manifest_json(url, driver)
+    else:
+        manifest_json = None
 
     # Put the results into a dataframe
     curr_link_results_df = pd.DataFrame(
