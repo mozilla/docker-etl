@@ -69,9 +69,16 @@ def get_manifest_json(url, driver):
     Outputs: Manifest JSON if found, else None"""
     manifest_json = None
     driver.get(url)
-    # ADD BELOW LOGIC TO GET MANIFEST
 
     # Click the add to chrome button
+    wait = WebDriverWait(driver, 5)
+    add_to_chrome_button = wait.until(
+        EC.element_to_be_clickable(
+            (By.XPATH, '//button//span[contains(text(), "Add to Chrome")]')
+        )
+    )
+    driver.execute_script("arguments[0].click();", add_to_chrome_button)
+    print("Clicked 'Add to Chrome'")
 
     # Find where the extension location is installed in the container
 
