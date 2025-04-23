@@ -258,7 +258,17 @@ def bugs_historic_states(
                 if field_change.field_name == "keywords":
                     for keyword in field_change.added.split(", "):
                         if keyword:
-                            prev.keywords.remove(keyword)
+                            try:
+                                prev.keywords.remove(keyword)
+                            except ValueError:
+                                # Occasionally keywords change case
+                                for prev_keyword in prev.keywords:
+                                    if prev_keyword.lower() == keyword.lower():
+                                        prev.keywords.remove(prev_keyword)
+                                        logging.warning(f"Didn't find keyword {keyword} using {prev_keyword}")
+                                        break
+                                else:
+                                    raise
                     for keyword in field_change.removed.split(", "):
                         if keyword:
                             prev.keywords.append(keyword)
