@@ -3,8 +3,7 @@ import re
 from abc import ABC, abstractmethod
 from typing import Any, MutableMapping
 
-import google.auth
-from google.cloud import bigquery
+from .bqhelpers import BigQuery
 
 # In the following we assume ascii-only characters for now. That's perhaps wrong,
 # but it covers everything we're currently using.
@@ -27,26 +26,15 @@ class EtlJob(ABC):
         ALL_JOBS[cls.name] = cls
 
     @classmethod
-    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        pass
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None: ...
 
     def set_default_args(
         self, parser: argparse.ArgumentParser, args: argparse.Namespace
-    ) -> None:
-        pass
+    ) -> None: ...
 
     @abstractmethod
-    def main(self, client: bigquery.Client, args: argparse.Namespace) -> None:
+    def default_dataset(self, args: argparse.Namespace) -> str: ...
+
+    @abstractmethod
+    def main(self, bq_client: BigQuery, args: argparse.Namespace) -> None:
         pass
-
-
-def get_client(bq_project_id: str) -> bigquery.Client:
-    credentials, _ = google.auth.default(
-        scopes=[
-            "https://www.googleapis.com/auth/cloud-platform",
-            "https://www.googleapis.com/auth/drive",
-            "https://www.googleapis.com/auth/bigquery",
-        ]
-    )
-
-    return bigquery.Client(credentials=credentials, project=bq_project_id)

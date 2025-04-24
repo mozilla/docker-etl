@@ -12,7 +12,6 @@ from typing import (
     MutableMapping,
     Optional,
     Self,
-    cast,
 )
 from collections import defaultdict
 from collections.abc import Sequence, Mapping
@@ -23,7 +22,7 @@ import bugdantic
 from google.cloud import bigquery
 
 from .base import EtlJob
-from .bqhelpers import ensure_table
+from .bqhelpers import BigQuery
 
 
 class BugLoadError(Exception):
@@ -591,12 +590,10 @@ def fetch_all_bugs(
 class BugHistoryUpdater:
     def __init__(
         self,
-        bq_client: bigquery.Client,
-        bq_dataset_id: str,
+        bq_client: BigQuery,
         bz_client: bugdantic.Bugzilla,
     ):
         self.bq_client = bq_client
-        self.bq_dataset_id = bq_dataset_id
         self.bz_client = bz_client
 
     def run(self, all_bugs: BugsById, recreate: bool) -> HistoryByBug:
@@ -693,11 +690,8 @@ class BugHistoryUpdater:
         return self.unflatten_history(item for item in new_history if item in diff)
 
     def bigquery_fetch_imported_ids(self) -> set[int]:
-        query = f"""
-                SELECT number
-                FROM `{self.bq_dataset_id}.bugzilla_bugs`
-            """
-        res = self.bq_client.query(query).result()
+        query = """SELECT number FROM bugzilla_bugs"""
+        res = self.bq_client.query(query)
         rows = list(res)
 
         imported_ids = {bug["number"] for bug in rows}
@@ -705,12 +699,12 @@ class BugHistoryUpdater:
         return imported_ids
 
     def bigquery_last_import(self) -> Optional[datetime]:
-        query = f"""
+        query = """
                 SELECT MAX(run_at) AS last_run_at
-                FROM `{self.bq_dataset_id}.import_runs`
+                FROM import_runs
                 WHERE is_history_fetch_completed = TRUE
             """
-        res = self.bq_client.query(query).result()
+        res = self.bq_client.query(query)
         row = list(res)[0]
         return row["last_run_at"]
 
@@ -803,10 +797,10 @@ class BugHistoryUpdater:
         formatted_numbers = ", ".join(str(bug_id) for bug_id in bug_ids)
         query = f"""
                     SELECT *
-                    FROM `{self.bq_dataset_id}.bugs_history`
+                    FROM bugs_history
                     WHERE number IN ({formatted_numbers})
                 """
-        result = self.bq_client.query(query).result()
+        result = self.bq_client.query(query)
         for row in result:
             rv[row["number"]].append(
                 BugHistoryEntry(
@@ -953,39 +947,18 @@ class BugHistoryUpdater:
 class BigQueryImporter:
     """Class to handle all writes to BigQuery"""
 
-    def __init__(self, client: bigquery.Client, bq_dataset_id: str, write: bool):
-        self.client = client
-        self.bq_dataset_id = bq_dataset_id
-        self.write = write
+    def __init__(self, bq_client: BigQuery):
+        self.client = bq_client
 
     def write_table(
         self,
-        table: str,
+        table_name: str,
         schema: list[bigquery.SchemaField],
         rows: Sequence[Mapping[str, Any]],
         overwrite: bool,
     ) -> None:
-        ensure_table(self.client, self.bq_dataset_id, table, schema, False)
-        table = f"{self.bq_dataset_id}.{table}"
-
-        job_config = bigquery.LoadJobConfig(
-            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-            schema=schema,
-            write_disposition="WRITE_APPEND" if not overwrite else "WRITE_TRUNCATE",
-        )
-
-        if self.write:
-            job = self.client.load_table_from_json(
-                cast(Iterable[dict[str, Any]], rows),
-                table,
-                job_config=job_config,
-            )
-            job.result()
-            logging.info(f"Wrote {len(rows)} records into {table}")
-        else:
-            logging.info(f"Skipping writes, would have written {len(rows)} to {table}")
-            for row in rows:
-                logging.debug(f"  {row}")
+        table = self.client.ensure_table(table_name, schema, False)
+        self.client.write_table(table, schema, rows, overwrite)
 
     def convert_bug(self, bug: Bug) -> Mapping[str, Any]:
         return {
@@ -1132,9 +1105,6 @@ class BigQueryImporter:
         history_count: Optional[int],
         last_change_time: datetime,
     ) -> None:
-        if not self.write:
-            return
-
         elapsed_time = time.monotonic() - start_time
         elapsed_time_delta = timedelta(seconds=elapsed_time)
         run_at = last_change_time - elapsed_time_delta
@@ -1150,12 +1120,8 @@ class BigQueryImporter:
                 "is_history_fetch_completed": history_count is not None,
             },
         ]
-        bugbug_runs_table = f"{self.bq_dataset_id}.import_runs"
-        errors = self.client.insert_rows_json(bugbug_runs_table, rows_to_insert)
-        if errors:
-            logging.error(errors)
-        else:
-            logging.info("Last import run recorded")
+        bugbug_runs_table = "import_runs"
+        self.client.insert_rows(bugbug_runs_table, rows_to_insert)
 
 
 def get_kb_entries(all_bugs: BugsById, site_report_blockers: set[BugId]) -> set[BugId]:
@@ -1254,7 +1220,7 @@ def load_bugs(
 
 
 def run(
-    client: bigquery.Client,
+    bq_client: BigQuery,
     bq_dataset_id: str,
     bz_client: bugdantic.Bugzilla,
     write: bool,
@@ -1269,7 +1235,7 @@ def run(
 
     history_changes = None
     if include_history:
-        history_updater = BugHistoryUpdater(client, bq_dataset_id, bz_client)
+        history_updater = BugHistoryUpdater(bq_client, bz_client)
         try:
             history_changes = history_updater.run(all_bugs, recreate_history)
         except Exception as e:
@@ -1317,7 +1283,7 @@ def run(
     last_change_time_max = max(bug.last_change_time for bug in all_bugs.values())
 
     # Finally do the actual import
-    importer = BigQueryImporter(client, bq_dataset_id, write)
+    importer = BigQueryImporter(bq_client)
     importer.insert_bugs(all_bugs)
     if history_changes is not None:
         importer.insert_history_changes(history_changes, recreate=recreate_history)
@@ -1374,7 +1340,10 @@ class BugzillaJob(EtlJob):
             help="Path to JSON file to load bug data from",
         )
 
-    def main(self, client: bigquery.Client, args: argparse.Namespace) -> None:
+    def default_dataset(self, args: argparse.Namespace) -> str:
+        return args.bq_kb_dataset
+
+    def main(self, bq_client: BigQuery, args: argparse.Namespace) -> None:
         bz_config = bugdantic.BugzillaConfig(
             "https://bugzilla.mozilla.org",
             args.bugzilla_api_key,
@@ -1383,7 +1352,7 @@ class BugzillaJob(EtlJob):
         bz_client = bugdantic.Bugzilla(bz_config)
 
         run(
-            client,
+            bq_client,
             args.bq_kb_dataset,
             bz_client,
             args.write,

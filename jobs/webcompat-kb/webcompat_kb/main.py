@@ -4,7 +4,8 @@ import sys
 
 # These imports are required to populate ALL_JOBS
 from . import bugzilla, crux, metric, metric_changes  # noqa: F401
-from .base import ALL_JOBS, VALID_PROJECT_ID, VALID_DATASET_ID, get_client
+from .base import ALL_JOBS, VALID_PROJECT_ID, VALID_DATASET_ID
+from .bqhelpers import get_client, BigQuery
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -99,7 +100,9 @@ def main() -> None:
 
         for job_name, job in jobs.items():
             logging.info(f"Running job {job_name}")
-            job.main(client, args)
+            bq_client = BigQuery(client, job.default_dataset(args), args.write)
+
+            job.main(bq_client, args)
     except Exception:
         if args.pdb:
             import pdb
