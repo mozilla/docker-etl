@@ -44,6 +44,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "jobs",
         nargs="*",
+        choices=list(ALL_JOBS.keys()),
         help="Jobs to run (defaults to all)",
     )
 
