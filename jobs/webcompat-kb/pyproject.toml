@@ -18,6 +18,8 @@ classifiers = [
 dependencies = [
   "bugdantic==0.2.5",
   "google-cloud-bigquery==3.24.0",
+  "httpx[http2]>=0.28.1",
+  "pydantic==2.11.3",
   "web-features==0.1.0"
 ]
 
