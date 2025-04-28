@@ -1,7 +1,6 @@
 import argparse
 import logging
 import re
-import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -323,7 +322,6 @@ def compute_historic_scores(
 
     rv: dict[int, list[float]] = {}
 
-    tmp_name = f"tmp_{uuid.uuid4()}"
     schema = [
         bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
         bigquery.SchemaField("index", "INTEGER", mode="REQUIRED"),
@@ -355,29 +353,24 @@ def compute_historic_scores(
                     }
                 )
 
-    score_query = f"""
+    with client.temporary_table(schema, rows) as tmp_table:
+        score_query = f"""
 DECLARE crux_yyyymm INT64 DEFAULT 202409;
 
 SELECT number,
        index,
        url, keywords, user_story,
        `moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK`(keywords, user_story) * `moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFER`(url, crux_yyyymm) as score
-FROM `{tmp_name}`
+FROM `{tmp_table.name}`
 """
-
-    tmp_table = client.ensure_table(tmp_name, schema, True)
-    client.write_table(tmp_table, schema, rows, True)
-    bugs_with_webcompat_states = set()
-    try:
-        scores = client.query(score_query)
+        bugs_with_webcompat_states = set()
+        scores = tmp_table.query(score_query)
         for row in scores:
             bugs_with_webcompat_states.add(row.number)
             logging.debug(
                 f"Bug {row.number}: {row.url} {row.keywords}, {repr(row.user_story)} SCORE: {row.score}"
             )
             rv[row.number][row.index] = row.score
-    finally:
-        client.delete_table(tmp_table)
 
     for bug_id, computed_scores in rv.items():
         current_score = float(current_scores.get(bug_id, 0))
