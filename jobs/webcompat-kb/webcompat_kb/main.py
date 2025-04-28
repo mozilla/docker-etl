@@ -85,7 +85,7 @@ def main() -> None:
 
     parser = get_parser()
     args = parser.parse_args()
-
+    failed = []
     try:
         logging.getLogger().setLevel(
             logging.getLevelNamesMapping()[args.log_level.upper()]
@@ -103,7 +103,13 @@ def main() -> None:
             logging.info(f"Running job {job_name}")
             bq_client = BigQuery(client, job.default_dataset(args), args.write)
 
-            job.main(bq_client, args)
+            try:
+                job.main(bq_client, args)
+            except Exception as e:
+                if args.pdb:
+                    raise
+                failed.append(job_name)
+                logging.error(e)
     except Exception:
         if args.pdb:
             import pdb
@@ -113,6 +119,10 @@ def main() -> None:
             pdb.post_mortem()
         else:
             raise
+
+    if failed:
+        logging.error(f"{len(failed)} jobs failed: {', '.join(failed)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
