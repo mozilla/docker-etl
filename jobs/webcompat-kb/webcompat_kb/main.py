@@ -3,7 +3,15 @@ import logging
 import sys
 
 # These imports are required to populate ALL_JOBS
-from . import bugzilla, crux, metric, metric_changes, web_features, metric_rescore  # noqa: F401
+from . import (
+    bugzilla,  # noqa: F401
+    crux,  # noqa: F401
+    metric,  # noqa: F401
+    metric_changes,  # noqa: F401
+    web_features,  # noqa: F401
+    standards_positions,  # noqa: F401
+    metric_rescore,  # noqa: F401
+)
 from .base import ALL_JOBS, VALID_PROJECT_ID, VALID_DATASET_ID
 from .bqhelpers import get_client, BigQuery
 
