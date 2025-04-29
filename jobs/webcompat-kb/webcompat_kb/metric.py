@@ -5,14 +5,13 @@ from datetime import date
 from google.cloud import bigquery
 
 from .base import EtlJob
+from .bqhelpers import BigQuery
 
 
-def update_metric_history(
-    client: bigquery.Client, bq_dataset_id: str, write: bool
-) -> None:
+def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> None:
     for suffix in ["global_1000", "sightline", "all"]:
-        metrics_table = f"{bq_dataset_id}.webcompat_topline_metric_{suffix}"
-        history_table = f"{bq_dataset_id}.webcompat_topline_metric_{suffix}_history"
+        metrics_table_name = f"webcompat_topline_metric_{suffix}"
+        history_table_name = f"webcompat_topline_metric_{suffix}_history"
 
         history_schema = [
             bigquery.SchemaField("recorded_date", "DATE", mode="REQUIRED"),
@@ -24,19 +23,18 @@ def update_metric_history(
             bigquery.SchemaField("total_score", "NUMERIC", mode="REQUIRED"),
         ]
 
-        client.create_table(
-            bigquery.Table(f"{client.project}.{history_table}", history_schema),
-            exists_ok=True,
+        history_table = client.ensure_table(
+            history_table_name, history_schema, recreate=False
         )
 
         query = f"""
                 SELECT recorded_date
-                FROM `{history_table}`
+                FROM `{bq_dataset_id}.{history_table_name}`
                 ORDER BY recorded_date DESC
                 LIMIT 1
             """
 
-        rows = list(client.query(query).result())
+        rows = list(client.query(query))
 
         today = date.today()
 
@@ -49,30 +47,16 @@ def update_metric_history(
 
         query = f"""
                 SELECT *
-                FROM `{metrics_table}`
+                FROM `{bq_dataset_id}.{metrics_table_name}`
             """
-        rows = list(dict(row.items()) for row in client.query(query).result())
+        rows = list(dict(row.items()) for row in client.query(query))
         for row in rows:
             row["recorded_date"] = today
 
-        if write:
-            logging.info(f"Writing to {history_table} table")
-
-            table = client.get_table(history_table)
-            errors = client.insert_rows(table, rows)
-
-            if errors:
-                logging.error(errors)
-            else:
-                logging.info("Metrics history recorded")
-                logging.info(f"Loaded {len(rows)} rows into {table}")
-        else:
-            logging.info(f"Skipping writes, would have written:\n{rows}")
+        client.insert_rows(history_table, rows)
 
 
-def update_metric_daily(
-    client: bigquery.Client, bq_dataset_id: str, write: bool
-) -> None:
+def update_metric_daily(client: BigQuery, bq_dataset_id: str, write: bool) -> None:
     history_table = f"{bq_dataset_id}.webcompat_topline_metric_daily"
     query = f"""
             SELECT date
@@ -80,7 +64,7 @@ def update_metric_daily(
             ORDER BY date DESC
             LIMIT 1"""
 
-    rows = list(client.query(query).result())
+    rows = list(client.query(query))
 
     today = date.today()
 
@@ -127,17 +111,19 @@ WHERE bugs.resolution = ""
         not_supported_score_global_1000,
         total_score_global_1000)
         ({metrics_query})"""
-        logging.debug(insert_query)
-        client.query(insert_query).result()
+        client.query(insert_query)
         logging.info("Updated daily metric")
     else:
-        result = client.query(metrics_query).result()
+        result = client.query(metrics_query)
         logging.info(f"Would insert {list(result)[0]}")
 
 
 class MetricJob(EtlJob):
     name = "metric"
 
-    def main(self, client: bigquery.Client, args: argparse.Namespace) -> None:
+    def default_dataset(self, args: argparse.Namespace) -> str:
+        return args.bq_kb_dataset
+
+    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
         update_metric_history(client, args.bq_kb_dataset, args.write)
         update_metric_daily(client, args.bq_kb_dataset, args.write)
