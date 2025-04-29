@@ -9,8 +9,8 @@ from typing import Iterator, Mapping, Optional, Sequence
 from google.cloud import bigquery
 
 from .base import EtlJob
-from .bugzilla import parse_string_to_json
 from .bqhelpers import ensure_table
+from .bugzilla import parse_user_story
 
 FIXED_STATES = {"RESOLVED", "VERIFIED"}
 
@@ -329,7 +329,7 @@ def compute_historic_scores(
                         "index": i,
                         "keywords": state.keywords,
                         "url": state.url,
-                        "user_story": parse_string_to_json(state.user_story),
+                        "user_story": parse_user_story(state.user_story),
                     }
                 )
 
