@@ -2,6 +2,7 @@ import argparse
 import logging
 import re
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterator, Mapping, Optional, Sequence
@@ -63,12 +64,16 @@ class ScoreChange:
     reasons: list[str]
 
 
+@dataclass(frozen=True)
+class ChangeKey:
+    who: str
+    change_time: datetime
+
+
 def get_last_recorded_date(client: BigQuery) -> datetime:
     query = """
-SELECT change_time
-FROM `webcompat_topline_metric_changes`
-ORDER BY change_time DESC
-LIMIT 1"""
+SELECT MAX(change_time) as change_time
+FROM webcompat_topline_metric_changes"""
     result = list(client.query(query))
 
     if result:
@@ -104,6 +109,24 @@ ORDER BY change_time ASC
         rv[bug_id].append(BugChange(row.who, row.change_time, changes))
 
     logging.info(f"Got {bug_changes.num_results} changes for {len(rv)} bugs")
+    return rv
+
+
+def get_recorded_changes(
+    client: BigQuery, bugs: Iterator[int]
+) -> Mapping[int, set[ChangeKey]]:
+    query = """
+SELECT number, who, change_time
+FROM webcompat_topline_metric_changes
+WHERE number IN UNNEST(@bugs)
+"""
+
+    rv = defaultdict(set)
+
+    query_parameters = [bigquery.ArrayQueryParameter("bugs", "INT64", list(bugs))]
+    for row in client.query(query, parameters=query_parameters):
+        rv[row.number].add(ChangeKey(row.who, row.change_time))
+
     return rv
 
 
@@ -155,6 +178,8 @@ header_pattern = re.compile(r"^@@ -(\d+),?(\d+)? \+(\d+),?(\d+)? @@$")
 
 
 def reverse_apply_diff(input_str: str, diff: str) -> str:
+    """Apply a diff in reverse to get the original string"""
+
     input_lines = input_str.splitlines(True)
     input_idx = 0
     diff_lines = diff.splitlines(True)
@@ -198,8 +223,13 @@ def bugs_historic_states(
     bug_data: Mapping[int, BugData],
     changes_by_bug: Mapping[int, list[BugChange]],
 ) -> Mapping[int, list[BugState]]:
+    """Create a per bug list of historic states of that bug
+
+    The first item in the list is the current state, subsequent items
+    are prior states, in chronological order."""
     rv: dict[int, list[BugState]] = {}
     for bug_id, bug in bug_data.items():
+        # Initial state corrsponding to what the bug looks like now
         states = [
             BugState(
                 bug.status,
@@ -222,6 +252,7 @@ def bugs_historic_states(
 
             current = states[-1]
             current.change_idx = index
+            # Duplicate the current state
             prev = BugState(
                 current.status,
                 current.product,
@@ -231,6 +262,7 @@ def bugs_historic_states(
                 current.user_story,
                 change_idx=None,
             )
+            # Apply the delta from current to previous state
             for field_change in change.changes:
                 if field_change.field_name == "keywords":
                     for keyword in field_change.added.split(", "):
@@ -275,9 +307,8 @@ def bugs_historic_states(
 
 def get_current_scores(client: BigQuery) -> Mapping[int, float]:
     rv: dict[int, float] = {}
-    query = (
-        """SELECT number, IFNULL(triage_score, 0) as score from scored_site_reports"""
-    )
+    query = "SELECT number, IFNULL(triage_score, 0) as score from scored_site_reports"
+
     for row in client.query(query):
         rv[row.number] = row.score
     return rv
@@ -288,6 +319,8 @@ def compute_historic_scores(
     historic_states: Mapping[int, list[BugState]],
     current_scores: Mapping[int, float],
 ) -> Mapping[int, list[float]]:
+    """Compute the webcompat scores corresponding to different states of bugs."""
+
     rv: dict[int, list[float]] = {}
 
     tmp_name = f"tmp_{uuid.uuid4()}"
@@ -353,7 +386,7 @@ FROM `{tmp_name}`
                 f"    {score}: {state}"
                 for score, state in zip(computed_scores, historic_states[bug_id])
             )
-            logging.warning(f"""Bug {bug_id}, current score is {current_score} but computed {computed_scores[-1]}
+            logging.warning(f"""Bug {bug_id}, current score is {current_score} but computed {computed_scores[0]}
   STATES:
 {history_logging}
 """)
@@ -394,6 +427,7 @@ def get_change_reasons(changes: Sequence[BugFieldChange]) -> list[str]:
 def compute_score_changes(
     changes_by_bug: Mapping[int, list[BugChange]],
     bug_data: Mapping[int, BugData],
+    recorded_changes: Mapping[int, set[ChangeKey]],
     historic_states: Mapping[int, list[BugState]],
     historic_scores: Mapping[int, list[float]],
     last_change_time: datetime,
@@ -407,20 +441,27 @@ def compute_score_changes(
         changes = changes_by_bug.get(bug_id)
         bug = bug_data[bug_id]
         newly_created = bug.creation_time > last_change_time
+        if newly_created:
+            assert bug_id not in recorded_changes
 
         assert len(states) == len(scores)
 
-        prev_score = None if not newly_created else 0.0
-
+        prev_score = 0.0
+        # Iterate through states and scores from oldest to newest
         for state, score in zip(reversed(states), reversed(scores)):
-            if prev_score is None:
-                score_change = ScoreChange(
-                    who=bug.creator,
-                    change_time=bug.creation_time,
-                    score_delta=score,
-                    reasons=["created"],
-                )
-            elif state.change_idx is not None:
+            if state.change_idx is None:
+                # This happens on the first iteration when the state represents
+                # the state before any of the current changes were applied.
+                if newly_created:
+                    score_change = ScoreChange(
+                        who=bug.creator,
+                        change_time=bug.creation_time,
+                        score_delta=score,
+                        reasons=["created"],
+                    )
+                else:
+                    score_change = None
+            else:
                 assert changes is not None
                 score_delta = score - prev_score
                 change = changes[state.change_idx]
@@ -436,13 +477,17 @@ def compute_score_changes(
                     score_delta=score_delta,
                     reasons=reasons,
                 )
-            else:
-                assert state == states[-1]
-                score_change = None
 
             prev_score = score
+
             if score_change is not None and score_change.score_delta != 0:
-                rv[bug_id].append(score_change)
+                change_key = ChangeKey(score_change.who, score_change.change_time)
+                if change_key in recorded_changes[bug_id]:
+                    logging.warning(
+                        f"Already recorded a change for bug {bug_id} from {change_key.who} at {change_key.change_time}, skipping"
+                    )
+                else:
+                    rv[bug_id].append(score_change)
 
         if len(rv[bug_id]) == 0 and any(
             is_webcompat_bug(state.product, state.component, state.keywords)
@@ -507,13 +552,17 @@ def update_metric_changes(client: BigQuery, recreate: bool) -> None:
     last_recorded_date = get_last_recorded_date(client)
     logging.info(f"Last change time {last_recorded_date}")
     changes_by_bug = get_bug_changes(client, last_recorded_date)
+    if not changes_by_bug:
+        return
     current_bug_data = get_bugs(client, last_recorded_date, iter(changes_by_bug.keys()))
+    recorded_changes = get_recorded_changes(client, iter(changes_by_bug.keys()))
     historic_states = bugs_historic_states(current_bug_data, changes_by_bug)
     current_scores = get_current_scores(client)
     historic_scores = compute_historic_scores(client, historic_states, current_scores)
     score_changes = compute_score_changes(
         changes_by_bug,
         current_bug_data,
+        recorded_changes,
         historic_states,
         historic_scores,
         last_recorded_date,
