@@ -2,7 +2,7 @@ import argparse
 import logging
 import sys
 
-from .base import get_client
+from .bqhelpers import BigQuery, get_client
 
 
 def get_parser_create_test_dataset() -> argparse.ArgumentParser:
@@ -58,12 +58,12 @@ def create_test_dataset() -> None:
     if res != "y":
         sys.exit(1)
 
-    client = get_client(args.bq_project_id)
+    client = BigQuery(get_client(args.bq_project_id), test_dataset_name, args.write)
 
     if not args.write:
         logging.info("Not writing; pass --write to commit changes")
     else:
-        client.create_dataset(test_dataset_name, exists_ok=True)
+        client.client.create_dataset(test_dataset_name, exists_ok=True)
 
     for table_name in tables:
         target = f"{test_dataset_name}.{table_name}"
@@ -79,6 +79,6 @@ CLONE {src}
 """
         if args.write:
             logging.info(f"Creating table {target} from {src}")
-            client.query_and_wait(query)
+            client.query(query)
         else:
             logging.info(f"Would run query:{query}")

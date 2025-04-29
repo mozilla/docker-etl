@@ -8,6 +8,7 @@ from typing import Self
 from google.cloud import bigquery
 
 from .base import EtlJob, VALID_DATASET_ID
+from .bqhelpers import BigQuery, RangePartition
 
 
 @dataclass
@@ -25,7 +26,7 @@ class Config:
         )
 
 
-def get_latest_crux_dataset(client: bigquery.Client) -> int:
+def get_latest_crux_dataset(client: BigQuery) -> int:
     query = r"""SELECT
   cast(tables.table_name as int) AS crux_date
 FROM
@@ -37,14 +38,14 @@ ORDER BY crux_date DESC
 LIMIT 1
 """
 
-    result = list(client.query(query).result())
+    result = list(client.query(query))
     if len(result) != 1:
         raise ValueError("Failed to get latest CrUX import")
 
     return result[0]["crux_date"]
 
 
-def get_imported_datasets(client: bigquery.Client, config: Config) -> int:
+def get_imported_datasets(client: BigQuery, config: Config) -> int:
     query = f"""
 SELECT
   yyyymm
@@ -54,35 +55,40 @@ ORDER BY yyyymm DESC
 LIMIT 1
 """
 
-    result = list(client.query(query).result())
+    try:
+        result = list(client.query(query))
+    except Exception:
+        return 0
+
     if not result:
         return 0
 
     return result[0]["yyyymm"]
 
 
-def update_crux_data(client: bigquery.Client, config: Config, date: int) -> None:
+def update_crux_data(client: BigQuery, config: Config, date: int) -> None:
     query = f"""
 SELECT yyyymm, origin, country_code, experimental.popularity.rank as rank from `chrome-ux-report.experimental.country` WHERE yyyymm = {date}
 UNION ALL
 SELECT yyyymm, origin, "global" as country_code, experimental.popularity.rank as rank from `chrome-ux-report.experimental.global` WHERE yyyymm = {date}
 """
-
+    schema = [
+        bigquery.SchemaField("yyyymm", "INTEGER", mode="REQUIRED"),
+        bigquery.SchemaField("origin", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("country_code", "STRING", mode="REQUIRED", max_length=8),
+        bigquery.SchemaField("rank", "INTEGER", mode="REQUIRED"),
+    ]
     if config.write:
         query = f"INSERT `{config.bq_project}.{config.bq_crux_dataset}.origin_ranks` (yyyymm, origin, country_code, rank)\n({query})"
 
-    logging.debug(query)
-    if config.write:
-        logging.info("Updating CrUX data")
-    else:
-        logging.info("Getting updated CrUX data")
-    result = client.query(query).result()
-
-    if not config.write:
-        logging.info(f"CrUX data has {result.total_rows} rows")
+    logging.info("Updating CrUX data")
+    client.ensure_table(
+        "origin_ranks", schema, partition=RangePartition("yyyymm", 201701, 202501)
+    )
+    client.query(query)
 
 
-def update_sightline_data(client: bigquery.Client, config: Config, date: int) -> None:
+def update_sightline_data(client: BigQuery, config: Config, date: int) -> None:
     if config.write:
         insert_str = f"INSERT `{config.bq_project}.{config.bq_crux_dataset}.sightline_top_1000` (yyyymm, host)"
     else:
@@ -106,18 +112,19 @@ WHERE
   crux_ranks.rank = 1000
   AND crux_ranks.yyyymm = {date}"""
 
-    logging.debug(query)
-    if config.write:
-        logging.info("Updating sightline data")
-    else:
-        logging.info("Getting updated sightline data")
-    result = client.query(query).result()
+    schema = [
+        bigquery.SchemaField("yyyymm", "INTEGER", mode="REQUIRED"),
+        bigquery.SchemaField("host", "STRING"),
+    ]
 
-    if not config.write:
-        logging.info(f"Sightline data has {result.total_rows} rows")
+    logging.info("Updating sightline data")
+    client.ensure_table(
+        "sightline_top_1000", schema, partition=RangePartition("yyyymm", 201701, 202501)
+    )
+    client.query(query)
 
 
-def update_min_rank_data(client: bigquery.Client, config: Config, date: int) -> None:
+def update_min_rank_data(client: BigQuery, config: Config, date: int) -> None:
     if config.write:
         insert_str = f"INSERT `{config.bq_project}.{config.bq_crux_dataset}.host_min_ranks` (yyyymm, host, global_rank, local_rank, sightline_rank)"
     else:
@@ -148,18 +155,23 @@ WHERE
 GROUP BY
   host
 """
-    if config.write:
-        logging.info("Updating host_min_ranks data")
-    else:
-        logging.info("Getting updated host_min_ranks data")
-    result = client.query(query).result()
+    schema = [
+        bigquery.SchemaField("yyyymm", "INTEGER", mode="REQUIRED"),
+        bigquery.SchemaField("host", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("global_rank", "INTEGER"),
+        bigquery.SchemaField("local_rank", "INTEGER"),
+        bigquery.SchemaField("sightline_rank", "INTEGER"),
+    ]
 
-    if not config.write:
-        logging.info(f"host_min_ranks data has {result.total_rows} rows")
+    logging.info("Updating host_min_ranks data")
+    client.ensure_table(
+        "host_min_ranks", schema, partition=RangePartition("yyyymm", 201701, 202501)
+    )
+    client.query(query)
 
 
 def update_import_date(
-    client: bigquery.Client, config: Config, run_at: datetime, data_yyyymm: int
+    client: BigQuery, config: Config, run_at: datetime, data_yyyymm: int
 ) -> None:
     if not config.write:
         return
@@ -173,10 +185,13 @@ def update_import_date(
         },
     ]
     logging.info("Updating last run date")
-    runs_table = f"{config.bq_project}.{config.bq_crux_dataset}.import_runs"
-    errors = client.insert_rows_json(runs_table, rows_to_insert)
-    if errors:
-        logging.error(errors)
+
+    schema = [
+        bigquery.SchemaField("run_at", "TIMESTAMP", mode="REQUIRED"),
+        bigquery.SchemaField("yyyymm", "INTEGER", mode="REQUIRED"),
+    ]
+    runs_table = client.ensure_table("import_runs", schema)
+    client.insert_rows(runs_table, rows_to_insert)
 
 
 def get_previous_month_yyyymm(date: datetime) -> int:
@@ -212,7 +227,10 @@ class CruxJob(EtlJob):
             logging.error(f"Invalid crux dataset id {args.bq_crux_dataset}")
             sys.exit(1)
 
-    def main(self, client: bigquery.Client, args: argparse.Namespace) -> None:
+    def default_dataset(self, args: argparse.Namespace) -> str:
+        return args.bq_crux_dataset
+
+    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
         run_at = datetime.now(UTC)
         config = Config.from_args(args)
 

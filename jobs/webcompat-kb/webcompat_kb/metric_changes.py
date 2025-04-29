@@ -2,6 +2,7 @@ import argparse
 import logging
 import re
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterator, Mapping, Optional, Sequence
@@ -9,7 +10,7 @@ from typing import Iterator, Mapping, Optional, Sequence
 from google.cloud import bigquery
 
 from .base import EtlJob
-from .bqhelpers import ensure_table
+from .bqhelpers import BigQuery
 from .bugzilla import parse_user_story
 
 FIXED_STATES = {"RESOLVED", "VERIFIED"}
@@ -63,13 +64,17 @@ class ScoreChange:
     reasons: list[str]
 
 
-def get_last_recorded_date(client: bigquery.Client, bq_dataset_id: str) -> datetime:
-    query = f"""
-            SELECT change_time
-            FROM `{bq_dataset_id}.webcompat_topline_metric_changes`
-            ORDER BY change_time DESC
-            LIMIT 1"""
-    result = list(client.query(query).result())
+@dataclass(frozen=True)
+class ChangeKey:
+    who: str
+    change_time: datetime
+
+
+def get_last_recorded_date(client: BigQuery) -> datetime:
+    query = """
+SELECT MAX(change_time) as change_time
+FROM webcompat_topline_metric_changes"""
+    result = list(client.query(query))
 
     if result:
         return result[0]["change_time"]
@@ -77,26 +82,22 @@ def get_last_recorded_date(client: bigquery.Client, bq_dataset_id: str) -> datet
 
 
 def get_bug_changes(
-    client: bigquery.Client, bq_dataset_id: str, last_change_time: datetime
+    client: BigQuery, last_change_time: datetime
 ) -> Mapping[int, list[BugChange]]:
     rv: dict[int, list[BugChange]] = {}
 
-    query = f"""
+    query = """
 SELECT number, who, change_time, changes
-FROM {bq_dataset_id}.bugs_history
+FROM bugs_history
 WHERE change_time > @last_change_time
 ORDER BY change_time ASC
 """
 
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter(
-                "last_change_time", "TIMESTAMP", last_change_time
-            )
-        ]
-    )
+    query_parameters = [
+        bigquery.ScalarQueryParameter("last_change_time", "TIMESTAMP", last_change_time)
+    ]
 
-    bug_changes = client.query(query, job_config=job_config).result()
+    bug_changes = client.query(query, parameters=query_parameters)
     for row in bug_changes:
         bug_id = row.number
         if bug_id not in rv:
@@ -111,28 +112,43 @@ ORDER BY change_time ASC
     return rv
 
 
+def get_recorded_changes(
+    client: BigQuery, bugs: Iterator[int]
+) -> Mapping[int, set[ChangeKey]]:
+    query = """
+SELECT number, who, change_time
+FROM webcompat_topline_metric_changes
+WHERE number IN UNNEST(@bugs)
+"""
+
+    rv = defaultdict(set)
+
+    query_parameters = [bigquery.ArrayQueryParameter("bugs", "INT64", list(bugs))]
+    for row in client.query(query, parameters=query_parameters):
+        rv[row.number].add(ChangeKey(row.who, row.change_time))
+
+    return rv
+
+
 def get_bugs(
-    client: bigquery.Client,
-    bq_dataset_id: str,
+    client: BigQuery,
     last_change_time: datetime,
     bugs: Iterator[int],
 ) -> Mapping[int, BugData]:
     rv: dict[int, BugData] = {}
 
-    query = f"""
+    query = """
 SELECT number, status, resolution, product, component, creator, creation_time, resolved_time, keywords, url, user_story_raw
-FROM {bq_dataset_id}.bugzilla_bugs
+FROM bugzilla_bugs
 WHERE number IN UNNEST(@bugs) OR creation_time > @last_change_time
 """
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter(
-                "last_change_time", "TIMESTAMP", last_change_time
-            ),
-            bigquery.ArrayQueryParameter("bugs", "INT64", list(bugs)),
-        ]
-    )
-    job = client.query(query, job_config=job_config).result()
+    query_parameters = [
+        bigquery.ScalarQueryParameter(
+            "last_change_time", "TIMESTAMP", last_change_time
+        ),
+        bigquery.ArrayQueryParameter("bugs", "INT64", list(bugs)),
+    ]
+    job = client.query(query, parameters=query_parameters)
 
     for row in job:
         rv[row.number] = BugData(
@@ -162,6 +178,8 @@ header_pattern = re.compile(r"^@@ -(\d+),?(\d+)? \+(\d+),?(\d+)? @@$")
 
 
 def reverse_apply_diff(input_str: str, diff: str) -> str:
+    """Apply a diff in reverse to get the original string"""
+
     input_lines = input_str.splitlines(True)
     input_idx = 0
     diff_lines = diff.splitlines(True)
@@ -205,8 +223,13 @@ def bugs_historic_states(
     bug_data: Mapping[int, BugData],
     changes_by_bug: Mapping[int, list[BugChange]],
 ) -> Mapping[int, list[BugState]]:
+    """Create a per bug list of historic states of that bug
+
+    The first item in the list is the current state, subsequent items
+    are prior states, in chronological order."""
     rv: dict[int, list[BugState]] = {}
     for bug_id, bug in bug_data.items():
+        # Initial state corrsponding to what the bug looks like now
         states = [
             BugState(
                 bug.status,
@@ -229,6 +252,7 @@ def bugs_historic_states(
 
             current = states[-1]
             current.change_idx = index
+            # Duplicate the current state
             prev = BugState(
                 current.status,
                 current.product,
@@ -238,6 +262,7 @@ def bugs_historic_states(
                 current.user_story,
                 change_idx=None,
             )
+            # Apply the delta from current to previous state
             for field_change in change.changes:
                 if field_change.field_name == "keywords":
                     for keyword in field_change.added.split(", "):
@@ -280,35 +305,32 @@ def bugs_historic_states(
     return rv
 
 
-def get_current_scores(
-    client: bigquery.Client, bq_dataset_id: str
-) -> Mapping[int, float]:
+def get_current_scores(client: BigQuery) -> Mapping[int, float]:
     rv: dict[int, float] = {}
-    query = f"""SELECT number, IFNULL(triage_score, 0) as score from `{bq_dataset_id}.scored_site_reports`"""
-    for row in client.query(query).result():
+    query = "SELECT number, IFNULL(triage_score, 0) as score from scored_site_reports"
+
+    for row in client.query(query):
         rv[row.number] = row.score
     return rv
 
 
 def compute_historic_scores(
-    client: bigquery.Client,
-    bq_dataset_id: str,
+    client: BigQuery,
     historic_states: Mapping[int, list[BugState]],
     current_scores: Mapping[int, float],
 ) -> Mapping[int, list[float]]:
+    """Compute the webcompat scores corresponding to different states of bugs."""
+
     rv: dict[int, list[float]] = {}
 
-    tmp_name = f"{bq_dataset_id}.tmp_{uuid.uuid4()}"
-    job_config = bigquery.LoadJobConfig(
-        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-        schema=[
-            bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
-            bigquery.SchemaField("index", "INTEGER", mode="REQUIRED"),
-            bigquery.SchemaField("keywords", "STRING", mode="REPEATED"),
-            bigquery.SchemaField("url", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("user_story", "JSON", mode="REQUIRED"),
-        ],
-    )
+    tmp_name = f"tmp_{uuid.uuid4()}"
+    schema = [
+        bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
+        bigquery.SchemaField("index", "INTEGER", mode="REQUIRED"),
+        bigquery.SchemaField("keywords", "STRING", mode="REPEATED"),
+        bigquery.SchemaField("url", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("user_story", "JSON", mode="REQUIRED"),
+    ]
 
     rows = []
     for bug_id, states in historic_states.items():
@@ -343,10 +365,11 @@ SELECT number,
 FROM `{tmp_name}`
 """
 
-    client.load_table_from_json(rows, tmp_name, job_config=job_config).result()
+    tmp_table = client.ensure_table(tmp_name, schema, True)
+    client.write_table(tmp_table, schema, rows, True)
     bugs_with_webcompat_states = set()
     try:
-        scores = client.query(score_query).result()
+        scores = client.query(score_query)
         for row in scores:
             bugs_with_webcompat_states.add(row.number)
             logging.debug(
@@ -354,7 +377,7 @@ FROM `{tmp_name}`
             )
             rv[row.number][row.index] = row.score
     finally:
-        client.delete_table(tmp_name)
+        client.delete_table(tmp_table)
 
     for bug_id, computed_scores in rv.items():
         current_score = float(current_scores.get(bug_id, 0))
@@ -363,7 +386,7 @@ FROM `{tmp_name}`
                 f"    {score}: {state}"
                 for score, state in zip(computed_scores, historic_states[bug_id])
             )
-            logging.warning(f"""Bug {bug_id}, current score is {current_score} but computed {computed_scores[-1]}
+            logging.warning(f"""Bug {bug_id}, current score is {current_score} but computed {computed_scores[0]}
   STATES:
 {history_logging}
 """)
@@ -404,6 +427,7 @@ def get_change_reasons(changes: Sequence[BugFieldChange]) -> list[str]:
 def compute_score_changes(
     changes_by_bug: Mapping[int, list[BugChange]],
     bug_data: Mapping[int, BugData],
+    recorded_changes: Mapping[int, set[ChangeKey]],
     historic_states: Mapping[int, list[BugState]],
     historic_scores: Mapping[int, list[float]],
     last_change_time: datetime,
@@ -417,20 +441,27 @@ def compute_score_changes(
         changes = changes_by_bug.get(bug_id)
         bug = bug_data[bug_id]
         newly_created = bug.creation_time > last_change_time
+        if newly_created:
+            assert bug_id not in recorded_changes
 
         assert len(states) == len(scores)
 
-        prev_score = None if not newly_created else 0.0
-
+        prev_score = 0.0
+        # Iterate through states and scores from oldest to newest
         for state, score in zip(reversed(states), reversed(scores)):
-            if prev_score is None:
-                score_change = ScoreChange(
-                    who=bug.creator,
-                    change_time=bug.creation_time,
-                    score_delta=score,
-                    reasons=["created"],
-                )
-            elif state.change_idx is not None:
+            if state.change_idx is None:
+                # This happens on the first iteration when the state represents
+                # the state before any of the current changes were applied.
+                if newly_created:
+                    score_change = ScoreChange(
+                        who=bug.creator,
+                        change_time=bug.creation_time,
+                        score_delta=score,
+                        reasons=["created"],
+                    )
+                else:
+                    score_change = None
+            else:
                 assert changes is not None
                 score_delta = score - prev_score
                 change = changes[state.change_idx]
@@ -446,13 +477,17 @@ def compute_score_changes(
                     score_delta=score_delta,
                     reasons=reasons,
                 )
-            else:
-                assert state == states[-1]
-                score_change = None
 
             prev_score = score
+
             if score_change is not None and score_change.score_delta != 0:
-                rv[bug_id].append(score_change)
+                change_key = ChangeKey(score_change.who, score_change.change_time)
+                if change_key in recorded_changes[bug_id]:
+                    logging.warning(
+                        f"Already recorded a change for bug {bug_id} from {change_key.who} at {change_key.change_time}, skipping"
+                    )
+                else:
+                    rv[bug_id].append(score_change)
 
         if len(rv[bug_id]) == 0 and any(
             is_webcompat_bug(state.product, state.component, state.keywords)
@@ -473,24 +508,19 @@ def compute_score_changes(
 
 
 def insert_score_changes(
-    client: bigquery.Client,
-    bq_dataset_id: str,
-    write: bool,
+    client: BigQuery,
     score_changes: Mapping[int, Sequence[ScoreChange]],
 ) -> None:
-    changes_table = f"{bq_dataset_id}.webcompat_topline_metric_changes"
+    changes_table_name = "webcompat_topline_metric_changes"
 
-    job_config = bigquery.LoadJobConfig(
-        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-        schema=[
-            bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
-            bigquery.SchemaField("who", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("change_time", "TIMESTAMP", mode="REQUIRED"),
-            bigquery.SchemaField("score_delta", "FLOAT", mode="REQUIRED"),
-            bigquery.SchemaField("reasons", "STRING", mode="REPEATED"),
-        ],
-        write_disposition="WRITE_APPEND",
-    )
+    schema = [
+        bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
+        bigquery.SchemaField("who", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("change_time", "TIMESTAMP", mode="REQUIRED"),
+        bigquery.SchemaField("score_delta", "FLOAT", mode="REQUIRED"),
+        bigquery.SchemaField("reasons", "STRING", mode="REPEATED"),
+    ]
+
     rows = []
     for bug_id, changes in score_changes.items():
         for change in changes:
@@ -504,22 +534,13 @@ def insert_score_changes(
                 }
             )
 
-    if write:
-        client.load_table_from_json(
-            rows,
-            changes_table,
-            job_config=job_config,
-        ).result()
-        logging.info(f"Wrote {len(rows)} records into {changes_table}")
-    else:
-        logging.info("Skipping writes, would have written:")
-        for row in rows:
-            logging.info(f"{row}")
+    changes_table = client.ensure_table(
+        changes_table_name, schema=schema, recreate=False
+    )
+    client.write_table(changes_table, schema, rows, overwrite=False)
 
 
-def update_metric_changes(
-    client: bigquery.Client, bq_dataset_id: str, write: bool, recreate: bool
-) -> None:
+def update_metric_changes(client: BigQuery, recreate: bool) -> None:
     schema = [
         bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
         bigquery.SchemaField("who", "STRING", mode="REQUIRED"),
@@ -527,32 +548,33 @@ def update_metric_changes(
         bigquery.SchemaField("score_delta", "FLOAT", mode="REQUIRED"),
         bigquery.SchemaField("reasons", "STRING", mode="REPEATED"),
     ]
-    ensure_table(
-        client, bq_dataset_id, "webcompat_topline_metric_changes", schema, recreate
-    )
-    last_recorded_date = get_last_recorded_date(client, bq_dataset_id)
+    client.ensure_table("webcompat_topline_metric_changes", schema, recreate)
+    last_recorded_date = get_last_recorded_date(client)
     logging.info(f"Last change time {last_recorded_date}")
-    changes_by_bug = get_bug_changes(client, bq_dataset_id, last_recorded_date)
-    current_bug_data = get_bugs(
-        client, bq_dataset_id, last_recorded_date, iter(changes_by_bug.keys())
-    )
+    changes_by_bug = get_bug_changes(client, last_recorded_date)
+    if not changes_by_bug:
+        return
+    current_bug_data = get_bugs(client, last_recorded_date, iter(changes_by_bug.keys()))
+    recorded_changes = get_recorded_changes(client, iter(changes_by_bug.keys()))
     historic_states = bugs_historic_states(current_bug_data, changes_by_bug)
-    current_scores = get_current_scores(client, bq_dataset_id)
-    historic_scores = compute_historic_scores(
-        client, bq_dataset_id, historic_states, current_scores
-    )
+    current_scores = get_current_scores(client)
+    historic_scores = compute_historic_scores(client, historic_states, current_scores)
     score_changes = compute_score_changes(
         changes_by_bug,
         current_bug_data,
+        recorded_changes,
         historic_states,
         historic_scores,
         last_recorded_date,
     )
-    insert_score_changes(client, bq_dataset_id, write, score_changes)
+    insert_score_changes(client, score_changes)
 
 
 class MetricChangesJob(EtlJob):
     name = "metric_changes"
+
+    def default_dataset(self, args: argparse.Namespace) -> str:
+        return args.bq_kb_dataset
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
@@ -565,7 +587,5 @@ class MetricChangesJob(EtlJob):
             help="Delete and recreate changes table from scratch",
         )
 
-    def main(self, client: bigquery.Client, args: argparse.Namespace) -> None:
-        update_metric_changes(
-            client, args.bq_kb_dataset, args.write, args.recreate_metric_changes
-        )
+    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
+        update_metric_changes(client, args.recreate_metric_changes)

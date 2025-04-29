@@ -7,7 +7,7 @@ from typing import Any, Iterable, Mapping
 import pytest
 import bugdantic.bugzilla
 
-from webcompat_kb.base import get_client
+from webcompat_kb.bqhelpers import get_client, BigQuery
 from webcompat_kb.bugzilla import (
     Bug,
     BugHistoryChange,
@@ -1148,8 +1148,8 @@ KEYWORDS_AND_STATUS = to_history(
 
 
 @pytest.fixture(scope="module")
-@patch("webcompat_kb.base.google.auth.default")
-@patch("webcompat_kb.base.bigquery.Client")
+@patch("webcompat_kb.bqhelpers.google.auth.default")
+@patch("webcompat_kb.bqhelpers.bigquery.Client")
 def bq_client(mock_bq, mock_auth_default):
     mock_credentials = Mock()
     mock_project_id = "placeholder_id"
@@ -1157,12 +1157,12 @@ def bq_client(mock_bq, mock_auth_default):
     mock_bq.return_value = Mock()
 
     mock_bq.return_value = Mock()
-    get_client(mock_project_id)
+    return BigQuery(get_client(mock_project_id), "test_dataset", True)
 
 
 @pytest.fixture(scope="module")
 def history_updater(bq_client):
-    return BugHistoryUpdater(bq_client, "test", None)
+    return BugHistoryUpdater(bq_client, None)
 
 
 def test_extract_int_from_field():
