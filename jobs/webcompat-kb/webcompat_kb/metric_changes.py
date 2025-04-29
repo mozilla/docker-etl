@@ -319,7 +319,7 @@ def compute_historic_scores(
     historic_states: Mapping[int, list[BugState]],
     current_scores: Mapping[int, float],
 ) -> Mapping[int, list[float]]:
-    """Compute the webcompat scores correspoding to different states of bugs."""
+    """Compute the webcompat scores corresponding to different states of bugs."""
 
     rv: dict[int, list[float]] = {}
 
