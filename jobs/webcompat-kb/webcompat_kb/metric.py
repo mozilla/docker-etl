@@ -49,9 +49,18 @@ def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> 
                 SELECT *
                 FROM `{bq_dataset_id}.{metrics_table_name}`
             """
-        rows = list(dict(row.items()) for row in client.query(query))
-        for row in rows:
-            row["recorded_date"] = today
+        rows = [
+            {
+                "recorded_date": today.isoformat(),
+                "date": row.date.isoformat(),
+                "bug_count": row.bug_count,
+                "needs_diagnosis_score": str(row.needs_diagnosis_score),
+                "platform_score": str(row.platform_score),
+                "not_supported_score": str(row.not_supported_score),
+                "total_score": str(row.total_score),
+            }
+            for row in client.query(query)
+        ]
 
         client.insert_rows(history_table, rows)
 
