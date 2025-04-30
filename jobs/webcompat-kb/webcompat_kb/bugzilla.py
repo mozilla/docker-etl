@@ -459,16 +459,13 @@ class BugCache(Mapping):
             logging.error(f"Error: {e}")
             raise
 
-    def fetch_missing_relations(self, bugs: BugsById, relation: str) -> int:
-        related_ids: set[str] = set()
+    def missing_relations(self, bugs: BugsById, relation: str) -> set[BugId]:
+        related_ids = set()
         for bug in bugs.values():
             related_ids |= {
-                str(bug_id) for bug_id in getattr(bug, relation) if bug_id not in self
+                bug_id for bug_id in getattr(bug, relation) if bug_id not in self
             }
-
-        if related_ids:
-            self.bz_fetch_bugs({"id": ",".join(related_ids)})
-        return len(related_ids)
+        return related_ids
 
     def into_mapping(self) -> BugsById:
         """Convert the data into a plain dict.
@@ -543,7 +540,7 @@ def get_etp_breakage_reports(
         meta_bugs = {
             meta_id
             for meta_id in report_bug.depends_on + report_bug.blocks
-            if "meta" in all_bugs[meta_id].keywords
+            if meta_id in all_bugs and "meta" in all_bugs[meta_id].keywords
         }
         if meta_bugs:
             rv[bug_id] = meta_bugs
@@ -564,12 +561,15 @@ def fetch_all_bugs(
         logging.info(f"Fetching {category} bugs")
         bug_cache.bz_fetch_bugs(filter_config)
 
-    fetch_count = -1
-    while fetch_count != 0:
+    tried_to_fetch: set[BugId] = set()
+    missing_relations = None
+    # Add a limit on how many fetches we will try
+    recurse_limit = 10
+    for _ in range(recurse_limit):
         # Get all blocking bugs for site reports or kb entries or etp site reports
         # This can take more than one iteration if dependencies themselves turn out
         # to be site reports that were excluded by a the date cutoff
-        fetch_count = bug_cache.fetch_missing_relations(
+        missing_relations = bug_cache.missing_relations(
             {
                 bug_id: bug
                 for bug_id, bug in bug_cache.items()
@@ -577,12 +577,26 @@ def fetch_all_bugs(
             },
             "depends_on",
         )
-        fetch_count += bug_cache.fetch_missing_relations(
+        missing_relations |= bug_cache.missing_relations(
             {bug_id: bug for bug_id, bug in bug_cache.items() if is_etp_report(bug)},
             "blocks",
         )
-        if fetch_count:
-            logging.info(f"Fetched {fetch_count} related bugs")
+        # If we already tried to fetch a bug don't try to fetch it again
+        missing_relations -= tried_to_fetch
+        if not missing_relations:
+            break
+
+        tried_to_fetch |= missing_relations
+        bug_cache.bz_fetch_bugs(
+            {"id": ",".join(str(bug_id) for bug_id in missing_relations)}
+        )
+        for bug_id in missing_relations:
+            if bug_id not in bug_cache:
+                logging.warning(f"Failed to fetch bug {bug_id}")
+    else:
+        logging.warning(
+            f"Failed to fetch all dependencies after {recurse_limit} attempts"
+        )
 
     return bug_cache.into_mapping()
 
@@ -661,7 +675,7 @@ class BugHistoryUpdater:
             return {}
 
         logging.info(
-            f"Fetching bugs {updated_bugs} updated since {last_import_time.isoformat()}"
+            f"Fetching bugs {','.join(str(item) for item in updated_bugs)} updated since {last_import_time.isoformat()}"
         )
 
         bugs_full_history = self.bugzilla_fetch_history(updated_bugs)
@@ -1130,6 +1144,7 @@ def get_kb_entries(all_bugs: BugsById, site_report_blockers: set[BugId]) -> set[
         dependency
         for bug_id in direct_kb_entries
         for dependency in all_bugs[bug_id].depends_on
+        if dependency in all_bugs
     }
     # We include any bug that's blocking a site report but isn't in Web Compatibility
     platform_site_report_blockers = {
@@ -1158,8 +1173,9 @@ def group_bugs(
         dependency
         for bug_id in site_reports
         for dependency in all_bugs[bug_id].depends_on
+        # This might not be true if the dependency is a bug we can't access
+        if dependency in all_bugs
     }
-    assert site_report_blockers.issubset(all_bugs.keys())
     kb_bugs = get_kb_entries(all_bugs, site_report_blockers)
     platform_bugs = {
         bug_id for bug_id in all_bugs if all_bugs[bug_id].product != "Web Compatibility"
