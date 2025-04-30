@@ -459,16 +459,45 @@ class BugCache(Mapping):
             logging.error(f"Error: {e}")
             raise
 
-    def fetch_missing_relations(self, bugs: BugsById, relation: str) -> int:
-        related_ids: set[str] = set()
+    def missing_relations(self, bugs: BugsById, relation: str) -> set[BugId]:
+        related_ids = set()
         for bug in bugs.values():
             related_ids |= {
-                str(bug_id) for bug_id in getattr(bug, relation) if bug_id not in self
+                bug_id for bug_id in getattr(bug, relation) if bug_id not in self
             }
+        return related_ids
 
-        if related_ids:
-            self.bz_fetch_bugs({"id": ",".join(related_ids)})
-        return len(related_ids)
+    def add_placeholders(self, bugs: Iterable[BugId]):
+        """Create fake entries for bugs.
+
+        This is useful when we don't have access to bugs e.g. because we don't have
+        permissions to read them."""
+
+        for bug_id in bugs:
+            self.bugs[bug_id] = Bug(
+                id=bug_id,
+                summary="",
+                status="UNKNOWN",
+                resolution="",
+                product="Unknown",
+                component="Unknown",
+                creator="nobody@mozilla.org",
+                see_also=[],
+                depends_on=[],
+                blocks=[],
+                priority=None,
+                severity=None,
+                creation_time=datetime.now(),
+                assigned_to=None,
+                keywords=[],
+                url="",
+                user_story="",
+                last_resolved=None,
+                last_change_time=datetime.now(),
+                whiteboard="",
+                webcompat_priority=None,
+                webcompat_score=None,
+            )
 
     def into_mapping(self) -> BugsById:
         """Convert the data into a plain dict.
@@ -564,12 +593,14 @@ def fetch_all_bugs(
         logging.info(f"Fetching {category} bugs")
         bug_cache.bz_fetch_bugs(filter_config)
 
-    fetch_count = -1
-    while fetch_count != 0:
+    missing_relations = None
+    # Add a limit on how many fetches we will try
+    recurse_limit = 10
+    for _ in range(recurse_limit):
         # Get all blocking bugs for site reports or kb entries or etp site reports
         # This can take more than one iteration if dependencies themselves turn out
         # to be site reports that were excluded by a the date cutoff
-        fetch_count = bug_cache.fetch_missing_relations(
+        missing_relations = bug_cache.missing_relations(
             {
                 bug_id: bug
                 for bug_id, bug in bug_cache.items()
@@ -577,12 +608,26 @@ def fetch_all_bugs(
             },
             "depends_on",
         )
-        fetch_count += bug_cache.fetch_missing_relations(
+        missing_relations |= bug_cache.missing_relations(
             {bug_id: bug for bug_id, bug in bug_cache.items() if is_etp_report(bug)},
             "blocks",
         )
-        if fetch_count:
-            logging.info(f"Fetched {fetch_count} related bugs")
+        if not missing_relations:
+            break
+
+        bug_cache.bz_fetch_bugs(
+            {"id": ",".join(str(bug_id) for bug_id in missing_relations)}
+        )
+        missing = [bug_id for bug_id in missing_relations if bug_id not in bug_cache]
+        if missing:
+            logging.warning(
+                f"Failed to fetch data for {','.join(str(item) for item in missing)}, creating placeholder entries"
+            )
+            bug_cache.add_placeholders(missing)
+    else:
+        logging.warning(
+            f"Failed to fetch all dependencies after {recurse_limit} attempts"
+        )
 
     return bug_cache.into_mapping()
 
@@ -661,7 +706,7 @@ class BugHistoryUpdater:
             return {}
 
         logging.info(
-            f"Fetching bugs {updated_bugs} updated since {last_import_time.isoformat()}"
+            f"Fetching bugs {','.join(str(item) for item in updated_bugs)} updated since {last_import_time.isoformat()}"
         )
 
         bugs_full_history = self.bugzilla_fetch_history(updated_bugs)
