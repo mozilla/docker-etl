@@ -4,12 +4,12 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterator, Mapping, Optional, Sequence
+from typing import Iterator, Mapping, Optional, Sequence, cast
 
 from google.cloud import bigquery
 
 from .base import EtlJob
-from .bqhelpers import BigQuery
+from .bqhelpers import BigQuery, Json
 from .bugzilla import parse_user_story
 
 FIXED_STATES = {"RESOLVED", "VERIFIED"}
@@ -39,7 +39,7 @@ class BugData:
     creator: str
     creation_time: datetime
     resolved_time: datetime
-    keywords: list[str]
+    keywords: Sequence[str]
     url: str
     user_story: str
 
@@ -234,7 +234,7 @@ def bugs_historic_states(
                 bug.status,
                 bug.product,
                 bug.component,
-                bug.keywords,
+                list(bug.keywords),
                 bug.url,
                 bug.user_story,
                 change_idx=None,
@@ -330,7 +330,7 @@ def compute_historic_scores(
         bigquery.SchemaField("user_story", "JSON", mode="REQUIRED"),
     ]
 
-    rows = []
+    rows: list[Mapping[str, Json]] = []
     for bug_id, states in historic_states.items():
         rv[bug_id] = [0] * len(states)
         for i, state in enumerate(states):
@@ -347,7 +347,7 @@ def compute_historic_scores(
                     {
                         "number": bug_id,
                         "index": i,
-                        "keywords": state.keywords,
+                        "keywords": cast(Sequence[str], state.keywords),
                         "url": state.url,
                         "user_story": parse_user_story(state.user_story),
                     }
@@ -514,7 +514,7 @@ def insert_score_changes(
         bigquery.SchemaField("reasons", "STRING", mode="REPEATED"),
     ]
 
-    rows = []
+    rows: list[dict[str, Json]] = []
     for bug_id, changes in score_changes.items():
         for change in changes:
             rows.append(

@@ -8,6 +8,9 @@ import google.auth
 from google.cloud import bigquery
 
 
+Json = Mapping[str, "Json"] | Sequence["Json"] | str | int | float | bool | None
+
+
 def get_client(bq_project_id: str) -> bigquery.Client:
     credentials, _ = google.auth.default(
         scopes=[
@@ -78,7 +81,7 @@ class BigQuery:
         self,
         table: bigquery.Table | str,
         schema: list[bigquery.SchemaField],
-        rows: Sequence[Mapping[str, Any]],
+        rows: Sequence[Mapping[str, Json]],
         overwrite: bool,
         dataset_id: Optional[str] = None,
     ) -> None:
@@ -112,7 +115,7 @@ class BigQuery:
         table = self.get_table_id(dataset_id, table)
 
         if self.write:
-            errors = self.client.insert_rows_json(table, rows)
+            errors = self.client.insert_rows(table, rows)
             if errors:
                 logging.error(errors)
         else:
