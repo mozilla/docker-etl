@@ -427,7 +427,16 @@ class BugCache(Mapping):
     def __iter__(self) -> Iterator[BugId]:
         yield from self.bugs
 
-    def bz_fetch_bugs(self, params: dict[str, str]) -> None:
+    def bz_fetch_bugs(
+        self,
+        params: Optional[dict[str, str | list[str]]] = None,
+        bug_ids: Optional[Sequence[BugId]] = None,
+    ) -> None:
+        if (params is None and bug_ids is None) or (
+            params is not None and bug_ids is not None
+        ):
+            raise ValueError("Must pass params or ids but not both")
+
         fields = [
             "id",
             "summary",
@@ -455,9 +464,15 @@ class BugCache(Mapping):
         ]
 
         try:
-            bugs = self.bz_client.search(
-                query=params, include_fields=fields, page_size=200
-            )
+            if params is not None:
+                bugs = self.bz_client.search(
+                    query=params, include_fields=fields, page_size=200
+                )
+            else:
+                assert bug_ids is not None
+                bugs = self.bz_client.bugs(
+                    bug_ids, include_fields=fields, page_size=200
+                )
             for bug in bugs:
                 assert bug.id is not None
                 self.bugs[bug.id] = Bug.from_bugzilla(bug)
@@ -565,7 +580,7 @@ def fetch_all_bugs(
 
     for category, filter_config in BUG_QUERIES.items():
         logging.info(f"Fetching {category} bugs")
-        bug_cache.bz_fetch_bugs(filter_config)
+        bug_cache.bz_fetch_bugs(params=filter_config)
 
     tried_to_fetch: set[BugId] = set()
     missing_relations = None
@@ -593,9 +608,8 @@ def fetch_all_bugs(
             break
 
         tried_to_fetch |= missing_relations
-        bug_cache.bz_fetch_bugs(
-            {"id": ",".join(str(bug_id) for bug_id in missing_relations)}
-        )
+        logging.info("Fetching related bugs")
+        bug_cache.bz_fetch_bugs(bug_ids=list(missing_relations))
         for bug_id in missing_relations:
             if bug_id not in bug_cache:
                 logging.warning(f"Failed to fetch bug {bug_id}")
@@ -681,7 +695,7 @@ class BugHistoryUpdater:
             return {}
 
         logging.info(
-            f"Fetching bugs {','.join(str(item) for item in updated_bugs)} updated since {last_import_time.isoformat()}"
+            f"Fetching history for bugs {','.join(str(item) for item in updated_bugs)} updated since {last_import_time.isoformat()}"
         )
 
         bugs_full_history = self.bugzilla_fetch_history(updated_bugs)
