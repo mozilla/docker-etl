@@ -16,7 +16,7 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "bugdantic==0.2.2",
+  "bugdantic==0.2.4",
   "google-cloud-bigquery==3.24.0",
 ]
 
