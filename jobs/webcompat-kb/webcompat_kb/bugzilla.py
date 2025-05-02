@@ -50,6 +50,7 @@ class Bug:
     user_story: str
     last_resolved: Optional[datetime]
     last_change_time: datetime
+    size_estimate: Optional[str]
     whiteboard: str
     webcompat_priority: Optional[str]
     webcompat_score: Optional[int]
@@ -127,6 +128,9 @@ class Bug:
             last_change_time=bug.last_change_time,
             whiteboard=bug.whiteboard,
             creator=bug.creator,
+            size_estimate=(
+                bug.cf_size_estimate if bug.cf_size_estimate != "---" else None
+            ),
             webcompat_priority=(
                 bug.cf_webcompat_priority
                 if bug.cf_webcompat_priority != "---"
@@ -173,6 +177,7 @@ class Bug:
             last_change_time=datetime.fromisoformat(bug_data["last_change_time"]),
             whiteboard=bug_data["whiteboard"],
             creator=bug_data["creator"],
+            size_estimate=bug_data["size_estimate"],
             webcompat_priority=bug_data["webcompat_priority"],
             webcompat_score=bug_data["webcompat_score"],
         )
@@ -444,6 +449,7 @@ class BugCache(Mapping):
             "cf_last_resolved",
             "last_change_time",
             "whiteboard",
+            "cf_size_estimate",
             "cf_webcompat_priority",
             "cf_webcompat_score",
         ]
@@ -995,6 +1001,7 @@ class BigQueryImporter:
             if bug.resolved is not None
             else None,
             "whiteboard": bug.whiteboard,
+            "size_estimate": bug.size_estimate,
             "webcompat_priority": bug.webcompat_priority,
             "webcompat_score": bug.webcompat_score,
             "depends_on": bug.depends_on,
@@ -1035,6 +1042,7 @@ class BigQueryImporter:
             bigquery.SchemaField("user_story", "JSON"),
             bigquery.SchemaField("user_story_raw", "STRING"),
             bigquery.SchemaField("resolved_time", "TIMESTAMP"),
+            bigquery.SchemaField("size_estimate", "STRING"),
             bigquery.SchemaField("whiteboard", "STRING"),
             bigquery.SchemaField("webcompat_priority", "STRING"),
             bigquery.SchemaField("webcompat_score", "INTEGER"),
