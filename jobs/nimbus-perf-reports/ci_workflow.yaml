@@ -1,0 +1,13 @@
+nimbus-perf-reports:
+  jobs:
+    - build-nimbus-perf-reports
+    - gcp-gcr/build-and-push-image:
+        context: data-eng-airflow-gcr
+        docker-context: jobs/nimbus-perf-reports/
+        path: jobs/nimbus-perf-reports/
+        image: nimbus-perf-reports
+        requires:
+          - build-nimbus-perf-reports
+        filters:
+          branches:
+            only: main
