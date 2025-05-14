@@ -45,7 +45,7 @@ def get_parser() -> argparse.ArgumentParser:
         "jobs",
         nargs="*",
         choices=list(ALL_JOBS.keys()),
-        help="Jobs to run (defaults to all)",
+        help=f"Jobs to run (defaults to {' '.join(name for name, cls in ALL_JOBS.items() if cls.default)})",
     )
 
     return parser
@@ -72,7 +72,7 @@ def set_default_args(parser: argparse.ArgumentParser, args: argparse.Namespace) 
         sys.exit(1)
 
     if not args.jobs:
-        args.jobs = list(ALL_JOBS.keys())
+        args.jobs = list(name for name, cls in ALL_JOBS.items() if cls.default)
     elif any(job not in ALL_JOBS for job in args.jobs):
         invalid = [job for job in args.jobs if job not in ALL_JOBS]
         parser.print_usage()
