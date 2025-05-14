@@ -963,7 +963,7 @@ class BigQueryImporter:
         rows: Sequence[Mapping[str, Any]],
         overwrite: bool,
     ) -> None:
-        table = self.client.ensure_table(table_name, schema, False)
+        table = self.client.ensure_table(table_name, schema)
         self.client.write_table(table, schema, rows, overwrite)
 
     def convert_bug(self, bug: Bug) -> Mapping[str, Any]:

@@ -58,7 +58,6 @@ class BigQuery:
         self,
         table_id: str,
         schema: Iterable[bigquery.SchemaField],
-        recreate: bool = False,
         dataset_id: Optional[str] = None,
         partition: Optional[RangePartition] = None,
     ) -> bigquery.Table:
@@ -72,8 +71,6 @@ class BigQuery:
             )
 
         if self.write:
-            if recreate:
-                self.client.delete_table(table, not_found_ok=True)
             self.client.create_table(table, exists_ok=True)
         return table
 
