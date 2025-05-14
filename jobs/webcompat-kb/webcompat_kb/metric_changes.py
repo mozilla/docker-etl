@@ -59,6 +59,8 @@ class BugState:
 class ScoreChange:
     who: str
     change_time: datetime
+    old_score: float
+    new_score: float
     score_delta: float
     reasons: list[str]
 
@@ -449,6 +451,8 @@ def compute_score_changes(
                     score_change = ScoreChange(
                         who=bug.creator,
                         change_time=bug.creation_time,
+                        old_score=0,
+                        new_score=score,
                         score_delta=score,
                         reasons=["created"],
                     )
@@ -467,6 +471,8 @@ def compute_score_changes(
                 score_change = ScoreChange(
                     who=change.who,
                     change_time=change.change_time,
+                    old_score=prev_score,
+                    new_score=score,
                     score_delta=score_delta,
                     reasons=reasons,
                 )
@@ -500,20 +506,28 @@ def compute_score_changes(
     return rv
 
 
-def insert_score_changes(
-    client: BigQuery,
-    score_changes: Mapping[int, Sequence[ScoreChange]],
-) -> None:
+def get_metric_changes_table(client: BigQuery, recreate: bool) -> bigquery.Table:
     changes_table_name = "webcompat_topline_metric_changes"
 
     schema = [
         bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
         bigquery.SchemaField("who", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("change_time", "TIMESTAMP", mode="REQUIRED"),
-        bigquery.SchemaField("score_delta", "FLOAT", mode="REQUIRED"),
+        bigquery.SchemaField("old_score", "NUMERIC", mode="REQUIRED"),
+        bigquery.SchemaField("new_score", "NUMERIC", mode="REQUIRED"),
+        bigquery.SchemaField("score_delta", "NUMERIC", mode="REQUIRED"),
         bigquery.SchemaField("reasons", "STRING", mode="REPEATED"),
     ]
+    return client.ensure_table(changes_table_name, schema=schema, recreate=recreate)
 
+
+def insert_score_changes(
+    client: BigQuery,
+    score_changes: Mapping[int, Sequence[ScoreChange]],
+    table: Optional[bigquery.Table] = None,
+) -> None:
+    if table is None:
+        table = get_metric_changes_table(client, False)
     rows: list[dict[str, Json]] = []
     for bug_id, changes in score_changes.items():
         for change in changes:
@@ -522,26 +536,18 @@ def insert_score_changes(
                     "number": bug_id,
                     "who": change.who,
                     "change_time": change.change_time.isoformat(),
+                    "old_score": change.old_score,
+                    "new_score": change.new_score,
                     "score_delta": change.score_delta,
                     "reasons": change.reasons,
                 }
             )
-
-    changes_table = client.ensure_table(
-        changes_table_name, schema=schema, recreate=False
-    )
-    client.write_table(changes_table, schema, rows, overwrite=False)
+    changes_table = get_metric_changes_table(client, False)
+    client.write_table(changes_table, changes_table.schema, rows, overwrite=False)
 
 
 def update_metric_changes(client: BigQuery, recreate: bool) -> None:
-    schema = [
-        bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
-        bigquery.SchemaField("who", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("change_time", "TIMESTAMP", mode="REQUIRED"),
-        bigquery.SchemaField("score_delta", "FLOAT", mode="REQUIRED"),
-        bigquery.SchemaField("reasons", "STRING", mode="REPEATED"),
-    ]
-    client.ensure_table("webcompat_topline_metric_changes", schema, recreate)
+    changes_table = get_metric_changes_table(client, recreate)
     last_recorded_date = get_last_recorded_date(client)
     logging.info(f"Last change time {last_recorded_date}")
     changes_by_bug = get_bug_changes(client, last_recorded_date)
@@ -560,7 +566,7 @@ def update_metric_changes(client: BigQuery, recreate: bool) -> None:
         historic_scores,
         last_recorded_date,
     )
-    insert_score_changes(client, score_changes)
+    insert_score_changes(client, score_changes, changes_table)
 
 
 class MetricChangesJob(EtlJob):
@@ -575,8 +581,9 @@ class MetricChangesJob(EtlJob):
             title="Metric Changes", description="Metric changes arguments"
         )
         group.add_argument(
-            "--recreate-metric-changes",
+            "--metric-changes-recreate",
             action="store_true",
+            dest="recreate_metric_changes",
             help="Delete and recreate changes table from scratch",
         )
 
