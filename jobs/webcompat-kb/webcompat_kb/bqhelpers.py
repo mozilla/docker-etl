@@ -1,6 +1,7 @@
 import logging
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from types import TracebackType
 from typing import Any, Iterable, Mapping, Optional, Self, Sequence, cast
 
@@ -160,6 +161,11 @@ class BigQuery:
         dataset_id: Optional[str] = None,
     ) -> "TemporaryTable":
         return TemporaryTable(self, schema, rows, dataset_id)
+
+    def current_datetime(self) -> datetime:
+        results = list(self.query("""SELECT current_datetime() as current_datetime"""))
+        assert len(results) == 1
+        return results[0].current_datetime
 
 
 class TemporaryTable:
