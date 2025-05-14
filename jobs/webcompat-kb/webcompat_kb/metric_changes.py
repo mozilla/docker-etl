@@ -4,6 +4,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Iterator, Mapping, Optional, Sequence, cast
 
 from google.cloud import bigquery
@@ -59,9 +60,9 @@ class BugState:
 class ScoreChange:
     who: str
     change_time: datetime
-    old_score: float
-    new_score: float
-    score_delta: float
+    old_score: Decimal
+    new_score: Decimal
+    score_delta: Decimal
     reasons: list[str]
 
 
@@ -306,9 +307,9 @@ def bugs_historic_states(
     return rv
 
 
-def get_current_scores(client: BigQuery) -> Mapping[int, float]:
-    rv: dict[int, float] = {}
-    query = "SELECT number, IFNULL(triage_score, 0) as score from scored_site_reports"
+def get_current_scores(client: BigQuery) -> Mapping[int, Decimal]:
+    rv: dict[int, Decimal] = {}
+    query = "SELECT number, CAST(IFNULL(triage_score, 0) as NUMERIC) as score from scored_site_reports"
 
     for row in client.query(query):
         rv[row.number] = row.score
@@ -318,11 +319,11 @@ def get_current_scores(client: BigQuery) -> Mapping[int, float]:
 def compute_historic_scores(
     client: BigQuery,
     historic_states: Mapping[int, list[BugState]],
-    current_scores: Mapping[int, float],
-) -> Mapping[int, list[float]]:
+    current_scores: Mapping[int, Decimal],
+) -> Mapping[int, list[Decimal]]:
     """Compute the webcompat scores corresponding to different states of bugs."""
 
-    rv: dict[int, list[float]] = {}
+    rv: dict[int, list[Decimal]] = {}
 
     schema = [
         bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
@@ -334,7 +335,7 @@ def compute_historic_scores(
 
     rows: list[Mapping[str, Json]] = []
     for bug_id, states in historic_states.items():
-        rv[bug_id] = [0] * len(states)
+        rv[bug_id] = [Decimal(0)] * len(states)
         for i, state in enumerate(states):
             is_open = state.status not in FIXED_STATES
             is_webcompat = (
@@ -357,12 +358,13 @@ def compute_historic_scores(
 
     with client.temporary_table(schema, rows) as tmp_table:
         score_query = f"""
-DECLARE crux_yyyymm INT64 DEFAULT 202409;
-
 SELECT number,
        index,
-       url, keywords, user_story,
-       `moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK`(keywords, user_story) * `moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFER`(url, crux_yyyymm) as score
+       url,
+       keywords,
+       user_story,
+       CAST(`moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK`(keywords, user_story) *
+            `moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFER`(url, 202409) AS NUMERIC) as score
 FROM `{tmp_table.name}`
 """
         bugs_with_webcompat_states = set()
@@ -372,7 +374,7 @@ FROM `{tmp_table.name}`
             logging.debug(
                 f"Bug {row.number}: {row.url} {row.keywords}, {repr(row.user_story)} SCORE: {row.score}"
             )
-            rv[row.number][row.index] = row.score
+            rv[row.number][row.index] = Decimal(row.score)
 
     for bug_id, computed_scores in rv.items():
         current_score = float(current_scores.get(bug_id, 0))
@@ -424,7 +426,7 @@ def compute_score_changes(
     bug_data: Mapping[int, BugData],
     recorded_changes: Mapping[int, set[ChangeKey]],
     historic_states: Mapping[int, list[BugState]],
-    historic_scores: Mapping[int, list[float]],
+    historic_scores: Mapping[int, list[Decimal]],
     last_change_time: datetime,
 ) -> Mapping[int, list[ScoreChange]]:
     rv: dict[int, list[ScoreChange]] = {}
@@ -441,7 +443,7 @@ def compute_score_changes(
 
         assert len(states) == len(scores)
 
-        prev_score = 0.0
+        prev_score = Decimal(0)
         # Iterate through states and scores from oldest to newest
         for state, score in zip(reversed(states), reversed(scores)):
             if state.change_idx is None:
@@ -451,7 +453,7 @@ def compute_score_changes(
                     score_change = ScoreChange(
                         who=bug.creator,
                         change_time=bug.creation_time,
-                        old_score=0,
+                        old_score=Decimal(0),
                         new_score=score,
                         score_delta=score,
                         reasons=["created"],
