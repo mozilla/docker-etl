@@ -1116,11 +1116,19 @@ class BigQueryImporter:
         elapsed_time = time.monotonic() - start_time
         elapsed_time_delta = timedelta(seconds=elapsed_time)
         run_at = last_change_time - elapsed_time_delta
-        formatted_time = run_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        schema = [
+            bigquery.SchemaField("run_at", "TIMESTAMP", mode="REQUIRED"),
+            bigquery.SchemaField("bugs_imported", "INTEGER", mode="REQUIRED"),
+            bigquery.SchemaField("bugs_history_updated", "INTEGER", mode="REQUIRED"),
+            bigquery.SchemaField(
+                "is_history_fetch_completed", "BOOLEAN", mode="REQUIRED"
+            ),
+        ]
 
         rows_to_insert = [
             {
-                "run_at": formatted_time,
+                "run_at": run_at,
                 "bugs_imported": count,
                 "bugs_history_updated": history_count
                 if history_count is not None
@@ -1128,8 +1136,8 @@ class BigQueryImporter:
                 "is_history_fetch_completed": history_count is not None,
             },
         ]
-        bugbug_runs_table = "import_runs"
-        self.client.insert_rows(bugbug_runs_table, rows_to_insert)
+        import_runs_table = self.client.ensure_table("import_runs", schema=schema)
+        self.client.insert_rows(import_runs_table, rows_to_insert)
 
 
 def get_kb_entries(all_bugs: BugsById, site_report_blockers: set[BugId]) -> set[BugId]:
