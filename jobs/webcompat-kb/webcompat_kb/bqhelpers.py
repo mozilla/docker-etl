@@ -77,6 +77,12 @@ class BigQuery:
             self.client.create_table(table, exists_ok=True)
         return table
 
+    def get_table(
+        self, table_id: str, dataset_id: Optional[str] = None
+    ) -> bigquery.Table:
+        table = self.get_table_id(dataset_id, table_id)
+        return self.client.get_table(table)
+
     def write_table(
         self,
         table: bigquery.Table | str,
@@ -122,6 +128,9 @@ class BigQuery:
             logging.info(f"Skipping writes, would have written {len(rows)} to {table}")
             for row in rows:
                 logging.debug(f"  {row}")
+
+    def get_routine(self, routine_id: str) -> bigquery.Routine:
+        return self.client.get_routine(routine_id)
 
     def query(
         self,
