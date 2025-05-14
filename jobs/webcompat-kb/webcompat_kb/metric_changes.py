@@ -14,6 +14,7 @@ from .bqhelpers import BigQuery, Json
 from .bugzilla import parse_user_story
 
 FIXED_STATES = {"RESOLVED", "VERIFIED"}
+MIN_CHANGE_DATE = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
 
 @dataclass
@@ -80,7 +81,7 @@ FROM webcompat_topline_metric_changes"""
 
     if result:
         return result[0]["change_time"]
-    return datetime(2024, 1, 1, tzinfo=timezone.utc)
+    return MIN_CHANGE_DATE
 
 
 def get_bug_changes(
@@ -483,7 +484,7 @@ def compute_score_changes(
 
             if score_change is not None and score_change.score_delta != 0:
                 change_key = ChangeKey(score_change.who, score_change.change_time)
-                if change_key in recorded_changes[bug_id]:
+                if change_key in recorded_changes.get(bug_id, set()):
                     logging.warning(
                         f"Already recorded a change for bug {bug_id} from {change_key.who} at {change_key.change_time}, skipping"
                     )
@@ -508,7 +509,7 @@ def compute_score_changes(
     return rv
 
 
-def get_metric_changes_table(client: BigQuery, recreate: bool) -> bigquery.Table:
+def get_metric_changes_table(client: BigQuery) -> bigquery.Table:
     changes_table_name = "webcompat_topline_metric_changes"
 
     schema = [
@@ -520,16 +521,17 @@ def get_metric_changes_table(client: BigQuery, recreate: bool) -> bigquery.Table
         bigquery.SchemaField("score_delta", "NUMERIC", mode="REQUIRED"),
         bigquery.SchemaField("reasons", "STRING", mode="REPEATED"),
     ]
-    return client.ensure_table(changes_table_name, schema=schema, recreate=recreate)
+    return client.ensure_table(changes_table_name, schema=schema)
 
 
 def insert_score_changes(
     client: BigQuery,
     score_changes: Mapping[int, Sequence[ScoreChange]],
-    table: Optional[bigquery.Table] = None,
+    changes_table: Optional[bigquery.Table] = None,
+    overwrite: bool = False,
 ) -> None:
-    if table is None:
-        table = get_metric_changes_table(client, False)
+    if changes_table is None:
+        changes_table = get_metric_changes_table(client)
     rows: list[dict[str, Json]] = []
     for bug_id, changes in score_changes.items():
         for change in changes:
@@ -538,25 +540,31 @@ def insert_score_changes(
                     "number": bug_id,
                     "who": change.who,
                     "change_time": change.change_time.isoformat(),
-                    "old_score": change.old_score,
-                    "new_score": change.new_score,
-                    "score_delta": change.score_delta,
+                    "old_score": str(change.old_score),
+                    "new_score": str(change.new_score),
+                    "score_delta": str(change.score_delta),
                     "reasons": change.reasons,
                 }
             )
-    changes_table = get_metric_changes_table(client, False)
-    client.write_table(changes_table, changes_table.schema, rows, overwrite=False)
+    client.write_table(changes_table, changes_table.schema, rows, overwrite=overwrite)
 
 
 def update_metric_changes(client: BigQuery, recreate: bool) -> None:
-    changes_table = get_metric_changes_table(client, recreate)
-    last_recorded_date = get_last_recorded_date(client)
+    changes_table = get_metric_changes_table(client)
+    last_recorded_date = (
+        get_last_recorded_date(client) if not recreate else MIN_CHANGE_DATE
+    )
     logging.info(f"Last change time {last_recorded_date}")
     changes_by_bug = get_bug_changes(client, last_recorded_date)
     if not changes_by_bug:
+        logging.info("No bug changes found")
         return
     current_bug_data = get_bugs(client, last_recorded_date, iter(changes_by_bug.keys()))
-    recorded_changes = get_recorded_changes(client, iter(changes_by_bug.keys()))
+    recorded_changes = (
+        get_recorded_changes(client, iter(changes_by_bug.keys()))
+        if not recreate
+        else {}
+    )
     historic_states = bugs_historic_states(current_bug_data, changes_by_bug)
     current_scores = get_current_scores(client)
     historic_scores = compute_historic_scores(client, historic_states, current_scores)
@@ -568,7 +576,7 @@ def update_metric_changes(client: BigQuery, recreate: bool) -> None:
         historic_scores,
         last_recorded_date,
     )
-    insert_score_changes(client, score_changes, changes_table)
+    insert_score_changes(client, score_changes, changes_table, overwrite=recreate)
 
 
 class MetricChangesJob(EtlJob):
