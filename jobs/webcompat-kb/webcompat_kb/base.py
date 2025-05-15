@@ -19,10 +19,12 @@ ALL_JOBS: MutableMapping[str, type["EtlJob"]] = {}
 
 class EtlJob(ABC):
     name: str
+    default = True
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         # Populates ALL_JOBS when a subclass is defined.
         super().__init_subclass__(**kwargs)
+        assert cls.name not in ALL_JOBS, f"Got multiple jobs named {cls.name}"
         ALL_JOBS[cls.name] = cls
 
     @classmethod

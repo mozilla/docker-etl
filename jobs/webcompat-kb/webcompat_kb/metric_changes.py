@@ -4,6 +4,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Iterator, Mapping, Optional, Sequence, cast
 
 from google.cloud import bigquery
@@ -13,6 +14,7 @@ from .bqhelpers import BigQuery, Json
 from .bugzilla import parse_user_story
 
 FIXED_STATES = {"RESOLVED", "VERIFIED"}
+MIN_CHANGE_DATE = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
 
 @dataclass
@@ -59,7 +61,9 @@ class BugState:
 class ScoreChange:
     who: str
     change_time: datetime
-    score_delta: float
+    old_score: Decimal
+    new_score: Decimal
+    score_delta: Decimal
     reasons: list[str]
 
 
@@ -77,7 +81,7 @@ FROM webcompat_topline_metric_changes"""
 
     if result:
         return result[0]["change_time"]
-    return datetime(2024, 1, 1, tzinfo=timezone.utc)
+    return MIN_CHANGE_DATE
 
 
 def get_bug_changes(
@@ -304,9 +308,9 @@ def bugs_historic_states(
     return rv
 
 
-def get_current_scores(client: BigQuery) -> Mapping[int, float]:
-    rv: dict[int, float] = {}
-    query = "SELECT number, IFNULL(triage_score, 0) as score from scored_site_reports"
+def get_current_scores(client: BigQuery) -> Mapping[int, Decimal]:
+    rv: dict[int, Decimal] = {}
+    query = "SELECT number, CAST(IFNULL(triage_score, 0) as NUMERIC) as score from scored_site_reports"
 
     for row in client.query(query):
         rv[row.number] = row.score
@@ -316,11 +320,11 @@ def get_current_scores(client: BigQuery) -> Mapping[int, float]:
 def compute_historic_scores(
     client: BigQuery,
     historic_states: Mapping[int, list[BugState]],
-    current_scores: Mapping[int, float],
-) -> Mapping[int, list[float]]:
+    current_scores: Mapping[int, Decimal],
+) -> Mapping[int, list[Decimal]]:
     """Compute the webcompat scores corresponding to different states of bugs."""
 
-    rv: dict[int, list[float]] = {}
+    rv: dict[int, list[Decimal]] = {}
 
     schema = [
         bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
@@ -332,7 +336,7 @@ def compute_historic_scores(
 
     rows: list[Mapping[str, Json]] = []
     for bug_id, states in historic_states.items():
-        rv[bug_id] = [0] * len(states)
+        rv[bug_id] = [Decimal(0)] * len(states)
         for i, state in enumerate(states):
             is_open = state.status not in FIXED_STATES
             is_webcompat = (
@@ -355,12 +359,13 @@ def compute_historic_scores(
 
     with client.temporary_table(schema, rows) as tmp_table:
         score_query = f"""
-DECLARE crux_yyyymm INT64 DEFAULT 202409;
-
 SELECT number,
        index,
-       url, keywords, user_story,
-       `moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK`(keywords, user_story) * `moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFER`(url, crux_yyyymm) as score
+       url,
+       keywords,
+       user_story,
+       CAST(`moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK`(keywords, user_story) *
+            `moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFER`(url, 202409) AS NUMERIC) as score
 FROM `{tmp_table.name}`
 """
         bugs_with_webcompat_states = set()
@@ -370,7 +375,7 @@ FROM `{tmp_table.name}`
             logging.debug(
                 f"Bug {row.number}: {row.url} {row.keywords}, {repr(row.user_story)} SCORE: {row.score}"
             )
-            rv[row.number][row.index] = row.score
+            rv[row.number][row.index] = Decimal(row.score)
 
     for bug_id, computed_scores in rv.items():
         current_score = float(current_scores.get(bug_id, 0))
@@ -422,7 +427,7 @@ def compute_score_changes(
     bug_data: Mapping[int, BugData],
     recorded_changes: Mapping[int, set[ChangeKey]],
     historic_states: Mapping[int, list[BugState]],
-    historic_scores: Mapping[int, list[float]],
+    historic_scores: Mapping[int, list[Decimal]],
     last_change_time: datetime,
 ) -> Mapping[int, list[ScoreChange]]:
     rv: dict[int, list[ScoreChange]] = {}
@@ -439,7 +444,7 @@ def compute_score_changes(
 
         assert len(states) == len(scores)
 
-        prev_score = 0.0
+        prev_score = Decimal(0)
         # Iterate through states and scores from oldest to newest
         for state, score in zip(reversed(states), reversed(scores)):
             if state.change_idx is None:
@@ -449,6 +454,8 @@ def compute_score_changes(
                     score_change = ScoreChange(
                         who=bug.creator,
                         change_time=bug.creation_time,
+                        old_score=Decimal(0),
+                        new_score=score,
                         score_delta=score,
                         reasons=["created"],
                     )
@@ -467,6 +474,8 @@ def compute_score_changes(
                 score_change = ScoreChange(
                     who=change.who,
                     change_time=change.change_time,
+                    old_score=prev_score,
+                    new_score=score,
                     score_delta=score_delta,
                     reasons=reasons,
                 )
@@ -475,7 +484,7 @@ def compute_score_changes(
 
             if score_change is not None and score_change.score_delta != 0:
                 change_key = ChangeKey(score_change.who, score_change.change_time)
-                if change_key in recorded_changes[bug_id]:
+                if change_key in recorded_changes.get(bug_id, set()):
                     logging.warning(
                         f"Already recorded a change for bug {bug_id} from {change_key.who} at {change_key.change_time}, skipping"
                     )
@@ -500,20 +509,29 @@ def compute_score_changes(
     return rv
 
 
-def insert_score_changes(
-    client: BigQuery,
-    score_changes: Mapping[int, Sequence[ScoreChange]],
-) -> None:
+def get_metric_changes_table(client: BigQuery) -> bigquery.Table:
     changes_table_name = "webcompat_topline_metric_changes"
 
     schema = [
         bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
         bigquery.SchemaField("who", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("change_time", "TIMESTAMP", mode="REQUIRED"),
-        bigquery.SchemaField("score_delta", "FLOAT", mode="REQUIRED"),
+        bigquery.SchemaField("old_score", "NUMERIC", mode="REQUIRED"),
+        bigquery.SchemaField("new_score", "NUMERIC", mode="REQUIRED"),
+        bigquery.SchemaField("score_delta", "NUMERIC", mode="REQUIRED"),
         bigquery.SchemaField("reasons", "STRING", mode="REPEATED"),
     ]
+    return client.ensure_table(changes_table_name, schema=schema)
 
+
+def insert_score_changes(
+    client: BigQuery,
+    score_changes: Mapping[int, Sequence[ScoreChange]],
+    changes_table: Optional[bigquery.Table] = None,
+    overwrite: bool = False,
+) -> None:
+    if changes_table is None:
+        changes_table = get_metric_changes_table(client)
     rows: list[dict[str, Json]] = []
     for bug_id, changes in score_changes.items():
         for change in changes:
@@ -522,33 +540,31 @@ def insert_score_changes(
                     "number": bug_id,
                     "who": change.who,
                     "change_time": change.change_time.isoformat(),
-                    "score_delta": change.score_delta,
+                    "old_score": str(change.old_score),
+                    "new_score": str(change.new_score),
+                    "score_delta": str(change.score_delta),
                     "reasons": change.reasons,
                 }
             )
-
-    changes_table = client.ensure_table(
-        changes_table_name, schema=schema, recreate=False
-    )
-    client.write_table(changes_table, schema, rows, overwrite=False)
+    client.write_table(changes_table, changes_table.schema, rows, overwrite=overwrite)
 
 
 def update_metric_changes(client: BigQuery, recreate: bool) -> None:
-    schema = [
-        bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
-        bigquery.SchemaField("who", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("change_time", "TIMESTAMP", mode="REQUIRED"),
-        bigquery.SchemaField("score_delta", "FLOAT", mode="REQUIRED"),
-        bigquery.SchemaField("reasons", "STRING", mode="REPEATED"),
-    ]
-    client.ensure_table("webcompat_topline_metric_changes", schema, recreate)
-    last_recorded_date = get_last_recorded_date(client)
+    changes_table = get_metric_changes_table(client)
+    last_recorded_date = (
+        get_last_recorded_date(client) if not recreate else MIN_CHANGE_DATE
+    )
     logging.info(f"Last change time {last_recorded_date}")
     changes_by_bug = get_bug_changes(client, last_recorded_date)
     if not changes_by_bug:
+        logging.info("No bug changes found")
         return
     current_bug_data = get_bugs(client, last_recorded_date, iter(changes_by_bug.keys()))
-    recorded_changes = get_recorded_changes(client, iter(changes_by_bug.keys()))
+    recorded_changes = (
+        get_recorded_changes(client, iter(changes_by_bug.keys()))
+        if not recreate
+        else {}
+    )
     historic_states = bugs_historic_states(current_bug_data, changes_by_bug)
     current_scores = get_current_scores(client)
     historic_scores = compute_historic_scores(client, historic_states, current_scores)
@@ -560,7 +576,7 @@ def update_metric_changes(client: BigQuery, recreate: bool) -> None:
         historic_scores,
         last_recorded_date,
     )
-    insert_score_changes(client, score_changes)
+    insert_score_changes(client, score_changes, changes_table, overwrite=recreate)
 
 
 class MetricChangesJob(EtlJob):
@@ -575,8 +591,9 @@ class MetricChangesJob(EtlJob):
             title="Metric Changes", description="Metric changes arguments"
         )
         group.add_argument(
-            "--recreate-metric-changes",
+            "--metric-changes-recreate",
             action="store_true",
+            dest="recreate_metric_changes",
             help="Delete and recreate changes table from scratch",
         )
 

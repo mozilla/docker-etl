@@ -1,6 +1,7 @@
 import logging
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from types import TracebackType
 from typing import Any, Iterable, Mapping, Optional, Self, Sequence, cast
 
@@ -58,7 +59,6 @@ class BigQuery:
         self,
         table_id: str,
         schema: Iterable[bigquery.SchemaField],
-        recreate: bool = False,
         dataset_id: Optional[str] = None,
         partition: Optional[RangePartition] = None,
     ) -> bigquery.Table:
@@ -72,10 +72,14 @@ class BigQuery:
             )
 
         if self.write:
-            if recreate:
-                self.client.delete_table(table, not_found_ok=True)
             self.client.create_table(table, exists_ok=True)
         return table
+
+    def get_table(
+        self, table_id: str, dataset_id: Optional[str] = None
+    ) -> bigquery.Table:
+        table = self.get_table_id(dataset_id, table_id)
+        return self.client.get_table(table)
 
     def write_table(
         self,
@@ -123,6 +127,9 @@ class BigQuery:
             for row in rows:
                 logging.debug(f"  {row}")
 
+    def get_routine(self, routine_id: str) -> bigquery.Routine:
+        return self.client.get_routine(routine_id)
+
     def query(
         self,
         query: str,
@@ -154,6 +161,11 @@ class BigQuery:
         dataset_id: Optional[str] = None,
     ) -> "TemporaryTable":
         return TemporaryTable(self, schema, rows, dataset_id)
+
+    def current_datetime(self) -> datetime:
+        results = list(self.query("""SELECT current_datetime() as current_datetime"""))
+        assert len(results) == 1
+        return results[0].current_datetime
 
 
 class TemporaryTable:
