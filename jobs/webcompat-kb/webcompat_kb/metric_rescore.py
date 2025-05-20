@@ -84,9 +84,14 @@ def insert_metric_changes(
     before and after scores, and a reason for the rescore."""
     bq_dataset_id = client.default_dataset_id
 
-    score_fields = ["needs_diagnosis", "not_supported", "total"]
-    score_types = ["all", "sightline", "global_1000"]
     change_states = ["before", "after"]
+    score_fields = [
+        "bug_count",
+        "needs_diagnosis_score",
+        "not_supported_score",
+        "total_score",
+    ]
+    score_types = ["all", "sightline", "global_1000"]
 
     score_change_schema = [
         bigquery.SchemaField("change_time", "DATETIME", mode="REQUIRED"),
@@ -98,7 +103,7 @@ def insert_metric_changes(
             for score_field in score_fields:
                 score_change_schema.append(
                     bigquery.SchemaField(
-                        f"{change_state}_{score_field}_score_{score_type}",
+                        f"{change_state}_{score_field}_{score_type}",
                         "NUMERIC",
                         mode="REQUIRED",
                     )
@@ -108,6 +113,9 @@ def insert_metric_changes(
 SELECT
   @change_time as change_time,
   @reason as reason,
+  COUNTIF(before.number IS NOT NULL) as before_bug_count_all,
+  SUM(if(before.metric_type_needs_diagnosis, before.score, 0)) as before_needs_diagnosis_score_all,
+  SUM(if(before.metric_type_firefox_not_supported, before.score, 0)) as before_not_supported_score_all,
   SUM(before.score) AS before_total_score_all,
   COUNTIF(before.is_sightline) as before_bug_count_sightline,
   SUM(if(before.is_sightline and before.metric_type_needs_diagnosis, before.score, 0)) as before_needs_diagnosis_score_sightline,
@@ -117,6 +125,10 @@ SELECT
   SUM(if(before.is_global_1000 and before.metric_type_needs_diagnosis, before.score, 0)) as before_needs_diagnosis_score_global_1000,
   SUM(if(before.is_global_1000 and before.metric_type_firefox_not_supported, before.score, 0)) as before_not_supported_score_global_1000,
   SUM(if(before.is_global_1000, before.score, 0)) AS before_total_score_global_1000,
+
+  COUNTIF(after.number IS NOT NULL) as after_bug_count_all,
+  SUM(if(after.metric_type_needs_diagnosis, after.score, 0)) as after_needs_diagnosis_score_all,
+  SUM(if(after.metric_type_firefox_not_supported, after.score, 0)) as after_not_supported_score_all,
   SUM(after.score) AS after_total_score_all,
   COUNTIF(after.is_sightline) as after_bug_count_sightline,
   SUM(if(after.is_sightline and after.metric_type_needs_diagnosis, after.score, 0)) as after_needs_diagnosis_score_sightline,
@@ -150,6 +162,7 @@ INSERT {bq_dataset_id}.{table.table_id}
         client.query(insert_query, parameters=parameters)
     else:
         result = list(client.query(query, parameters=parameters))[0]
+        assert all(hasattr(result, item.name) for item in score_change_schema)
         logging.info(
             f"Score changes all: {result.after_total_score_all - result.before_total_score_all}, "
             f"sightline: {result.after_total_score_sightline - result.before_total_score_sightline}, "
