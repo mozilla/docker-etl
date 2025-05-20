@@ -3,7 +3,7 @@ import logging
 import sys
 
 # These imports are required to populate ALL_JOBS
-from . import bugzilla, crux, metric, metric_changes, web_features  # noqa: F401
+from . import bugzilla, crux, metric, metric_changes, web_features, metric_rescore  # noqa: F401
 from .base import ALL_JOBS, VALID_PROJECT_ID, VALID_DATASET_ID
 from .bqhelpers import get_client, BigQuery
 
@@ -45,7 +45,7 @@ def get_parser() -> argparse.ArgumentParser:
         "jobs",
         nargs="*",
         choices=list(ALL_JOBS.keys()),
-        help="Jobs to run (defaults to all)",
+        help=f"Jobs to run (defaults to {' '.join(name for name, cls in ALL_JOBS.items() if cls.default)})",
     )
 
     return parser
@@ -72,7 +72,7 @@ def set_default_args(parser: argparse.ArgumentParser, args: argparse.Namespace) 
         sys.exit(1)
 
     if not args.jobs:
-        args.jobs = list(ALL_JOBS.keys())
+        args.jobs = list(name for name, cls in ALL_JOBS.items() if cls.default)
     elif any(job not in ALL_JOBS for job in args.jobs):
         invalid = [job for job in args.jobs if job not in ALL_JOBS]
         parser.print_usage()
