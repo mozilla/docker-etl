@@ -23,9 +23,7 @@ def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> 
             bigquery.SchemaField("total_score", "NUMERIC", mode="REQUIRED"),
         ]
 
-        history_table = client.ensure_table(
-            history_table_name, history_schema, recreate=False
-        )
+        history_table = client.ensure_table(history_table_name, history_schema)
 
         query = f"""
                 SELECT recorded_date

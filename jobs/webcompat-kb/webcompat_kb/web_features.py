@@ -37,11 +37,7 @@ def update_releases(
             ],
         ),
     ]
-    releases_table = client.ensure_table(
-        "releases",
-        releases_schema,
-        recreate=recreate,
-    )
+    releases_table = client.ensure_table("releases", releases_schema)
     version = release.parsed_version
     rows: list[Mapping[str, Json]] = [
         {
@@ -78,26 +74,26 @@ def update_browsers(
         bigquery.SchemaField("version", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
     ]
-    browsers_table = client.ensure_table(
-        "browsers",
-        browsers_schema,
-        recreate=recreate,
-    )
+    browsers_table = client.ensure_table("browsers", browsers_schema)
     browser_versions_table = client.ensure_table(
         "browser_versions",
         browser_versions_schema,
-        recreate=recreate,
     )
 
-    known_browsers = {
-        item.id for item in client.query(f"SELECT id FROM `{browsers_table.table_id}`")
-    }
-    known_versions = {
-        (item.browser_id, item.version): item.date
-        for item in client.query(
-            f"SELECT browser_id, version, date FROM `{browser_versions_table.table_id}`"
-        )
-    }
+    if not recreate:
+        known_browsers = {
+            item.id
+            for item in client.query(f"SELECT id FROM `{browsers_table.table_id}`")
+        }
+        known_versions = {
+            (item.browser_id, item.version): item.date
+            for item in client.query(
+                f"SELECT browser_id, version, date FROM `{browser_versions_table.table_id}`"
+            )
+        }
+    else:
+        known_browsers = set()
+        known_versions = {}
     insert_browsers = []
     insert_versions = []
     for browser_id, data in browser_data.items():
@@ -180,7 +176,6 @@ def update_features(
     table = client.ensure_table(
         "features",
         schema,
-        recreate=recreate,
     )
     rows: list[dict[str, Any]] = []
     for feature_id, data in features_data.items():
