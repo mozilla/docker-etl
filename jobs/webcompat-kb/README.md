@@ -92,7 +92,7 @@ Once the change is validated and you're ready to deploy:
   * `--metric-rescore-update-routine` - once for each routine that
     needs to be replaced by a new version. This has the form
     `canonical_name:replacement_name`
-    e.g. `WEBCOMPAT_METRIC_SCORE_NO_HOST:WEBCOMPAT_METRIC_SCORE_NO_HOST_NEW`.
+    e.g. `WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK:WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK_NEW`.
 
   * `--metric-rescore-reason` - A string summarising the change.
 
