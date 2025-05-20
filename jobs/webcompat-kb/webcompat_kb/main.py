@@ -37,6 +37,9 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--pdb", action="store_true", help="Drop into debugger on execption"
     )
+    parser.add_argument(
+        "--fail-on-error", action="store_true", help="Fail immediately if any job fails"
+    )
 
     for job_cls in ALL_JOBS.values():
         job_cls.add_arguments(parser)
@@ -106,7 +109,7 @@ def main() -> None:
             try:
                 job.main(bq_client, args)
             except Exception as e:
-                if args.pdb:
+                if args.pdb or args.fail_on_error:
                     raise
                 failed.append(job_name)
                 logging.error(e)
