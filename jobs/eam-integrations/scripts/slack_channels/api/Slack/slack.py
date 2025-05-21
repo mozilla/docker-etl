@@ -15,7 +15,7 @@ def retry(count):
                 except Exception as e:
                     print('retry except')
                     if 'ratelimited' in e.args[0].get('error'):
-                        time.sleep(1)
+                        time.sleep(5)
                         continue
         return wrapper
     return decorator
@@ -25,18 +25,33 @@ class SlackAPI:
         self.api_adapter = APIAdaptor(host=config['slack_host'])
         self._token = config['slack_token']
 
-    @retry(3)
-    def get_conversations_list(self, types):
+    @retry(10)
+    def get_conversation_info(self, channel_id):
+        params = {'channel': channel_id,'include_num_members':True}
+        headers = {'Authorization': f'Bearer {self._token }'}
+        endpoint = "api/conversations.info"
+
+        return self.api_adapter.get(endpoint=endpoint, 
+                                    headers=headers,
+                                    params=params)
+        
+    @retry(10)
+    def get_teams_list(self):
+        headers = {'Authorization': f'Bearer {self._token }'}
+        endpoint = "api/auth.teams.list"
+        return self.api_adapter.get(endpoint=endpoint, 
+                            headers=headers)
+        
+    @retry(10)
+    def get_conversations_list(self, types,team_id):
         channels_dict = {}
-        params = {'limit': 100,
+        params = {'limit': 1000,
                   'types': types,
-                  'team_id': 'T07JXFQU132',
-                  # 'last_message_activity_before': 1724426147
-        }
+                  'team_id': team_id, 
+                }
         
         headers = {'Authorization': f'Bearer {self._token }'}
-        endpoint = "api/conversations.list"
-        #endpoint = "api/admin.conversations.lookup"
+        endpoint = "api/conversations.list"        
         
         while (True):
             data = self.api_adapter.get(endpoint=endpoint,
@@ -56,7 +71,7 @@ class SlackAPI:
 
         return channels_dict
 
-    @retry(3)
+    @retry(10)
     def get_conversations_history(self, params):
         
         headers = {'Authorization': f'Bearer {self._token }'}
@@ -66,7 +81,7 @@ class SlackAPI:
                                     headers=headers,
                                     params=params)
 
-    @retry(3)
+    @retry(10)
     def conversations_archive(self, channel_id):
         params = {'channel': channel_id}
         headers = {'Authorization': f'Bearer {self._token }'}
@@ -75,7 +90,7 @@ class SlackAPI:
         return self.api_adapter.post(endpoint=endpoint,
                                      headers=headers,
                                      params=params)
-    @retry(3)
+    @retry(10)
     def conversations_delete(self, channel_id):
         params = {'channel_id': channel_id}
         headers = {'Authorization': f'Bearer {self._token }'}
@@ -83,8 +98,18 @@ class SlackAPI:
         return self.api_adapter.post(endpoint=endpoint,
                                             headers=headers,
                                             params=params)
+
+    @retry(10)
+    def leave_channel(self, channel_id):
+        params = {'channel': channel_id}
+        endpoint = "api/conversations.leave"
+        headers = {'Authorization': f'Bearer {self._token }'}
+
+        return self.api_adapter.post(endpoint=endpoint,
+                                     headers=headers,
+                                     params=params)
         
-    @retry(3)
+    @retry(10)
     def join_channel(self, channel_id):
         params = {'channel': channel_id}
         endpoint = "api/conversations.join"
@@ -93,7 +118,7 @@ class SlackAPI:
         return self.api_adapter.post(endpoint=endpoint,
                                      headers=headers,
                                      params=params)
-    @retry(3)
+    @retry(10)
     def chat_post_message(self, channel_id, text):
         params = {'channel': channel_id,
                   'text': text}
