@@ -147,7 +147,7 @@ class SlackIntegration:
                       Operations.archive, 
                       Operations.delete_archived
                       ]
-        max_limit = 50
+        max_limit = 5
         ts_07_days = 60*60*24*7
         lst_msg_secs = 60*60*24*173 # 173 days
         archived_secs = 60*60*24*30 # 30 days
