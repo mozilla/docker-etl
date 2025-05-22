@@ -13,7 +13,11 @@ from .bqhelpers import BigQuery, Json
 
 def get_imported_releases(client: BigQuery) -> dict[str, datetime]:
     query = "SELECT name, published_at FROM releases"
-    return {item.name: item.published_at for item in client.query(query)}
+    try:
+        return {item.name: item.published_at for item in client.query(query)}
+    except Exception:
+        # If the table doesn't exist
+        return {}
 
 
 def update_releases(
