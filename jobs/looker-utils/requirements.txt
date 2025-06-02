@@ -1,2 +1,5 @@
 click==8.0.4
+google-cloud-bigquery==3.22.0
+henry==0.4.4
 looker-sdk==24.20.0
+pandas==2.0.3
