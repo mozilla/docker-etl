@@ -1,4 +1,4 @@
-FROM google/cloud-sdk:357.0.0
+FROM google/cloud-sdk:slim
 MAINTAINER Jeff Klukas <jklukas@mozilla.com>
 
 # https://github.com/mozilla-services/Dockerflow/blob/master/docs/building-container.md
