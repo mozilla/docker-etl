@@ -244,7 +244,7 @@ MutBugsById = MutableMapping[BugId, Bug]
 
 HistoryByBug = Mapping[BugId, Sequence[BugHistoryEntry]]
 
-BUG_QUERIES: Mapping[str, dict[str, str | list[str]]] = {
+BUG_QUERIES: Mapping[str, Mapping[str, str | list[str]]] = {
     "webcompat_product": {
         "component": [
             "Knowledge Base",
@@ -253,12 +253,14 @@ BUG_QUERIES: Mapping[str, dict[str, str | list[str]]] = {
             "Interventions",
         ],
         "product": "Web Compatibility",
-        "j_top": "OR",
-        "f1": "bug_status",
-        "o1": "changedafter",
-        "v1": "2020-01-01",
-        "f2": "resolution",
-        "o2": "isempty",
+        "f1": "OP",
+        "j1": "OR",
+        "f2": "bug_status",
+        "o2": "changedafter",
+        "v2": "2020-01-01",
+        "f3": "resolution",
+        "o4": "isempty",
+        "f5": "CP",
     },
     "webcompat_other": {
         "f1": "product",
@@ -286,6 +288,34 @@ BUG_QUERIES: Mapping[str, dict[str, str | list[str]]] = {
         "f10": "CP",
     },
 }
+
+
+def add_datetime_limit(
+    query: Mapping[str, str | list[str]], after: datetime
+) -> Mapping[str, str | list[str]]:
+    max_clause_id = 0
+    field_re = re.compile(r"(?:f|J|o|v)(\d+)")
+    for key in query.keys():
+        if key == "j_top":
+            raise ValueError(
+                "add_datetime_limit doesn't support queries with top-level OR relation"
+            )
+        m = field_re.match(key)
+        if m is not None:
+            key_clause_id = int(m.group(1))
+            if key_clause_id > max_clause_id:
+                max_clause_id = key_clause_id
+
+    new_clause = max_clause_id + 1
+    query = {**query}
+    query.update(
+        {
+            f"f{new_clause}": "delta_ts",
+            f"o{new_clause}": "greaterthaneq",
+            f"v{new_clause}": after.strftime("%Y-%m-%d %H:%M"),
+        }
+    )
+    return query
 
 
 @dataclass
@@ -385,8 +415,20 @@ def parse_user_story(input_string: str) -> Mapping[str, str | list[str]]:
     return result_dict
 
 
+def bigquery_last_import(bq_client: BigQuery) -> Optional[datetime]:
+    query = """
+            SELECT MAX(run_at) AS last_run_at
+            FROM import_runs
+            WHERE is_history_fetch_completed = TRUE
+        """
+    res = bq_client.query(query)
+    row = list(res)[0]
+    return row["last_run_at"]
+
+
 class BugCache(Mapping):
-    def __init__(self, bz_client: bugdantic.Bugzilla):
+    def __init__(self, bq_client: BigQuery, bz_client: bugdantic.Bugzilla):
+        self.bq_client = bq_client
         self.bz_client = bz_client
         self.bugs: MutBugsById = {}
 
@@ -399,9 +441,37 @@ class BugCache(Mapping):
     def __iter__(self) -> Iterator[BugId]:
         yield from self.bugs
 
+    def bq_fetch_bugs(self) -> None:
+        for bug in self.bq_client.query("SELECT * from bugzilla_bugs"):
+            self.bugs[bug.number] = Bug(
+                id=bug.number,
+                summary=bug.title,
+                status=bug.status,
+                resolution=bug.resolution,
+                product=bug.product,
+                component=bug.component,
+                creator=bug.creator,
+                see_also=bug.see_also,
+                depends_on=bug.depends_on,
+                blocks=bug.blocks,
+                priority=bug.priority,
+                severity=bug.severity,
+                creation_time=bug.creation_time,
+                assigned_to=bug.assigned_to,
+                keywords=bug.keywords,
+                url=bug.url,
+                user_story=bug.user_story_raw,
+                last_resolved=bug.resolved_time,
+                last_change_time=bug.last_change_time,
+                size_estimate=bug.size_estimate,
+                whiteboard=bug.whiteboard,
+                webcompat_priority=bug.webcompat_priority,
+                webcompat_score=bug.webcompat_score,
+            )
+
     def bz_fetch_bugs(
         self,
-        params: Optional[dict[str, str | list[str]]] = None,
+        params: Optional[Mapping[str, str | list[str]]] = None,
         bug_ids: Optional[Sequence[BugId]] = None,
     ) -> None:
         if (params is None and bug_ids is None) or (
@@ -445,6 +515,7 @@ class BugCache(Mapping):
                 bugs = self.bz_client.bugs(
                     bug_ids, include_fields=fields, page_size=200
                 )
+            logging.info(f"Got {len(bugs)} bugs")
             for bug in bugs:
                 assert bug.id is not None
                 self.bugs[bug.id] = Bug.from_bugzilla(bug)
@@ -541,16 +612,23 @@ def get_etp_breakage_reports(
 
 
 def fetch_all_bugs(
+    bq_client: BigQuery,
     bz_client: bugdantic.Bugzilla,
+    last_import_time: Optional[datetime],
 ) -> BugsById:
     """Get all the bugs that should be imported into BigQuery.
 
     :returns: A tuple of (all bugs, site report bugs, knowledge base bugs,
                           core bugs, ETP report bugs, ETP dependencies)."""
 
-    bug_cache = BugCache(bz_client)
+    bug_cache = BugCache(bq_client, bz_client)
+
+    if last_import_time is not None:
+        bug_cache.bq_fetch_bugs()
 
     for category, filter_config in BUG_QUERIES.items():
+        if last_import_time:
+            filter_config = add_datetime_limit(filter_config, last_import_time)
         logging.info(f"Fetching {category} bugs")
         bug_cache.bz_fetch_bugs(params=filter_config)
 
@@ -602,12 +680,15 @@ class BugHistoryUpdater:
         self.bq_client = bq_client
         self.bz_client = bz_client
 
-    def run(self, all_bugs: BugsById, recreate: bool) -> HistoryByBug:
-        if not recreate:
+    def run(
+        self, all_bugs: BugsById, last_import_time: Optional[datetime]
+    ) -> HistoryByBug:
+        if last_import_time is not None:
             existing_records = self.bigquery_fetch_history(all_bugs.keys())
             new_bugs, existing_bugs = self.group_bugs(all_bugs)
             existing_bugs_history = self.missing_records(
-                existing_records, self.existing_bugs_history(existing_bugs)
+                existing_records,
+                self.existing_bugs_history(existing_bugs, last_import_time),
             )
         else:
             existing_records = {}
@@ -649,13 +730,9 @@ class BugHistoryUpdater:
         synthetic_history = self.create_initial_history_entry(new_bugs, history)
         return self.merge_history(history, synthetic_history)
 
-    def existing_bugs_history(self, existing_bugs: BugsById) -> HistoryByBug:
-        last_import_time = self.bigquery_last_import()
-
-        if last_import_time is None:
-            logging.info("No previous history update found")
-            return {}
-
+    def existing_bugs_history(
+        self, existing_bugs: BugsById, last_import_time: datetime
+    ) -> HistoryByBug:
         updated_bugs = {
             bug_id
             for bug_id, bug in existing_bugs.items()
@@ -703,16 +780,6 @@ class BugHistoryUpdater:
         imported_ids = {bug["number"] for bug in rows}
 
         return imported_ids
-
-    def bigquery_last_import(self) -> Optional[datetime]:
-        query = """
-                SELECT MAX(run_at) AS last_run_at
-                FROM import_runs
-                WHERE is_history_fetch_completed = TRUE
-            """
-        res = self.bq_client.query(query)
-        row = list(res)[0]
-        return row["last_run_at"]
 
     def bugzilla_fetch_history(self, ids: Iterable[int]) -> HistoryByBug:
         history: dict[int, list[bugdantic.bugzilla.History]] = {}
@@ -978,6 +1045,7 @@ class BigQueryImporter:
             "severity": bug.severity,
             "priority": bug.priority,
             "creation_time": bug.creation_time.isoformat(),
+            "last_change_time": bug.last_change_time.isoformat(),
             "assigned_to": bug.assigned_to,
             "keywords": bug.keywords,
             "url": bug.url,
@@ -992,6 +1060,7 @@ class BigQueryImporter:
             "webcompat_score": bug.webcompat_score,
             "depends_on": bug.depends_on,
             "blocks": bug.blocks,
+            "see_also": bug.see_also,
         }
 
     def convert_history_entry(self, entry: BugHistoryEntry) -> Mapping[str, Any]:
@@ -1022,6 +1091,7 @@ class BigQueryImporter:
             bigquery.SchemaField("severity", "INTEGER"),
             bigquery.SchemaField("priority", "INTEGER"),
             bigquery.SchemaField("creation_time", "TIMESTAMP", mode="REQUIRED"),
+            bigquery.SchemaField("last_change_time", "TIMESTAMP"),
             bigquery.SchemaField("assigned_to", "STRING"),
             bigquery.SchemaField("keywords", "STRING", mode="REPEATED"),
             bigquery.SchemaField("url", "STRING"),
@@ -1034,6 +1104,7 @@ class BigQueryImporter:
             bigquery.SchemaField("webcompat_score", "INTEGER"),
             bigquery.SchemaField("depends_on", "INTEGER", mode="REPEATED"),
             bigquery.SchemaField("blocks", "INTEGER", mode="REPEATED"),
+            bigquery.SchemaField("see_also", "STRING", mode="REPEATED"),
         ]
         rows = [self.convert_bug(bug) for bug in all_bugs.values()]
         self.write_table(table, schema, rows, overwrite=True)
@@ -1215,7 +1286,10 @@ def write_bugs(
 
 
 def load_bugs(
-    bz_client: bugdantic.Bugzilla, load_bug_data_path: Optional[str]
+    bq_client: BigQuery,
+    bz_client: bugdantic.Bugzilla,
+    load_bug_data_path: Optional[str],
+    last_import_time: Optional[datetime],
 ) -> BugsById:
     if load_bug_data_path is not None:
         try:
@@ -1230,7 +1304,7 @@ def load_bugs(
             raise BugLoadError(f"Reading bugs from {load_bug_data_path} failed") from e
     else:
         try:
-            return fetch_all_bugs(bz_client)
+            return fetch_all_bugs(bq_client, bz_client, last_import_time)
         except Exception as e:
             raise BugLoadError(
                 "Fetching bugs from Bugzilla was not completed due to an error, aborting."
@@ -1243,19 +1317,33 @@ def run(
     bz_client: bugdantic.Bugzilla,
     write: bool,
     include_history: bool,
+    recreate_bugs: bool,
     recreate_history: bool,
     write_bug_data_path: Optional[str],
     load_bug_data_path: Optional[str],
 ) -> None:
     start_time = time.monotonic()
 
-    all_bugs = load_bugs(bz_client, load_bug_data_path)
+    last_import_time = (
+        bigquery_last_import(bq_client)
+        if not recreate_bugs or (include_history and not recreate_history)
+        else None
+    )
+
+    bugs_last_import_time = last_import_time if not recreate_bugs else None
+    all_bugs = load_bugs(
+        bq_client,
+        bz_client,
+        load_bug_data_path,
+        bugs_last_import_time,
+    )
 
     history_changes = None
     if include_history:
         history_updater = BugHistoryUpdater(bq_client, bz_client)
+        history_last_import_time = last_import_time if not recreate_history else None
         try:
-            history_changes = history_updater.run(all_bugs, recreate_history)
+            history_changes = history_updater.run(all_bugs, history_last_import_time)
         except Exception as e:
             logging.error(f"Exception updating history: {e}")
             raise
@@ -1343,6 +1431,11 @@ class BugzillaJob(EtlJob):
             help="Don't read or update bug history",
         )
         group.add_argument(
+            "--bugzilla-recreate-bugs",
+            action="store_true",
+            help="Re-read bug data from scratch",
+        )
+        group.add_argument(
             "--bugzilla-recreate-history",
             action="store_true",
             help="Re-read bug history from scratch",
@@ -1375,6 +1468,7 @@ class BugzillaJob(EtlJob):
             bz_client,
             args.write,
             args.bugzilla_include_history,
+            args.bugzilla_recreate_bugs,
             args.bugzilla_recreate_history,
             args.bugzilla_write_bug_data,
             args.bugzilla_load_bug_data,
