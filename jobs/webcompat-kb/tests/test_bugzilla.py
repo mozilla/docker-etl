@@ -15,6 +15,7 @@ from webcompat_kb.bugzilla import (
     BugHistoryUpdater,
     EXTERNAL_LINK_CONFIGS,
     PropertyHistory,
+    add_datetime_limit,
     extract_int_from_field,
     get_etp_breakage_reports,
     get_kb_bug_core_bugs,
@@ -1447,17 +1448,15 @@ def test_missing_initial_add():
     assert empty_history.missing_initial_add()
 
 
-@patch("webcompat_kb.bugzilla.BugHistoryUpdater.bigquery_last_import")
 @patch("webcompat_kb.bugzilla.BugHistoryUpdater.bugzilla_fetch_history")
-def test_existing_bugs_history(
-    mock_bugzilla_fetch_history, mock_last_import, history_updater
-):
-    mock_last_import.return_value = datetime(2020, 1, 1, tzinfo=timezone.utc)
+def test_existing_bugs_history(mock_bugzilla_fetch_history, history_updater):
     mock_bugzilla_fetch_history.return_value = (
         history_updater.bugzilla_to_history_entry(MISSING_KEYWORDS_HISTORY)
     )
 
-    result = history_updater.existing_bugs_history(MISSING_KEYWORDS_BUGS)
+    result = history_updater.existing_bugs_history(
+        MISSING_KEYWORDS_BUGS, datetime(2020, 1, 1, tzinfo=timezone.utc)
+    )
 
     expected = to_history_entry(
         [
@@ -1532,17 +1531,17 @@ def test_existing_bugs_history(
     assert result == expected
 
 
-@patch("webcompat_kb.bugzilla.BugHistoryUpdater.bigquery_last_import")
 @patch("webcompat_kb.bugzilla.BugHistoryUpdater.bugzilla_fetch_history")
 def test_existing_bugs_history_filter_updated(
-    mock_bugzilla_fetch_history, mock_last_import, history_updater
+    mock_bugzilla_fetch_history, history_updater
 ):
-    mock_last_import.return_value = datetime(2024, 5, 28, tzinfo=timezone.utc)
     mock_bugzilla_fetch_history.return_value = (
         history_updater.bugzilla_to_history_entry(MISSING_KEYWORDS_HISTORY)
     )
 
-    result = history_updater.existing_bugs_history(MISSING_KEYWORDS_BUGS)
+    result = history_updater.existing_bugs_history(
+        MISSING_KEYWORDS_BUGS, datetime(2024, 5, 28, tzinfo=timezone.utc)
+    )
 
     expected = to_history_entry(
         [
@@ -1704,4 +1703,77 @@ def test_read_write_data():
             [],
         )
 
-        assert load_bugs(None, f.name) == SAMPLE_ALL_BUGS
+        assert load_bugs(None, None, f.name, None) == SAMPLE_ALL_BUGS
+
+
+@pytest.mark.parametrize(
+    "input_query, expected_query",
+    [
+        ({}, {"f1": "delta_ts", "o1": "greaterthaneq", "v1": "2025-05-10 00:30"}),
+        (
+            {"product": "Web Compatibility"},
+            {
+                "product": "Web Compatibility",
+                "f1": "delta_ts",
+                "o1": "greaterthaneq",
+                "v1": "2025-05-10 00:30",
+            },
+        ),
+        (
+            {"f1": "product", "o1": "equals", "v1": "Web Compatibility"},
+            {
+                "f1": "product",
+                "o1": "equals",
+                "v1": "Web Compatibility",
+                "f2": "delta_ts",
+                "o2": "greaterthaneq",
+                "v2": "2025-05-10 00:30",
+            },
+        ),
+        (
+            {
+                "f1": "OP",
+                "j1": "OR",
+                "f2": "product",
+                "o2": "equals",
+                "v2": "Web Compatibility",
+                "f3": "keywords",
+                "o3": "substring",
+                "v3": "webcompat:site-report",
+                "f4": "CP",
+            },
+            {
+                "f1": "OP",
+                "j1": "OR",
+                "f2": "product",
+                "o2": "equals",
+                "v2": "Web Compatibility",
+                "f3": "keywords",
+                "o3": "substring",
+                "v3": "webcompat:site-report",
+                "f4": "CP",
+                "f5": "delta_ts",
+                "o5": "greaterthaneq",
+                "v5": "2025-05-10 00:30",
+            },
+        ),
+    ],
+)
+def test_add_datetime_limit(input_query, expected_query):
+    assert (
+        add_datetime_limit(input_query, datetime(2025, 5, 10, 0, 30)) == expected_query
+    )
+
+
+def test_add_datetime_limit_error():
+    with pytest.raises(ValueError):
+        add_datetime_limit(
+            {
+                "test": "Example",
+                "j_top": "OR",
+                "f1": "product",
+                "o1": "equals",
+                "v1": "Web Compatibility",
+            },
+            datetime(2025, 5, 10, 0, 30),
+        )
