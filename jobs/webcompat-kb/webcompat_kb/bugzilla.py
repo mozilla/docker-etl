@@ -259,8 +259,8 @@ BUG_QUERIES: Mapping[str, Mapping[str, str | list[str]]] = {
         "o2": "changedafter",
         "v2": "2020-01-01",
         "f3": "resolution",
-        "o4": "isempty",
-        "f5": "CP",
+        "o3": "isempty",
+        "f4": "CP",
     },
     "webcompat_other": {
         "f1": "product",
