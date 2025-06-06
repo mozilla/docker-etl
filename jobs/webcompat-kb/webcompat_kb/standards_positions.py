@@ -35,8 +35,8 @@ class StandardsPosition(pydantic.BaseModel):
     rationale: Optional[str] = None
 
 
-def get_last_import(client: BigQuery) -> Optional[str]:
-    client.ensure_table(
+def get_last_import(client: BigQuery) -> tuple[bigquery.Table, Optional[str]]:
+    runs_table = client.ensure_table(
         "import_runs",
         [
             bigquery.SchemaField("mozilla_id", "STRING", mode="REQUIRED"),
@@ -46,8 +46,8 @@ def get_last_import(client: BigQuery) -> Optional[str]:
     query = "SELECT mozilla_id FROM import_runs ORDER BY run_at DESC LIMIT 1"
     result = list(client.query(query))
     if len(result):
-        return result[0]["mozilla_id"]
-    return None
+        return runs_table, result[0]["mozilla_id"]
+    return runs_table, None
 
 
 def get_sp_metadata() -> tuple[str, str]:
@@ -98,15 +98,15 @@ def update_sp_data(client: BigQuery, data: Sequence[StandardsPosition]) -> None:
     client.write_table(table, schema, [vars(item) for item in data], True)
 
 
-def record_import(client: BigQuery, current_sha: str) -> None:
+def record_import(client: BigQuery, table: bigquery.Table, current_sha: str) -> None:
     client.insert_rows(
-        "import_runs",
+        table,
         [{"mozilla_id": current_sha, "run_at": datetime.now().isoformat()}],
     )
 
 
 def update_standards_positions(client: BigQuery) -> None:
-    last_import_sha = get_last_import(client)
+    runs_table, last_import_sha = get_last_import(client)
     current_sha, download_url = get_sp_metadata()
 
     if current_sha == last_import_sha:
@@ -115,7 +115,7 @@ def update_standards_positions(client: BigQuery) -> None:
 
     data = get_sp_data(download_url)
     update_sp_data(client, data)
-    record_import(client, current_sha)
+    record_import(client, runs_table, current_sha)
 
 
 class StandardsPositionsJob(EtlJob):
