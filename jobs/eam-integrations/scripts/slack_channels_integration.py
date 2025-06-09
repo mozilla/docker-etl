@@ -354,7 +354,7 @@ class SlackIntegration:
         # ==================================================================================
         try:
             report = "_*SLACK CHANNELS INTEGRATION REPORT:*_\r"
-            report += f"_*`Number of Public and Archived Channels (before integration):`*_ `{len(channels_dict)}`\r"
+            report += f"_*`Number of Public and Archived Channels (before integration):`*_ `{len(non_archived)+ len(archived)}`\r"
             report += f"_*`Warning messages posted by the integration:`*_ `{num_warnings}`\r"
             report += f"_*`Channels archived by the integration:`*_ `{num_archived}`\r"
             report += f"_*`Channels deleted by the integration:`*_ `{num_deleted}`\r"
