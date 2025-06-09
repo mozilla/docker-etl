@@ -17,28 +17,28 @@ classifiers = [
 ]
 dependencies = [
   "bugdantic==0.2.5",
-  "google-cloud-bigquery==3.24.0",
+  "google-cloud-bigquery==3.34.0",
   "httpx[http2]>=0.28.1",
-  "pydantic==2.11.3",
+  "pydantic==2.11.5",
   "web-features==0.1.0"
 ]
 
 [project.optional-dependencies]
 test = [
-  "mypy==1.10.0",
+  "mypy==1.16.0",
   "pandas-stubs==2.2.2.240603",
-  "pytest-ruff==0.3.2",
-  "pytest==8.2.2",
-  "ruff==0.4.8",
-  "types-cachetools==5.3.0.7",
-  "types-cffi==1.16.0.20240331",
-  "types-protobuf==5.27.0.20240626",
-  "types-pyOpenSSL==24.1.0.20240425",
-  "types-python-dateutil==2.9.0.20240316",
-  "types-pytz==2024.1.0.20240417",
-  "types-requests==2.32.0.20240712",
-  "types-setuptools==70.3.0.20240710",
-  "types-tqdm==4.66.0.20240417",
+  "pytest-ruff==0.4.1",
+  "pytest==8.4.0",
+  "ruff==0.11.13",
+  "types-cachetools==6.0.0.20250525",
+  "types-cffi==1.17.0.20250523",
+  "types-protobuf==6.30.2.20250516",
+  "types-pyOpenSSL==24.1.0.20240722",
+  "types-python-dateutil==2.9.0.20250516",
+  "types-pytz==2025.2.0.20250516",
+  "types-requests==2.32.0.20250602",
+  "types-setuptools==80.9.0.20250529",
+  "types-tqdm==4.67.0.20250516",
 ]
 
 [project.scripts]
