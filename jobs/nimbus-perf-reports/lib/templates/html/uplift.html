@@ -1,0 +1,210 @@
+{% autoescape off %}
+<div class="chart"><canvas id="{{segment}}_{{metric}}_uplift"></canvas>
+<button onclick="{{segment}}_{{metric}}_uplift_chart.resetZoom()">Reset Zoom</button>
+</div>
+<script>
+  ctx = document.getElementById('{{segment}}_{{metric}}_uplift');
+
+  data = {
+      labels: {{quantiles}},
+      datasets: [
+{% for dataset in datasets %}
+      {
+          label: "{{dataset.branch}}",
+          data: {{dataset.uplift}},
+          borderWidth: 2
+      },
+{% endfor %}
+      ]
+  };
+
+  var {{segment}}_{{metric}}_uplift_chart = new Chart(ctx, {
+    type: 'line',
+    data,
+    options: {
+      animation: false,
+      responsive: true,
+      plugins: {
+          zoom: zoomOptions,
+          datalabels: {
+            display: function(context) {
+
+              let num_visible = 0;
+              for (let i =0 ; i < context.chart.data.datasets.length ; i++) {
+                if (context.chart.isDatasetVisible(i)) {
+                  num_visible++;
+                  if (num_visible !== 1) {
+                    return false;
+                  } 
+                }
+              }
+
+              const index = context.dataIndex;
+              const labelValue = context.chart.data.labels[index];
+              return (labelValue == 0.99 || labelValue==0.95 || Math.round(labelValue*100)%10 === 0)
+                  ? true : false;
+            },
+            anchor: 'end',
+            align: 'top',
+            formatter: n => Math.round(n)+"%"
+          },
+          annotation: {
+              annotations: {
+                  line: {
+                      type: 'line',
+                      yMin: 0,
+                      yMax: 0,
+                      borderWidth: 2,
+                      borderColor: 'gray'
+                    }
+                }
+          },
+          legend: {
+              display: true,
+              position: 'top',
+          },
+          title: {
+              display: true,
+              text: ["{{metric}} uplift", "segment: {{segment}}"]
+          }
+      },
+      scales: {
+        y: {
+          suggestedMax: {{upliftMax}},
+          suggestedMin: {{upliftMin}},
+          beginAtZero: true,
+          title: {
+            text: "Uplift (%)",
+            display: true
+          }
+        },
+        x: {
+          title: {
+            text: "Quantile",
+            display: true
+          },
+          ticks: {
+            minRotation: 50,
+            callback: function(val, index) {
+              x = this.getLabelForValue(val);
+              if (Math.round(x*100) % 10 === 0 || x==0.99 || x==0.95) {
+                  return x;
+              }
+            }
+          }
+        }
+      },
+      elements: {
+        point:{
+          radius: 0
+        }
+      }
+    }
+  });
+</script>
+
+<div class="chart">
+<canvas id="{{segment}}_{{metric}}_diff"></canvas>
+<button onclick="{{segment}}_{{metric}}_diff_chart.resetZoom()">Reset Zoom</button>
+</div>
+<script>
+  ctx = document.getElementById('{{segment}}_{{metric}}_diff');
+
+  data = {
+      labels: {{quantiles}},
+      datasets: [
+{% for dataset in datasets %}
+      {
+          label: "{{dataset.branch}}",
+          data: {{dataset.diff}},
+          borderWidth: 2
+      },
+{% endfor %}
+      ]
+  };
+
+  var {{segment}}_{{metric}}_diff_chart = new Chart(ctx, {
+    type: 'line',
+    data,
+    options: {
+      animation: false,
+      responsive: true,
+      plugins: {
+          zoom: zoomOptions,
+          datalabels: {
+            display: function(context) {
+
+              let num_visible = 0;
+              for (let i =0 ; i < context.chart.data.datasets.length ; i++) {
+                if (context.chart.isDatasetVisible(i)) {
+                  num_visible++;
+                  if (num_visible !== 1) {
+                    return false;
+                  } 
+                }
+              }
+
+              const index = context.dataIndex;
+              const labelValue = context.chart.data.labels[index];
+              return (labelValue == 0.99 || labelValue==0.95 || Math.round(labelValue*100)%10 === 0)
+                  ? true : false;
+            },
+            anchor: 'end',
+            align: 'top',
+            formatter: Math.round,
+          },
+          annotation: {
+              annotations: {
+                  line: {
+                      type: 'line',
+                      yMin: 0,
+                      yMax: 0,
+                      borderWidth: 2,
+                      borderColor: 'gray'
+                    }
+                }
+          },
+          legend: {
+              display: true,
+              position: 'top',
+          },
+          title: {
+              display: true,
+              text: ["{{metric}} difference", "segment: {{segment}}"]
+          }
+      },
+      scales: {
+        y: {
+          suggestedMax: {{diffMax}},
+          suggestedMin: {{diffMin}},
+          beginAtZero: true,
+          title: {
+            text: "Difference",
+            display: true
+          }
+        },
+        x: {
+          title: {
+            text: "Quantile",
+            display: true
+          },
+          ticks: {
+            minRotation: 50,
+            callback: function(val, index) {
+              x = this.getLabelForValue(val);
+              if (Math.round(x*100) % 10 === 0 || x==0.99 || x==0.95) {
+                  return x;
+              }
+            }
+          }
+        }
+      },
+      elements: {
+        point:{
+          radius: 0
+        }
+      }
+    },
+  });
+</script>
+{% endautoescape %}
