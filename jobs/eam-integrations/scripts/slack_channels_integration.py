@@ -223,9 +223,10 @@ class SlackIntegration:
                      or 'channel_unarchive' in x.values()
                      )
                     ] #
+            
+            created = channels_dict.get(channel_id).get('created')
             # no msgs
-            if len(msgs) == 0:
-                created = channels_dict.get(channel_id).get('created')                
+            if len(msgs) == 0:                                
                 
                 # No messages, no members: Delete channel
                 if (channels_dict.get(channel_id).get('num_members')==0):                     
