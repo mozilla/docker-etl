@@ -356,3 +356,94 @@ class SiteRanksJob(EtlJob):
             update_sightline_data(client_crux, config, latest_yyyymm)
             update_min_rank_data(client_crux, config, latest_yyyymm)
             update_import_date(client_crux, config, run_at, latest_yyyymm)
+
+
+def check_yyyymm(client: BigQuery, config: Config, yyyymm: int) -> bool:
+    query = f"""
+SELECT EXISTS (
+  SELECT 1 FROM `{config.bq_crux_dataset}.host_min_ranks` WHERE yyyymm = @yyyymm) as has_yyyymm
+"""
+    parameters = [bigquery.ScalarQueryParameter("yyyymm", "INTEGER", yyyymm)]
+    result = list(client.query(query, parameters=parameters))[0]
+    return result.has_yyyymm
+
+
+def create_new_routine(client: BigQuery, config: Config, yyyymm: int) -> str:
+    new_name = f"{client.project_id}.{client.default_dataset_id}.WEBCOMPAT_METRIC_YYYYMM_{yyyymm}"
+    query = f"CREATE OR REPLACE FUNCTION `{new_name}`() RETURNS INT64 AS ({yyyymm});"
+    if config.write:
+        logging.info(f"Creating function {new_name}")
+        client.query(query)
+    else:
+        logging.info(f"Would create function {new_name}")
+    return new_name
+
+
+def create_new_scored_site_reports(
+    client: BigQuery, config: Config, yyyymm: int, new_fn_name: str
+) -> str:
+    current_table = client.get_table("scored_site_reports")
+    current_query = current_table.view_query
+
+    fn_name = f"{client.project_id}.{client.default_dataset_id}.WEBCOMPAT_METRIC_YYYYMM"
+
+    if fn_name not in current_query:
+        raise ValueError(f"Failed to find {fn_name} in {current_table}")
+
+    new_query = current_query.replace(fn_name, new_fn_name)
+    new_table_id = f"{current_table.reference}_{yyyymm}"
+    new_table = bigquery.Table(new_table_id)
+    new_table.view_query = new_query
+
+    if config.write:
+        logging.info(f"Creating view {new_table_id}")
+        client.client.create_table(new_table, exists_ok=True)
+    else:
+        logging.info(f"Would create view {new_table_id} with query:\n{new_query}")
+    return new_table_id
+
+
+def update_site_ranks(client: BigQuery, config: Config, yyyymm: int) -> None:
+    from . import metric_rescore
+
+    if not check_yyyymm(client, config, yyyymm):
+        raise ValueError(f"No site rank data found for {yyyymm}")
+
+    new_fn_name = create_new_routine(client, config, yyyymm)
+    new_site_reports = create_new_scored_site_reports(
+        client, config, yyyymm, new_fn_name
+    )
+
+    _, new_routine_id = new_fn_name.split(".", 1)
+    logging.info(new_routine_id)
+
+    metric_rescore.rescore(
+        client,
+        new_site_reports.rsplit(".", 1)[1],
+        f"Update site rank data to {yyyymm}",
+        [f"{client.default_dataset_id}.WEBCOMPAT_METRIC_YYYYMM:{new_routine_id}"],
+    )
+
+
+class SiteRanksUpdateList(EtlJob):
+    name = "site-ranks-update"
+    default = False
+
+    def default_dataset(self, args: argparse.Namespace) -> str:
+        return args.bq_kb_dataset
+
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        group = parser.add_argument_group(
+            title="Site-Ranks", description="site-ranks update arguments"
+        )
+        group.add_argument(
+            "--site-ranks-update-yyyymm",
+            action="store",
+            type=int,
+            help="New site rank data to use in the format YYYYMM",
+        )
+
+    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
+        config = Config.from_args(args)
+        update_site_ranks(client, config, args.site_ranks_update_yyyymm)
