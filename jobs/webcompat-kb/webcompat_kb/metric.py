@@ -9,7 +9,7 @@ from .bqhelpers import BigQuery
 
 
 def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> None:
-    for suffix in ["global_1000", "sightline", "all"]:
+    for suffix in ["global_1000", "sightline", "all", "japan_1000"]:
         metrics_table_name = f"webcompat_topline_metric_{suffix}"
         history_table_name = f"webcompat_topline_metric_{suffix}_history"
 
@@ -96,8 +96,12 @@ SELECT
   COUNTIF(bugs.is_global_1000) as bug_count_global_1000,
   SUM(if(bugs.is_global_1000 and bugs.metric_type_needs_diagnosis, bugs.score, 0)) as needs_diagnosis_score_global_1000,
   SUM(if(bugs.is_global_1000 and bugs.metric_type_firefox_not_supported, bugs.score, 0)) as not_supported_score_global_1000,
-  SUM(if(bugs.is_global_1000, bugs.score, 0)) AS total_score_global_1000
-FROM
+  SUM(if(bugs.is_global_1000, bugs.score, 0)) AS total_score_global_1000,
+  COUNTIF(bugs.is_japan_1000) as bug_count_japan_1000,
+  SUM(if(bugs.is_japan_1000 and bugs.metric_type_needs_diagnosis, bugs.score, 0)) as needs_diagnosis_score_japan_1000,
+  SUM(if(bugs.is_japan_1000 and bugs.metric_type_firefox_not_supported, bugs.score, 0)) as not_supported_score_japan_1000,
+  SUM(if(bugs.is_japan_1000, bugs.score, 0)) AS total_score_japan_1000
+ FROM
   `{bq_dataset_id}.scored_site_reports` AS bugs
 WHERE bugs.resolution = ""
 """
@@ -116,7 +120,11 @@ WHERE bugs.resolution = ""
         bug_count_global_1000,
         needs_diagnosis_score_global_1000,
         not_supported_score_global_1000,
-        total_score_global_1000)
+        total_score_global_1000,
+        bug_count_japan_1000,
+        needs_diagnosis_score_japan_1000,
+        not_supported_score_japan_1000,
+        total_score_japan_1000)
         ({metrics_query})"""
         client.query(insert_query)
         logging.info("Updated daily metric")
