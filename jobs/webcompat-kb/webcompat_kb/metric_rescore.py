@@ -278,15 +278,11 @@ def update_views(
     {name}_before_{timestamp} and the new version to {name}."""
     dataset_id = client.default_dataset_id
     to_delete = [f"{dataset_id}.{new_scored_site_reports}"]
-    query = f"""
-CREATE VIEW `{dataset_id}.scored_site_reports{archive_suffix}` AS (
-{view_definitions[0]}
-);
-CREATE OR REPLACE VIEW `{dataset_id}.scored_site_reports` AS (
-{view_definitions[1]}
-);
-"""
+
+    query = ""
+
     # This doesn't handle cases where one routine depends on another modified routine
+    # We do the routines first since the views depend on them
     for old_routine, new_routine in routines_map.items():
         query += f"""
 CREATE FUNCTION `{old_routine.reference}{archive_suffix}`({serialize_arguments(old_routine.arguments)})
@@ -304,6 +300,16 @@ RETURNS {serialize_datatype(new_routine.return_type)} AS
 );
 """
         to_delete.append(new_routine.reference)
+
+
+    query += f"""
+CREATE VIEW `{dataset_id}.scored_site_reports{archive_suffix}` AS (
+{view_definitions[0]}
+);
+CREATE OR REPLACE VIEW `{dataset_id}.scored_site_reports` AS (
+{view_definitions[1]}
+);
+"""
 
     if client.write:
         client.query(query)
