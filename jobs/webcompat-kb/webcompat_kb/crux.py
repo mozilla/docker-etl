@@ -126,14 +126,14 @@ WHERE
 
 def update_min_rank_data(client: BigQuery, config: Config, date: int) -> None:
     if config.write:
-        insert_str = f"INSERT `{config.bq_project}.{config.bq_crux_dataset}.host_min_ranks` (yyyymm, host, global_rank, local_rank, sightline_rank)"
+        insert_str = f"INSERT `{config.bq_project}.{config.bq_crux_dataset}.host_min_ranks` (yyyymm, host, global_rank, local_rank, sightline_rank, japan_rank)"
     else:
         insert_str = ""
 
     query = f"""
 {insert_str}
 SELECT
-  {date} as yyyymm,
+  yyyymm,
   NET.HOST(origin) AS host,
   MIN(
   IF
@@ -143,13 +143,12 @@ SELECT
     (origin_ranks.country_code != "global", origin_ranks.rank, NULL)) AS local_rank,
   MIN(
   IF
-    (country_code IS NOT NULL, origin_ranks.rank, NULL)) as sightline_rank
+    (country_code In UNNEST(["global", "us", "fr", "de", "es", "it", "mx"]), origin_ranks.rank, NULL)) as sightline_rank,
+  MIN(
+  IF
+    (country_code = "jp", origin_ranks.rank, NULL)) as japan_rank
 FROM
-  `{config.bq_crux_dataset}.origin_ranks` AS origin_ranks
-LEFT JOIN
-  UNNEST(JSON_VALUE_ARRAY('["global", "us", "fr", "de", "es", "it", "mx"]')) as country_code
-ON
-  origin_ranks.country_code = country_code
+  `moz-fx-dev-dschubert-wckb.crux_imported.origin_ranks` AS origin_ranks
 WHERE
   origin_ranks.yyyymm = {date}
 GROUP BY
@@ -161,6 +160,7 @@ GROUP BY
         bigquery.SchemaField("global_rank", "INTEGER"),
         bigquery.SchemaField("local_rank", "INTEGER"),
         bigquery.SchemaField("sightline_rank", "INTEGER"),
+        bigquery.SchemaField("japan_rank", "INTEGER"),
     ]
 
     logging.info("Updating host_min_ranks data")
