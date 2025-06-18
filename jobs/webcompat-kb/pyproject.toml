@@ -16,11 +16,11 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "bugdantic==0.2.5",
+  "bugdantic==0.2.6",
   "google-cloud-bigquery==3.34.0",
   "httpx[http2]>=0.28.1",
   "pydantic==2.11.5",
-  "web-features==0.1.0"
+  "web-features==0.1.0",
 ]
 
 [project.optional-dependencies]
