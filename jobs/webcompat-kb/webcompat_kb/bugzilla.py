@@ -32,6 +32,7 @@ class BugLoadError(Exception):
 @dataclass(frozen=True)
 class Bug:
     id: int
+    alias: Optional[str]
     summary: str
     status: str
     resolution: str
@@ -89,6 +90,7 @@ class Bug:
 
         return cls(
             id=bug.id,
+            alias=bug.alias,
             summary=bug.summary,
             status=bug.status,
             resolution=bug.resolution,
@@ -156,6 +158,7 @@ class Bug:
     def from_json(cls, bug_data: Mapping[str, Any]) -> Self:
         return cls(
             id=bug_data["id"],
+            alias=bug_data["alias"],
             summary=bug_data["summary"],
             status=bug_data["status"],
             resolution=bug_data["resolution"],
@@ -445,6 +448,7 @@ class BugCache(Mapping):
         for bug in self.bq_client.query("SELECT * from bugzilla_bugs"):
             self.bugs[bug.number] = Bug(
                 id=bug.number,
+                alias=bug.alias,
                 summary=bug.title,
                 status=bug.status,
                 resolution=bug.resolution,
@@ -481,6 +485,7 @@ class BugCache(Mapping):
 
         fields = [
             "id",
+            "alias",
             "summary",
             "status",
             "resolution",
@@ -1036,6 +1041,7 @@ class BigQueryImporter:
     def convert_bug(self, bug: Bug) -> Mapping[str, Any]:
         return {
             "number": bug.id,
+            "alias": bug.alias,
             "title": bug.summary,
             "status": bug.status,
             "resolution": bug.resolution,
@@ -1082,6 +1088,7 @@ class BigQueryImporter:
         table = "bugzilla_bugs"
         schema = [
             bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
+            bigquery.SchemaField("alias", "STRING"),
             bigquery.SchemaField("title", "STRING", mode="REQUIRED"),
             bigquery.SchemaField("status", "STRING", mode="REQUIRED"),
             bigquery.SchemaField("resolution", "STRING", mode="REQUIRED"),
