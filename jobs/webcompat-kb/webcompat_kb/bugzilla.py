@@ -477,7 +477,7 @@ class BugCache(Mapping):
         self,
         params: Optional[Mapping[str, str | list[str]]] = None,
         bug_ids: Optional[Sequence[BugId]] = None,
-    ) -> None:
+    ) -> set[BugId]:
         if (params is None and bug_ids is None) or (
             params is not None and bug_ids is not None
         ):
@@ -510,6 +510,8 @@ class BugCache(Mapping):
             "cf_webcompat_score",
         ]
 
+        bugs_fetched = set()
+
         try:
             if params is not None:
                 bugs = self.bz_client.search(
@@ -524,9 +526,11 @@ class BugCache(Mapping):
             for bug in bugs:
                 assert bug.id is not None
                 self.bugs[bug.id] = Bug.from_bugzilla(bug)
+                bugs_fetched.add(bug.id)
         except Exception as e:
             logging.error(f"Error: {e}")
             raise
+        return bugs_fetched
 
     def missing_relations(self, bugs: BugsById, relation: str) -> set[BugId]:
         related_ids = set()
@@ -635,7 +639,11 @@ def fetch_all_bugs(
         if last_import_time:
             filter_config = add_datetime_limit(filter_config, last_import_time)
         logging.info(f"Fetching {category} bugs")
-        bug_cache.bz_fetch_bugs(params=filter_config)
+        fetched_bugs = bug_cache.bz_fetch_bugs(params=filter_config)
+        if last_import_time:
+            logging.info(
+                f"Fetched bugs {','.join(str(item) for item in fetched_bugs)} updated since {last_import_time.isoformat()}"
+            )
 
     tried_to_fetch: set[BugId] = set()
     missing_relations = None
