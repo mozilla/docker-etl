@@ -61,6 +61,7 @@ def to_history_entry(data: list[dict[str, Any]]) -> dict[int, BugHistoryEntry]:
 SAMPLE_KB_BUGS = to_bugs_by_id(
     [
         {
+            "alias": None,
             "assigned_to": "test@example.org",
             "blocks": [],
             "component": "Knowledge Base",
@@ -97,6 +98,7 @@ SAMPLE_KB_BUGS = to_bugs_by_id(
             "whiteboard": "",
         },
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [],
             "component": "Knowledge Base",
@@ -132,6 +134,7 @@ SAMPLE_KB_BUGS = to_bugs_by_id(
             "whiteboard": "",
         },
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [222222, 1734557],
             "component": "Knowledge Base",
@@ -169,6 +172,7 @@ SAMPLE_KB_BUGS = to_bugs_by_id(
 SAMPLE_CORE_BUGS = to_bugs_by_id(
     [
         {
+            "alias": "core-bug-1",
             "assigned_to": "nobody@mozilla.org",
             "blocks": [1754236, 1835339],
             "component": "DOM: Events",
@@ -204,6 +208,7 @@ SAMPLE_CORE_BUGS = to_bugs_by_id(
         },
         {
             "assigned_to": "nobody@mozilla.org",
+            "alias": None,
             "blocks": [111111],
             "component": "Test",
             "creation_time": "2000-07-25T13:50:04Z",
@@ -228,6 +233,7 @@ SAMPLE_CORE_BUGS = to_bugs_by_id(
             "whiteboard": "",
         },
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [],
             "component": "Test",
@@ -258,6 +264,7 @@ SAMPLE_CORE_BUGS = to_bugs_by_id(
 SAMPLE_BREAKAGE_BUGS = to_bugs_by_id(
     [
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [],
             "component": "Site Reports",
@@ -283,6 +290,7 @@ SAMPLE_BREAKAGE_BUGS = to_bugs_by_id(
             "whiteboard": "",
         },
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [],
             "component": "Site Reports",
@@ -313,6 +321,7 @@ SAMPLE_BREAKAGE_BUGS = to_bugs_by_id(
 SAMPLE_ETP_BUGS = to_bugs_by_id(
     [
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [1101005],
             "component": "Privacy: Site Reports",
@@ -338,6 +347,7 @@ SAMPLE_ETP_BUGS = to_bugs_by_id(
             "whiteboard": "",
         },
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [],
             "component": "Privacy: Site Reports",
@@ -367,6 +377,7 @@ SAMPLE_ETP_BUGS = to_bugs_by_id(
             "whiteboard": "",
         },
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [],
             "component": "Privacy: Site Reports",
@@ -397,6 +408,7 @@ SAMPLE_ETP_BUGS = to_bugs_by_id(
 SAMPLE_ETP_DEPENDENCIES_BUGS = to_bugs_by_id(
     [
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [
                 1526695,
@@ -460,6 +472,7 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = to_bugs_by_id(
             "whiteboard": "",
         },
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [1101005, 1773684, 1921943],
             "component": "Privacy: Anti-Tracking",
@@ -491,6 +504,7 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = to_bugs_by_id(
             "whiteboard": "",
         },
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [
                 1101005,
@@ -533,6 +547,7 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = to_bugs_by_id(
             "whiteboard": "",
         },
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [],
             "component": "Privacy: Anti-Tracking",
@@ -563,6 +578,7 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = to_bugs_by_id(
 SAMPLE_CORE_AS_KB_BUGS = to_bugs_by_id(
     [
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [1539848, 1729514, 1896383],
             "component": "JavaScript Engine",
@@ -588,6 +604,7 @@ SAMPLE_CORE_AS_KB_BUGS = to_bugs_by_id(
             "whiteboard": "",
         },
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [1656444, 1835339, 222222],
             "component": "DOM: Window and Location",
@@ -613,6 +630,7 @@ SAMPLE_CORE_AS_KB_BUGS = to_bugs_by_id(
             "whiteboard": "",
         },
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [],
             "component": "JavaScript Engine",
@@ -929,6 +947,7 @@ MISSING_KEYWORDS_INITIAL = to_history_entry(
 MISSING_KEYWORDS_BUGS = to_bugs_by_id(
     [
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [],
             "component": "Site Reports",
@@ -954,6 +973,7 @@ MISSING_KEYWORDS_BUGS = to_bugs_by_id(
             "whiteboard": "",
         },
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [],
             "component": "Site Reports",
@@ -979,6 +999,7 @@ MISSING_KEYWORDS_BUGS = to_bugs_by_id(
             "whiteboard": "",
         },
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [],
             "component": "Desktop",
@@ -1009,6 +1030,7 @@ MISSING_KEYWORDS_BUGS = to_bugs_by_id(
 REMOVED_READDED_BUGS = to_bugs_by_id(
     [
         {
+            "alias": None,
             "assigned_to": "nobody@mozilla.org",
             "blocks": [],
             "component": "Desktop",
@@ -1658,6 +1680,7 @@ def test_parse_user_story(input, expected):
 def test_from_bugzilla(input_data, test_fields):
     bug_data = {
         "id": 1,
+        "alias": None,
         "summary": "Example",
         "status": "NEW",
         "resolution": "",
