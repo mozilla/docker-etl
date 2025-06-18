@@ -32,8 +32,21 @@ def create_test_dataset() -> None:
 
     parser = get_parser_create_test_dataset()
     args = parser.parse_args()
+
+    assert args.bq_project_id is not None
+    assert args.bq_kb_dataset is not None
+
     logging.getLogger().setLevel(logging.getLevelNamesMapping()[args.log_level.upper()])
 
+    try:
+        do_create_test_dataset(args)
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        import pdb
+        pdb.post_mortem()
+
+def do_create_test_dataset(args: argparse.Namespace) -> None:
     test_dataset_name = f"{args.bq_kb_dataset}_test"
     tables = [
         "breakage_reports",
@@ -47,12 +60,41 @@ def create_test_dataset() -> None:
         "other_browser_issues",
         "standards_issues",
         "standards_positions",
+        "webcompat_topline_metric_all_history",
+        "webcompat_topline_metric_daily",
+        "webcompat_topline_metric_global_1000_history",
+        "webcompat_topline_metric_rescores",
+        "webcompat_topline_metric_sightline_history",
     ]
+
+    # Note order here is important since views need to be created after any other view they depend on
+    views = [
+        "core_bugs_all",
+        "site_reports",
+        "scored_site_reports",
+        "webcompat_topline_metric_site_reports",
+        "prioritized_kb_entries",
+        "core_bug_states",
+        "site_reports_states",
+        "site_reports_bugzilla_buckets",
+        "site_reports_next_action",
+        "webcompat_topline_metric",
+        "webcompat_topline_metric_all",
+        "webcompat_topline_metric_bug_hosts",
+        "webcompat_topline_metric_global_1000",
+        "webcompat_topline_metric_japan_1000",
+        "webcompat_topline_metric_sightline",
+    ]
+    all_data = tables + views
 
     logging.info(f"Will create dataset {args.bq_project_id}.{test_dataset_name}")
     for table in tables:
         logging.info(
             f"Will create table {args.bq_project_id}.{test_dataset_name}.{table} from {args.bq_project_id}.{args.bq_kb_dataset}.{table}"
+        )
+    for view in views:
+        logging.info(
+            f"Will create view {args.bq_project_id}.{test_dataset_name}.{view} from {args.bq_project_id}.{args.bq_kb_dataset}.{view}"
         )
 
     res = ""
@@ -87,6 +129,24 @@ CLONE {src}
             client.query(query)
         else:
             logging.info(f"Would run query:{query}")
+
+    for view_name in views:
+        target = f"{args.bq_project_id}.{test_dataset_name}.{view_name}"
+        src_view = client.get_table(view_name, args.bq_kb_dataset)
+        query = src_view.view_query
+        for name in all_data:
+            query = query.replace(f"{args.bq_kb_dataset}.{name}", f"{test_dataset_name}.{name}")
+        target_view = bigquery.Table(target)
+        target_view.view_query = query
+        if args.write:
+            logging.info(f"Creating view {target} from {src_view}")
+            try:
+                client.delete_table(target_view, not_found_ok=True)
+                client.client.create_table(target_view)
+            except Exception as e:
+                logging.warning(f"Failed to create view {target}\n{e}\n{target_view.view_query}")
+        else:
+            logging.info(f"Would add view {target} with query:{target_view.view_query}")
 
 
 @dataclass(frozen=True)
