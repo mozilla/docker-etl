@@ -93,6 +93,9 @@ class BigQueryHandler(PulseHandler):
         self.task_records: list[Record] = []
         self.run_records: list[Record] = []
 
+        self.task_loader = BigQueryLoader(self.config, "tasks")
+        self.run_loader = BigQueryLoader(self.config, "runs")
+
         self._convert_camel_case_re = re.compile(r"(?<!^)(?=[A-Z])")
         self._known_tags = set(Tags.__annotations__.keys())
 
@@ -168,11 +171,9 @@ class BigQueryHandler(PulseHandler):
     def on_processing_complete(self):
         logger.info(f"Processed {self._count} pulse events")
         if self.task_records:
-            task_loader = BigQueryLoader(self.config, "tasks")
-            task_loader.insert(self.task_records)
+            self.task_loader.insert(self.task_records)
             self.task_records = []
 
         if self.run_records:
-            run_loader = BigQueryLoader(self.config, "runs")
-            run_loader.insert(self.run_records)
+            self.run_loader.insert(self.run_records)
             self.run_records = []
