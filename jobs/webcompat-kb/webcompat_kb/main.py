@@ -5,7 +5,7 @@ import sys
 # These imports are required to populate ALL_JOBS
 from . import (
     bugzilla,  # noqa: F401
-    crux,  # noqa: F401
+    siterank,  # noqa: F401
     metric,  # noqa: F401
     metric_changes,  # noqa: F401
     web_features,  # noqa: F401
