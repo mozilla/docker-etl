@@ -35,6 +35,7 @@ class RangePartition:
 class BigQuery:
     def __init__(self, client: bigquery.Client, default_dataset_id: str, write: bool):
         self.client = client
+        self.project_id = client.project
         self.default_dataset_id = default_dataset_id
         self.write = write
 
