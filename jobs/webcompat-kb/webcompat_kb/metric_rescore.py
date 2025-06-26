@@ -20,16 +20,18 @@ with scores as (
          new_scored_site_reports.score AS new_score,
          old_scored_site_reports.score as old_score,
          old_scored_site_reports.is_sightline AS is_sightline_old,
+         old_scored_site_reports.is_japan_1000 AS is_japan_1000_old,
          old_scored_site_reports.is_global_1000 AS is_global_1000_old,
          new_scored_site_reports.is_sightline AS is_sightline_new,
+         new_scored_site_reports.is_japan_1000 AS is_japan_1000_new,
          new_scored_site_reports.is_global_1000 AS is_global_1000_new,
   FROM `{new_scored_site_reports}` as new_scored_site_reports
   FULL OUTER JOIN `scored_site_reports` AS old_scored_site_reports USING(number)
   WHERE new_scored_site_reports.resolution = ""
 )
-SELECT number, new_score, old_score, is_sightline_old, is_sightline_new, is_global_1000_old, is_global_1000_new, new_score - old_score as delta FROM scores
+SELECT number, new_score, old_score, is_sightline_old, is_sightline_new, is_japan_1000_old, is_japan_1000_new, is_global_1000_old, is_global_1000_new, new_score - old_score as delta FROM scores
 """
-    score_deltas = {"all": 0, "sightline": 0, "global_1000": 0}
+    score_deltas = {"all": 0, "sightline": 0, "japan_1000": 0, "global_1000": 0}
     for bug in client.query(score_query):
         if bug.new_score is None or bug.old_score is None:
             raise ValueError(
@@ -52,6 +54,14 @@ SELECT number, new_score, old_score, is_sightline_old, is_sightline_new, is_glob
             elif bug.is_sightline_new:
                 score_deltas["sightline"] += bug.new_score
                 reasons.append("sightline-added")
+            if bug.is_japan_1000_old and bug.is_japan_1000_new:
+                score_deltas["japan_1000"] += bug.delta
+            elif bug.is_japan_1000_old:
+                score_deltas["japan_1000"] -= bug.old_score
+                reasons.append("japan-1000-removed")
+            elif bug.is_japan_1000_new:
+                score_deltas["japan_1000"] += bug.new_score
+                reasons.append("japan-1000-added")
             if bug.is_global_1000_old and bug.is_global_1000_new:
                 score_deltas["global_1000"] += bug.delta
             elif bug.is_global_1000_old:
@@ -91,55 +101,55 @@ def insert_metric_changes(
         "not_supported_score",
         "total_score",
     ]
-    score_types = ["all", "sightline", "global_1000"]
+    score_types = ["all", "sightline", "japan_1000", "global_1000"]
 
     score_change_schema = [
         bigquery.SchemaField("change_time", "DATETIME", mode="REQUIRED"),
-        bigquery.SchemaField("reason", "STRING"),
+        bigquery.SchemaField("reason", "STRING", mode="REQUIRED"),
+    ]
+
+    field_conditionals = {
+        "needs_diagnosis_score": "metric_type_needs_diagnosis",
+        "not_supported_score": "metric_type_firefox_not_supported",
+    }
+
+    query_parts = [
+        "@change_time as change_time",
+        "@reason as reason",
     ]
 
     for change_state in change_states:
-        for score_type in score_types:
-            for score_field in score_fields:
+        for score_field in score_fields:
+            for score_type in score_types:
                 score_change_schema.append(
                     bigquery.SchemaField(
                         f"{change_state}_{score_field}_{score_type}",
                         "NUMERIC",
-                        mode="REQUIRED",
                     )
+                )
+                condition = (
+                    f"{change_state}.is_{score_type}"
+                    if score_type != "all"
+                    else f"{change_state}.number IS NOT NULL"
+                )
+                if score_field in field_conditionals:
+                    condition += (
+                        f" AND {change_state}.{field_conditionals[score_field]}"
+                    )
+                group_fn = (
+                    f"COUNTIF({condition})"
+                    if score_field == "bug_count"
+                    else f"SUM(IF({condition}, {change_state}.score, 0))"
+                )
+                query_parts.append(
+                    f"{group_fn} as {change_state}_{score_field}_{score_type}"
                 )
 
     query = f"""
 SELECT
-  @change_time as change_time,
-  @reason as reason,
-  COUNTIF(before.number IS NOT NULL) as before_bug_count_all,
-  SUM(if(before.metric_type_needs_diagnosis, before.score, 0)) as before_needs_diagnosis_score_all,
-  SUM(if(before.metric_type_firefox_not_supported, before.score, 0)) as before_not_supported_score_all,
-  SUM(before.score) AS before_total_score_all,
-  COUNTIF(before.is_sightline) as before_bug_count_sightline,
-  SUM(if(before.is_sightline and before.metric_type_needs_diagnosis, before.score, 0)) as before_needs_diagnosis_score_sightline,
-  SUM(if(before.is_sightline and before.metric_type_firefox_not_supported, before.score, 0)) as before_not_supported_score_sightline,
-  SUM(if(before.is_sightline, before.score, 0)) AS before_total_score_sightline,
-  COUNTIF(before.is_global_1000) as before_bug_count_global_1000,
-  SUM(if(before.is_global_1000 and before.metric_type_needs_diagnosis, before.score, 0)) as before_needs_diagnosis_score_global_1000,
-  SUM(if(before.is_global_1000 and before.metric_type_firefox_not_supported, before.score, 0)) as before_not_supported_score_global_1000,
-  SUM(if(before.is_global_1000, before.score, 0)) AS before_total_score_global_1000,
-
-  COUNTIF(after.number IS NOT NULL) as after_bug_count_all,
-  SUM(if(after.metric_type_needs_diagnosis, after.score, 0)) as after_needs_diagnosis_score_all,
-  SUM(if(after.metric_type_firefox_not_supported, after.score, 0)) as after_not_supported_score_all,
-  SUM(after.score) AS after_total_score_all,
-  COUNTIF(after.is_sightline) as after_bug_count_sightline,
-  SUM(if(after.is_sightline and after.metric_type_needs_diagnosis, after.score, 0)) as after_needs_diagnosis_score_sightline,
-  SUM(if(after.is_sightline and after.metric_type_firefox_not_supported, after.score, 0)) as after_not_supported_score_sightline,
-  SUM(if(after.is_sightline, after.score, 0)) AS after_total_score_sightline,
-  COUNTIF(after.is_global_1000) as after_bug_count_global_1000,
-  SUM(if(after.is_global_1000 and after.metric_type_needs_diagnosis, after.score, 0)) as after_needs_diagnosis_score_global_1000,
-  SUM(if(after.is_global_1000 and after.metric_type_firefox_not_supported, after.score, 0)) as after_not_supported_score_global_1000,
-  SUM(if(after.is_global_1000, after.score, 0)) AS after_total_score_global_1000
+{",\n".join(query_parts)}
 FROM
-  `{bq_dataset_id}.scored_site_reports` AS before
+`{bq_dataset_id}.scored_site_reports` AS before
 JOIN `{bq_dataset_id}.{new_scored_site_reports}` AS after USING(number)
 WHERE before.resolution = ""
 """
@@ -166,6 +176,7 @@ INSERT {bq_dataset_id}.{table.table_id}
         logging.info(
             f"Score changes all: {result.after_total_score_all - result.before_total_score_all}, "
             f"sightline: {result.after_total_score_sightline - result.before_total_score_sightline}, "
+            f"japan_1000: {result.after_total_score_japan_1000 - result.before_total_score_japan_1000}, "
             f"global_1000: {result.after_total_score_global_1000 - result.before_total_score_global_1000}"
         )
 
@@ -349,7 +360,7 @@ def rescore(
 
 
 class MetricRescoreJob(EtlJob):
-    name = "metric_rescore"
+    name = "metric-rescore"
     default = False
 
     def default_dataset(self, args: argparse.Namespace) -> str:
