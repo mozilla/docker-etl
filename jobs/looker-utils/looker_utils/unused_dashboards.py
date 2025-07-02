@@ -61,7 +61,6 @@ def looker_one_dashboard_download(submission_date, access_token, dashboard_id):
         return default_dashboard_dict
     dashboard_data = dashboard_data_response[0]
     last_viewed_str = dashboard_data.get("last_viewed_at")
-    dashboard_details = []
     if last_viewed_str:
         last_viewed_date = datetime.strptime(last_viewed_str, "%Y-%m-%dT%H:%M:%S.%fZ").date()
         six_months_ago = datetime.today().date() - relativedelta(months=6)
