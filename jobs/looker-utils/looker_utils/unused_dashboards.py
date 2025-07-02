@@ -107,7 +107,5 @@ def main():
         dashboard_datum = looker_one_dashboard_download(submission_date, looker_access_token, id)
         dashboard_ids_data_list.append(dashboard_datum)
 
-    # upload_to_bigquery(project, dataset, table_name, cinder_data, download_date)
-
 if __name__ == "__main__":
     main()
