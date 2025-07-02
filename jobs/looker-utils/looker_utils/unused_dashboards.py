@@ -43,7 +43,6 @@ def looker_one_dashboard_download(submission_date, access_token, dashboard_id):
     headers = {'Authorization': f'token {access_token}'}
     params = {}
     dashboard_data = {}
-    # print(f"this is dashboard id {dashboard_id}" )
     default_dashboard_dict = {
         "submission_date": submission_date,
         "url": f"https://mozilla.cloud.looker.com/{dashboard_id}",
