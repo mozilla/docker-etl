@@ -5,10 +5,29 @@ from argparse import ArgumentParser
 import requests
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+import click
+import csv
 
-CLIENT_ID = os.environ.get("LOOKER_CLIENT_ID")
-CLIENT_SECRET = os.environ.get("LOOKER_CLIENT_SECRET")
+@click.option("--client_id", "--client-id", envvar="LOOKER_CLIENT_ID", required=True)
+@click.option(
+    "--client_secret",
+    "--client-secret",
+    envvar="LOOKER_CLIENT_SECRET",
+    required=True,
+)
 
+CSV_FIELDS = [
+    "submission_date",
+    "url",
+    "dashboard_id",
+    "last_accessed_at",
+    "last_viewed_at",
+    "updated_at",
+    "user_name",
+    "last_updater_id",
+    "last_updater_name",
+    "view_count",
+]
 
 def get_response(url, headers, params):
     """GET response function."""
@@ -23,6 +42,13 @@ def get_response(url, headers, params):
             raise err
         return ({"items": []}, "skipped")
     return (response.json(), "completed")
+
+def write_dict_to_csv(json_data, filename):
+    """Write a dictionary to a csv."""
+    with open(filename, "w") as out_file:
+        dict_writer = csv.DictWriter(out_file, CSV_FIELDS)
+        dict_writer.writeheader()
+        dict_writer.writerows(json_data)
 
 def looker_login_post(client_id, client_secret):
     url = "https://mozilla.cloud.looker.com/api/4.0/login"
@@ -77,10 +103,9 @@ def looker_one_dashboard_download(submission_date, access_token, dashboard_id):
             }        
 
 def main():
+    parser = ArgumentParser(description=__doc__)
     parser.add_argument("--date", required=True)
 
-    client_id = CLIENT_ID
-    client_secret = CLIENT_SECRET
     args = parser.parse_args()
 
     submission_date = args.date
@@ -104,6 +129,9 @@ def main():
     for id in dashboard_ids_list:
         dashboard_datum = looker_one_dashboard_download(submission_date, looker_access_token, id)
         dashboard_ids_data_list.append(dashboard_datum)
+
+    csv_name = f"unused_looker_dashboards_{submission_date}.csv"
+    write_dict_to_csv(dashboard_ids_data_list, csv_name)
 
 if __name__ == "__main__":
     main()
