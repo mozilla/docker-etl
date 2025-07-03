@@ -1,6 +1,5 @@
 import json
 import os
-from argparse import ArgumentParser
 
 import requests
 from datetime import datetime
@@ -15,6 +14,7 @@ import csv
     envvar="LOOKER_CLIENT_SECRET",
     required=True,
 )
+@click.option("--date", required=True)
 
 CSV_FIELDS = [
     "submission_date",
@@ -95,12 +95,8 @@ def looker_looks_download(submission_date,access_token):
     return looks_data_list
 
 def main():
-    parser = ArgumentParser(description=__doc__)
-    parser.add_argument("--date", required=True)
 
-    args = parser.parse_args()
-
-    submission_date = args.date
+    submission_date = date
 
     auth_looker_response = looker_login_post(client_id, client_secret)
     looker_access_token = auth_looker_response.json()['access_token']
