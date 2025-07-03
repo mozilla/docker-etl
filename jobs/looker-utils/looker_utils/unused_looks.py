@@ -95,10 +95,9 @@ def looker_looks_download(submission_date,access_token):
     return looks_data_list
 
 def main():
+    parser = ArgumentParser(description=__doc__)
     parser.add_argument("--date", required=True)
 
-    client_id = CLIENT_ID
-    client_secret = CLIENT_SECRET
     args = parser.parse_args()
 
     submission_date = args.date
@@ -108,7 +107,7 @@ def main():
 
     looks_export = looker_looks_download(submission_date, looker_access_token)
 
-    csv_name = f"unused_looker_looks_{submission_date}.csv"
+    csv_name = f"unused_looker_looks_{submission_date}"
     write_dict_to_csv(looks_export, csv_name)
 
 if __name__ == "__main__":
