@@ -7,15 +7,6 @@ from dateutil.relativedelta import relativedelta
 import click
 import csv
 
-@click.option("--client_id", "--client-id", envvar="LOOKER_CLIENT_ID", required=True)
-@click.option(
-    "--client_secret",
-    "--client-secret",
-    envvar="LOOKER_CLIENT_SECRET",
-    required=True,
-)
-@click.option("--date", required=True )
-
 CSV_FIELDS = [
     "submission_date",
     "url",
@@ -101,8 +92,16 @@ def looker_one_dashboard_download(submission_date, access_token, dashboard_id):
                 "last_updater_name": dashboard_data["last_updater_name"],
                 "view_count": dashboard_data["view_count"],
             }        
+@click.option("--client_id", "--client-id", envvar="LOOKER_CLIENT_ID", required=True)
+@click.option(
+    "--client_secret",
+    "--client-secret",
+    envvar="LOOKER_CLIENT_SECRET",
+    required=True,
+)
+@click.option("--date", required=True )
 
-def main():
+def main(date, client_id, client_secret):
 
     submission_date = date
 
