@@ -48,7 +48,6 @@ def looker_lookml_download(submission_date,access_token):
     headers = {'Authorization': f'token {access_token}'}
     params = {}
     looks_data_list = []
-        # print(f"this is look id {look_id}" )
     default_look_dict = {
         "submission_date": submission_date,
         "explores": None,
