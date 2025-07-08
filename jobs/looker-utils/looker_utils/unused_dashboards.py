@@ -32,7 +32,7 @@ def get_response(url, headers, params):
         if response.status_code != 500:
             raise err
         return ("skipped")
-    return (response.json(), "completed")
+    return (response.json()['access_token'], "completed")
 
 def write_dict_to_csv(json_data, filename):
     """Write a dictionary to a csv."""
@@ -105,8 +105,7 @@ def main(date, client_id, client_secret):
 
     submission_date = date
 
-    auth_looker_response = looker_login_post(client_id, client_secret)
-    looker_access_token = auth_looker_response['access_token']
+    looker_access_token = looker_login_post(client_id, client_secret)
 
     # The next line returns a tuple. The first entry is the actual data, the second is the status of the query
     all_dashboards_export =looker_dashboards_download(looker_access_token)
