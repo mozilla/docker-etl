@@ -6,6 +6,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import click
 import csv
+import logging
 
 CSV_FIELDS = [
     "submission_date",
