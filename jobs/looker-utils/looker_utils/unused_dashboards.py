@@ -1,6 +1,3 @@
-import json
-import os
-
 import requests
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
@@ -22,17 +19,18 @@ CSV_FIELDS = [
 
 def get_response(url, headers, params):
     """GET response function."""
-    response = requests.get(url, headers=headers, params=params)
     try:
+        response = requests.get(url, headers=headers, params=params)
         response.raise_for_status()
+        return (response.json().get('access_token'), "completed")
+
     except requests.exceptions.HTTPError as err:
         if response.status_code == 404:
+            return ("Not Found. Possible Permissions Error. Might need to re-login",)
+        elif response.status_code == 500:
+            return ("skipped",)
+        else:
             raise err
-        return ("Not Found. Possible Permissions Error. Might need to re-login")
-        if response.status_code != 500:
-            raise err
-        return ("skipped")
-    return (response.json()['access_token'], "completed")
 
 def write_dict_to_csv(json_data, filename):
     """Write a dictionary to a csv."""
