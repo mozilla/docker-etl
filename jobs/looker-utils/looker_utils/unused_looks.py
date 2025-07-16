@@ -1,11 +1,9 @@
-import json
-import os
-
 import requests
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import click
 import csv
+import logging
 
 CSV_FIELDS = [
     "submission_date",
@@ -20,17 +18,18 @@ CSV_FIELDS = [
 
 def get_response(url, headers, params):
     """GET response function."""
-    response = requests.get(url, headers=headers, params=params)
     try:
+        response = requests.get(url, headers=headers, params=params)
         response.raise_for_status()
+        return (response.json().get('access_token'), "completed")
+
     except requests.exceptions.HTTPError as err:
         if response.status_code == 404:
+            return ("Not Found. Possible Permissions Error. Might need to re-login",)
+        elif response.status_code == 500:
+            return ("skipped",)
+        else:
             raise err
-        return("Not Found. Possible Permissions Error")
-        if response.status_code != 500:
-            raise err
-        return ({"items": []}, "skipped")
-    return (response.json(), "completed")
 
 def write_dict_to_csv(json_data, filename):
     """Write a dictionary to a csv."""
@@ -43,7 +42,7 @@ def looker_login_post(client_id, client_secret):
     url = "https://mozilla.cloud.looker.com/api/4.0/login"
     query_params = {"client_id": client_id, "client_secret": client_secret}
     response = requests.post(url, query_params)
-    return response
+    return response.json()
 
 def looker_looks_download(submission_date,access_token):
     url = f"https://mozilla.cloud.looker.com/api/4.0/looks"
@@ -63,7 +62,7 @@ def looker_looks_download(submission_date,access_token):
     }
     # this returns a tuple
     look_data_response = get_response(url, headers, params)
-    if look_data_response == "Not Found. Possible Permissions Error":
+    if look_data_response == "Not Found. Possible Permissions Error. Might need to re-login":
         looks_data_list.append(default_look_dict)
         return looks_data_list
     look_data = look_data_response[0]
@@ -83,6 +82,7 @@ def looker_looks_download(submission_date,access_token):
                         "view_count": datum["view_count"],
                     } 
                 looks_data_list.append(looks_data)
+    logging.info(f"Downloaded Looks details, number items retrieved in this batch: {len(looks_data_list)}")
     return looks_data_list
 
 @click.option("--client_id", "--client-id", envvar="LOOKER_CLIENT_ID", required=True)
@@ -98,8 +98,7 @@ def main(date, client_id, client_secret):
 
     submission_date = date
 
-    auth_looker_response = looker_login_post(client_id, client_secret)
-    looker_access_token = auth_looker_response.json()['access_token']
+    looker_access_token = looker_login_post(client_id, client_secret)
 
     looks_export = looker_looks_download(submission_date, looker_access_token)
 
