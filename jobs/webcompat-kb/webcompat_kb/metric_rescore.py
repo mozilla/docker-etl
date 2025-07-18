@@ -393,15 +393,14 @@ class MetricRescoreJob(EtlJob):
             help="Routines to update in the form canonical_name:updated_definition_name e.g. test_dataset.WEBCOMPAT_METRIC_SCORE:test_dataset.WEBCOMPAT_METRIC_SCORE_NEW",
         )
 
+    def required_args(self) -> set[str | tuple[str, str]]:
+        return {
+            "bq_kb_dataset",
+            ("new_scored_site_reports", "--metric-rescore-new-scored-site-reports"),
+            "metric_rescore_reason",
+        }
+
     def main(self, client: BigQuery, args: argparse.Namespace) -> None:
-        if args.new_scored_site_reports is None:
-            raise ValueError(
-                "Must provide view containing new scored_site_reports query with --metric-rescore-new-scored-site-reports"
-            )
-        if args.metric_rescore_reason is None:
-            raise ValueError(
-                "Must provide a reason for rescore with --metric-rescore-reason"
-            )
         rescore(
             client,
             args.new_scored_site_reports,

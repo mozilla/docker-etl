@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from google.cloud import bigquery
 import pydantic
 
-from .base import EtlJob
+from .base import EtlJob, dataset_arg
 from .bqhelpers import BigQuery
 from .httphelpers import get_json
 
@@ -225,15 +225,16 @@ class StandardsPositionsJob(EtlJob):
             title="Standards Positions", description="Standards Positions arguments"
         )
         group.add_argument(
-            "--bq-standards-positions-dataset", help="BigQuery Web Features dataset id"
+            "--bq-standards-positions-dataset",
+            type=dataset_arg,
+            help="BigQuery Web Features dataset id",
         )
+
+    def required_args(self) -> set[str | tuple[str, str]]:
+        return {"bq_standards_positions_dataset"}
 
     def default_dataset(self, args: argparse.Namespace) -> str:
         return args.bq_standards_positions_dataset
 
     def main(self, client: BigQuery, args: argparse.Namespace) -> None:
-        if args.bq_standards_positions_dataset is None:
-            raise ValueError(
-                f"Must pass in --bq-standards-positions-dataset to run {self.name}"
-            )
         update_standards_positions(client)

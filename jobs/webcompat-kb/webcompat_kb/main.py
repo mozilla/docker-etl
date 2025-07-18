@@ -1,6 +1,7 @@
 import argparse
 import logging
 import sys
+from typing import Iterable
 
 # These imports are required to populate ALL_JOBS
 from . import (
@@ -12,7 +13,7 @@ from . import (
     standards_positions,  # noqa: F401
     metric_rescore,  # noqa: F401
 )
-from .base import ALL_JOBS, VALID_PROJECT_ID, VALID_DATASET_ID
+from .base import ALL_JOBS, EtlJob, dataset_arg, project_arg
 from .bqhelpers import get_client, BigQuery
 
 
@@ -30,9 +31,14 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--bq_dataset_id", help=argparse.SUPPRESS)
 
     parser.add_argument(
-        "--bq-project", dest="bq_project_id", help="BigQuery project id"
+        "--bq-project",
+        dest="bq_project_id",
+        type=project_arg,
+        help="BigQuery project id",
     )
-    parser.add_argument("--bq-kb-dataset", help="BigQuery knowledge base dataset id")
+    parser.add_argument(
+        "--bq-kb-dataset", type=dataset_arg, help="BigQuery knowledge base dataset id"
+    )
 
     parser.add_argument(
         "--no-write",
@@ -62,32 +68,27 @@ def get_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def set_default_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
-    if args.bq_project_id is None:
-        parser.print_usage()
-        logging.error("The following arguments are required --bq-project")
-        sys.exit(1)
+def validate_args(
+    parser: argparse.ArgumentParser, args: argparse.Namespace, jobs: Iterable[EtlJob]
+) -> None:
+    required_args: set[str | tuple[str, str]] = {("bq_project_id", "--bq-project")}
+    for job in jobs:
+        required_args |= job.required_args()
 
-    if not VALID_PROJECT_ID.match(args.bq_project_id):
-        parser.print_usage()
-        logging.error(f"Invalid project id {args.bq_project_id}")
-        sys.exit(1)
+    missing = []
+    for arg in required_args:
+        if isinstance(arg, tuple):
+            prop_name, arg_name = arg
+        else:
+            prop_name = arg
+            arg_name = f"--{arg.replace('_', '-')}"
 
-    if args.bq_kb_dataset is None:
-        # Default to a test dataset
-        args.bq_kb_dataset = "webcompat_knowledge_base_test"
+        if getattr(args, prop_name) is None:
+            missing.append(arg_name)
 
-    if not VALID_DATASET_ID.match(args.bq_kb_dataset):
+    if missing:
         parser.print_usage()
-        logging.error(f"Invalid kb dataset id {args.bq_kb_dataset}")
-        sys.exit(1)
-
-    if not args.jobs:
-        args.jobs = list(name for name, cls in ALL_JOBS.items() if cls.default)
-    elif any(job not in ALL_JOBS for job in args.jobs):
-        invalid = [job for job in args.jobs if job not in ALL_JOBS]
-        parser.print_usage()
-        logging.error(f"Invalid jobs {', '.join(invalid)}")
+        logging.error(f"The following arguments are required {' '.join(missing)}")
         sys.exit(1)
 
 
@@ -101,12 +102,13 @@ def main() -> None:
         logging.getLogger().setLevel(
             logging.getLevelNamesMapping()[args.log_level.upper()]
         )
-        set_default_args(parser, args)
+        jobs = (
+            {job_name: ALL_JOBS[job_name]() for job_name in args.jobs}
+            if args.jobs
+            else {name: cls() for name, cls in ALL_JOBS.items() if cls.default}
+        )
 
-        jobs = {job_name: ALL_JOBS[job_name]() for job_name in args.jobs}
-
-        for job_name, job in jobs.items():
-            job.set_default_args(parser, args)
+        validate_args(parser, args, jobs.values())
 
         client = get_client(args.bq_project_id)
 
