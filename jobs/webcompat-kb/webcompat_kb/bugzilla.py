@@ -1469,6 +1469,9 @@ class BugzillaJob(EtlJob):
     def default_dataset(self, args: argparse.Namespace) -> str:
         return args.bq_kb_dataset
 
+    def required_args(self) -> set[str | tuple[str, str]]:
+        return {"bq_kb_dataset"}
+
     def main(self, bq_client: BigQuery, args: argparse.Namespace) -> None:
         bz_config = bugdantic.BugzillaConfig(
             "https://bugzilla.mozilla.org",

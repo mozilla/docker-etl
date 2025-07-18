@@ -17,6 +17,18 @@ VALID_DATASET_ID = re.compile(r"^[a-zA-Z_0-9]{1,1024}$")
 ALL_JOBS: MutableMapping[str, type["EtlJob"]] = {}
 
 
+def project_arg(value: str) -> str:
+    if not VALID_PROJECT_ID.match(value):
+        raise ValueError(f"{value} is not a valid project id")
+    return value
+
+
+def dataset_arg(value: str) -> str:
+    if not VALID_DATASET_ID.match(value):
+        raise ValueError(f"{value} is not a valid dataset id")
+    return value
+
+
 class EtlJob(ABC):
     name: str
     default = True
@@ -30,9 +42,8 @@ class EtlJob(ABC):
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None: ...
 
-    def set_default_args(
-        self, parser: argparse.ArgumentParser, args: argparse.Namespace
-    ) -> None: ...
+    def required_args(self) -> set[str | tuple[str, str]]:
+        return set()
 
     @abstractmethod
     def default_dataset(self, args: argparse.Namespace) -> str: ...

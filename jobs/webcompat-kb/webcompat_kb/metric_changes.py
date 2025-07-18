@@ -585,6 +585,9 @@ class MetricChangesJob(EtlJob):
     def default_dataset(self, args: argparse.Namespace) -> str:
         return args.bq_kb_dataset
 
+    def required_args(self) -> set[str | tuple[str, str]]:
+        return {"bq_kb_dataset"}
+
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         group = parser.add_argument_group(

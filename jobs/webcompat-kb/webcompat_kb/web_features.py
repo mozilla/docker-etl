@@ -7,7 +7,7 @@ import webfeatures
 from google.cloud import bigquery
 from webfeatures import FeaturesFile
 
-from .base import EtlJob
+from .base import EtlJob, dataset_arg
 from .bqhelpers import BigQuery, Json
 
 
@@ -280,7 +280,9 @@ class WebFeaturesJob(EtlJob):
             title="Web Features", description="Web Features arguments"
         )
         group.add_argument(
-            "--bq-web-features-dataset", help="BigQuery Web Features dataset id"
+            "--bq-web-features-dataset",
+            type=dataset_arg,
+            help="BigQuery Web Features dataset id",
         )
         group.add_argument(
             "--recreate-web-features",
@@ -288,12 +290,11 @@ class WebFeaturesJob(EtlJob):
             help="Delete and recreate web features tables from scratch",
         )
 
+    def required_args(self) -> set[str | tuple[str, str]]:
+        return {"bq_web_features_dataset"}
+
     def default_dataset(self, args: argparse.Namespace) -> str:
         return args.bq_web_features_dataset
 
     def main(self, client: BigQuery, args: argparse.Namespace) -> None:
-        if args.bq_web_features_dataset is None:
-            raise ValueError(
-                f"Must pass in --bq-web-features-dataset to run {self.name}"
-            )
         update_web_features(client, args.recreate_web_features)

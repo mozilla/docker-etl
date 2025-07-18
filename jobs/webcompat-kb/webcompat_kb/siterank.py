@@ -1,7 +1,6 @@
 import argparse
 import csv
 import logging
-import sys
 from dataclasses import dataclass
 from datetime import datetime, UTC
 from typing import Iterator, Self
@@ -9,7 +8,7 @@ from typing import Iterator, Self
 import httpx
 from google.cloud import bigquery
 
-from .base import EtlJob, VALID_DATASET_ID
+from .base import EtlJob, dataset_arg
 from .bqhelpers import BigQuery, Json, RangePartition, get_client
 from .httphelpers import get_json
 
@@ -336,11 +335,13 @@ class SiteRanksJob(EtlJob):
         group.add_argument(
             "--bq-crux-dataset",
             default="crux_imported",
+            type=dataset_arg,
             help="BigQuery CrUX import dataset",
         )
         group.add_argument(
             "--bq-tranco-dataset",
             default="tranco_imported",
+            type=dataset_arg,
             help="BigQuery Tranco import dataset",
         )
         group.add_argument(
@@ -353,18 +354,6 @@ class SiteRanksJob(EtlJob):
             action="store_true",
             help="Update hosts-min-rank data even if there isn't any new CrUX data",
         )
-
-    def set_default_args(
-        self, parser: argparse.ArgumentParser, args: argparse.Namespace
-    ) -> None:
-        if not VALID_DATASET_ID.match(args.bq_crux_dataset):
-            parser.print_usage()
-            logging.error(f"Invalid crux dataset id {args.bq_crux_dataset}")
-            sys.exit(1)
-        if not VALID_DATASET_ID.match(args.bq_tranco_dataset):
-            parser.print_usage()
-            logging.error(f"Invalid tranco dataset id {args.bq_tranco_dataset}")
-            sys.exit(1)
 
     def default_dataset(self, args: argparse.Namespace) -> str:
         return args.bq_crux_dataset
@@ -481,6 +470,9 @@ class SiteRanksUpdateList(EtlJob):
 
     def default_dataset(self, args: argparse.Namespace) -> str:
         return args.bq_kb_dataset
+
+    def required_args(self) -> set[str | tuple[str, str]]:
+        return {"bq_kb_dataset", "site_ranks_update_yyyymm"}
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
