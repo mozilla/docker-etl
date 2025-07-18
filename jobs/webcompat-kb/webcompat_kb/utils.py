@@ -42,9 +42,12 @@ def create_test_dataset() -> None:
         do_create_test_dataset(args)
     except Exception:
         import traceback
+
         traceback.print_exc()
         import pdb
+
         pdb.post_mortem()
+
 
 def do_create_test_dataset(args: argparse.Namespace) -> None:
     test_dataset_name = f"{args.bq_kb_dataset}_test"
@@ -135,7 +138,9 @@ CLONE {src}
         src_view = client.get_table(view_name, args.bq_kb_dataset)
         query = src_view.view_query
         for name in all_data:
-            query = query.replace(f"{args.bq_kb_dataset}.{name}", f"{test_dataset_name}.{name}")
+            query = query.replace(
+                f"{args.bq_kb_dataset}.{name}", f"{test_dataset_name}.{name}"
+            )
         target_view = bigquery.Table(target)
         target_view.view_query = query
         if args.write:
@@ -144,7 +149,9 @@ CLONE {src}
                 client.delete_table(target_view, not_found_ok=True)
                 client.client.create_table(target_view)
             except Exception as e:
-                logging.warning(f"Failed to create view {target}\n{e}\n{target_view.view_query}")
+                logging.warning(
+                    f"Failed to create view {target}\n{e}\n{target_view.view_query}"
+                )
         else:
             logging.info(f"Would add view {target} with query:{target_view.view_query}")
 

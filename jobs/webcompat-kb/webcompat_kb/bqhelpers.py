@@ -8,8 +8,7 @@ from typing import Any, Iterable, Mapping, Optional, Self, Sequence, cast
 import google.auth
 from google.cloud import bigquery
 
-
-Json = Mapping[str, "Json"] | Sequence["Json"] | str | int | float | bool | None
+from .httphelpers import Json
 
 
 def get_client(bq_project_id: str) -> bigquery.Client:
