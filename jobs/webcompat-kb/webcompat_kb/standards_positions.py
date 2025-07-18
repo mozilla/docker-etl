@@ -1,21 +1,15 @@
 import argparse
 import logging
 from datetime import datetime
-from typing import Optional, Mapping, Sequence
+from typing import Optional, Sequence
 from urllib.parse import urlparse
 
 from google.cloud import bigquery
-import httpx
 import pydantic
 
 from .base import EtlJob
-from .bqhelpers import BigQuery, Json
-
-
-def get_json(url: str, headers: Optional[Mapping[str, str]] = None) -> Json:
-    resp = httpx.get(url, headers=headers, follow_redirects=True)
-    resp.raise_for_status()
-    return resp.json()
+from .bqhelpers import BigQuery
+from .httphelpers import get_json
 
 
 class StandardsPosition(pydantic.BaseModel):

@@ -301,7 +301,6 @@ RETURNS {serialize_datatype(new_routine.return_type)} AS
 """
         to_delete.append(new_routine.reference)
 
-
     query += f"""
 CREATE VIEW `{dataset_id}.scored_site_reports{archive_suffix}` AS (
 {view_definitions[0]}

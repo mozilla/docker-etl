@@ -6,11 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime, UTC
 from typing import Iterator, Self
 
-from google.cloud import bigquery
 import httpx
+from google.cloud import bigquery
 
 from .base import EtlJob, VALID_DATASET_ID
 from .bqhelpers import BigQuery, Json, RangePartition, get_client
+from .httphelpers import get_json
 
 
 @dataclass
@@ -107,12 +108,9 @@ SELECT yyyymm, origin, "global" as country_code, experimental.popularity.rank as
 
 
 def get_tranco_data() -> Iterator[tuple[int, str]]:
-    id_resp = httpx.get(
-        "https://tranco-list.eu/api/lists/date/latest?subdomains=true",
-        follow_redirects=True,
-    )
-    id_resp.raise_for_status()
-    list_id = id_resp.json()["list_id"]
+    id_resp = get_json("https://tranco-list.eu/api/lists/date/latest?subdomains=true")
+    assert isinstance(id_resp, dict)
+    list_id = id_resp["list_id"]
 
     data_resp = httpx.get(
         f"https://tranco-list.eu/download/{list_id}/1000000", follow_redirects=True
