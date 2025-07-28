@@ -12,6 +12,7 @@ from . import (
     web_features,  # noqa: F401
     standards_positions,  # noqa: F401
     metric_rescore,  # noqa: F401
+    chrome_use_counters,  # noqa: F401
 )
 from .base import ALL_JOBS, EtlJob, dataset_arg, project_arg
 from .bqhelpers import get_client, BigQuery
