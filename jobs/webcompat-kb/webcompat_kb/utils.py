@@ -61,6 +61,7 @@ def do_create_test_dataset(args: argparse.Namespace) -> None:
         "interventions",
         "kb_bugs",
         "other_browser_issues",
+        "platform_features",
         "standards_issues",
         "standards_positions",
         "webcompat_topline_metric_all_history",
@@ -78,6 +79,7 @@ def do_create_test_dataset(args: argparse.Namespace) -> None:
         "webcompat_topline_metric_site_reports",
         "prioritized_kb_entries",
         "core_bug_states",
+        "breakage_reports_core_bugs",
         "site_reports_states",
         "site_reports_bugzilla_buckets",
         "site_reports_next_action",
@@ -87,6 +89,8 @@ def do_create_test_dataset(args: argparse.Namespace) -> None:
         "webcompat_topline_metric_global_1000",
         "webcompat_topline_metric_japan_1000",
         "webcompat_topline_metric_sightline",
+        "platform_priorities",
+        "platform_priority_scores",
     ]
     all_data = tables + views
 
