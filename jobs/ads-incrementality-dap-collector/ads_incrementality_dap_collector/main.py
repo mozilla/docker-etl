@@ -26,7 +26,7 @@ SCHEMA = [
     bigquery.SchemaField("end_date", "DATE", mode="REQUIRED", description="End date of the collected time window, inclusive."),
     bigquery.SchemaField("country_codes", "JSON", mode="NULLABLE", description="List of 2-char country codes for the experiment"),
     bigquery.SchemaField("experiment_slug", "STRING", mode="REQUIRED", description="Slug indicating the experiment."),
-    bigquery.SchemaField("branch", "STRING", mode="REQUIRED", description="The experiment branch this data is associated with."),
+    bigquery.SchemaField("experiment_branch", "STRING", mode="REQUIRED", description="The experiment branch this data is associated with."),
     bigquery.SchemaField("advertiser", "STRING", mode="REQUIRED", description="Advertiser associated with this experiment."),
     bigquery.SchemaField("metric", "STRING", mode="REQUIRED", description="Metric collected for this experiment."),
     bigquery.SchemaField(
@@ -113,6 +113,7 @@ def get_experiment(experiment_slug: str) -> Optional[NimbusExperiment]:
     """Fetch the experiment from Experimenter API and return the configuration."""
     try:
         nimbus_experiments_json = fetch(f"{EXPERIMENTER_API_URL_V6}{experiment_slug}/")
+        logging.debug(f"Succeeded fetching experiment json: {nimbus_experiments_json}")
         nimbus_experiment = NimbusExperiment.from_dict(nimbus_experiments_json)
         return nimbus_experiment
     except Exception as e:
@@ -176,9 +177,9 @@ def parse_histogram(histogram_str: str) -> dict:
     return {i: correct_wraparound(val) for i, val in enumerate(parsed_list)}
 
 
-def collect_dap_result(task_id: str, vdaf_length: int, auth_token: str, hpke_config: str, hpke_private_key: str, batch_start: int, duration: int) -> dict:
+def collect_dap_result(task_id: str, vdaf_length: int, hpke_token: str, hpke_config: str, hpke_private_key: str, batch_start: int, duration: int) -> dict:
     command_str = (f"./collect --task-id {task_id} --leader {LEADER} --vdaf {VDAF} --length {vdaf_length} "
-                   f"--authorization-bearer-token {auth_token} --batch-interval-start {batch_start} "
+                   f"--authorization-bearer-token {hpke_token} --batch-interval-start {batch_start} "
                    f"--batch-interval-duration {duration} --hpke-config {hpke_config} "
                    f"--hpke-private-key {hpke_private_key}")
     logging.debug(f"command_str: {command_str}")
@@ -186,7 +187,7 @@ def collect_dap_result(task_id: str, vdaf_length: int, auth_token: str, hpke_con
     try:
 
         result = subprocess.run(["./collect", "--task-id", task_id, "--leader", LEADER, "--vdaf", VDAF,
-                                 "--length", f"{vdaf_length}", "--authorization-bearer-token", auth_token,
+                                 "--length", f"{vdaf_length}", "--authorization-bearer-token", hpke_token,
                                  "--batch-interval-start", f"{batch_start}", "--batch-interval-duration", f"{duration}",
                                  "--hpke-config", hpke_config, "--hpke-private-key", hpke_private_key],
                                 capture_output=True,
@@ -212,15 +213,15 @@ def collect_dap_result(task_id: str, vdaf_length: int, auth_token: str, hpke_con
     required=True)
 @click.option("--table_id", help="Table for incrementality dap aggregations.", required=True)
 @click.option(
-    "--auth_token",
-    envvar='AUTH_TOKEN',
-    help="HTTP bearer token to authenticate to the leader",
+    "--hpke_token",
+    envvar='DIVVIUP_HPKE_TOKEN',
+    help="The token defined in the collector credentials, used to authenticate to the leader",
     required=True,
 )
 @click.option(
     "--hpke_private_key",
-    envvar='HPKE_PRIVATE_KEY',
-    help="The private key used to decrypt shares from the leader and helper",
+    envvar='DIVVIUP_PRIVATE_KEY',
+    help="The private key defined in the collector credentials, used to decrypt shares from the leader and helper",
     required=True,
 )
 # TODO Since this one isn't private if might be possible to keep in the same file as the experiment slugs?
@@ -246,7 +247,7 @@ def collect_dap_result(task_id: str, vdaf_length: int, auth_token: str, hpke_con
 @click.option("--experiment_slug", "experiment_slugs",
               help="Experiment to collect.  To specify multiple experiments use multiple --experiment_slug options",
               multiple=True, required=True)
-def main(project_id, dataset_id, table_id, auth_token, hpke_private_key, hpke_config, batch_start, batch_duration,
+def main(project_id, dataset_id, table_id, hpke_token, hpke_private_key, hpke_config, batch_start, batch_duration,
          experiment_slugs):
     logging.info(f"Starting collector job for batch_start: {batch_start} duration: {batch_duration}")
     data_set = f"{project_id}.{dataset_id}"
@@ -265,7 +266,7 @@ def main(project_id, dataset_id, table_id, auth_token, hpke_private_key, hpke_co
         try:
             experiment = get_experiment(experiment_slug)
         except:
-            raise Exception(f"Cannot load experiment {experiment_slug} from: ")
+            raise Exception(f"Cannot load experiment {experiment_slug} from: {EXPERIMENTER_API_URL_V6}")
         branches = experiment.branches
 
         targeting = experiment.targeting
@@ -302,7 +303,7 @@ def main(project_id, dataset_id, table_id, auth_token, hpke_private_key, hpke_co
             logging.info(f"Collecting task_id: {task_id}")
             experiment_metadata = collector_results[task_id]
             # need to collect once per task, not bucket.
-            collected = collect_dap_result(task_id, tasks_to_process.get(task_id), auth_token, hpke_config,
+            collected = collect_dap_result(task_id, tasks_to_process.get(task_id), hpke_token, hpke_config,
                                            hpke_private_key, batch_start, batch_duration)
             for bucket in experiment_metadata.keys():
                 collector_results[task_id][bucket]["value_count"] = collected[bucket]
