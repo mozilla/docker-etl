@@ -48,6 +48,9 @@ class KintoSuggestion:
     # `score` is optional in the schema but should be included in every suggestion.
     score: Optional[float] = None
 
+    # `serp_categories` is optional in the schema but should be included in every suggestion.
+    serp_categories: Optional[list[int]] = None
+
 
 def download_suggestions(client: kinto_http.Client) -> Iterator[KintoSuggestion]:
     """Get records, download attachments and return the suggestions."""
