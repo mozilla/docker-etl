@@ -144,6 +144,14 @@ def store_suggestions(
             bigquery.SchemaField("title", "STRING"),
             bigquery.SchemaField("url", "STRING"),
             bigquery.SchemaField("score", "FLOAT64"),
+            bigquery.SchemaField(
+                "serp_categories",
+                "RECORD",
+                mode="REPEATED",
+                fields=[
+                    bigquery.SchemaField("category", "INTEGER"),
+                ],
+            ),
         ],
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
         write_disposition="WRITE_TRUNCATE",
