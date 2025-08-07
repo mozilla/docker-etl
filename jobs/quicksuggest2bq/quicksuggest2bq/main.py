@@ -49,7 +49,7 @@ class KintoSuggestion:
     score: Optional[float] = None
 
     # `serp_categories` is optional in the schema but should be included in every suggestion.
-    serp_categories: Optional[list[int]] = None
+    serp_categories: Optional[List[int]] = None
 
 
 def download_suggestions(client: kinto_http.Client) -> Iterator[KintoSuggestion]:
