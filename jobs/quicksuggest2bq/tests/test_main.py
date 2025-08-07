@@ -24,7 +24,7 @@ SAMPLE_SUGGESTION = {
     ],
     "score": 0.4,
     "full_keywords": [("sample data", 3), ("sample", 3)],
-    "serp_categories": SERP_CATEGORIES
+    "serp_categories": SERP_CATEGORIES,
 }
 
 SAMPLE_WIKIPEDIA_SUGGESTION = {
