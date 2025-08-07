@@ -187,22 +187,22 @@ def _henry_analyze(cmd, destination_table, date):
 
         table = client.create_table(table)
 
-        job_config = bigquery.LoadJobConfig(
-            source_format=bigquery.SourceFormat.CSV,
-            skip_leading_rows=1,
-            autodetect=True,
-            write_disposition="WRITE_TRUNCATE",
-            schema_update_options=["ALLOW_FIELD_ADDITION"],
+    job_config = bigquery.LoadJobConfig(
+        source_format=bigquery.SourceFormat.CSV,
+        skip_leading_rows=1,
+        autodetect=True,
+        write_disposition="WRITE_TRUNCATE",
+        schema_update_options=["ALLOW_FIELD_ADDITION"],
+    )
+
+    with open(output_csv, "rb") as source_file:
+        load_job = client.load_table_from_file(
+            source_file, table_id, job_config=job_config
         )
 
-        with open(output_csv, "rb") as source_file:
-            load_job = client.load_table_from_file(
-                source_file, table_id, job_config=job_config
-            )
+    load_job.result()
 
-        load_job.result()
-
-        print(f"Loaded {load_job.output_rows} rows into {table_id}.")
+    print(f"Loaded {load_job.output_rows} rows into {table_id}.")
 
 
 def _henry_config_file():
