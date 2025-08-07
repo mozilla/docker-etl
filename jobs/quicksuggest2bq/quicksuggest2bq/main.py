@@ -48,7 +48,8 @@ class KintoSuggestion:
     # `score` is optional in the schema but should be included in every suggestion.
     score: Optional[float] = None
 
-    # `serp_categories` is optional in the schema but should be included in every suggestion.
+    # `serp_categories` is optional in the schema but should be included in every
+    # suggestion.
     serp_categories: Optional[List[int]] = None
 
 
