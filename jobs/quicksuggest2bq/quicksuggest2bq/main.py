@@ -48,6 +48,10 @@ class KintoSuggestion:
     # `score` is optional in the schema but should be included in every suggestion.
     score: Optional[float] = None
 
+    # `serp_categories` is optional in the schema but should be included in every
+    # suggestion.
+    serp_categories: Optional[List[int]] = None
+
 
 def download_suggestions(client: kinto_http.Client) -> Iterator[KintoSuggestion]:
     """Get records, download attachments and return the suggestions."""
@@ -140,6 +144,14 @@ def store_suggestions(
             bigquery.SchemaField("title", "STRING"),
             bigquery.SchemaField("url", "STRING"),
             bigquery.SchemaField("score", "FLOAT64"),
+            bigquery.SchemaField(
+                "serp_categories",
+                "RECORD",
+                mode="REPEATED",
+                fields=[
+                    bigquery.SchemaField("category", "INTEGER"),
+                ],
+            ),
         ],
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
         write_disposition="WRITE_TRUNCATE",

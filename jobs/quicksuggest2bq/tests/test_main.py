@@ -5,6 +5,9 @@ from quicksuggest2bq.main import KintoSuggestion, download_suggestions
 from pytest_mock.plugin import MockerFixture
 from typing import List, Dict
 
+
+SERP_CATEGORIES = [1, 2]
+
 SAMPLE_SUGGESTION = {
     "id": 2802,
     "url": "https://www.example.com",
@@ -21,6 +24,7 @@ SAMPLE_SUGGESTION = {
     ],
     "score": 0.4,
     "full_keywords": [("sample data", 3), ("sample", 3)],
+    "serp_categories": SERP_CATEGORIES,
 }
 
 SAMPLE_WIKIPEDIA_SUGGESTION = {
@@ -132,6 +136,10 @@ class TestMain:
             suggestions[1].full_keywords[0]["count"]
             == SAMPLE_WIKIPEDIA_SUGGESTION["full_keywords"][0][1]
         )
+
+    def test_suggestion_serp_categories(self, mocked_kinto_client):
+        suggestions = list(download_suggestions(mocked_kinto_client))
+        assert suggestions[0].serp_categories == SERP_CATEGORIES
 
     def test_suggestion_score(self, mocked_kinto_client):
         suggestions = list(download_suggestions(mocked_kinto_client))
