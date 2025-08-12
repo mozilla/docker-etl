@@ -59,7 +59,6 @@ def main(gcp_project, bq_namespace, bq_table, hpke_token, hpke_private_key, hpke
         logging.debug(f"Succeeded fetching experiment json: {experiment}")
 
         tasks_to_process = {}
-        collector_results = {}
 
         for branch in experiment.branches:
             logging.info(f"Processing branch {branch.slug}")
@@ -76,23 +75,20 @@ def main(gcp_project, bq_namespace, bq_table, hpke_token, hpke_private_key, hpke
                             tasks_to_process[task_id] = {}
                         tasks_to_process[task_id][incrementality.bucket] = incrementality
 
-                        # if task_id not in collector_results:
-                        #     result = IncrementalityBranchResult(incrementality_config)
-                        #     collector_results[task_id][result.bucket] = result
-
-            logging.info(f"Succeeded processing branch {branch.slug}, prepared result: {collector_results}")
+            logging.info(f"Succeeded processing branch {branch.slug}, prepared result: {tasks_to_process[task_id]}")
 
         unique_tasks = list(dict.fromkeys(tasks_to_process))
         for task_id in unique_tasks:
             logging.info(f"Collecting DAP task: {task_id}")
             results = tasks_to_process[task_id]
-            # need to collect once per task, not bucket.
-            # but the veclen comes from the bucket ... so for now just grabbing the first bucket's veclen
-            task_veclen = list(results.values())[0]
+            # - Need to collect once per task, not bucket.
+            # - For now just grabbing the first experiment branch's veclen,
+            # as I think it's specified per task, just stored in each branch.
+            task_veclen = list(results.values())[0].task_veclen
             collected = collect_dap_result(task_id, task_veclen, hpke_token, hpke_config,
                                            hpke_private_key, batch_start, batch_duration)
             for bucket in results.keys():
-                tasks_to_process[task_id][bucket]["value_count"] = collected[bucket]
+                tasks_to_process[task_id][bucket].value_count = collected[bucket]
 
         records = [v for inner in tasks_to_process.values() for v in inner.values()]
 
