@@ -111,6 +111,7 @@ class IncrementalityBranchData:
         self.targeting = experiment.targeting
         # Store the length associated with the task, needed for collector process.
         self.task_veclen = visitCountingExperimentListItem.get("task_veclen")
+        self.value_count = None
 
 # @attr.s(auto_attribs=True)
 # class IncrementalityBranchResult:
