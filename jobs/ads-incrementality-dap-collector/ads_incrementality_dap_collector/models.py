@@ -82,9 +82,29 @@ def get_advertiser_from_url(url: str) -> Optional[str]:
 
 
 @attr.s(auto_attribs=True, auto_detect=True)
-class IncrementalityBranchData:
-    """This info is contained within a Nimbus Experiment branch's VisitCountExperiment data.
-        It associates the Nimbus experiment branch to the DAP bucket."""
+class IncrementalityBranchResultsRow:
+    """This object encapsulates all the data for an incrementality experiment branch that uses the
+        Nimbus dapTelemetry feature. It is used as an intermediate data structure, to hold the
+        info from the experiment metadata which is later used in the DAP collection, then to store
+        the actual count values fetched from DAP, and finally to write most of these attributes to
+        a BQ results row.
+
+        Attributes:
+            advertiser:         Derived from from the urls stored in the visitCountingExperimentList
+                                key within Nimbus's dapTelemetry feature.
+            branch:             A Nimbus experiment branch. Each experiment may have multiple
+                                branches (ie control, treatment-a).
+            bucket:             Stored in Nimbus experiment metadata. Each exeriment branch specifies
+                                the corresponding DAP bucket where the visit counts for that branch
+                                can be collected.
+            experiment_slug:    The Nimbus experiment's URL slug
+            metric:             Currently hardcoded to "unique_client_organic_visits" for incrementality.
+            task_id:            Stored in Nimbus experiment metadata. The task id is returned when setting
+                                up DAP counting, and is used to collect the experiment result counts.
+            task_veclen:        Stored in Nimbus experiment metadata. The task_veclen is configured when
+                                setting up DAP counting, and is needed to collect the experiment results.
+            value_count:        The url visits count value collected from DAP for this experiment branch.
+    """
 
     advertiser: str
     branch: str
@@ -92,14 +112,13 @@ class IncrementalityBranchData:
     experiment_slug: str
     metric: str
     task_id: str
-    targeting: int
     task_veclen: int
     value_count: int
 
     def __init__(self, experiment, branch_slug, visitCountingExperimentListItem):
+        self.advertiser = "not_set"
         urls = visitCountingExperimentListItem.get("urls")
         # Default to the first url in the list to determine the advertiser.
-        self.advertiser = "not_set"
         if len(urls) > 0:
             self.advertiser = get_advertiser_from_url(urls[0])
         self.branch = branch_slug
@@ -108,28 +127,21 @@ class IncrementalityBranchData:
         self.experiment_slug = experiment.slug
         self.metric = "unique_client_organic_visits"
         self.task_id = visitCountingExperimentListItem.get("task_id")
-        self.targeting = experiment.targeting
-        # Store the length associated with the task, needed for collector process.
         self.task_veclen = visitCountingExperimentListItem.get("task_veclen")
+        # This will be populated when we successfully fetch the count from DAP
         self.value_count = None
 
-# @attr.s(auto_attribs=True)
-# class IncrementalityBranchResult:
-#     """Defines the Incrementality results data for a particular branch of an Incrementality experiment.
-#         It brings together data specified in the Nimbus experiment branch with the metrics and results fetched from DAP"""
+@attr.s(auto_attribs=True)
+class BQConfig:
+    project: str
+    namespace: str
+    table: str
 
-#     advertiser: str
-#     country_codes: list[str]
-#     dap_bucket: str
-#     experiment_slug: str
-#     experiment_branch_slug: str
-#     metrics: str
-#     value_count: int
 
-#     def __init__(self, branch_config: IncrementalityBranchConfig):
-#         self.advertiser = branch_config.advertiser
-#         self.country_codes = get_country_from_targeting(branch_config.targeting)
-#         self.dap_bucket = branch_config.bucket
-#         self.experimnent_slug = branch_config.experiment_slug
-#         self.experiment_branch_slug = branch_config.branch_slug
-#         self.metrics = "unique_client_organic_visits"
+@attr.s(auto_attribs=True)
+class DAPConfig:
+    hpke_token: str
+    hpke_private_key: str
+    hpke_config: str
+    batch_start: int
+    batch_duration: int
