@@ -8,6 +8,7 @@ import tldextract
 
 from typing import List, Optional
 
+
 @attr.s(auto_attribs=True)
 class Branch:
     """Defines a branch of a Nimbus experiement from Experimenter."""
@@ -53,7 +54,6 @@ class NimbusExperiment:
         )
         return converter.structure(d, cls)
 
-
 def get_country_from_targeting(targeting: str) -> Optional[str]:
     """Parses the region/country from the targeting string and
     returns a JSON formatted list of country codes."""
@@ -67,12 +67,10 @@ def get_country_from_targeting(targeting: str) -> Optional[str]:
         return json.dumps(regions)
     return None
 
-
 def normalize_url(url: str) -> str:
     # Replace wildcard with a dummy protocol and subdomain so urlparse can handle it
     normalized = re.sub(r'^\*://\*\.?', 'https://', url)
     return normalized
-
 
 def get_advertiser_from_url(url: str) -> Optional[str]:
     """Parses the advertiser name (domain) from the url"""
@@ -131,6 +129,7 @@ class IncrementalityBranchResultsRow:
         self.task_veclen = visitCountingExperimentListItem.get("task_veclen")
         # This will be populated when we successfully fetch the count from DAP
         self.value_count = None
+
 
 @attr.s(auto_attribs=True)
 class BQConfig:
@@ -195,6 +194,7 @@ class IncrementalityConfig:
     bq: BQConfig
     dap: DAPConfig
     nimbus: NimbusConfig
+
 
 class ConfigEncoder(json.JSONEncoder):
     def default(self, o): return o.__dict__
