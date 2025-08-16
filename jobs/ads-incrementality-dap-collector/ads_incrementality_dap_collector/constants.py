@@ -2,7 +2,7 @@ from google.cloud import bigquery
 
 DAP_LEADER = "https://dap-09-3.api.divviup.org"
 VDAF = "histogram"
-process_timeout = 600  # 10 mins
+PROCESS_TIMEOUT = 600  # 10 mins
 
 CONFIG_FILE_NAME = "config.json"     # See example_config.json for the contents and structure of the job config file.
 
