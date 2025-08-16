@@ -4,12 +4,14 @@ docker run -it --rm \
   -v $HOME/.config/gcloud:/app/.config/gcloud \
   -e GOOGLE_APPLICATION_CREDENTIALS=/app/.config/gcloud/application_default_credentials.json \
   ads_incrementality_dap_collector python ./ads_incrementality_dap_collector/main.py \
-      --gcp_project moz-fx-dev-mlifshin-sandbox \
-      --bq_namespace ads_dap \
-      --bq_table incrementality \
-      --experiment_slug $EXPERIMENT_SLUG \
-      --hpke_token $DIVVIUP_HPKE_TOKEN \
-      --hpke_private_key  $DIVVIUP_PRIVATE_KEY \
-      --hpke_config $DIVVIUP_HPKE_CONFIG \
-      --batch_start $BATCH_START \
-      --batch_duration 3600
+        --gcp_project moz-fx-dev-mlifshin-sandbox \
+        --job_config_bucket ads-nonprod-stage-incrementality-dap-collector-config \
+        --hpke_token $DAP_HPKE_TOKEN \
+        --hpke_private_key  $DAP_PRIVATE_KEY \
+      # --gcp_project moz-fx-dev-mlifshin-sandbox \
+      # --bq_namespace ads_dap \
+      # --bq_table incrementality \
+      # --experiment_slug $EXPERIMENT_SLUG \
+      # --hpke_config $DIVVIUP_HPKE_CONFIG \
+      # --batch_start $BATCH_START \
+      # --batch_duration 3600

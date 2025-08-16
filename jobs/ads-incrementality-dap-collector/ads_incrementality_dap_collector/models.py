@@ -5,6 +5,7 @@ import json
 import pytz
 import re
 import tldextract
+
 from typing import List, Optional
 
 @attr.s(auto_attribs=True)
@@ -84,7 +85,7 @@ def get_advertiser_from_url(url: str) -> Optional[str]:
 @attr.s(auto_attribs=True, auto_detect=True)
 class IncrementalityBranchResultsRow:
     """This object encapsulates all the data for an incrementality experiment branch that uses the
-        Nimbus dapTelemetry feature. It is used as an intermediate data structure, to hold the
+        Nimbus dapTelemetry feature. It is used as an intermediate data structure, first to hold the
         info from the experiment metadata which is later used in the DAP collection, then to store
         the actual count values fetched from DAP, and finally to write most of these attributes to
         a BQ results row.
@@ -133,6 +134,14 @@ class IncrementalityBranchResultsRow:
 
 @attr.s(auto_attribs=True)
 class BQConfig:
+    """Encapsulates everything the job needs to connect to BigQuery
+
+        Attributes:
+            project:         GCP project
+            namespace:       BQ namespace for ads incrementality
+            table:           BQ table where incrementality results go
+    """
+
     project: str
     namespace: str
     table: str
@@ -140,8 +149,52 @@ class BQConfig:
 
 @attr.s(auto_attribs=True)
 class DAPConfig:
+    """Encapsulates everything the job needs to connect to DAP
+
+        Attributes:
+            hpke_token:         Token defined in the collector credentials, used to authenticate to the leader
+            hpke_private_key:   Private key defined in the collector credentials, used to decrypt shares from the leader and helper
+            hpke_config:        base64url-encoded version of hpke_config defined in the collector credentials
+            batch_start:        Start of the collection interval, as the number of seconds since the Unix epoch
+            batch_duration:     Duration of the collection batch interval, in seconds
+    """
+
     hpke_token: str
     hpke_private_key: str
     hpke_config: str
     batch_start: int
     batch_duration: int
+
+
+@attr.s(auto_attribs=True)
+class NimbusConfig:
+    """Encapsulates everything the job needs to connect to Nimbus
+
+        Attributes:
+            experiment_slugs:   Slugs for the incrementality experiments. Nimbus experiments
+                                branches store DAP task info that allows for branch results
+                                collection from DAP.
+            api_url:            API URL for fetching the Nimbus experiment info
+
+    """
+
+    experiment_slugs: list[str]
+    api_url: str
+
+
+@attr.s(auto_attribs=True)
+class IncrementalityConfig:
+    """Encapsulates everything the job needs to connect to various 3rd party services
+
+        Attributes:
+            bq:         BigQuery config
+            dap:        Divviup's DAP service config
+            nimbus:     Nimbus Experiment framework config
+    """
+
+    bq: BQConfig
+    dap: DAPConfig
+    nimbus: NimbusConfig
+
+class ConfigEncoder(json.JSONEncoder):
+    def default(self, o): return o.__dict__

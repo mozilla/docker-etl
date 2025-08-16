@@ -5,4 +5,5 @@ pytest-black==0.3.11
 pytest-flake8==1.0.6
 pytz==2025.2
 google-cloud-bigquery==3.34.0
+google-cloud-storage==3.3.0
 tldextract==5.3.0

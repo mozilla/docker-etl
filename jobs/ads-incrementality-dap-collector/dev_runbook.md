@@ -120,18 +120,13 @@ Then run the utility:
 python3 generate_hpke_config.py
 ```
 
-Store the output in the expected env var:
-
-```sh
-export DIVVIUP_HPKE_CONFIG="AQAgAAEAAQAgpdceoGiuWvIiogA8SPCdprkhWMNtLq_y0GSePI7EhXE"
-```
+The code will expect to find this value in a `config.json` file in the GCS bucket defined by the param `--job_config_bucket`. See `example_config.json` for how that file should be structured.
 
 ## Set up credentials and run the collector
 ```sh
 # This value is the "token" value from the collector credentials json file, which is used by the python code DAP collector
 # Not to be confused with the API token you created during developer setup, and goes with the 'divviup' CLI tool
-export DIVVIUP_HPKE_TOKEN="shhhh"
-export DIVVIUP_PRIVATE_KEY="shhh"
-export EXPERIMENT_SLUG="incrementality-etl-testing-mlifshin-dev"
+export DAP_HPKE_TOKEN="shhhh"
+export DAP_PRIVATE_KEY="shhh"
 ./dev_run_docker.sh
 ```

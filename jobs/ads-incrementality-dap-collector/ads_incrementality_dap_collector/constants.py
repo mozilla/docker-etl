@@ -4,10 +4,7 @@ DAP_LEADER = "https://dap-09-3.api.divviup.org"
 VDAF = "histogram"
 process_timeout = 600  # 10 mins
 
-EXPERIMENTER_API_URL_V6 = (
-    # "https://experimenter.services.mozilla.com/api/v6/experiments/"
-    "https://stage.experimenter.nonprod.webservices.mozgcp.net/api/v6/experiments/"
-)
+CONFIG_FILE_NAME = "config.json"     # See example_config.json for the contents and structure of the job config file.
 
 COLLECTOR_RESULTS_SCHEMA = [
     bigquery.SchemaField("start_date", "DATE", mode="REQUIRED", description="Start date of the collected time window, inclusive."),

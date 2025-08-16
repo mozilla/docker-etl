@@ -1,25 +1,30 @@
 import ast
 import datetime
+import json
 import logging
 import requests
 import subprocess
 import time
 
 from google.cloud import bigquery
+from google.cloud import storage
 from typing import Optional
 
-from constants import COLLECTOR_RESULTS_SCHEMA, EXPERIMENTER_API_URL_V6, DAP_LEADER, process_timeout, VDAF
-from models import BQConfig, DAPConfig, IncrementalityBranchResultsRow, NimbusExperiment
+from constants import COLLECTOR_RESULTS_SCHEMA, CONFIG_FILE_NAME, DAP_LEADER, process_timeout, VDAF
+from models import BQConfig, DAPConfig, IncrementalityBranchResultsRow, NimbusExperiment, IncrementalityConfig
+from types import SimpleNamespace
 
 # Nimbus Experimenter helper functions
-def get_experiment(experiment_slug: str) -> Optional[NimbusExperiment]:
+def get_experiment(experiment_slug: str, api_url: str) -> Optional[NimbusExperiment]:
     """Fetch the experiment from Experimenter API and return the configuration."""
     try:
-        nimbus_experiments_json = fetch(f"{EXPERIMENTER_API_URL_V6}{experiment_slug}/")
+        logging.info(f"Fetching experiment: {experiment_slug}")
+        nimbus_experiments_json = fetch(f"{api_url}/{experiment_slug}/")
         nimbus_experiment = NimbusExperiment.from_dict(nimbus_experiments_json)
+        logging.info(f"Fetched experiment json: {experiment_slug}")
         return nimbus_experiment
     except Exception as e:
-        raise Exception(f"Failed loading experiment {experiment_slug} from {EXPERIMENTER_API_URL_V6}", e)
+        raise Exception(f"Failed fetching experiment {experiment_slug} from {api_url}", e)
 
 def prepare_results_rows(experiment: NimbusExperiment) -> dict:
     """Pull info out of the experiment metadata to set up experiment branch results rows. The info
@@ -52,7 +57,7 @@ def collect_dap_result(task_id: str, vdaf_length: int, hpke_token: str, hpke_con
                    f"--authorization-bearer-token {hpke_token} --batch-interval-start {batch_start} "
                    f"--batch-interval-duration {duration} --hpke-config {hpke_config} "
                    f"--hpke-private-key {hpke_private_key}")
-    logging.debug(f"command_str: {command_str}")
+    logging.info(f"command_str: {command_str}")
     logging.info(f"Processing batch_start: {batch_start} for duration: {duration}")
     try:
 
@@ -149,6 +154,19 @@ def write_results_to_bq(collected_tasks: dict, config: BQConfig):
                          value_count=record.value_count)
         insert_into_bq(row, bq_client, full_table_id)
     logging.info("Finished inserting results rows into BQ.")
+
+# GCS helper functions
+def get_config(gcp_project: str, config_bucket: str, hpke_token: str, hpke_private_key: str) -> IncrementalityConfig:
+    client = storage.Client(project=gcp_project)
+    bucket = client.get_bucket(config_bucket)
+    blob = bucket.blob(CONFIG_FILE_NAME)
+    reader = blob.open("rt")
+    config = json.load(reader, object_hook=lambda d: SimpleNamespace(**d))
+    config.dap.hpke_token = hpke_token
+    config.dap.hpke_private_key = hpke_private_key
+    logging.info(f"Config is: {config}")
+    return config
+
 
 # General helper functions
 def fetch(url: str):
