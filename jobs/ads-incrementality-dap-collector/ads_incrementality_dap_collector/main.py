@@ -22,7 +22,7 @@ from helpers import get_config, get_experiment, prepare_results_rows, collect_da
 )
 def main(gcp_project, job_config_bucket, hpke_token, hpke_private_key):
     try:
-        logging.info(f"Starting collector job with configuration from {job_config_bucket}")
+        logging.info(f"Starting collector job with configuration from gcs bucket: {job_config_bucket}")
         config = get_config(gcp_project, job_config_bucket, hpke_token, hpke_private_key)
         logging.info(f"Starting collector job for experiments: {config.nimbus.experiment_slugs}.")
 
