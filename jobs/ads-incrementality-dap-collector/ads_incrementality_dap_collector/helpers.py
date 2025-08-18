@@ -175,7 +175,7 @@ def get_config(gcp_project: str, config_bucket: str, hpke_token: str, hpke_priva
     except Exception as e:
         raise Exception(f"Failed to get job config file: {CONFIG_FILE_NAME} from GCS bucket: {config_bucket} in project: {gcp_project}.") from e
 
-def write_logs_to_bucket(gcp_project: str, config_bucket: str, ):
+def write_job_logs_to_bucket(gcp_project: str, config_bucket: str):
     client = storage.Client(project=gcp_project)
     try:
         bucket = client.get_bucket(config_bucket)
