@@ -1,9 +1,9 @@
 import click
 import logging
+import traceback
 
-from helpers import get_config, get_experiment, prepare_results_rows, collect_dap_results, write_results_to_bq
-
-
+from constants import LOG_FILE_NAME
+from helpers import get_config, get_experiment, prepare_results_rows, collect_dap_results, write_job_logs_to_bucket, write_results_to_bq
 
 @click.command()
 @click.option("--gcp_project", help="GCP project id", required=True)
@@ -21,20 +21,32 @@ from helpers import get_config, get_experiment, prepare_results_rows, collect_da
     required=True,
 )
 def main(gcp_project, job_config_bucket, hpke_token, hpke_private_key):
-    logging.info(f"Starting collector job with configuration from {job_config_bucket}")
-    config = get_config(gcp_project, job_config_bucket, hpke_token, hpke_private_key)
-    logging.info(f"Starting collector job for experiments: {config.nimbus.experiment_slugs}.")
+    try:
+        logging.info(f"Starting collector job with configuration from {job_config_bucket}")
+        config = get_config(gcp_project, job_config_bucket, hpke_token, hpke_private_key)
+        logging.info(f"Starting collector job for experiments: {config.nimbus.experiment_slugs}.")
 
-    for experiment_slug in config.nimbus.experiment_slugs:
-        experiment = get_experiment(experiment_slug, config.nimbus.api_url)
+        for experiment_slug in config.nimbus.experiment_slugs:
+            experiment = get_experiment(experiment_slug, config.nimbus.api_url)
 
-        tasks_to_collect = prepare_results_rows(experiment)
+            tasks_to_collect = prepare_results_rows(experiment)
 
-        collected_tasks = collect_dap_results(tasks_to_collect, config.dap)
+            collected_tasks = collect_dap_results(tasks_to_collect, config.dap)
 
-        write_results_to_bq(collected_tasks, config.bq)
+            write_results_to_bq(collected_tasks, config.bq)
+
+            write_job_logs_to_bucket(gcp_project, job_config_bucket)
+    except Exception as e:
+        logging.error(f"{e}\n{traceback.format_exc()}")
+        write_job_logs_to_bucket(gcp_project, job_config_bucket)
 
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.INFO)
+    logging.basicConfig(
+        filename=LOG_FILE_NAME,
+        filemode='a',
+        format='%(asctime)s,%(msecs)03d %(name)s %(levelname)s %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        level=logging.INFO)
+    # logging.getLogger().setLevel(logging.INFO)
     main()
