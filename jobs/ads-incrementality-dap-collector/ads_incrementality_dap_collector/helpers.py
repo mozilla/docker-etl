@@ -10,7 +10,7 @@ from google.cloud import bigquery
 from google.cloud import storage
 from typing import Optional
 
-from constants import COLLECTOR_RESULTS_SCHEMA, CONFIG_FILE_NAME, DAP_LEADER, PROCESS_TIMEOUT, VDAF
+from constants import COLLECTOR_RESULTS_SCHEMA, CONFIG_FILE_NAME, DAP_LEADER, LOG_FILE_NAME, PROCESS_TIMEOUT, VDAF
 from models import BQConfig, DAPConfig, IncrementalityBranchResultsRow, NimbusExperiment, IncrementalityConfig
 from types import SimpleNamespace
 
@@ -20,7 +20,7 @@ def get_experiment(experiment_slug: str, api_url: str) -> Optional[NimbusExperim
     """Fetch the experiment from Experimenter API and return the configuration."""
     logging.info(f"Fetching experiment: {experiment_slug}")
     try:
-        nimbus_experiments_json = fetch(f"{api_url}/pants/")
+        nimbus_experiments_json = fetch(f"{api_url}/{experiment_slug}/")
         nimbus_experiment = NimbusExperiment.from_dict(nimbus_experiments_json)
         logging.info(f"Fetched experiment json: {experiment_slug}")
         return nimbus_experiment
@@ -174,6 +174,15 @@ def get_config(gcp_project: str, config_bucket: str, hpke_token: str, hpke_priva
         return config
     except Exception as e:
         raise Exception(f"Failed to get job config file: {CONFIG_FILE_NAME} from GCS bucket: {config_bucket} in project: {gcp_project}.") from e
+
+def write_logs_to_bucket(gcp_project: str, config_bucket: str, ):
+    client = storage.Client(project=gcp_project)
+    try:
+        bucket = client.get_bucket(config_bucket)
+        blob = bucket.blob(f"logs/{LOG_FILE_NAME}")
+        blob.upload_from_filename(LOG_FILE_NAME)
+    except Exception as e:
+        raise Exception(f"Failed to upload job log file: {LOG_FILE_NAME} to GCS bucket: {config_bucket} in project: {gcp_project}.") from e
 
 
 # General helper functions
