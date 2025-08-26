@@ -7,3 +7,4 @@ numpy==1.24.4
 pandas==2.1.4
 boto3
 requests-oauthlib==2.0.0
+zeep==4.3.1
