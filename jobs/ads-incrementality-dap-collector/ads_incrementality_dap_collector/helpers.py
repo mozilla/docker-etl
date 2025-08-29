@@ -27,11 +27,11 @@ def get_experiment(experiment_slug: str, api_url: str) -> Optional[NimbusExperim
     except Exception as e:
         raise Exception(f"Failed fetching experiment: {experiment_slug} from: {api_url}") from e
 
-def prepare_results_rows(experiment: NimbusExperiment) -> dict:
+def prepare_results_rows(experiment: NimbusExperiment) -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
     """Pull info out of the experiment metadata to set up experiment branch results rows. The info
-        here will be used to call DAP and get results data for each branch, and  ultimately written
+        here will be used to call DAP and get results data for each branch, and ultimately written
         to BQ."""
-    tasks_to_process = {}
+    tasks_to_process : dict[str, dict[int, IncrementalityBranchResultsRow]] = {}
     for branch in experiment.branches:
         logging.info(f"Processing experiment branch: {branch.slug}")
         dap_telemetry_features = [f for f in branch.features if f.get("featureId") == "dapTelemetry"]
@@ -83,7 +83,7 @@ def collect_dap_result(task_id: str, vdaf_length: int, hpke_token: str, hpke_con
     except subprocess.TimeoutExpired as e:
         raise Exception(f"Collection timed out for {task_id}, {e.timeout}, stderr: {e.stderr}") from None
 
-def collect_dap_results(tasks_to_collect: dict, config: DAPConfig):
+def collect_dap_results(tasks_to_collect: dict[str, dict[int, IncrementalityBranchResultsRow]], config: DAPConfig):
     tasks = list(dict.fromkeys(tasks_to_collect))
     logging.info(f"Starting DAP collection for tasks: {tasks}.")
     for task_id in tasks:
@@ -100,6 +100,7 @@ def collect_dap_results(tasks_to_collect: dict, config: DAPConfig):
         logging.info(f"Prepared final result rows: {tasks_to_collect[task_id]}")
         logging.info(f"Finished collecting DAP task: {task_id}")
     logging.info("Finished DAP collection for all tasks.")
+    return tasks_to_collect
 
 # TODO Trigger Airflow errors
 def correct_wraparound(num: int) -> int:
@@ -170,7 +171,7 @@ def get_config(gcp_project: str, config_bucket: str, hpke_token: str, hpke_priva
         config = json.load(reader, object_hook=lambda d: SimpleNamespace(**d))
         config.dap.hpke_token = hpke_token
         config.dap.hpke_private_key = hpke_private_key
-        logging.info(f"Config is: {config}")
+        config.bq.project = gcp_project
         return config
     except Exception as e:
         raise Exception(f"Failed to get job config file: {CONFIG_FILE_NAME} from GCS bucket: {config_bucket} in project: {gcp_project}.") from e

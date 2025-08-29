@@ -80,7 +80,7 @@ def get_advertiser_from_url(url: str) -> Optional[str]:
     return ext.domain
 
 
-@attr.s(auto_attribs=True, auto_detect=True)
+@attr.s(auto_attribs=True, auto_detect=True, eq=True)
 class IncrementalityBranchResultsRow:
     """This object encapsulates all the data for an incrementality experiment branch that uses the
         Nimbus dapTelemetry feature. It is used as an intermediate data structure, first to hold the
@@ -114,7 +114,7 @@ class IncrementalityBranchResultsRow:
     task_veclen: int
     value_count: int
 
-    def __init__(self, experiment, branch_slug, visitCountingExperimentListItem):
+    def __init__(self, experiment: NimbusExperiment, branch_slug: str, visitCountingExperimentListItem: dict):
         self.advertiser = "not_set"
         urls = visitCountingExperimentListItem.get("urls")
         # Default to the first url in the list to determine the advertiser.
