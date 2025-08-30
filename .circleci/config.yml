@@ -433,20 +433,6 @@ workflows:
             branches:
               only: main
 
-  job-ads-incrementality-mvp-dap-collector:
-    jobs:
-      - build-job-ads-incrementality-mvp-dap-collector
-      - gcp-gcr/build-and-push-image:
-          context: data-eng-airflow-gcr
-          docker-context: jobs/ads-incrementality-mvp-dap-collector/
-          path: jobs/ads-incrementality-mvp-dap-collector/
-          image: ads-incrementality-mvp-dap-collector_docker_etl
-          requires:
-            - build-job-ads-incrementality-mvp-dap-collector
-          filters:
-            branches:
-              only: main
-
   job-bq2sftp:
     jobs:
       - build-job-bq2sftp
