@@ -43,7 +43,7 @@ NIMBUS_SUCCESS = {
                                 'bucket': 1,
                                 'task_id': 'mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o',
                                 'task_veclen': 4,
-                                'urls': ['*://*.amazon.com/']
+                                'urls': ['*://*.glamazon.com/']
                             }
                         ]
                     }
@@ -79,7 +79,7 @@ NIMBUS_SUCCESS = {
                                 'bucket': 2,
                                 'task_id': 'mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o',
                                 'task_veclen': 4,
-                                'urls': ['*://*.amazon.com/']
+                                'urls': ['*://*.glamazon.com/']
                             }
                         ]
                     }
@@ -115,7 +115,7 @@ NIMBUS_SUCCESS = {
                                 'bucket': 3,
                                 'task_id': 'mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o',
                                 'task_veclen': 4,
-                                'urls': ['*://*.amazon.com/', '*://*.amazon.com/*tag=admarketus*ref=*mfadid=adm']
+                                'urls': ['*://*.glamazon.com/', '*://*.glamazon.com/*tag=admarketus*ref=*mfadid=adm']
                             }
                         ]
                     }
