@@ -11,7 +11,7 @@ from google.cloud import storage
 from typing import Optional
 
 from constants import COLLECTOR_RESULTS_SCHEMA, CONFIG_FILE_NAME, DAP_LEADER, LOG_FILE_NAME, PROCESS_TIMEOUT, VDAF
-from models import BQConfig, DAPConfig, IncrementalityBranchResultsRow, NimbusExperiment, IncrementalityConfig
+from models import BQConfig, DAPConfig, ExperimentConfig, IncrementalityBranchResultsRow, NimbusExperiment, IncrementalityConfig
 from types import SimpleNamespace
 
 
@@ -82,7 +82,7 @@ def collect_dap_result(task_id: str, vdaf_length: int, hpke_token: str, hpke_con
     except subprocess.TimeoutExpired as e:
         raise Exception(f"Collection timed out for {task_id}, {e.timeout}, stderr: {e.stderr}") from None
 
-def collect_dap_results(tasks_to_collect: dict[str, dict[int, IncrementalityBranchResultsRow]], config: DAPConfig):
+def collect_dap_results(tasks_to_collect: dict[str, dict[int, IncrementalityBranchResultsRow]], config: DAPConfig, experiment_config: ExperimentConfig):
     tasks = list(dict.fromkeys(tasks_to_collect))
     logging.info(f"Starting DAP collection for tasks: {tasks}.")
     for task_id in tasks:
@@ -93,7 +93,7 @@ def collect_dap_results(tasks_to_collect: dict[str, dict[int, IncrementalityBran
         # as I think it's specified per task, just stored in each branch.
         task_veclen = list(results.values())[0].task_veclen
         collected = collect_dap_result(task_id, task_veclen, config.hpke_token, config.hpke_config,
-                                       config.hpke_private_key, config.batch_start, config.batch_duration)
+                                       config.hpke_private_key, config.batch_start, experiment_config.batch_duration)
         try:
             for bucket in results.keys():
                 # Experiment branches are indexed starting from 1, DAP bucket results from 0
