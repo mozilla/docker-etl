@@ -20,10 +20,17 @@ from helpers import get_config, get_experiment, prepare_results_rows, collect_da
     help="The private key defined in the collector credentials, used to decrypt shares from the leader and helper",
     required=True,
 )
-def main(gcp_project, job_config_bucket, hpke_token, hpke_private_key):
+@click.option(
+    "--batch_start",
+    type=int,
+    envvar='BATCH_START',
+    help="Start of the collection interval, as the number of seconds since the Unix epoch",
+    required=True,
+)
+def main(gcp_project, job_config_bucket, hpke_token, hpke_private_key, batch_start):
     try:
         logging.info(f"Starting collector job with configuration from gcs bucket: {job_config_bucket}")
-        config = get_config(gcp_project, job_config_bucket, hpke_token, hpke_private_key)
+        config = get_config(gcp_project, job_config_bucket, hpke_token, hpke_private_key, batch_start)
         logging.info(f"Starting collector job for experiments: {config.nimbus.experiment_slugs}.")
 
         for experiment_slug in config.nimbus.experiment_slugs:
