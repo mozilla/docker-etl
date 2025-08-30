@@ -12,7 +12,7 @@ from tests.test_mocks import (
     mock_nimbus_success, mock_nimbus_fail,
     mock_nimbus_experiment, mock_control_row, mock_treatment_a_row, mock_treatment_b_row,
     mock_task_id, mock_nimbus_unparseable_experiment,
-    mock_tasks_to_collect, mock_dap_config,
+    mock_tasks_to_collect, mock_dap_config, mock_experiment_config,
     mock_dap_subprocess_success, mock_dap_subprocess_fail, mock_dap_subprocess_raise
 )
 from ads_incrementality_dap_collector.helpers import get_experiment, prepare_results_rows, collect_dap_results
@@ -49,7 +49,7 @@ class TestHelpers(TestCase):
     def test_collect_dap_results_success(self, mock_dap_subprocess_success):
         tasks_to_collect = mock_tasks_to_collect()
         task_id = list(tasks_to_collect.keys())[0]
-        collect_dap_results(tasks_to_collect, mock_dap_config())
+        collect_dap_results(tasks_to_collect, mock_dap_config(), mock_experiment_config())
         self.assertEqual(1, mock_dap_subprocess_success.call_count)
         self.assertEqual(tasks_to_collect[task_id][1].value_count, 53)
         self.assertEqual(tasks_to_collect[task_id][2].value_count, 48)
@@ -59,7 +59,7 @@ class TestHelpers(TestCase):
     def test_collect_dap_results_fail(self, mock_dap_subprocess_fail):
         tasks_to_collect = mock_tasks_to_collect()
         with pytest.raises(Exception, match='Failed to parse collected DAP results: None'):
-            collect_dap_results(tasks_to_collect, mock_dap_config())
+            collect_dap_results(tasks_to_collect, mock_dap_config(), mock_experiment_config())
             self.assertEqual(1, mock_dap_subprocess_success.call_count)
 
     @patch("subprocess.run", side_effect=mock_dap_subprocess_raise)
@@ -67,5 +67,5 @@ class TestHelpers(TestCase):
         tasks_to_collect = mock_tasks_to_collect()
         task_id = list(tasks_to_collect.keys())[0]
         with pytest.raises(Exception, match=f'Collection failed for {task_id}, 1, stderr: Uh-oh'):
-            collect_dap_results(tasks_to_collect, mock_dap_config())
+            collect_dap_results(tasks_to_collect, mock_dap_config(), mock_experiment_config())
             self.assertEqual(1, mock_dap_subprocess_success.call_count)
