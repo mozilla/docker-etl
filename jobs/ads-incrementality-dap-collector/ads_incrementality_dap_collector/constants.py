@@ -4,7 +4,7 @@ from google.cloud import bigquery
 
 DAP_LEADER = "https://dap-09-3.api.divviup.org"
 VDAF = "histogram"
-PROCESS_TIMEOUT = 600  # 10 mins
+PROCESS_TIMEOUT = 1200  # 20 mins
 
 CONFIG_FILE_NAME = "config.json"     # See example_config.json for the contents and structure of the job config file.
 LOG_FILE_NAME = f"ads-incrementality-dap-collector-{datetime.now()}.log"
