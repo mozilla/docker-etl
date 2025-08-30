@@ -164,7 +164,7 @@ def write_results_to_bq(collected_tasks: dict, config: BQConfig):
 
 
 # GCS helper functions
-def get_config(gcp_project: str, config_bucket: str, hpke_token: str, hpke_private_key: str) -> IncrementalityConfig:
+def get_config(gcp_project: str, config_bucket: str, hpke_token: str, hpke_private_key: str, batch_start: int) -> IncrementalityConfig:
     """Gets the incrementality job's config from a file in a GCS bucket. See example_config.json for the structure."""
     client = storage.Client(project=gcp_project)
     try:
@@ -174,6 +174,7 @@ def get_config(gcp_project: str, config_bucket: str, hpke_token: str, hpke_priva
         config = json.load(reader, object_hook=lambda d: SimpleNamespace(**d))
         config.dap.hpke_token = hpke_token
         config.dap.hpke_private_key = hpke_private_key
+        config.dap.batch_start = batch_start
         config.bq.project = gcp_project
         return config
     except Exception as e:

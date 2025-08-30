@@ -5,11 +5,10 @@
   },
   "dap": {
     "hpke_config": "AQAgAAEAAQAgpdceoGiuWvIiogA8SPCdprkhWMNtLq_y0GSePI7EhXE",
-    "batch_start": "1755291600",
     "batch_duration": "3600"
   },
   "nimbus": {
-    "experiment_slugs": ["incrementality-etl-testing-mlifshin-dev"],
+    "experiment_slugs": ["incrementality-etl-testing-mlifshin-dev", "incrementality"],
     "api_url": "https://stage.experimenter.nonprod.webservices.mozgcp.net/api/v6/experiments"
   }
 }
