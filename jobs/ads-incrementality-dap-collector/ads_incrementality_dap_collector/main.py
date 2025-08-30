@@ -31,14 +31,14 @@ def main(gcp_project, job_config_bucket, hpke_token, hpke_private_key, batch_sta
     try:
         logging.info(f"Starting collector job with configuration from gcs bucket: {job_config_bucket}")
         config = get_config(gcp_project, job_config_bucket, hpke_token, hpke_private_key, batch_start)
-        logging.info(f"Starting collector job for experiments: {config.nimbus.experiment_slugs}.")
+        logging.info(f"Starting collector job for experiments: {config.nimbus.experiments}.")
 
-        for experiment_slug in config.nimbus.experiment_slugs:
-            experiment = get_experiment(experiment_slug, config.nimbus.api_url)
+        for experiment_config in config.nimbus.experiments:
+            experiment = get_experiment(experiment_config.slug, config.nimbus.api_url)
 
             tasks_to_collect = prepare_results_rows(experiment)
 
-            collected_tasks = collect_dap_results(tasks_to_collect, config.dap)
+            collected_tasks = collect_dap_results(tasks_to_collect, config.dap, experiment_config)
 
             write_results_to_bq(collected_tasks, config.bq)
 

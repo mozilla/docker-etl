@@ -1,5 +1,5 @@
 from subprocess import CompletedProcess
-from models import IncrementalityBranchResultsRow, NimbusExperiment, DAPConfig
+from models import IncrementalityBranchResultsRow, NimbusExperiment, DAPConfig, ExperimentConfig
 from tests.test_mock_responses import NIMBUS_SUCCESS, NIMBUS_NOT_AN_INCREMENTALITY_EXPERIMENT
 
 class MockResponse:
@@ -89,7 +89,12 @@ def mock_dap_config() -> DAPConfig:
         hpke_token="shh-secret-token",
         hpke_private_key="ssh-private-key",
         batch_start="1755291600",
-        batch_duration = "3600",
+    )
+
+def mock_experiment_config() -> ExperimentConfig:
+    return ExperimentConfig(
+        slug="traffic-impact-study-5",
+        batch_duration=3600
     )
 
 def mock_dap_subprocess_success(args: list[str], capture_output: bool, text: bool, check: bool, timeout: int) -> CompletedProcess:

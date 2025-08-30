@@ -4,11 +4,13 @@
     "table": "incrementality"
   },
   "dap": {
-    "hpke_config": "AQAgAAEAAQAgpdceoGiuWvIiogA8SPCdprkhWMNtLq_y0GSePI7EhXE",
-    "batch_duration": "3600"
+    "hpke_config": "AQAgAAEAAQAgpdceoGiuWvIiogA8SPCdprkhWMNtLq_y0GSePI7EhXE"
   },
   "nimbus": {
-    "experiment_slugs": ["incrementality-etl-testing-mlifshin-dev", "incrementality"],
+    "experiments": [{
+      "slug": "incrementality-etl-testing-mlifshin-dev",
+      "batch_duration": 3600
+    }],
     "api_url": "https://stage.experimenter.nonprod.webservices.mozgcp.net/api/v6/experiments"
   }
 }

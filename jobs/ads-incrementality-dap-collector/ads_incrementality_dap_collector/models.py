@@ -155,13 +155,25 @@ class DAPConfig:
             hpke_private_key:   Private key defined in the collector credentials, used to decrypt shares from the leader and helper
             hpke_config:        base64url-encoded version of hpke_config defined in the collector credentials
             batch_start:        Start of the collection interval, as the number of seconds since the Unix epoch
-            batch_duration:     Duration of the collection batch interval, in seconds
     """
 
     hpke_token: str
     hpke_private_key: str
     hpke_config: str
     batch_start: int
+
+
+@attr.s(auto_attribs=True)
+class ExperimentConfig:
+    """Encapsulates the experiments that should be collected from DAP and how far back to collect,
+        in seconds
+
+        Attributes:
+            slug:               Experiment slug
+            batch_duration:     Duration of the collection batch interval, in seconds
+    """
+
+    slug: str
     batch_duration: int
 
 
@@ -170,14 +182,13 @@ class NimbusConfig:
     """Encapsulates everything the job needs to connect to Nimbus
 
         Attributes:
-            experiment_slugs:   Slugs for the incrementality experiments. Nimbus experiments
-                                branches store DAP task info that allows for branch results
-                                collection from DAP.
-            api_url:            API URL for fetching the Nimbus experiment info
-
+            experiments:    Config for the incrementality experiments. Nimbus experiments
+                            branches store DAP task info that allows for branch results
+                            collection from DAP.
+            api_url:        API URL for fetching the Nimbus experiment info
     """
 
-    experiment_slugs: list[str]
+    experiments: list[ExperimentConfig]
     api_url: str
 
 
