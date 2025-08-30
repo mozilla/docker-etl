@@ -72,7 +72,6 @@ def collect_dap_result(task_id: str, vdaf_length: int, hpke_token: str, hpke_con
                                 text=True,
                                 check=True,
                                 timeout=PROCESS_TIMEOUT)
-
         for line in result.stdout.splitlines():
             if line.startswith("Aggregation result:"):
                 entries = parse_histogram(line[21:-1])
@@ -95,8 +94,12 @@ def collect_dap_results(tasks_to_collect: dict[str, dict[int, IncrementalityBran
         task_veclen = list(results.values())[0].task_veclen
         collected = collect_dap_result(task_id, task_veclen, config.hpke_token, config.hpke_config,
                                        config.hpke_private_key, config.batch_start, config.batch_duration)
-        for bucket in results.keys():
-            tasks_to_collect[task_id][bucket].value_count = collected[bucket]
+        try:
+            for bucket in results.keys():
+                # Experiment branches are indexed starting from 1, DAP bucket results from 0
+                tasks_to_collect[task_id][bucket].value_count = collected[bucket - 1]
+        except Exception as e:
+            raise Exception(f"Failed to parse collected DAP results: {collected}") from e
         logging.info(f"Prepared final result rows: {tasks_to_collect[task_id]}")
         logging.info(f"Finished collecting DAP task: {task_id}")
     logging.info("Finished DAP collection for all tasks.")
