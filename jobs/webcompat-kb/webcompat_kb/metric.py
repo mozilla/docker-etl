@@ -1,6 +1,8 @@
 import argparse
 import logging
+from abc import ABC, abstractmethod
 from datetime import date
+from typing import Optional
 
 from google.cloud import bigquery
 
@@ -8,20 +10,91 @@ from .base import EtlJob
 from .bqhelpers import BigQuery
 
 
+class Metric:
+    def __init__(self, name: str):
+        self.name = name
+        self.conditional = name != "all"
+
+    @property
+    def site_reports_field(self) -> str:
+        return f"is_{self.name}"
+
+
+class MetricType(ABC):
+    field_type: str
+
+    def __init__(self, name: str, metric_type_field: Optional[str] = None):
+        self.name = name
+        self.metric_type_field = metric_type_field
+
+    @abstractmethod
+    def agg_function(self, table: str, metric: Metric) -> str: ...
+
+    def condition(self, table: str, metric: Metric) -> str:
+        """Condition applied to the scored_site_reports table to decide if the entry contributes to the metric score.
+
+        :param str table: Alias for scored_site_reports.
+        :param Metric metric: Metric for which the condition applies
+        :returns str: SQL condition that is TRUE when the scored_site_reports row is included in the metric.conditional
+        """
+        conds = []
+        if self.metric_type_field is not None:
+            conds.append(f"{table}.{self.metric_type_field}")
+        if metric.conditional:
+            conds.append(f"{table}.{metric.site_reports_field}")
+        if not conds:
+            return "TRUE"
+        return " AND ".join(conds)
+
+
+class CountMetricType(MetricType):
+    field_type = "INTEGER"
+
+    def agg_function(self, table: str, metric: Metric) -> str:
+        if not metric.conditional:
+            return f"COUNT({table}.number)"
+        return f"COUNTIF({self.condition(table, metric)})"
+
+
+class SumMetricType(MetricType):
+    field_type = "NUMERIC"
+
+    def agg_function(self, table: str, metric: Metric) -> str:
+        return f"SUM(IF({self.condition(table, metric)}, {table}.score, 0))"
+
+
+metrics = [
+    Metric("all"),
+    Metric("sightline"),
+    Metric("japan_1000"),
+    Metric("global_1000"),
+]
+
+
+metric_types = [
+    CountMetricType("bug_count", None),
+    SumMetricType("needs_diagnosis", "metric_type_needs_diagnosis"),
+    SumMetricType("not_supported", "metric_type_firefox_not_supported"),
+    SumMetricType("total_score", None),
+]
+
+
 def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> None:
-    for suffix in ["global_1000", "sightline", "all", "japan_1000"]:
-        metrics_table_name = f"webcompat_topline_metric_{suffix}"
-        history_table_name = f"webcompat_topline_metric_{suffix}_history"
+    for metric in metrics:
+        metrics_table_name = f"webcompat_topline_metric_{metric.name}"
+        history_table_name = f"webcompat_topline_metric_{metric.name}_history"
 
         history_schema = [
             bigquery.SchemaField("recorded_date", "DATE", mode="REQUIRED"),
             bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
-            bigquery.SchemaField("bug_count", "INTEGER", mode="REQUIRED"),
-            bigquery.SchemaField("needs_diagnosis_score", "NUMERIC", mode="REQUIRED"),
             bigquery.SchemaField("platform_score", "NUMERIC", mode="REQUIRED"),
-            bigquery.SchemaField("not_supported_score", "NUMERIC", mode="REQUIRED"),
-            bigquery.SchemaField("total_score", "NUMERIC", mode="REQUIRED"),
         ]
+        for metric_type in metric_types:
+            history_schema.append(
+                bigquery.SchemaField(
+                    metric_type.name, metric_type.field_type, mode="REQUIRED"
+                )
+            )
 
         history_table = client.ensure_table(history_table_name, history_schema)
 
@@ -82,50 +155,30 @@ def update_metric_daily(client: BigQuery, bq_dataset_id: str, write: bool) -> No
         )
         return
 
+    query_fields = ["CURRENT_DATE() AS date"]
+    insert_fields = ["date"]
+
+    for metric in metrics:
+        for metric_type in metric_types:
+            field_name = f"{metric_type.name}_{metric.name}"
+            agg_function = metric_type.agg_function("bugs", metric)
+
+            query_fields.append(f"{agg_function} AS {field_name}")
+            insert_fields.append(field_name)
+
     metrics_query = f"""
 SELECT
-  current_date() as date,
-  count(bugs.number) as bug_count_all,
-  SUM(if(bugs.metric_type_needs_diagnosis, bugs.score, 0)) as needs_diagnosis_score_all,
-  SUM(if(bugs.metric_type_firefox_not_supported, bugs.score, 0)) as not_supported_score_all,
-  SUM(bugs.score) AS total_score_all,
-  COUNTIF(bugs.is_sightline) as bug_count_sightline,
-  SUM(if(bugs.is_sightline and bugs.metric_type_needs_diagnosis, bugs.score, 0)) as needs_diagnosis_score_sightline,
-  SUM(if(bugs.is_sightline and bugs.metric_type_firefox_not_supported, bugs.score, 0)) as not_supported_score_sightline,
-  SUM(if(bugs.is_sightline, bugs.score, 0)) AS total_score_sightline,
-  COUNTIF(bugs.is_global_1000) as bug_count_global_1000,
-  SUM(if(bugs.is_global_1000 and bugs.metric_type_needs_diagnosis, bugs.score, 0)) as needs_diagnosis_score_global_1000,
-  SUM(if(bugs.is_global_1000 and bugs.metric_type_firefox_not_supported, bugs.score, 0)) as not_supported_score_global_1000,
-  SUM(if(bugs.is_global_1000, bugs.score, 0)) AS total_score_global_1000,
-  COUNTIF(bugs.is_japan_1000) as bug_count_japan_1000,
-  SUM(if(bugs.is_japan_1000 and bugs.metric_type_needs_diagnosis, bugs.score, 0)) as needs_diagnosis_score_japan_1000,
-  SUM(if(bugs.is_japan_1000 and bugs.metric_type_firefox_not_supported, bugs.score, 0)) as not_supported_score_japan_1000,
-  SUM(if(bugs.is_japan_1000, bugs.score, 0)) AS total_score_japan_1000
- FROM
+  {",\n  ".join(query_fields)}
+FROM
   `{bq_dataset_id}.scored_site_reports` AS bugs
 WHERE bugs.resolution = ""
 """
 
     if write:
-        insert_query = f"""INSERT `{bq_dataset_id}.webcompat_topline_metric_daily`
-        (date,
-        bug_count_all,
-        needs_diagnosis_score_all,
-        not_supported_score_all,
-        total_score_all,
-        bug_count_sightline,
-        needs_diagnosis_score_sightline,
-        not_supported_score_sightline,
-        total_score_sightline,
-        bug_count_global_1000,
-        needs_diagnosis_score_global_1000,
-        not_supported_score_global_1000,
-        total_score_global_1000,
-        bug_count_japan_1000,
-        needs_diagnosis_score_japan_1000,
-        not_supported_score_japan_1000,
-        total_score_japan_1000)
-        ({metrics_query})"""
+        insert_query = f"""
+INSERT `{bq_dataset_id}.webcompat_topline_metric_daily`
+  ({",\n  ".join(insert_fields)})
+  ({metrics_query})"""
         client.query(insert_query)
         logging.info("Updated daily metric")
     else:

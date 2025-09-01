@@ -7,69 +7,105 @@ from google.cloud import bigquery
 
 from .base import EtlJob
 from .bqhelpers import BigQuery
+from .metric import Metric, metrics, metric_types
 from .metric_changes import ScoreChange, insert_score_changes
+
+
+class ConditionalMetric:
+    def __init__(self, metric: Metric):
+        self.metric = metric
+
+    @property
+    def name(self) -> str:
+        return self.metric.name
+
+    @property
+    def src_name(self) -> str:
+        return self.metric.site_reports_field
+
+    @property
+    def is_old_field(self) -> str:
+        return f"is_{self.name}_old"
+
+    @property
+    def is_new_field(self) -> str:
+        return f"is_{self.name}_new"
+
+
+conditional_metrics = [ConditionalMetric(item) for item in metrics if item.conditional]
 
 
 def score_bug_changes(
     client: BigQuery, new_scored_site_reports: str, change_time: datetime
 ) -> Mapping[int, Sequence[ScoreChange]]:
     score_changes = {}
+
+    score_deltas = {"all": 0}
+    scores_query_fields = ["number"]
+    query_fields = ["number"]
+
+    score_types = ["old", "new"]
+
+    for score_type in score_types:
+        src_table = f"{score_type}_scored_site_reports"
+        field_name = f"{score_type}_score"
+        scores_query_fields.append(f"{src_table}.score AS {field_name}")
+        query_fields.append(field_name)
+
+    for metric in conditional_metrics:
+        score_deltas[metric.name] = 0
+        for score_type, field_name in [
+            ("old", metric.is_old_field),
+            ("new", metric.is_new_field),
+        ]:
+            src_table = f"{score_type}_scored_site_reports"
+            scores_query_fields.append(f"{src_table}.{metric.src_name} AS {field_name}")
+            query_fields.append(field_name)
+
+    query_fields.append("new_score - old_score AS delta")
+
     score_query = f"""
 with scores as (
-  SELECT number,
-         new_scored_site_reports.score AS new_score,
-         old_scored_site_reports.score as old_score,
-         old_scored_site_reports.is_sightline AS is_sightline_old,
-         old_scored_site_reports.is_japan_1000 AS is_japan_1000_old,
-         old_scored_site_reports.is_global_1000 AS is_global_1000_old,
-         new_scored_site_reports.is_sightline AS is_sightline_new,
-         new_scored_site_reports.is_japan_1000 AS is_japan_1000_new,
-         new_scored_site_reports.is_global_1000 AS is_global_1000_new,
+  SELECT
+    {",\n    ".join(scores_query_fields)}
   FROM `{new_scored_site_reports}` as new_scored_site_reports
   FULL OUTER JOIN `scored_site_reports` AS old_scored_site_reports USING(number)
   WHERE new_scored_site_reports.resolution = ""
 )
-SELECT number, new_score, old_score, is_sightline_old, is_sightline_new, is_japan_1000_old, is_japan_1000_new, is_global_1000_old, is_global_1000_new, new_score - old_score as delta FROM scores
+SELECT
+  {",\n  ".join(query_fields)}
+FROM scores
 """
-    score_deltas = {"all": 0, "sightline": 0, "japan_1000": 0, "global_1000": 0}
     for bug in client.query(score_query):
         if bug.new_score is None or bug.old_score is None:
             raise ValueError(
                 f"Missing data for bug {bug.number}; old score was {bug.old_score} new score is {bug.new_score}"
             )
-        if (
-            bug.delta != 0
-            or (bug.is_sightline_new != bug.is_sightline_old)
-            or (bug.is_global_1000_new != bug.is_global_1000_old)
-        ):
+        has_change = bug.delta != 0 or any(
+            bug[metric.is_old_field] != bug[metric.is_new_field]
+            for metric in conditional_metrics
+        )
+        if has_change:
             reasons = []
             if bug.delta:
                 reasons.append("rescore")
             score_deltas["all"] += bug.delta
-            if bug.is_sightline_old and bug.is_sightline_new:
-                score_deltas["sightline"] += bug.delta
-            elif bug.is_sightline_old:
-                score_deltas["sightline"] -= bug.old_score
-                reasons.append("sightline-removed")
-            elif bug.is_sightline_new:
-                score_deltas["sightline"] += bug.new_score
-                reasons.append("sightline-added")
-            if bug.is_japan_1000_old and bug.is_japan_1000_new:
-                score_deltas["japan_1000"] += bug.delta
-            elif bug.is_japan_1000_old:
-                score_deltas["japan_1000"] -= bug.old_score
-                reasons.append("japan-1000-removed")
-            elif bug.is_japan_1000_new:
-                score_deltas["japan_1000"] += bug.new_score
-                reasons.append("japan-1000-added")
-            if bug.is_global_1000_old and bug.is_global_1000_new:
-                score_deltas["global_1000"] += bug.delta
-            elif bug.is_global_1000_old:
-                score_deltas["global_1000"] -= bug.old_score
-                reasons.append("global-1000-removed")
-            elif bug.is_global_1000_new:
-                score_deltas["global_1000"] += bug.new_score
-                reasons.append("global-1000-added")
+            for metric in conditional_metrics:
+                if metric.name == "all":
+                    continue
+                in_old_metric = bug[metric.is_old_field]
+                in_new_metric = bug[metric.is_new_field]
+                reason_name = metric.name.replace("_", "-")
+
+                if in_old_metric and in_new_metric:
+                    score_deltas[metric.name] += bug.delta
+                elif in_old_metric:
+                    score_deltas[metric.name] -= bug.old_score
+                    reasons.append(f"{reason_name}-removed")
+                elif in_new_metric:
+                    score_deltas[metric.name] += bug.new_score
+                    reasons.append(f"{reason_name}-added")
+
             score_changes[bug.number] = [
                 ScoreChange(
                     who="",
@@ -95,23 +131,11 @@ def insert_metric_changes(
     bq_dataset_id = client.default_dataset_id
 
     change_states = ["before", "after"]
-    score_fields = [
-        "bug_count",
-        "needs_diagnosis_score",
-        "not_supported_score",
-        "total_score",
-    ]
-    score_types = ["all", "sightline", "japan_1000", "global_1000"]
 
     score_change_schema = [
         bigquery.SchemaField("change_time", "DATETIME", mode="REQUIRED"),
         bigquery.SchemaField("reason", "STRING", mode="REQUIRED"),
     ]
-
-    field_conditionals = {
-        "needs_diagnosis_score": "metric_type_needs_diagnosis",
-        "not_supported_score": "metric_type_firefox_not_supported",
-    }
 
     query_parts = [
         "@change_time as change_time",
@@ -119,35 +143,22 @@ def insert_metric_changes(
     ]
 
     for change_state in change_states:
-        for score_field in score_fields:
-            for score_type in score_types:
+        for metric_type in metric_types:
+            for metric in metrics:
                 score_change_schema.append(
                     bigquery.SchemaField(
-                        f"{change_state}_{score_field}_{score_type}",
+                        f"{change_state}_{metric_type.name}_{metric.name}",
                         "NUMERIC",
                     )
                 )
-                condition = (
-                    f"{change_state}.is_{score_type}"
-                    if score_type != "all"
-                    else f"{change_state}.number IS NOT NULL"
-                )
-                if score_field in field_conditionals:
-                    condition += (
-                        f" AND {change_state}.{field_conditionals[score_field]}"
-                    )
-                group_fn = (
-                    f"COUNTIF({condition})"
-                    if score_field == "bug_count"
-                    else f"SUM(IF({condition}, {change_state}.score, 0))"
-                )
+                agg_function = metric_type.agg_function(change_state, metric)
                 query_parts.append(
-                    f"{group_fn} as {change_state}_{score_field}_{score_type}"
+                    f"{agg_function} AS {change_state}_{metric_type.name}_{metric.name}"
                 )
 
     query = f"""
 SELECT
-{",\n".join(query_parts)}
+  {",\n  ".join(query_parts)}
 FROM
 `{bq_dataset_id}.scored_site_reports` AS before
 JOIN `{bq_dataset_id}.{new_scored_site_reports}` AS after USING(number)
@@ -173,12 +184,15 @@ INSERT {bq_dataset_id}.{table.table_id}
     else:
         result = list(client.query(query, parameters=parameters))[0]
         assert all(hasattr(result, item.name) for item in score_change_schema)
-        logging.info(
-            f"Score changes all: {result.after_total_score_all - result.before_total_score_all}, "
-            f"sightline: {result.after_total_score_sightline - result.before_total_score_sightline}, "
-            f"japan_1000: {result.after_total_score_japan_1000 - result.before_total_score_japan_1000}, "
-            f"global_1000: {result.after_total_score_global_1000 - result.before_total_score_global_1000}"
-        )
+        changes = []
+        for metric in metrics:
+            score_change = (
+                result[f"after_total_score_{metric.name}"]
+                - result[f"before_total_score_{metric.name}"]
+            )
+            changes.append(f"{metric.name}: {score_change}")
+        msg = f"Score_changes:\n  {'\n  '.join(changes)}"
+        logging.info(msg)
 
 
 def get_view_definitions(
@@ -405,5 +419,5 @@ class MetricRescoreJob(EtlJob):
             client,
             args.new_scored_site_reports,
             args.metric_rescore_reason,
-            args.metric_rescore_update_routine,
+            args.metric_rescore_update_routine or [],
         )
