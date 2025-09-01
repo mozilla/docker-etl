@@ -67,6 +67,7 @@ metrics = [
     Metric("all"),
     Metric("sightline"),
     Metric("japan_1000"),
+    Metric("japan_1000_mobile"),
     Metric("global_1000"),
 ]
 
