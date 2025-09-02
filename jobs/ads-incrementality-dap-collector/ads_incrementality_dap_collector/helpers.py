@@ -96,8 +96,7 @@ def collect_dap_results(tasks_to_collect: dict[str, dict[int, IncrementalityBran
                                        config.hpke_private_key, config.batch_start, experiment_config.batch_duration)
         try:
             for bucket in results.keys():
-                # Experiment branches are indexed starting from 1, DAP bucket results from 0
-                tasks_to_collect[task_id][bucket].value_count = collected[bucket - 1]
+                tasks_to_collect[task_id][bucket].value_count = collected[bucket]
         except Exception as e:
             raise Exception(f"Failed to parse collected DAP results: {collected}") from e
         logging.info(f"Prepared final result rows: {tasks_to_collect[task_id]}")
@@ -117,7 +116,9 @@ def correct_wraparound(num: int) -> int:
 
 def parse_histogram(histogram_str: str) -> dict:
     parsed_list = ast.literal_eval(histogram_str)
-    return {i: correct_wraparound(val) for i, val in enumerate(parsed_list)}
+    # Experiment branches are indexed starting from 1, DAP bucket results from 0,
+    # so use i + 1 as the key here when parsing the histogram
+    return {i + 1: correct_wraparound(val) for i, val in enumerate(parsed_list)}
 
 
 # BigQuery helper functions
