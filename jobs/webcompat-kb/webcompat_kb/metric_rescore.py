@@ -144,6 +144,8 @@ def insert_metric_changes(
 
     for change_state in change_states:
         for metric_type in metric_types:
+            if "daily" not in metric_type.contexts:
+                continue
             for metric in metrics:
                 score_change_schema.append(
                     bigquery.SchemaField(

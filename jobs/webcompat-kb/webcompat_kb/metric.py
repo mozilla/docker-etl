@@ -20,12 +20,23 @@ class Metric:
         return f"is_{self.name}"
 
 
+default_contexts = {"history", "daily"}
+
+
 class MetricType(ABC):
     field_type: str
 
-    def __init__(self, name: str, metric_type_field: Optional[str] = None):
+    def __init__(
+        self,
+        name: str,
+        metric_type_field: Optional[str] = None,
+        contexts: Optional[set[str]] = None,
+    ):
         self.name = name
         self.metric_type_field = metric_type_field
+        self.contexts = default_contexts if contexts is None else contexts
+        if not self.contexts.issubset(default_contexts):
+            raise ValueError(f"Invalid contexts: {','.join(self.contexts)}")
 
     @abstractmethod
     def agg_function(self, table: str, metric: Metric) -> str: ...
@@ -74,13 +85,18 @@ metrics = [
 
 metric_types = [
     CountMetricType("bug_count", None),
-    SumMetricType("needs_diagnosis", "metric_type_needs_diagnosis"),
-    SumMetricType("not_supported", "metric_type_firefox_not_supported"),
+    SumMetricType("needs_diagnosis_score", "metric_type_needs_diagnosis"),
+    SumMetricType("not_supported_score", "metric_type_firefox_not_supported"),
+    SumMetricType("platform_score", "metric_type_platform_bug", contexts={"history"}),
     SumMetricType("total_score", None),
 ]
 
 
 def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> None:
+    history_metric_types = [
+        metric_type for metric_type in metric_types if "history" in metric_type.contexts
+    ]
+
     for metric in metrics:
         metrics_table_name = f"webcompat_topline_metric_{metric.name}"
         history_table_name = f"webcompat_topline_metric_{metric.name}_history"
@@ -88,9 +104,8 @@ def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> 
         history_schema = [
             bigquery.SchemaField("recorded_date", "DATE", mode="REQUIRED"),
             bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
-            bigquery.SchemaField("platform_score", "NUMERIC", mode="REQUIRED"),
         ]
-        for metric_type in metric_types:
+        for metric_type in history_metric_types:
             history_schema.append(
                 bigquery.SchemaField(
                     metric_type.name, metric_type.field_type, mode="REQUIRED"
@@ -121,23 +136,28 @@ def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> 
                 SELECT *
                 FROM `{bq_dataset_id}.{metrics_table_name}`
             """
-        rows = [
-            {
+        rows = []
+        for row in client.query(query):
+            row_data = {
                 "recorded_date": today,
                 "date": row.date,
-                "bug_count": row.bug_count,
-                "needs_diagnosis_score": row.needs_diagnosis_score,
-                "platform_score": row.platform_score,
-                "not_supported_score": row.not_supported_score,
-                "total_score": row.total_score,
             }
-            for row in client.query(query)
-        ]
+            row_data.update(
+                {
+                    metric_type.name: row[metric_type.name]
+                    for metric_type in history_metric_types
+                }
+            )
+            rows.append(row_data)
 
         client.insert_rows(history_table, rows)
 
 
 def update_metric_daily(client: BigQuery, bq_dataset_id: str, write: bool) -> None:
+    daily_metric_types = [
+        metric_type for metric_type in metric_types if "daily" in metric_type.contexts
+    ]
+
     history_table = f"{bq_dataset_id}.webcompat_topline_metric_daily"
     query = f"""
             SELECT date
@@ -160,7 +180,7 @@ def update_metric_daily(client: BigQuery, bq_dataset_id: str, write: bool) -> No
     insert_fields = ["date"]
 
     for metric in metrics:
-        for metric_type in metric_types:
+        for metric_type in daily_metric_types:
             field_name = f"{metric_type.name}_{metric.name}"
             agg_function = metric_type.agg_function("bugs", metric)
 
