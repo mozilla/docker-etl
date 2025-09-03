@@ -1,7 +1,13 @@
-.ci_job.yaml
-.ci_workflow.yaml
+.cache/
+ci_job.yaml
+ci_workflow.yaml
+dev_generate_hpke_config.py
+dev_run_docker.sh
+dev_runbook.md
 .DS_Store
+example_config.json
 *.pyc
 .pytest_cache/
+.python-version
 __pycache__/
 venv/
