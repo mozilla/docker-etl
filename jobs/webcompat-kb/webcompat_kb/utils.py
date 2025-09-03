@@ -66,13 +66,16 @@ def do_create_test_dataset(args: argparse.Namespace) -> None:
         "webcompat_topline_metric_all_history",
         "webcompat_topline_metric_daily",
         "webcompat_topline_metric_global_1000_history",
-        "webcompat_topline_metric_rescores",
+        "webcompat_topline_metric_japan_1000_history",
+        "webcompat_topline_metric_japan_1000_mobile_history",
         "webcompat_topline_metric_sightline_history",
+        "webcompat_topline_metric_rescores",
     ]
 
     # Note order here is important since views need to be created after any other view they depend on
     views = [
         "core_bugs_all",
+        "breakage_reports_core_bugs",
         "site_reports",
         "scored_site_reports",
         "webcompat_topline_metric_site_reports",
@@ -86,7 +89,10 @@ def do_create_test_dataset(args: argparse.Namespace) -> None:
         "webcompat_topline_metric_bug_hosts",
         "webcompat_topline_metric_global_1000",
         "webcompat_topline_metric_japan_1000",
+        "webcompat_topline_metric_japan_1000_mobile",
         "webcompat_topline_metric_sightline",
+        "platform_priorities",
+        "platform_priority_scores",
     ]
     all_data = tables + views
 
