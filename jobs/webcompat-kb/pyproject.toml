@@ -2,6 +2,9 @@
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+packages = ["webcompat_kb"]
+
 [project]
 name = "webcompat-kb"
 description = "Import webcompat data into BigQuery"
@@ -11,10 +14,10 @@ authors = [
 version = "0.1.0"
 requires-python = ">=3.12"
 classifiers = [
-    "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
+license = "MPL-2.0"
 dependencies = [
   "bugdantic==0.2.6",
   "google-cloud-bigquery==3.34.0",
