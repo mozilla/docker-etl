@@ -1,16 +1,8 @@
 NIMBUS_SUCCESS = {
-    'schemaVersion': '1.12.0',
     'slug': 'traffic-impact-study-5',
-    'id': 'traffic-impact-study-5',
-    'arguments': {},
-    'application': 'firefox-desktop',
     'appName': 'firefox_desktop',
     'appId': 'firefox-desktop',
     'channel': 'nightly',
-    'userFacingName': 'Traffic Impact Study 5',
-    'userFacingDescription': 'We are running a basic traffic incrementality test to measure how our sponsored links on the new tab page influence visits to partner sites.  This analysis relies solely on anonymous, aggregate visit numbers - so no personal data is collected or shared at any point.',
-    'isEnrollmentPaused': False,
-    'isRollout': False,
     'bucketConfig': {
         'randomizationUnit': 'group_id',
         'namespace': 'firefox-desktop-dapTelemetry-newtabSponsoredContent-nightly-group_id-2',
@@ -19,17 +11,10 @@ NIMBUS_SUCCESS = {
         'total': 10000
     },
     'featureIds': ['dapTelemetry', 'newtabSponsoredContent'],
-    'probeSets': [],
-    'outcomes': [{'slug': 'incrementality_sponsored_tiles', 'priority': 'primary'}],
     'branches': [
         {
             'slug': 'control',
             'ratio': 1,
-            'feature': {
-                'featureId': 'this-is-included-for-desktop-pre-95-support',
-                'enabled': False,
-                'value': {}
-            },
             'features': [
                 {
                     'featureId': 'dapTelemetry',
@@ -61,11 +46,6 @@ NIMBUS_SUCCESS = {
         {
             'slug': 'treatment-a',
             'ratio': 1,
-            'feature': {
-                'featureId': 'this-is-included-for-desktop-pre-95-support',
-                'enabled': False,
-                'value': {}
-            },
             'features': [
                 {
                     'featureId': 'dapTelemetry',
@@ -97,11 +77,6 @@ NIMBUS_SUCCESS = {
         {
             'slug': 'treatment-b',
             'ratio': 1,
-            'feature': {
-                'featureId': 'this-is-included-for-desktop-pre-95-support',
-                'enabled': False,
-                'value': {}
-            },
             'features': [
                 {
                     'featureId': 'dapTelemetry',
@@ -134,34 +109,15 @@ NIMBUS_SUCCESS = {
     'startDate': '2025-08-18',
     'enrollmentEndDate': None,
     'endDate': None,
-    'proposedDuration': 35,
     'proposedEnrollment': 7,
     'referenceBranch': 'control',
-    'featureValidationOptOut': False,
-    'localizations': None,
-    'locales': None,
-    'publishedDate': '2025-08-18T21:38:41.303081Z',
-    'isFirefoxLabsOptIn': False,
-    'firefoxLabsTitle': '',
-    'firefoxLabsDescription': '',
-    'firefoxLabsDescriptionLinks': None,
-    'firefoxLabsGroup': '',
-    'requiresRestart': False
 }
 
 NIMBUS_NOT_AN_INCREMENTALITY_EXPERIMENT = {
-    'schemaVersion': '1.12.0',
     'slug': 'something-experiment',
-    'id': 'something-experiment',
-    'arguments': {},
-    'application': 'firefox-desktop',
     'appName': 'firefox_desktop',
     'appId': 'firefox-desktop',
     'channel': 'nightly',
-    'userFacingName': 'Something Experiment',
-    'userFacingDescription': 'We\'re trying something. No personal data is collected. ',
-    'isEnrollmentPaused': False,
-    'isRollout': False,
     'bucketConfig': {
         'randomizationUnit': 'group_id',
         'namespace': 'firefox-desktop-dapTelemetry-newtabSponsoredContent-nightly-group_id-2',
@@ -170,17 +126,10 @@ NIMBUS_NOT_AN_INCREMENTALITY_EXPERIMENT = {
         'total': 10000
     },
     'featureIds': ['dapTelemetryIsNotPartOfThisExperiment', 'newtabSponsoredContentIsNotPartOfThisExperiment'],
-    'probeSets': [],
-    'outcomes': [{'slug': 'incrementality_sponsored_tiles', 'priority': 'primary'}],
     'branches': [
         {
             'slug': 'control',
             'ratio': 1,
-            'feature': {
-                'featureId': 'this-is-included-for-desktop-pre-95-support',
-                'enabled': False,
-                'value': {}
-            },
             'features': [
                 {
                     'featureId': 'dapTelemetryIsNotPartOfThisExperiment',
@@ -208,11 +157,6 @@ NIMBUS_NOT_AN_INCREMENTALITY_EXPERIMENT = {
         {
             'slug': 'treatment-a',
             'ratio': 1,
-            'feature': {
-                'featureId': 'this-is-included-for-desktop-pre-95-support',
-                'enabled': False,
-                'value': {}
-            },
             'features': [
                 {
                     'featureId': 'dapTelemetryIsNotPartOfThisExperiment',
@@ -240,11 +184,6 @@ NIMBUS_NOT_AN_INCREMENTALITY_EXPERIMENT = {
         {
             'slug': 'treatment-b',
             'ratio': 1,
-            'feature': {
-                'featureId': 'this-is-included-for-desktop-pre-95-support',
-                'enabled': False,
-                'value': {}
-            },
             'features': [
                 {
                     'featureId': 'dapTelemetryIsNotPartOfThisExperiment',
@@ -273,17 +212,6 @@ NIMBUS_NOT_AN_INCREMENTALITY_EXPERIMENT = {
     'startDate': '2025-08-18',
     'enrollmentEndDate': None,
     'endDate': None,
-    'proposedDuration': 35,
     'proposedEnrollment': 7,
     'referenceBranch': 'control',
-    'featureValidationOptOut': False,
-    'localizations': None,
-    'locales': None,
-    'publishedDate': '2025-08-18T21:38:41.303081Z',
-    'isFirefoxLabsOptIn': False,
-    'firefoxLabsTitle': '',
-    'firefoxLabsDescription': '',
-    'firefoxLabsDescriptionLinks': None,
-    'firefoxLabsGroup': '',
-    'requiresRestart': False
 }
