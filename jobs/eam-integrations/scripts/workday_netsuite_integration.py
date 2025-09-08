@@ -53,6 +53,9 @@ class Workday:
         worker_list = []
         wd_comp = {}
         for worker in wd_data["Report_Entry"]:
+            if 'mozilla.com' not in worker.get('primaryWorkEmail'):
+                continue
+            
             worker['Cost_Center_ID'] = worker.pop('Cost_Center_-_ID')
             worker_list.append(Worker(**worker))
             worker_dict[worker['Employee_ID']] = worker
@@ -725,7 +728,7 @@ class WorkdayToNetsuiteIntegration():
         try:
             self.logger.info("Step 2: Getting NetSuite Data")
             ns_workers, ns_comp = self.netsuite.get_employees()
-            self.logger.info(f"Number of Worday employees {len(ns_workers)}.")
+            self.logger.info(f"Number of NetSuite employees {len(ns_workers)}.")
         except (APIAdaptorException, Exception) as e:
             self.logger.error(str(e))
             self.logger.critical("Failed on Step 2: Getting NetSuite Data")
