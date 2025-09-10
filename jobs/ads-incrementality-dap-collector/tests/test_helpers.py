@@ -20,14 +20,14 @@ from ads_incrementality_dap_collector.helpers import get_experiment, prepare_res
 class TestHelpers(TestCase):
     @patch("requests.get", side_effect=mock_nimbus_success)
     def test_get_experiment_success(self, mock_fetch):
-        experiment = get_experiment("traffic-impact-study-5", "nimbus_api_url")
-        self.assertEqual("traffic-impact-study-5", experiment.slug, )
+        experiment = get_experiment(mock_experiment_config(), "nimbus_api_url")
+        self.assertEqual("traffic-impact-study-5", experiment.slug)
         self.assertEqual(1, mock_fetch.call_count)
 
     @patch("requests.get", side_effect=mock_nimbus_fail)
-    def test_get_experiment_fal(self, mock_fetch):
-        with pytest.raises(Exception, match='Failed fetching experiment: traffic-impact-study-5 from: nimbus_api_url'):
-            _ = get_experiment("traffic-impact-study-5", "nimbus_api_url")
+    def test_get_experiment_fail(self, mock_fetch):
+        with pytest.raises(Exception, match='Failed getting experiment: traffic-impact-study-5 from: nimbus_api_url'):
+            _ = get_experiment(mock_experiment_config(), "nimbus_api_url")
             self.assertEqual(1, mock_fetch.call_count)
 
     def test_prepare_results_rows_success(self):

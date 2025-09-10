@@ -8,4 +8,3 @@ docker run -it --rm \
         --job_config_bucket ads-nonprod-stage-incrementality-dap-collector-config \
         --hpke_token $DAP_HPKE_TOKEN \
         --hpke_private_key  $DAP_PRIVATE_KEY \
-        --batch_start $BATCH_START \

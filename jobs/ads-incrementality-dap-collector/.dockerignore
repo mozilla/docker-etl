@@ -1,7 +1,7 @@
 .cache/
 ci_job.yaml
 ci_workflow.yaml
-dev_generate_hpke_config.py
+public_key_to_hpke_config.py
 dev_run_docker.sh
 dev_runbook.md
 .DS_Store
