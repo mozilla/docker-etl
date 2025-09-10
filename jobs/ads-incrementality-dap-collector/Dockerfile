@@ -28,12 +28,11 @@ RUN groupadd --gid ${USER_ID} ${GROUP_ID} && \
 COPY --from=0 /janus_build/janus/target/release/collect ./
 ###################
 
-COPY . .
-
 # Drop root and change ownership of the application folder to the user
 RUN chown -R ${USER_ID}:${GROUP_ID} ${HOME}
 USER ${USER_ID}
-
+ADD ./requirements.txt .
 RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir .
+RUN pip install -r requirements.txt
+
+ADD . .

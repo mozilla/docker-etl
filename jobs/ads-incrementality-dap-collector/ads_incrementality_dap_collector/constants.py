@@ -10,8 +10,8 @@ CONFIG_FILE_NAME = "config.json"     # See example_config.json for the contents 
 LOG_FILE_NAME = f"ads-incrementality-dap-collector-{datetime.now()}.log"
 
 COLLECTOR_RESULTS_SCHEMA = [
-    bigquery.SchemaField("start_date", "DATE", mode="REQUIRED", description="Start date of the collected time window, inclusive."),
-    bigquery.SchemaField("end_date", "DATE", mode="REQUIRED", description="End date of the collected time window, inclusive."),
+    bigquery.SchemaField("collection_start", "DATE", mode="REQUIRED", description="Start date of the collected time window, inclusive."),
+    bigquery.SchemaField("collection_end", "DATE", mode="REQUIRED", description="End date of the collected time window, inclusive."),
     bigquery.SchemaField("country_codes", "JSON", mode="NULLABLE", description="List of 2-char country codes for the experiment"),
     bigquery.SchemaField("experiment_slug", "STRING", mode="REQUIRED", description="Slug indicating the experiment."),
     bigquery.SchemaField("experiment_branch", "STRING", mode="REQUIRED", description="The experiment branch this data is associated with."),
@@ -26,4 +26,5 @@ COLLECTOR_RESULTS_SCHEMA = [
             bigquery.SchemaField("histogram", "JSON", mode="NULLABLE"),
         ]
     ),
+    bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED", description="Timestamp for when this row was written.")
 ]

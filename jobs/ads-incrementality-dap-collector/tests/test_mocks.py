@@ -26,7 +26,9 @@ def mock_nimbus_fail(*args, **kwargs) -> MockResponse:
     return MockResponse({}, 404)
 
 def mock_nimbus_experiment() -> NimbusExperiment:
-    return NimbusExperiment.from_dict(NIMBUS_SUCCESS)
+    nimbus_success_json = NIMBUS_SUCCESS
+    nimbus_success_json['batchDuration'] = mock_experiment_config().batch_duration
+    return NimbusExperiment.from_dict(nimbus_success_json)
 
 def mock_task_id() -> str:
     return "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o"
@@ -71,7 +73,9 @@ def mock_treatment_b_row(experiment) -> IncrementalityBranchResultsRow:
     )
 
 def mock_nimbus_unparseable_experiment() -> NimbusExperiment:
-    return NimbusExperiment.from_dict(NIMBUS_NOT_AN_INCREMENTALITY_EXPERIMENT)
+    nimbus_unparseable_json = NIMBUS_NOT_AN_INCREMENTALITY_EXPERIMENT
+    nimbus_unparseable_json['batchDuration'] = mock_experiment_config().batch_duration
+    return NimbusExperiment.from_dict(nimbus_unparseable_json)
 
 def mock_tasks_to_collect() -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
     experiment = mock_nimbus_experiment()
@@ -94,7 +98,7 @@ def mock_dap_config() -> DAPConfig:
 def mock_experiment_config() -> ExperimentConfig:
     return ExperimentConfig(
         slug="traffic-impact-study-5",
-        batch_duration=3600
+        batch_duration=604800
     )
 
 def mock_dap_subprocess_success(args: list[str], capture_output: bool, text: bool, check: bool, timeout: int) -> CompletedProcess:
