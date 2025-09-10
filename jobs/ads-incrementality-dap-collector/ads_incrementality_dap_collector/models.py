@@ -1,13 +1,13 @@
 import attr
 import cattrs
-import datetime
+from datetime import date, datetime, timedelta
 import json
 import pytz
 import re
 import tldextract
 
 from typing import List, Optional
-
+import logging
 
 @attr.s(auto_attribs=True)
 class Branch:
@@ -20,31 +20,70 @@ class Branch:
 
 @attr.s(auto_attribs=True)
 class NimbusExperiment:
-    """Represents a v8 Nimbus experiment from Experimenter."""
+    """Represents a v8 Nimbus experiment from Experimenter. Most of these values get read from
+        Nimbus's GET experiment endpoint's json response. The notable exception is batch_duration,
+        which currently comes from the experiment's configuration in config.json, but we add it
+        to this model so we can conveniently figure out when the data should be collected.
 
-    slug: str  # Normandy slug
-    startDate: Optional[datetime.datetime]
-    endDate: Optional[datetime.datetime]
-    enrollmentEndDate: Optional[datetime.datetime]
-    proposedEnrollment: int
-    branches: List[Branch]
-    referenceBranch: Optional[str]
-    appName: str
+    Attributes:
+        appId:                  Id of the app we're experimenting on, something like 'firefox-desktop'.
+        appName:                Name of the app we're experimenting on, something like 'firefox_desktop'.
+        batchDuration:          The DAP agreggation time interval.
+        branches:               A list of Branch objects for the experiment's branch data.
+        bucketConfig:
+        channel:                The release channel for this experiment, something like 'nightly'.
+        featureIds:             A list of all the features used in this experiment.
+        proposedEnrollment:
+        referenceBranch:        The slug of the control branch.
+        slug:                   Normandy slug that uniquely identifies the experiment
+                                in Nimbus.
+        targeting:              A string of js that evaluates to a boolean value indicating
+                                targeting based on region, channel, and user prefs.
+
+        startDate:              The day the experiment will begin enrolling users.
+        endDate:                The day the experiment will be turned off.
+        enrollmentEndDate:      The day the experiment's enrollment phase ends.
+
+    """
+
+
     appId: str
-    channel: str
-    targeting: str
+    appName: str
+    batchDuration: int
+    branches: List[Branch]
     bucketConfig: dict
+    channel: str
     featureIds: list[str]
+    proposedEnrollment: int
+    referenceBranch: Optional[str]
+    slug: str
+    targeting: str
+
+    startDate: date
+    endDate: Optional[datetime]
+    enrollmentEndDate: Optional[datetime]
+
+    # Experiment results are removed from DAP after 2 weeks, so our window to collect results for
+    # an experiment is up to 2 weeks after the experiment's current_batch_end.
+    # However, we don't need to collect every day of those two weeks (this job runs daily). So this
+    # constant defines how many days after current_batch_end to go out and collect and write to BQ.
+    COLLECT_RETRY_DAYS = 7
 
     @classmethod
     def from_dict(cls, d) -> "NimbusExperiment":
         """Load an experiment from dict."""
         converter = cattrs.BaseConverter()
         converter.register_structure_hook(
-            datetime.datetime,
-            lambda num, _: datetime.datetime.fromisoformat(
+            datetime,
+            lambda num, _: datetime.fromisoformat(
                 num.replace("Z", "+00:00")
             ).astimezone(pytz.utc),
+        )
+        converter.register_structure_hook(
+            date,
+            lambda num, _: datetime.fromisoformat(
+                num.replace("Z", "+00:00")
+            ).astimezone(pytz.utc).date(),
         )
         converter.register_structure_hook(
             Branch,
@@ -53,6 +92,24 @@ class NimbusExperiment:
             ),
         )
         return converter.structure(d, cls)
+
+    def current_batch_start(self) -> date:
+        current_batch_start = self.startDate
+        if current_batch_start >= date.today():
+            return current_batch_start
+
+        while current_batch_start < (date.today() - timedelta(seconds=self.batchDuration)):
+            current_batch_start = current_batch_start + timedelta(seconds=self.batchDuration)
+        return current_batch_start - timedelta(seconds=self.batchDuration)
+
+    def current_batch_end(self) -> date:
+        return self.current_batch_start() + timedelta(seconds=self.batchDuration)
+
+    def next_collect_date(self) -> date:
+        return self.current_batch_end() + timedelta(days=1)
+
+    def collect_today(self) -> bool:
+        return self.current_batch_end() < date.today() < (self.current_batch_end() + timedelta(days=self.COLLECT_RETRY_DAYS))
 
 def get_country_from_targeting(targeting: str) -> Optional[str]:
     """Parses the region/country from the targeting string and
@@ -91,11 +148,15 @@ class IncrementalityBranchResultsRow:
         Attributes:
             advertiser:         Derived from from the urls stored in the visitCountingExperimentList
                                 key within Nimbus's dapTelemetry feature.
+            batch_start:        The start date of the collection period that we're requesting counts for from DAP.
+            batch_end:          The end date of the collection period that we're requesting counts from DAP.
+            batch_duration:     The duration of the collection period that we're requeting counts for from DAP.
             branch:             A Nimbus experiment branch. Each experiment may have multiple
                                 branches (ie control, treatment-a).
             bucket:             Stored in Nimbus experiment metadata. Each exeriment branch specifies
                                 the corresponding DAP bucket where the visit counts for that branch
                                 can be collected.
+            country_codes:      The countries where the experiment is active, as an array of ISO country code strings.
             experiment_slug:    The Nimbus experiment's URL slug
             metric:             Currently hardcoded to "unique_client_organic_visits" for incrementality.
             task_id:            Stored in Nimbus experiment metadata. The task id is returned when setting
@@ -106,8 +167,12 @@ class IncrementalityBranchResultsRow:
     """
 
     advertiser: str
+    batch_start: date
+    batch_end: date
+    batch_duration: date
     branch: str
     bucket: int
+    country_codes: Optional[str]
     experiment_slug: str
     metric: str
     task_id: str
@@ -122,6 +187,9 @@ class IncrementalityBranchResultsRow:
             self.advertiser = get_advertiser_from_url(urls[0])
         self.branch = branch_slug
         self.bucket = visitCountingExperimentListItem.get("bucket")
+        self.batch_start = experiment.current_batch_start()
+        self.batch_end = experiment.current_batch_end()
+        self.batch_duration = experiment.batchDuration
         self.country_codes = get_country_from_targeting(experiment.targeting)
         self.experiment_slug = experiment.slug
         self.metric = "unique_client_organic_visits"
@@ -153,7 +221,7 @@ class DAPConfig:
         Attributes:
             hpke_token:         Token defined in the collector credentials, used to authenticate to the leader
             hpke_private_key:   Private key defined in the collector credentials, used to decrypt shares from the leader and helper
-            hpke_config:        base64url-encoded version of hpke_config defined in the collector credentials
+            hpke_config:        base64 url-encoded version of public key defined in the collector credentials
             batch_start:        Start of the collection interval, as the number of seconds since the Unix epoch
     """
 

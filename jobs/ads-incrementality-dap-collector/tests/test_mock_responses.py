@@ -211,7 +211,7 @@ NIMBUS_NOT_AN_INCREMENTALITY_EXPERIMENT = {
     'targeting': '(browserSettings.update.channel == "nightly") && ((experiment.slug in activeExperiments) || ((\n        \'browser.newtabpage.activity-stream.showSponsoredTopSites\'|preferenceValue\n    ) && (version|versionCompare(\'140.!\') >= 0) && (region in [\'US\'])))',
     'startDate': '2025-08-18',
     'enrollmentEndDate': None,
-    'endDate': None,
+    'endDate': '2025-09-15',
     'proposedEnrollment': 7,
     'referenceBranch': 'control',
 }
