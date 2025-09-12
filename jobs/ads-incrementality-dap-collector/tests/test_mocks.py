@@ -1,5 +1,7 @@
+from google.cloud import bigquery
+from collections.abc import Mapping, Sequence
 from subprocess import CompletedProcess
-from models import IncrementalityBranchResultsRow, NimbusExperiment, DAPConfig, ExperimentConfig
+from models import IncrementalityBranchResultsRow, NimbusExperiment, BQConfig, DAPConfig, ExperimentConfig
 from tests.test_mock_responses import NIMBUS_SUCCESS, NIMBUS_NOT_AN_INCREMENTALITY_EXPERIMENT
 
 class MockResponse:
@@ -87,6 +89,20 @@ def mock_tasks_to_collect() -> dict[str, dict[int, IncrementalityBranchResultsRo
         }
     }
 
+def mock_collected_tasks() -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
+    experiment = mock_nimbus_experiment()
+    tasks_to_collect = {
+        "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o": {
+            1: mock_control_row(experiment),
+            2: mock_treatment_b_row(experiment),
+            3: mock_treatment_a_row(experiment)
+        }
+    }
+    tasks_to_collect["mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o"][1].value_count = 13645
+    tasks_to_collect["mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o"][2].value_count = 18645
+    tasks_to_collect["mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o"][3].value_count = 9645
+    return tasks_to_collect
+
 def mock_dap_config() -> DAPConfig:
     return DAPConfig(
         hpke_config="AQAgAAEAAQAgpdceoGiuWvIiogA8SPCdprkhWMNtLq_y0GSePI7EhXE",
@@ -99,6 +115,13 @@ def mock_experiment_config() -> ExperimentConfig:
     return ExperimentConfig(
         slug="traffic-impact-study-5",
         batch_duration=604800
+    )
+
+def mock_bq_config() -> BQConfig:
+    return BQConfig(
+        project="some-gcp-project-id",
+        namespace="ads_dap",
+        table="incrementality"
     )
 
 def mock_dap_subprocess_success(args: list[str], capture_output: bool, text: bool, check: bool, timeout: int) -> CompletedProcess:
@@ -137,3 +160,25 @@ def mock_dap_subprocess_fail(args: list[str], capture_output: bool, text: bool, 
 
 def mock_dap_subprocess_raise(args: list[str], capture_output: bool, text: bool, check: bool, timeout: int) -> CompletedProcess:
     raise Exception("Collection failed for mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o, 1, stderr: Uh-oh") from None
+
+def mock_create_dataset_success(data_set: str, exists_ok: bool):
+    pass
+
+def mock_create_dataset_fail(data_set: str, exists_ok: bool):
+    raise Exception("BQ create dataset Uh-oh")
+
+def mock_create_table_success(table: bigquery.Table, exists_ok: bool):
+    pass
+
+def mock_create_table_fail(table: bigquery.Table, exists_ok: bool):
+    raise Exception("BQ create table Uh-oh")
+
+def mock_insert_rows_json_success(table: str, json_rows: dict) -> Sequence[Mapping]:
+    return []
+
+def mock_insert_rows_json_fail(table: str, json_rows: dict) -> Sequence[Mapping]:
+    return [
+        {"key": 0, "errors": "Problem writing bucket 1 results" },
+        {"key": 1, "errors": "Problem writing bucket 2 results"},
+        {"key": 2, "errors": "Problem writing bucket 3 results"}
+    ]
