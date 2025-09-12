@@ -7,7 +7,6 @@ import re
 import tldextract
 
 from typing import List, Optional
-import logging
 
 @attr.s(auto_attribs=True)
 class Branch:
@@ -198,6 +197,10 @@ class IncrementalityBranchResultsRow:
         # This will be populated when we successfully fetch the count from DAP
         self.value_count = None
 
+    def __str__(self):
+        return f"IncrementalityBranchResultsRow(advertiser='{self.advertiser}', branch='{self.branch}', bucket='{self.bucket}', experiment_slug='{self.experiment_slug}', metric='{self.metric}', task_id='{self.task_id}', task_veclen='redacted', value_count='redacted')"
+
+    __repr__ = __str__
 
 @attr.s(auto_attribs=True)
 class BQConfig:
