@@ -8,6 +8,7 @@ import tldextract
 
 from typing import List, Optional
 
+
 @attr.s(auto_attribs=True)
 class Branch:
     """Defines a branch of a Nimbus experiement from Experimenter."""
@@ -45,7 +46,6 @@ class NimbusExperiment:
 
     """
 
-
     appId: str
     appName: str
     batchDuration: int
@@ -80,9 +80,9 @@ class NimbusExperiment:
         )
         converter.register_structure_hook(
             date,
-            lambda num, _: datetime.fromisoformat(
-                num.replace("Z", "+00:00")
-            ).astimezone(pytz.utc).date(),
+            lambda num, _: datetime.fromisoformat(num.replace("Z", "+00:00"))
+            .astimezone(pytz.utc)
+            .date(),
         )
         converter.register_structure_hook(
             Branch,
@@ -97,8 +97,12 @@ class NimbusExperiment:
         if current_batch_start >= date.today():
             return current_batch_start
 
-        while current_batch_start < (date.today() - timedelta(seconds=self.batchDuration)):
-            current_batch_start = current_batch_start + timedelta(seconds=self.batchDuration)
+        while current_batch_start < (
+            date.today() - timedelta(seconds=self.batchDuration)
+        ):
+            current_batch_start = current_batch_start + timedelta(
+                seconds=self.batchDuration
+            )
         return current_batch_start - timedelta(seconds=self.batchDuration)
 
     def current_batch_end(self) -> date:
@@ -108,7 +112,12 @@ class NimbusExperiment:
         return self.current_batch_end() + timedelta(days=1)
 
     def collect_today(self) -> bool:
-        return self.current_batch_end() < date.today() < (self.current_batch_end() + timedelta(days=self.COLLECT_RETRY_DAYS))
+        return (
+            self.current_batch_end()
+            < date.today()
+            < (self.current_batch_end() + timedelta(days=self.COLLECT_RETRY_DAYS))
+        )
+
 
 def get_country_from_targeting(targeting: str) -> Optional[str]:
     """Parses the region/country from the targeting string and
@@ -118,15 +127,17 @@ def get_country_from_targeting(targeting: str) -> Optional[str]:
 
     if match:
         inner = match.group(1)
-        regions = [r.strip().strip("'\"") for r in inner.split(',')]
+        regions = [r.strip().strip("'\"") for r in inner.split(",")]
         # logging.info("regions: %s", regions)
         return json.dumps(regions)
     return None
 
+
 def normalize_url(url: str) -> str:
     # Replace wildcard with a dummy protocol and subdomain so urlparse can handle it
-    normalized = re.sub(r'^\*://\*\.?', 'https://', url)
+    normalized = re.sub(r"^\*://\*\.?", "https://", url)
     return normalized
+
 
 def get_advertiser_from_url(url: str) -> Optional[str]:
     """Parses the advertiser name (domain) from the url"""
@@ -139,30 +150,30 @@ def get_advertiser_from_url(url: str) -> Optional[str]:
 @attr.s(auto_attribs=True, auto_detect=True, eq=True)
 class IncrementalityBranchResultsRow:
     """This object encapsulates all the data for an incrementality experiment branch that uses the
-        Nimbus dapTelemetry feature. It is used as an intermediate data structure, first to hold the
-        info from the experiment metadata which is later used in the DAP collection, then to store
-        the actual count values fetched from DAP, and finally to write most of these attributes to
-        a BQ results row.
+    Nimbus dapTelemetry feature. It is used as an intermediate data structure, first to hold the
+    info from the experiment metadata which is later used in the DAP collection, then to store
+    the actual count values fetched from DAP, and finally to write most of these attributes to
+    a BQ results row.
 
-        Attributes:
-            advertiser:         Derived from from the urls stored in the visitCountingExperimentList
-                                key within Nimbus's dapTelemetry feature.
-            batch_start:        The start date of the collection period that we're requesting counts for from DAP.
-            batch_end:          The end date of the collection period that we're requesting counts from DAP.
-            batch_duration:     The duration of the collection period that we're requeting counts for from DAP.
-            branch:             A Nimbus experiment branch. Each experiment may have multiple
-                                branches (ie control, treatment-a).
-            bucket:             Stored in Nimbus experiment metadata. Each exeriment branch specifies
-                                the corresponding DAP bucket where the visit counts for that branch
-                                can be collected.
-            country_codes:      The countries where the experiment is active, as an array of ISO country code strings.
-            experiment_slug:    The Nimbus experiment's URL slug
-            metric:             Currently hardcoded to "unique_client_organic_visits" for incrementality.
-            task_id:            Stored in Nimbus experiment metadata. The task id is returned when setting
-                                up DAP counting, and is used to collect the experiment result counts.
-            task_veclen:        Stored in Nimbus experiment metadata. The task_veclen is configured when
-                                setting up DAP counting, and is needed to collect the experiment results.
-            value_count:        The url visits count value collected from DAP for this experiment branch.
+    Attributes:
+        advertiser:         Derived from from the urls stored in the visitCountingExperimentList
+                            key within Nimbus's dapTelemetry feature.
+        batch_start:        The start date of the collection period that we're requesting counts for from DAP.
+        batch_end:          The end date of the collection period that we're requesting counts from DAP.
+        batch_duration:     The duration of the collection period that we're requeting counts for from DAP.
+        branch:             A Nimbus experiment branch. Each experiment may have multiple
+                            branches (ie control, treatment-a).
+        bucket:             Stored in Nimbus experiment metadata. Each exeriment branch specifies
+                            the corresponding DAP bucket where the visit counts for that branch
+                            can be collected.
+        country_codes:      The countries where the experiment is active, as an array of ISO country code strings.
+        experiment_slug:    The Nimbus experiment's URL slug
+        metric:             Currently hardcoded to "unique_client_organic_visits" for incrementality.
+        task_id:            Stored in Nimbus experiment metadata. The task id is returned when setting
+                            up DAP counting, and is used to collect the experiment result counts.
+        task_veclen:        Stored in Nimbus experiment metadata. The task_veclen is configured when
+                            setting up DAP counting, and is needed to collect the experiment results.
+        value_count:        The url visits count value collected from DAP for this experiment branch.
     """
 
     advertiser: str
@@ -178,7 +189,12 @@ class IncrementalityBranchResultsRow:
     task_veclen: int
     value_count: int
 
-    def __init__(self, experiment: NimbusExperiment, branch_slug: str, visitCountingExperimentListItem: dict):
+    def __init__(
+        self,
+        experiment: NimbusExperiment,
+        branch_slug: str,
+        visitCountingExperimentListItem: dict,
+    ):
         self.advertiser = "not_set"
         urls = visitCountingExperimentListItem.get("urls")
         # Default to the first url in the list to determine the advertiser.
@@ -198,18 +214,21 @@ class IncrementalityBranchResultsRow:
         self.value_count = None
 
     def __str__(self):
-        return f"IncrementalityBranchResultsRow(advertiser='{self.advertiser}', branch='{self.branch}', bucket='{self.bucket}', experiment_slug='{self.experiment_slug}', metric='{self.metric}', task_id='{self.task_id}', task_veclen='redacted', value_count='redacted')"
+        return f"IncrementalityBranchResultsRow(advertiser='{self.advertiser}', branch='{self.branch}', \
+            bucket='{self.bucket}', experiment_slug='{self.experiment_slug}', metric='{self.metric}', \
+            task_id='{self.task_id}', task_veclen='redacted', value_count='redacted')"
 
     __repr__ = __str__
+
 
 @attr.s(auto_attribs=True)
 class BQConfig:
     """Encapsulates everything the job needs to connect to BigQuery
 
-        Attributes:
-            project:         GCP project
-            namespace:       BQ namespace for ads incrementality
-            table:           BQ table where incrementality results go
+    Attributes:
+        project:         GCP project
+        namespace:       BQ namespace for ads incrementality
+        table:           BQ table where incrementality results go
     """
 
     project: str
@@ -221,11 +240,12 @@ class BQConfig:
 class DAPConfig:
     """Encapsulates everything the job needs to connect to DAP
 
-        Attributes:
-            hpke_token:         Token defined in the collector credentials, used to authenticate to the leader
-            hpke_private_key:   Private key defined in the collector credentials, used to decrypt shares from the leader and helper
-            hpke_config:        base64 url-encoded version of public key defined in the collector credentials
-            batch_start:        Start of the collection interval, as the number of seconds since the Unix epoch
+    Attributes:
+        hpke_token:         Token defined in the collector credentials, used to authenticate to the leader
+        hpke_private_key:   Private key defined in the collector credentials, used to decrypt shares from the leader
+                            and helper
+        hpke_config:        base64 url-encoded version of public key defined in the collector credentials
+        batch_start:        Start of the collection interval, as the number of seconds since the Unix epoch
     """
 
     hpke_token: str
@@ -237,11 +257,11 @@ class DAPConfig:
 @attr.s(auto_attribs=True)
 class ExperimentConfig:
     """Encapsulates the experiments that should be collected from DAP and how far back to collect,
-        in seconds
+    in seconds
 
-        Attributes:
-            slug:               Experiment slug
-            batch_duration:     Duration of the collection batch interval, in seconds
+    Attributes:
+        slug:               Experiment slug
+        batch_duration:     Duration of the collection batch interval, in seconds
     """
 
     slug: str
@@ -252,11 +272,11 @@ class ExperimentConfig:
 class NimbusConfig:
     """Encapsulates everything the job needs to connect to Nimbus
 
-        Attributes:
-            experiments:    Config for the incrementality experiments. Nimbus experiments
-                            branches store DAP task info that allows for branch results
-                            collection from DAP.
-            api_url:        API URL for fetching the Nimbus experiment info
+    Attributes:
+        experiments:    Config for the incrementality experiments. Nimbus experiments
+                        branches store DAP task info that allows for branch results
+                        collection from DAP.
+        api_url:        API URL for fetching the Nimbus experiment info
     """
 
     experiments: list[ExperimentConfig]
@@ -267,10 +287,10 @@ class NimbusConfig:
 class IncrementalityConfig:
     """Encapsulates everything the job needs to connect to various 3rd party services
 
-        Attributes:
-            bq:         BigQuery config
-            dap:        Divviup's DAP service config
-            nimbus:     Nimbus Experiment framework config
+    Attributes:
+        bq:         BigQuery config
+        dap:        Divviup's DAP service config
+        nimbus:     Nimbus Experiment framework config
     """
 
     bq: BQConfig
@@ -279,4 +299,5 @@ class IncrementalityConfig:
 
 
 class ConfigEncoder(json.JSONEncoder):
-    def default(self, o): return o.__dict__
+    def default(self, o):
+        return o.__dict__
