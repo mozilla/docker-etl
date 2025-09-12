@@ -4,7 +4,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../ads_incrementality_dap_collector')))
 
 import pytest
-
+import re
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -13,9 +13,14 @@ from tests.test_mocks import (
     mock_nimbus_experiment, mock_control_row, mock_treatment_a_row, mock_treatment_b_row,
     mock_task_id, mock_nimbus_unparseable_experiment,
     mock_tasks_to_collect, mock_dap_config, mock_experiment_config,
-    mock_dap_subprocess_success, mock_dap_subprocess_fail, mock_dap_subprocess_raise
+    mock_dap_subprocess_success, mock_dap_subprocess_fail, mock_dap_subprocess_raise,
+    mock_collected_tasks, mock_bq_config,
+    mock_create_dataset_success, mock_create_table_success, mock_insert_rows_json_success,
+    mock_create_dataset_fail, mock_create_table_fail, mock_insert_rows_json_fail
 )
-from ads_incrementality_dap_collector.helpers import get_experiment, prepare_results_rows, collect_dap_results
+from ads_incrementality_dap_collector.helpers import (
+    get_experiment, prepare_results_rows, collect_dap_results, write_results_to_bq
+)
 
 class TestHelpers(TestCase):
     @patch("requests.get", side_effect=mock_nimbus_success)
@@ -69,3 +74,43 @@ class TestHelpers(TestCase):
         with pytest.raises(Exception, match=f'Collection failed for {task_id}, 1, stderr: Uh-oh'):
             collect_dap_results(tasks_to_collect, mock_dap_config(), mock_experiment_config())
             self.assertEqual(1, mock_dap_subprocess_success.call_count)
+
+    @patch("google.cloud.bigquery.Client.create_dataset", side_effect=mock_create_dataset_success)
+    @patch("google.cloud.bigquery.Client.create_table", side_effect=mock_create_table_success)
+    @patch("google.cloud.bigquery.Client.insert_rows_json", side_effect=mock_insert_rows_json_success)
+    def test_write_results_to_bq_success(self, mock_insert_rows_json_success, mock_create_table_success, mock_create_dataset_success):
+        collected_tasks = mock_collected_tasks()
+        write_results_to_bq(collected_tasks, mock_bq_config())
+        self.assertEqual(1, mock_create_dataset_success.call_count)
+        self.assertEqual(1, mock_create_table_success.call_count)
+        self.assertEqual(len(collected_tasks["mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o"]), mock_insert_rows_json_success.call_count)
+
+    @patch("google.cloud.bigquery.Client.create_dataset", side_effect=mock_create_dataset_fail)
+    @patch("google.cloud.bigquery.Client.create_table", side_effect=mock_create_table_success)
+    @patch("google.cloud.bigquery.Client.insert_rows_json", side_effect=mock_insert_rows_json_success)
+    def test_write_results_to_bq_create_dataset_fail(self, mock_insert_rows_json_success, mock_create_table_success, mock_create_dataset_fail):
+        with pytest.raises(Exception, match='BQ create dataset Uh-oh'):
+            write_results_to_bq(mock_collected_tasks(), mock_bq_config())
+            self.assertEqual(1, mock_create_dataset_fail.call_count)
+            self.assertEqual(0, mock_create_table_success.call_count)
+            self.assertEqual(0, mock_insert_rows_json_success.call_count)
+
+    @patch("google.cloud.bigquery.Client.create_dataset", side_effect=mock_create_dataset_success)
+    @patch("google.cloud.bigquery.Client.create_table", side_effect=mock_create_table_fail)
+    @patch("google.cloud.bigquery.Client.insert_rows_json", side_effect=mock_insert_rows_json_success)
+    def test_write_results_to_bq_create_table_fail(self, mock_insert_rows_json_success, mock_create_table_fail, mock_create_dataset_success):
+        with pytest.raises(Exception, match='Failed to create BQ table: some-gcp-project-id.ads_dap.incrementality'):
+            write_results_to_bq(mock_collected_tasks(), mock_bq_config())
+            self.assertEqual(1, mock_create_dataset_success.call_count)
+            self.assertEqual(1, mock_create_dataset_fail.call_count)
+            self.assertEqual(0, mock_insert_rows_json_success.call_count)
+
+    @patch("google.cloud.bigquery.Client.create_dataset", side_effect=mock_create_dataset_success)
+    @patch("google.cloud.bigquery.Client.create_table", side_effect=mock_create_table_success)
+    @patch("google.cloud.bigquery.Client.insert_rows_json", side_effect=mock_insert_rows_json_fail)
+    def test_write_results_to_bq_insert_rows_fail(self, mock_insert_rows_json_fail, mock_create_table_success, mock_create_dataset_success):
+        with pytest.raises(Exception, match=re.escape("Error inserting rows into some-gcp-project-id.ads_dap.incrementality: [{'key': 0, 'errors': 'Problem writing bucket 1 results'}, {'key': 1, 'errors': 'Problem writing bucket 2 results'}, {'key': 2, 'errors': 'Problem writing bucket 3 results'}]")):
+            write_results_to_bq(mock_collected_tasks(), mock_bq_config())
+            self.assertEqual(1, mock_create_dataset_success.call_count)
+            self.assertEqual(1, mock_create_table_success.call_count)
+            self.assertEqual(1, mock_insert_rows_json_fail.call_count)
