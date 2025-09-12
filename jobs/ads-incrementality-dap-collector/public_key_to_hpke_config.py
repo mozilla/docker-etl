@@ -3,11 +3,13 @@ import struct
 
 
 def decode_base64url(data: str) -> bytes:
-    padded = data + '=' * (-len(data) % 4)
+    padded = data + "=" * (-len(data) % 4)
     return base64.urlsafe_b64decode(padded)
 
 
-def encode_hpke_config(config_id: int, kem_id: int, kdf_id: int, aead_id: int, public_key_b64url: str) -> str:
+def encode_hpke_config(
+    config_id: int, kem_id: int, kdf_id: int, aead_id: int, public_key_b64url: str
+) -> str:
     # Decode the public key from base64url
     public_key = decode_base64url(public_key_b64url)
 
@@ -31,7 +33,7 @@ b64_hpke = encode_hpke_config(
     kem_id=0x0020,  # DHKEM(X25519, HKDF-SHA256)
     kdf_id=0x0001,  # HKDF-SHA256
     aead_id=0x0001,  # AES-128-GCM
-    public_key_b64url="your-collector-credentials-public-key-here"
+    public_key_b64url="your-collector-credentials-public-key-here",
 )
 
 print("Base64URL-encoded HPKE config:", b64_hpke)
