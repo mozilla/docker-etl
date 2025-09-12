@@ -1,0 +1,20 @@
+{
+  "bq": {
+    "namespace": "ads_dap",
+    "table": "incrementality"
+  },
+  "dap": {
+    "hpke_config": "AQAgAAEAAQAgpdceoGiuWvIiogA8SPCdprkhWMNtLq_y0GSePI7EhXE"
+  },
+  "nimbus": {
+    "experiments": [{
+      "slug": "incrementality-etl-testing-mlifshin-dev",
+      "batch_duration": 604800
+    },
+    {
+      "slug": "incrementality-etl-testing",
+      "batch_duration": 604800
+    }],
+    "api_url": "https://stage.experimenter.nonprod.webservices.mozgcp.net/api/v6/experiments"
+  }
+}
