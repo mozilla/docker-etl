@@ -7,7 +7,7 @@ VDAF = "histogram"
 PROCESS_TIMEOUT = 1200  # 20 mins
 
 CONFIG_FILE_NAME = "config.json"     # See example_config.json for the contents and structure of the job config file.
-LOG_FILE_NAME = f"ads-incrementality-dap-collector-{datetime.now()}.log"
+LOG_FILE_NAME = f"{datetime.now()}-ads-incrementality-dap-collector.log"
 
 COLLECTOR_RESULTS_SCHEMA = [
     bigquery.SchemaField("collection_start", "DATE", mode="REQUIRED", description="Start date of the collected time window, inclusive."),
