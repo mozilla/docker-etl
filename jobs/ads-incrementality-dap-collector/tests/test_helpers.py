@@ -1,9 +1,11 @@
+from datetime import datetime
 import os
-import sys
 import pytest
 import re
-from unittest import TestCase
-from unittest.mock import patch
+import sys
+from unittest import  TestCase
+from unittest.mock import call,patch
+
 
 # Append the source code directory to the path
 sys.path.append(
@@ -29,11 +31,13 @@ from tests.test_mocks import (  # noqa: E402
     mock_dap_subprocess_raise,
     mock_collected_tasks,
     mock_bq_config,
-    mock_create_dataset_success,
-    mock_create_table_success,
-    mock_insert_rows_json_success,
+    mock_bq_table,
+    # mock_bq_client,
+    mock_create_dataset,
     mock_create_dataset_fail,
+    mock_create_table,
     mock_create_table_fail,
+    mock_insert_rows_json,
     mock_insert_rows_json_fail,
 )
 from ads_incrementality_dap_collector.helpers import (  # noqa: E402
@@ -42,6 +46,7 @@ from ads_incrementality_dap_collector.helpers import (  # noqa: E402
     collect_dap_results,
     write_results_to_bq,
 )
+from  ads_incrementality_dap_collector.constants import COLLECTOR_RESULTS_SCHEMA
 
 
 class TestHelpers(TestCase):
@@ -110,108 +115,98 @@ class TestHelpers(TestCase):
             )
             self.assertEqual(1, mock_dap_subprocess_success.call_count)
 
-    @patch(
-        "google.cloud.bigquery.Client.create_dataset",
-        side_effect=mock_create_dataset_success,
-    )
-    @patch(
-        "google.cloud.bigquery.Client.create_table",
-        side_effect=mock_create_table_success,
-    )
-    @patch(
-        "google.cloud.bigquery.Client.insert_rows_json",
-        side_effect=mock_insert_rows_json_success,
-    )
+    @patch("google.cloud.bigquery.Table")
+    @patch("google.cloud.bigquery.Client")
+    @patch("ads_incrementality_dap_collector.helpers.datetime")
     def test_write_results_to_bq_success(
         self,
-        mock_insert_rows_json_success,
-        mock_create_table_success,
-        mock_create_dataset_success,
+        the_datetime,
+        bq_client,
+        bq_table,
     ):
-        collected_tasks = mock_collected_tasks()
-        write_results_to_bq(collected_tasks, mock_bq_config())
-        self.assertEqual(1, mock_create_dataset_success.call_count)
-        self.assertEqual(1, mock_create_table_success.call_count)
-        self.assertEqual(
-            len(collected_tasks["mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o"]),
-            mock_insert_rows_json_success.call_count,
-        )
+        bq_client.return_value.create_dataset.side_effect = mock_create_dataset
+        bq_client.return_value.create_table.side_effect = mock_create_table
+        bq_client.return_value.insert_rows_json.side_effect = mock_insert_rows_json
 
-    @patch(
-        "google.cloud.bigquery.Client.create_dataset",
-        side_effect=mock_create_dataset_fail,
-    )
-    @patch(
-        "google.cloud.bigquery.Client.create_table",
-        side_effect=mock_create_table_success,
-    )
-    @patch(
-        "google.cloud.bigquery.Client.insert_rows_json",
-        side_effect=mock_insert_rows_json_success,
-    )
+        the_datetime.now.return_value = datetime(2025, 9, 19, 16, 54, 34, 366228)
+        the_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
+
+        bq_config = mock_bq_config()
+        collected_tasks = mock_collected_tasks()
+        write_results_to_bq(collected_tasks, bq_config)
+
+        bq_client.assert_called_once_with(project=bq_config.project)
+        bq_table.assert_called_once_with(f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}", schema=COLLECTOR_RESULTS_SCHEMA)
+        bq_client.return_value.create_dataset.assert_called_once_with(f"{bq_config.project}.{bq_config.namespace}", exists_ok=True)
+        bq_client.return_value.create_table.assert_called_once_with(mock_bq_table(), exists_ok=True)
+
+        calls = [
+            call(table=f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}", json_rows=[{"collection_start": "2025-09-08", "collection_end": "2025-09-15", "country_codes": '["US"]', "experiment_slug": "traffic-impact-study-5", "experiment_branch": "control", "advertiser": "glamazon", "metric": "unique_client_organic_visits", "value": {"count": 13645, "histogram": None}, "created_at": datetime(2025, 9, 19, 16, 54, 34, 366228)}]),
+            call(table=f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}", json_rows=[{"collection_start": "2025-09-08", "collection_end": "2025-09-15", "country_codes": '["US"]', "experiment_slug": "traffic-impact-study-5", "experiment_branch": "treatment-b", "advertiser": "glamazon", "metric": "unique_client_organic_visits", "value": {"count": 18645, "histogram": None}, "created_at": datetime(2025, 9, 19, 16, 54, 34, 366228)}]),
+            call(table=f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}", json_rows=[{"collection_start": "2025-09-08", "collection_end": "2025-09-15", "country_codes": '["US"]', "experiment_slug": "traffic-impact-study-5", "experiment_branch": "treatment-a", "advertiser": "glamazon", "metric": "unique_client_organic_visits", "value": {"count": 9645, "histogram": None}, "created_at": datetime(2025, 9, 19, 16, 54, 34, 366228)}])
+        ]
+        bq_client.return_value.insert_rows_json.assert_has_calls(calls)
+
+    @patch("google.cloud.bigquery.Client")
     def test_write_results_to_bq_create_dataset_fail(
         self,
-        mock_insert_rows_json_success,
-        mock_create_table_success,
-        mock_create_dataset_fail,
+        bq_client,
     ):
-        with pytest.raises(Exception, match="BQ create dataset Uh-oh"):
-            write_results_to_bq(mock_collected_tasks(), mock_bq_config())
-            self.assertEqual(1, mock_create_dataset_fail.call_count)
-            self.assertEqual(0, mock_create_table_success.call_count)
-            self.assertEqual(0, mock_insert_rows_json_success.call_count)
+        bq_client.return_value.create_dataset.side_effect = mock_create_dataset_fail
+        bq_client.return_value.create_table.side_effect = mock_create_table
+        bq_client.return_value.insert_rows_json.side_effect = mock_insert_rows_json
+        bq_config = mock_bq_config()
 
-    @patch(
-        "google.cloud.bigquery.Client.create_dataset",
-        side_effect=mock_create_dataset_success,
-    )
-    @patch(
-        "google.cloud.bigquery.Client.create_table", side_effect=mock_create_table_fail
-    )
-    @patch(
-        "google.cloud.bigquery.Client.insert_rows_json",
-        side_effect=mock_insert_rows_json_success,
-    )
+        with pytest.raises(Exception, match="BQ create dataset Uh-oh"):
+            write_results_to_bq(mock_collected_tasks(), bq_config)
+
+            bq_client.return_value.create_dataset.assert_called_once_with(f"{bq_config.project}.{bq_config.namespace}", exists_ok=True)
+            bq_client.return_value.create_table.assert_not_called()
+            bq_client.return_value.insert_rows_json.assert_not_called()
+
+
+    @patch("google.cloud.bigquery.Client")
     def test_write_results_to_bq_create_table_fail(
         self,
-        mock_insert_rows_json_success,
-        mock_create_table_fail,
-        mock_create_dataset_success,
+        bq_client,
     ):
+        bq_client.return_value.create_dataset.side_effect = mock_create_dataset
+        bq_client.return_value.create_table.side_effect = mock_create_table_fail
+        bq_client.return_value.insert_rows_json.side_effect = mock_insert_rows_json
+        bq_config = mock_bq_config()
+
         with pytest.raises(
             Exception,
-            match="Failed to create BQ table: some-gcp-project-id.ads_dap.incrementality",
+            match=f"Failed to create BQ table: {bq_config.project}.{bq_config.namespace}.{bq_config.table}"
         ):
-            write_results_to_bq(mock_collected_tasks(), mock_bq_config())
-            self.assertEqual(1, mock_create_dataset_success.call_count)
-            self.assertEqual(1, mock_create_dataset_fail.call_count)
-            self.assertEqual(0, mock_insert_rows_json_success.call_count)
 
-    @patch(
-        "google.cloud.bigquery.Client.create_dataset",
-        side_effect=mock_create_dataset_success,
-    )
-    @patch(
-        "google.cloud.bigquery.Client.create_table",
-        side_effect=mock_create_table_success,
-    )
-    @patch(
-        "google.cloud.bigquery.Client.insert_rows_json",
-        side_effect=mock_insert_rows_json_fail,
-    )
+            write_results_to_bq(mock_collected_tasks(), bq_config)
+            bq_client.return_value.create_dataset.assert_called_once_with(f"{bq_config.project}.{bq_config.namespace}", exists_ok=True)
+            bq_client.return_value.create_table.assert_called_once_with(mock_bq_table(), exists_ok=True)
+            bq_client.return_value.insert_rows_json.assert_not_called()
+
+    @patch("google.cloud.bigquery.Client")
     def test_write_results_to_bq_insert_rows_fail(
         self,
-        mock_insert_rows_json_fail,
-        mock_create_table_success,
-        mock_create_dataset_success,
+        bq_client,
     ):
+        bq_client.return_value.create_dataset.side_effect = mock_create_dataset
+        bq_client.return_value.create_table.side_effect = mock_create_table
+        bq_client.return_value.insert_rows_json.side_effect = mock_insert_rows_json_fail
+        bq_config = mock_bq_config()
+
         with pytest.raises(
             Exception,
             match=re.escape(
                 "Error inserting rows into some-gcp-project-id.ads_dap.incrementality: [{'key': 0, 'errors': 'Problem writing bucket 1 results'}, {'key': 1, 'errors': 'Problem writing bucket 2 results'}, {'key': 2, 'errors': 'Problem writing bucket 3 results'}]"  # noqa: E501
             ),
         ):
-            write_results_to_bq(mock_collected_tasks(), mock_bq_config())
-            self.assertEqual(1, mock_create_dataset_success.call_count)
-            self.assertEqual(1, mock_create_table_success.call_count)
-            self.assertEqual(1, mock_insert_rows_json_fail.call_count)
+            write_results_to_bq(mock_collected_tasks(), bq_config)
+            bq_client.return_value.create_dataset.assert_called_once_with(f"{bq_config.project}.{bq_config.namespace}", exists_ok=True)
+            bq_client.return_value.create_table.assert_called_once_with(mock_bq_table(), exists_ok=True)
+            calls = [
+                call(table='some-gcp-project-id.ads_dap.incrementality', json_rows=[{'collection_start': '2025-09-08', 'collection_end': '2025-09-15', 'country_codes': '["US"]', 'experiment_slug': 'traffic-impact-study-5', 'experiment_branch': 'control', 'advertiser': 'glamazon', 'metric': 'unique_client_organic_visits', 'value': {'count': 13645, 'histogram': None}, 'created_at': datetime(2025, 9, 19, 16, 54, 34, 366228)}]),
+                call(table='some-gcp-project-id.ads_dap.incrementality', json_rows=[{'collection_start': '2025-09-08', 'collection_end': '2025-09-15', 'country_codes': '["US"]', 'experiment_slug': 'traffic-impact-study-5', 'experiment_branch': 'treatment-b', 'advertiser': 'glamazon', 'metric': 'unique_client_organic_visits', 'value': {'count': 18645, 'histogram': None}, 'created_at': datetime(2025, 9, 19, 16, 54, 34, 366228)}]),
+                call(table='some-gcp-project-id.ads_dap.incrementality', json_rows=[{'collection_start': '2025-09-08', 'collection_end': '2025-09-15', 'country_codes': '["US"]', 'experiment_slug': 'traffic-impact-study-5', 'experiment_branch': 'treatment-a', 'advertiser': 'glamazon', 'metric': 'unique_client_organic_visits', 'value': {'count': 9645, 'histogram': None}, 'created_at': datetime(2025, 9, 19, 16, 54, 34, 366228)}])
+            ]
+            bq_client.return_value.insert_rows_json.assert_has_calls(calls)
