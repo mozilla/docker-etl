@@ -1,11 +1,13 @@
 import argparse
+from dataclasses import dataclass
 import logging
 from datetime import datetime
-from typing import Any, Mapping
+from typing import Mapping, Optional, Union
 
 import webfeatures
 from google.cloud import bigquery
 from webfeatures import FeaturesFile
+from webfeatures.features import Feature, FeatureMoved, FeatureSplit
 
 from .base import EtlJob, dataset_arg
 from .bqhelpers import BigQuery, Json
@@ -131,94 +133,147 @@ def update_browsers(
         client.write_table(table, schema, rows, recreate)
 
 
+@dataclass
+class FeaturesTable:
+    table_name: str
+    schema: list[bigquery.SchemaField]
+    rows: list[dict[str, Json]]
+    table: Optional[bigquery.Table] = None
+
+
 def update_features(
     client: BigQuery,
     release_name: str,
-    features_data: Mapping[str, webfeatures.features.Feature],
+    features_data: Mapping[str, Union[Feature, FeatureMoved, FeatureSplit]],
     recreate: bool,
 ) -> None:
-    schema = [
-        bigquery.SchemaField("release", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("feature", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("name", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("description", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("description_html", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("status_baseline", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField(
-            "status_baseline_high_date",
-            "RECORD",
-            fields=[
-                bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
-                bigquery.SchemaField("is_upper_bound", "BOOL", mode="REQUIRED"),
-            ],
-        ),
-        bigquery.SchemaField(
-            "status_baseline_low_date",
-            "RECORD",
-            fields=[
-                bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
-                bigquery.SchemaField("is_upper_bound", "BOOL", mode="REQUIRED"),
-            ],
-        ),
-        bigquery.SchemaField(
-            "support",
-            "RECORD",
-            mode="REPEATED",
-            fields=[
-                bigquery.SchemaField("browser", "STRING", mode="REQUIRED"),
-                bigquery.SchemaField("browser_version", "STRING", mode="REQUIRED"),
-            ],
-        ),
-        # Optional Data
-        bigquery.SchemaField("caniuse", "STRING", mode="REPEATED"),
-        bigquery.SchemaField("compat_features", "STRING", mode="REPEATED"),
-        bigquery.SchemaField("group", "STRING", mode="REPEATED"),
-        bigquery.SchemaField("spec", "STRING", mode="REPEATED"),
-        bigquery.SchemaField("snapshot", "STRING", mode="REPEATED"),
-    ]
-
-    table = client.ensure_table(
-        "features",
-        schema,
-    )
-    rows: list[dict[str, Any]] = []
-    for feature_id, data in features_data.items():
-        rows.append(
-            {
-                "release": release_name,
-                "feature": feature_id,
-                "name": data.name,
-                "description": data.description,
-                "description_html": data.description_html,
-                "status_baseline": data.status.baseline,
-                "status_baseline_high_date": {
-                    "date": data.status.baseline_high_date.date.isoformat(),
-                    "is_upper_bound": data.status.baseline_high_date.is_upper_bound,
-                }
-                if data.status.baseline_high_date
-                else None,
-                "status_baseline_low_date": {
-                    "date": data.status.baseline_low_date.date.isoformat(),
-                    "is_upper_bound": data.status.baseline_low_date.is_upper_bound,
-                }
-                if data.status.baseline_low_date
-                else None,
-                "caniuse": data.caniuse,
-                "compat_features": data.compat_features,
-                "group": data.group,
-                "spec": data.spec,
-                "snapshot": data.snapshot,
-                "support": [
-                    {
-                        "browser": browser,
-                        "browser_version": browser_version,
-                    }
-                    for browser, browser_version in data.status.support.items()
+    features = FeaturesTable(
+        table_name="features",
+        schema=[
+            bigquery.SchemaField("release", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("feature", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("name", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("description", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("description_html", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("status_baseline", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField(
+                "status_baseline_high_date",
+                "RECORD",
+                fields=[
+                    bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
+                    bigquery.SchemaField("is_upper_bound", "BOOL", mode="REQUIRED"),
                 ],
-            }
+            ),
+            bigquery.SchemaField(
+                "status_baseline_low_date",
+                "RECORD",
+                fields=[
+                    bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
+                    bigquery.SchemaField("is_upper_bound", "BOOL", mode="REQUIRED"),
+                ],
+            ),
+            bigquery.SchemaField(
+                "support",
+                "RECORD",
+                mode="REPEATED",
+                fields=[
+                    bigquery.SchemaField("browser", "STRING", mode="REQUIRED"),
+                    bigquery.SchemaField("browser_version", "STRING", mode="REQUIRED"),
+                ],
+            ),
+            # Optional Data
+            bigquery.SchemaField("caniuse", "STRING", mode="REPEATED"),
+            bigquery.SchemaField("compat_features", "STRING", mode="REPEATED"),
+            bigquery.SchemaField("group", "STRING", mode="REPEATED"),
+            bigquery.SchemaField("spec", "STRING", mode="REPEATED"),
+            bigquery.SchemaField("snapshot", "STRING", mode="REPEATED"),
+        ],
+        rows=[],
+    )
+
+    features_moved = FeaturesTable(
+        table_name="features_moved",
+        schema=[
+            bigquery.SchemaField("release", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("feature", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("redirect_target", "STRING", mode="REQUIRED"),
+        ],
+        rows=[],
+    )
+
+    features_split = FeaturesTable(
+        table_name="features_split",
+        schema=[
+            bigquery.SchemaField("release", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("feature", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("redirect_target", "STRING", mode="REPEATED"),
+        ],
+        rows=[],
+    )
+
+    tables = [features, features_moved, features_split]
+    for table_dfn in tables:
+        table_dfn.table = client.ensure_table(
+            table_dfn.table_name,
+            table_dfn.schema,
         )
 
-    client.write_table(table, schema, rows, recreate)
+    for feature_id, data in features_data.items():
+        if isinstance(data, Feature):
+            features.rows.append(
+                {
+                    "release": release_name,
+                    "feature": feature_id,
+                    "name": data.name,
+                    "description": data.description,
+                    "description_html": data.description_html,
+                    "status_baseline": data.status.baseline,
+                    "status_baseline_high_date": {
+                        "date": data.status.baseline_high_date.date.isoformat(),
+                        "is_upper_bound": data.status.baseline_high_date.is_upper_bound,
+                    }
+                    if data.status.baseline_high_date
+                    else None,
+                    "status_baseline_low_date": {
+                        "date": data.status.baseline_low_date.date.isoformat(),
+                        "is_upper_bound": data.status.baseline_low_date.is_upper_bound,
+                    }
+                    if data.status.baseline_low_date
+                    else None,
+                    "caniuse": data.caniuse,
+                    "compat_features": data.compat_features,
+                    "group": data.group,
+                    "spec": data.spec,
+                    "snapshot": data.snapshot,
+                    "support": [
+                        {
+                            "browser": browser,
+                            "browser_version": browser_version,
+                        }
+                        for browser, browser_version in data.status.support.items()
+                    ],
+                }
+            )
+        elif isinstance(data, FeatureMoved):
+            features_moved.rows.append(
+                {
+                    "release": release_name,
+                    "feature": feature_id,
+                    "redirect_target": data.redirect_target,
+                }
+            )
+        elif isinstance(data, FeatureSplit):
+            features_split.rows.append(
+                {
+                    "release": release_name,
+                    "feature": feature_id,
+                    "redirect_target": data.redirect_targets,
+                }
+            )
+
+    for table_dfn in tables:
+        assert table_dfn.table is not None
+        client.write_table(table_dfn.table, table_dfn.schema, table_dfn.rows, recreate)
 
 
 def import_release(
