@@ -126,7 +126,7 @@ The code will expect to find this value in a `config.json` file in the GCS bucke
 ```sh
 # This value is the "token" value from the collector credentials json file, which is used by the python code DAP collector
 # Not to be confused with the API token you created during developer setup, and goes with the 'divviup' CLI tool
-export DAP_HPKE_TOKEN="shhhh"
+export DAP_AUTH_TOKEN="shhhh"
 export DAP_PRIVATE_KEY="shhh"
 ./dev_run_docker.sh
 ```

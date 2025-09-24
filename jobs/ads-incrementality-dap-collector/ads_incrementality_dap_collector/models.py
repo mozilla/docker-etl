@@ -241,14 +241,14 @@ class DAPConfig:
     """Encapsulates everything the job needs to connect to DAP
 
     Attributes:
-        hpke_token:         Token defined in the collector credentials, used to authenticate to the leader
+        auth_token:         Token defined in the collector credentials, used to authenticate to the leader
         hpke_private_key:   Private key defined in the collector credentials, used to decrypt shares from the leader
                             and helper
         hpke_config:        base64 url-encoded version of public key defined in the collector credentials
         batch_start:        Start of the collection interval, as the number of seconds since the Unix epoch
     """
 
-    hpke_token: str
+    auth_token: str
     hpke_private_key: str
     hpke_config: str
     batch_start: int

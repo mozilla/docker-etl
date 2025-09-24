@@ -21,24 +21,24 @@ from helpers import (
     required=True,
 )
 @click.option(
-    "--hpke_token",
-    envvar="DAP_HPKE_TOKEN",
-    help="The token defined in the collector credentials, used to authenticate to the leader",
+    "--auth_token",
+    envvar="DAP_AUTH_TOKEN",
+    help="The 'token' defined in the collector credentials, used to authenticate to the leader",
     required=True,
 )
 @click.option(
     "--hpke_private_key",
     envvar="DAP_PRIVATE_KEY",
-    help="The private key defined in the collector credentials, used to decrypt shares from the leader and helper",
+    help="The 'private_key' defined in the collector credentials, used to decrypt shares from the leader and helper",
     required=True,
 )
-def main(gcp_project, job_config_bucket, hpke_token, hpke_private_key):
+def main(gcp_project, job_config_bucket, auth_token, hpke_private_key):
     try:
         logging.info(
             f"Starting collector job with configuration from gcs bucket: {job_config_bucket}"
         )
         config = get_config(
-            gcp_project, job_config_bucket, hpke_token, hpke_private_key
+            gcp_project, job_config_bucket, auth_token, hpke_private_key
         )
         logging.info(
             f"Starting collector job for experiments: {config.nimbus.experiments}."

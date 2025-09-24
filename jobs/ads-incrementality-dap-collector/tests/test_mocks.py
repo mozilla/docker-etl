@@ -138,7 +138,7 @@ def mock_collected_tasks() -> dict[str, dict[int, IncrementalityBranchResultsRow
 def mock_dap_config() -> DAPConfig:
     return DAPConfig(
         hpke_config="AQAgAAEAAQAgpdceoGiuWvIiogA8SPCdprkhWMNtLq_y0GSePI7EhXE",
-        hpke_token="shh-secret-token",
+        auth_token="shh-secret-token",
         hpke_private_key="ssh-private-key",
         batch_start="1755291600",
     )
