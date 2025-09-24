@@ -6,5 +6,5 @@ docker run -it --rm \
   ads_incrementality_dap_collector python ./ads_incrementality_dap_collector/main.py \
         --gcp_project moz-fx-dev-mlifshin-sandbox \
         --job_config_bucket ads-nonprod-stage-incrementality-dap-collector-config \
-        --hpke_token $DAP_HPKE_TOKEN \
+        --auth_token $DAP_AUTH_TOKEN \
         --hpke_private_key  $DAP_PRIVATE_KEY \
