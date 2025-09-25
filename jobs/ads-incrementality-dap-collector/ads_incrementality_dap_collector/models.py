@@ -59,25 +59,19 @@ class NimbusExperiment:
     targeting: str
 
     startDate: date
-    endDate: Optional[datetime]
-    enrollmentEndDate: Optional[datetime]
+    endDate: Optional[date]
+    enrollmentEndDate: Optional[date]
 
     # Experiment results are removed from DAP after 2 weeks, so our window to collect results for
-    # an experiment is up to 2 weeks after the experiment's current_batch_end.
+    # an experiment is up to 2 weeks after the experiment's latest_collectible_batch_end.
     # However, we don't need to collect every day of those two weeks (this job runs daily). So this
-    # constant defines how many days after current_batch_end to go out and collect and write to BQ.
+    # constant defines how many days after latest_collectible_batch_end to go out and collect and write to BQ.
     COLLECT_RETRY_DAYS = 7
 
     @classmethod
     def from_dict(cls, d) -> "NimbusExperiment":
         """Load an experiment from dict."""
         converter = cattrs.BaseConverter()
-        converter.register_structure_hook(
-            datetime,
-            lambda num, _: datetime.fromisoformat(
-                num.replace("Z", "+00:00")
-            ).astimezone(pytz.utc),
-        )
         converter.register_structure_hook(
             date,
             lambda num, _: datetime.fromisoformat(num.replace("Z", "+00:00"))
@@ -92,30 +86,35 @@ class NimbusExperiment:
         )
         return converter.structure(d, cls)
 
-    def current_batch_start(self) -> date:
-        current_batch_start = self.startDate
-        if current_batch_start >= date.today():
-            return current_batch_start
+    def latest_collectible_batch_start(self) -> date:
+        latest_collectible_batch_start = self.startDate
+        # If the experiment's start date is today or in the future, return it
+        if latest_collectible_batch_start >= date.today():
+            return latest_collectible_batch_start
 
-        while current_batch_start < (
+        # While the latest_collectible_batch_start variable is before the batch that includes today...
+        while latest_collectible_batch_start < (
             date.today() - timedelta(seconds=self.batchDuration)
         ):
-            current_batch_start = current_batch_start + timedelta(
+            # Increment the latest_collectible_batch_start by the batch interval
+            latest_collectible_batch_start = latest_collectible_batch_start + timedelta(
                 seconds=self.batchDuration
             )
-        return current_batch_start - timedelta(seconds=self.batchDuration)
+        # After the loop, we have the batch start date for the batch that includes today.
+        # We need to return the previous batch, which is now complete and ready for collection.
+        return latest_collectible_batch_start - timedelta(seconds=self.batchDuration)
 
-    def current_batch_end(self) -> date:
-        return self.current_batch_start() + timedelta(seconds=self.batchDuration)
+    def latest_collectible_batch_end(self) -> date:
+        return self.latest_collectible_batch_start() + timedelta(seconds=self.batchDuration, days=-1)
 
     def next_collect_date(self) -> date:
-        return self.current_batch_end() + timedelta(days=1)
+        return self.latest_collectible_batch_end() + timedelta(days=1)
 
     def collect_today(self) -> bool:
         return (
-            self.current_batch_end()
+            self.latest_collectible_batch_end()
             < date.today()
-            < (self.current_batch_end() + timedelta(days=self.COLLECT_RETRY_DAYS))
+            < (self.latest_collectible_batch_end() + timedelta(days=self.COLLECT_RETRY_DAYS))
         )
 
 
@@ -158,8 +157,8 @@ class IncrementalityBranchResultsRow:
     Attributes:
         advertiser:         Derived from from the urls stored in the visitCountingExperimentList
                             key within Nimbus's dapTelemetry feature.
-        batch_start:        The start date of the collection period that we're requesting counts for from DAP.
-        batch_end:          The end date of the collection period that we're requesting counts from DAP.
+        batch_start:        The start date of the collection period that we're getting counts for from DAP, inclusive.
+        batch_end:          The end date of the collection period that we're getting counts from DAP, inclusive.
         batch_duration:     The duration of the collection period that we're requeting counts for from DAP.
         branch:             A Nimbus experiment branch. Each experiment may have multiple
                             branches (ie control, treatment-a).
@@ -202,8 +201,8 @@ class IncrementalityBranchResultsRow:
             self.advertiser = get_advertiser_from_url(urls[0])
         self.branch = branch_slug
         self.bucket = visitCountingExperimentListItem.get("bucket")
-        self.batch_start = experiment.current_batch_start()
-        self.batch_end = experiment.current_batch_end()
+        self.batch_start = experiment.latest_collectible_batch_start()
+        self.batch_end = experiment.latest_collectible_batch_end()
         self.batch_duration = experiment.batchDuration
         self.country_codes = get_country_from_targeting(experiment.targeting)
         self.experiment_slug = experiment.slug
@@ -214,9 +213,10 @@ class IncrementalityBranchResultsRow:
         self.value_count = None
 
     def __str__(self):
-        return f"IncrementalityBranchResultsRow(advertiser='{self.advertiser}', branch='{self.branch}', \
-            bucket='{self.bucket}', experiment_slug='{self.experiment_slug}', metric='{self.metric}', \
-            task_id='{self.task_id}', task_veclen='redacted', value_count='redacted')"
+        return str(f"IncrementalityBranchResultsRow(advertiser='{self.advertiser}', branch='{self.branch}', "
+            f"bucket='{self.bucket}', batch_start='{self.batch_start}', batch_end='{self.batch_end}', "
+            f"country_codes='{self.country_codes}', experiment_slug='{self.experiment_slug}', metric='{self.metric}', "
+            f"task_id='{self.task_id}', task_veclen='redacted', value_count='redacted')")
 
     __repr__ = __str__
 

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 import os
 import pytest
 import re
@@ -32,7 +32,6 @@ from tests.test_mocks import (  # noqa: E402
     mock_collected_tasks,
     mock_bq_config,
     mock_bq_table,
-    # mock_bq_client,
     mock_create_dataset,
     mock_create_dataset_fail,
     mock_create_table,
@@ -118,9 +117,11 @@ class TestHelpers(TestCase):
     @patch("google.cloud.bigquery.Table")
     @patch("google.cloud.bigquery.Client")
     @patch("ads_incrementality_dap_collector.helpers.datetime")
+    @patch("ads_incrementality_dap_collector.models.datetime")
     def test_write_results_to_bq_success(
         self,
-        the_datetime,
+        datetime_in_models,
+        datetime_in_helpers,
         bq_client,
         bq_table,
     ):
@@ -128,8 +129,13 @@ class TestHelpers(TestCase):
         bq_client.return_value.create_table.side_effect = mock_create_table
         bq_client.return_value.insert_rows_json.side_effect = mock_insert_rows_json
 
-        the_datetime.now.return_value = datetime(2025, 9, 19, 16, 54, 34, 366228)
-        the_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
+        mock_datetime = datetime(2025, 9, 19, 16, 54, 34, 366228)
+        datetime_in_helpers.now.return_value = mock_datetime
+        datetime_in_helpers.side_effect = lambda *args, **kw: datetime(*args, **kw)
+
+        mock_date = date(2025, 9, 19)
+        datetime_in_models.today.return_value = mock_date
+        datetime_in_models.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
         bq_config = mock_bq_config()
         collected_tasks = mock_collected_tasks()
@@ -141,9 +147,9 @@ class TestHelpers(TestCase):
         bq_client.return_value.create_table.assert_called_once_with(mock_bq_table(), exists_ok=True)
 
         calls = [
-            call(table=f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}", json_rows=[{"collection_start": "2025-09-08", "collection_end": "2025-09-15", "country_codes": '["US"]', "experiment_slug": "traffic-impact-study-5", "experiment_branch": "control", "advertiser": "glamazon", "metric": "unique_client_organic_visits", "value": {"count": 13645, "histogram": None}, "created_at": datetime(2025, 9, 19, 16, 54, 34, 366228)}]),
-            call(table=f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}", json_rows=[{"collection_start": "2025-09-08", "collection_end": "2025-09-15", "country_codes": '["US"]', "experiment_slug": "traffic-impact-study-5", "experiment_branch": "treatment-b", "advertiser": "glamazon", "metric": "unique_client_organic_visits", "value": {"count": 18645, "histogram": None}, "created_at": datetime(2025, 9, 19, 16, 54, 34, 366228)}]),
-            call(table=f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}", json_rows=[{"collection_start": "2025-09-08", "collection_end": "2025-09-15", "country_codes": '["US"]', "experiment_slug": "traffic-impact-study-5", "experiment_branch": "treatment-a", "advertiser": "glamazon", "metric": "unique_client_organic_visits", "value": {"count": 9645, "histogram": None}, "created_at": datetime(2025, 9, 19, 16, 54, 34, 366228)}])
+            call(table=f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}", json_rows=[{"collection_start": "2025-09-08", "collection_end": "2025-09-14", "country_codes": '["US"]', "experiment_slug": "traffic-impact-study-5", "experiment_branch": "control", "advertiser": "glamazon", "metric": "unique_client_organic_visits", "value": {"count": 13645, "histogram": None}, "created_at": mock_datetime}]),
+            call(table=f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}", json_rows=[{"collection_start": "2025-09-08", "collection_end": "2025-09-14", "country_codes": '["US"]', "experiment_slug": "traffic-impact-study-5", "experiment_branch": "treatment-b", "advertiser": "glamazon", "metric": "unique_client_organic_visits", "value": {"count": 18645, "histogram": None}, "created_at": mock_datetime}]),
+            call(table=f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}", json_rows=[{"collection_start": "2025-09-08", "collection_end": "2025-09-14", "country_codes": '["US"]', "experiment_slug": "traffic-impact-study-5", "experiment_branch": "treatment-a", "advertiser": "glamazon", "metric": "unique_client_organic_visits", "value": {"count": 9645, "histogram": None}, "created_at": mock_datetime}])
         ]
         bq_client.return_value.insert_rows_json.assert_has_calls(calls)
 
