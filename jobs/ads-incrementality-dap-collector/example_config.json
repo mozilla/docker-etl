@@ -7,14 +7,25 @@
     "hpke_config": "AQAgAAEAAQAgpdceoGiuWvIiogA8SPCdprkhWMNtLq_y0GSePI7EhXE"
   },
   "nimbus": {
+    "api_url": "https://stage.experimenter.nonprod.webservices.mozgcp.net/api/v6/experiments",
     "experiments": [{
-      "slug": "incrementality-etl-testing-mlifshin-dev",
-      "batch_duration": 604800
+      "slug": "traffic-impact-study-1"
     },
     {
-      "slug": "incrementality-etl-testing",
-      "batch_duration": 604800
-    }],
-    "api_url": "https://stage.experimenter.nonprod.webservices.mozgcp.net/api/v6/experiments"
+      "slug": "traffic-impact-study-2"
+    },
+    {
+      "slug": "traffic-impact-study-3"
+    },
+    {
+      "slug": "traffic-impact-study-4"
+    },
+    {
+      "slug": "traffic-impact-study-5"
+    },
+    {
+      "slug": "example-incrementality-study",
+      "batch_duration" : 432000
+    }]
   }
 }
