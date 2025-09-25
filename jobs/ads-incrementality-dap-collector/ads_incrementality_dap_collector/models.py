@@ -105,7 +105,9 @@ class NimbusExperiment:
         return latest_collectible_batch_start - timedelta(seconds=self.batchDuration)
 
     def latest_collectible_batch_end(self) -> date:
-        return self.latest_collectible_batch_start() + timedelta(seconds=self.batchDuration, days=-1)
+        return self.latest_collectible_batch_start() + timedelta(
+            seconds=self.batchDuration, days=-1
+        )
 
     def next_collect_date(self) -> date:
         return self.latest_collectible_batch_end() + timedelta(days=1)
@@ -114,7 +116,10 @@ class NimbusExperiment:
         return (
             self.latest_collectible_batch_end()
             < date.today()
-            < (self.latest_collectible_batch_end() + timedelta(days=self.COLLECT_RETRY_DAYS))
+            < (
+                self.latest_collectible_batch_end()
+                + timedelta(days=self.COLLECT_RETRY_DAYS)
+            )
         )
 
 
@@ -213,10 +218,12 @@ class IncrementalityBranchResultsRow:
         self.value_count = None
 
     def __str__(self):
-        return str(f"IncrementalityBranchResultsRow(advertiser='{self.advertiser}', branch='{self.branch}', "
+        return str(
+            f"IncrementalityBranchResultsRow(advertiser='{self.advertiser}', branch='{self.branch}', "
             f"bucket='{self.bucket}', batch_start='{self.batch_start}', batch_end='{self.batch_end}', "
             f"country_codes='{self.country_codes}', experiment_slug='{self.experiment_slug}', metric='{self.metric}', "
-            f"task_id='{self.task_id}', task_veclen='redacted', value_count='redacted')")
+            f"task_id='{self.task_id}', task_veclen='redacted', value_count='redacted')"
+        )
 
     __repr__ = __str__
 
@@ -252,6 +259,7 @@ class DAPConfig:
     hpke_private_key: str
     hpke_config: str
     batch_start: int
+
 
 class ConfigEncoder(json.JSONEncoder):
     def default(self, o):

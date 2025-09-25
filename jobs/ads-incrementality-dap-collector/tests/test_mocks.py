@@ -226,20 +226,26 @@ def mock_dap_subprocess_raise(
         "Collection failed for mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o, 1, stderr: Uh-oh"
     ) from None
 
+
 def mock_create_dataset(data_set: str, exists_ok: bool):
     pass
+
 
 def mock_create_dataset_fail(data_set: str, exists_ok: bool):
     raise Exception("BQ create dataset Uh-oh")
 
+
 def mock_create_table(table: bigquery.Table, exists_ok: bool):
     pass
+
 
 def mock_create_table_fail(table: bigquery.Table, exists_ok: bool):
     raise Exception("BQ create table Uh-oh")
 
+
 def mock_insert_rows_json(table: str, json_rows: dict) -> Sequence[Mapping]:
     return []
+
 
 def mock_insert_rows_json_fail(table: str, json_rows: dict) -> Sequence[Mapping]:
     return [
@@ -248,17 +254,98 @@ def mock_insert_rows_json_fail(table: str, json_rows: dict) -> Sequence[Mapping]
         {"key": 2, "errors": "Problem writing bucket 3 results"},
     ]
 
+
 def mock_bq_table() -> bigquery.Table:
-    return bigquery.Table('some-gcp-project-id.ads_dap.incrementality',
+    return bigquery.Table(
+        "some-gcp-project-id.ads_dap.incrementality",
         schema=[
-            bigquery.SchemaField('collection_start', 'DATE', 'REQUIRED', None, 'Start date of the collected time window, inclusive.', (), None),
-            bigquery.SchemaField('collection_end', 'DATE', 'REQUIRED', None, 'End date of the collected time window, inclusive.', (), None),
-            bigquery.SchemaField('country_codes', 'JSON', 'NULLABLE', None, 'List of 2-char country codes for the experiment', (), None),
-            bigquery.SchemaField('experiment_slug', 'STRING', 'REQUIRED', None, 'Slug indicating the experiment.', (), None),
-            bigquery.SchemaField('experiment_branch', 'STRING', 'REQUIRED', None, 'The experiment branch this data is associated with.', (), None),
-            bigquery.SchemaField('advertiser', 'STRING', 'REQUIRED', None, 'Advertiser associated with this experiment.', (), None),
-            bigquery.SchemaField('metric', 'STRING', 'REQUIRED', None, 'Metric collected for this experiment.', (), None),
-            bigquery.SchemaField('value', 'RECORD', 'REQUIRED', None, None, (
-                bigquery.SchemaField('count', 'INT64', 'NULLABLE', None, None, (), None),
-                bigquery.SchemaField('histogram', 'JSON', 'NULLABLE', None, None, (), None)), None),
-            bigquery.SchemaField('created_at', 'TIMESTAMP', 'REQUIRED', None, 'Timestamp for when this row was written.', (), None)])
+            bigquery.SchemaField(
+                "collection_start",
+                "DATE",
+                "REQUIRED",
+                None,
+                "Start date of the collected time window, inclusive.",
+                (),
+                None,
+            ),
+            bigquery.SchemaField(
+                "collection_end",
+                "DATE",
+                "REQUIRED",
+                None,
+                "End date of the collected time window, inclusive.",
+                (),
+                None,
+            ),
+            bigquery.SchemaField(
+                "country_codes",
+                "JSON",
+                "NULLABLE",
+                None,
+                "List of 2-char country codes for the experiment",
+                (),
+                None,
+            ),
+            bigquery.SchemaField(
+                "experiment_slug",
+                "STRING",
+                "REQUIRED",
+                None,
+                "Slug indicating the experiment.",
+                (),
+                None,
+            ),
+            bigquery.SchemaField(
+                "experiment_branch",
+                "STRING",
+                "REQUIRED",
+                None,
+                "The experiment branch this data is associated with.",
+                (),
+                None,
+            ),
+            bigquery.SchemaField(
+                "advertiser",
+                "STRING",
+                "REQUIRED",
+                None,
+                "Advertiser associated with this experiment.",
+                (),
+                None,
+            ),
+            bigquery.SchemaField(
+                "metric",
+                "STRING",
+                "REQUIRED",
+                None,
+                "Metric collected for this experiment.",
+                (),
+                None,
+            ),
+            bigquery.SchemaField(
+                "value",
+                "RECORD",
+                "REQUIRED",
+                None,
+                None,
+                (
+                    bigquery.SchemaField(
+                        "count", "INT64", "NULLABLE", None, None, (), None
+                    ),
+                    bigquery.SchemaField(
+                        "histogram", "JSON", "NULLABLE", None, None, (), None
+                    ),
+                ),
+                None,
+            ),
+            bigquery.SchemaField(
+                "created_at",
+                "TIMESTAMP",
+                "REQUIRED",
+                None,
+                "Timestamp for when this row was written.",
+                (),
+                None,
+            ),
+        ],
+    )

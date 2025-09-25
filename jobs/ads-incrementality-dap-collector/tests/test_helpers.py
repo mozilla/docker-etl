@@ -3,8 +3,8 @@ import os
 import pytest
 import re
 import sys
-from unittest import  TestCase
-from unittest.mock import call,patch
+from unittest import TestCase
+from unittest.mock import call, patch
 
 
 # Append the source code directory to the path
@@ -46,21 +46,28 @@ from ads_incrementality_dap_collector.helpers import (  # noqa: E402
     collect_dap_results,
     write_results_to_bq,
 )
-from  ads_incrementality_dap_collector.constants import COLLECTOR_RESULTS_SCHEMA, DEFAULT_BATCH_DURATION
+from ads_incrementality_dap_collector.constants import (  # noqa: E402
+    COLLECTOR_RESULTS_SCHEMA,
+    DEFAULT_BATCH_DURATION,
+)
 
 
 class TestHelpers(TestCase):
     @patch("requests.get", side_effect=mock_nimbus_success)
     def test_get_experiment_success(self, mock_fetch):
         experiment = get_experiment(mock_experiment_config(), "nimbus_api_url")
-        self.assertEqual('traffic-impact-study-5', experiment.slug)
-        self.assertEqual(mock_experiment_config().batch_duration, experiment.batchDuration)
+        self.assertEqual("traffic-impact-study-5", experiment.slug)
+        self.assertEqual(
+            mock_experiment_config().batch_duration, experiment.batchDuration
+        )
         self.assertEqual(1, mock_fetch.call_count)
 
     @patch("requests.get", side_effect=mock_nimbus_success)
     def test_get_experiment_with_default_duration_success(self, mock_fetch):
-        experiment = get_experiment(mock_experiment_config_with_default_duration(), "nimbus_api_url")
-        self.assertEqual('traffic-impact-study-5', experiment.slug)
+        experiment = get_experiment(
+            mock_experiment_config_with_default_duration(), "nimbus_api_url"
+        )
+        self.assertEqual("traffic-impact-study-5", experiment.slug)
         self.assertEqual(DEFAULT_BATCH_DURATION, experiment.batchDuration)
         self.assertEqual(1, mock_fetch.call_count)
 
@@ -151,14 +158,66 @@ class TestHelpers(TestCase):
         write_results_to_bq(collected_tasks, bq_config)
 
         bq_client.assert_called_once_with(project=bq_config.project)
-        bq_table.assert_called_once_with(f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}", schema=COLLECTOR_RESULTS_SCHEMA)
-        bq_client.return_value.create_dataset.assert_called_once_with(f"{bq_config.project}.{bq_config.namespace}", exists_ok=True)
-        bq_client.return_value.create_table.assert_called_once_with(mock_bq_table(), exists_ok=True)
+        bq_table.assert_called_once_with(
+            f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}",
+            schema=COLLECTOR_RESULTS_SCHEMA,
+        )
+        bq_client.return_value.create_dataset.assert_called_once_with(
+            f"{bq_config.project}.{bq_config.namespace}", exists_ok=True
+        )
+        bq_client.return_value.create_table.assert_called_once_with(
+            mock_bq_table(), exists_ok=True
+        )
 
         calls = [
-            call(table=f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}", json_rows=[{"collection_start": "2025-09-08", "collection_end": "2025-09-14", "country_codes": '["US"]', "experiment_slug": "traffic-impact-study-5", "experiment_branch": "control", "advertiser": "glamazon", "metric": "unique_client_organic_visits", "value": {"count": 13645, "histogram": None}, "created_at": mock_datetime}]),
-            call(table=f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}", json_rows=[{"collection_start": "2025-09-08", "collection_end": "2025-09-14", "country_codes": '["US"]', "experiment_slug": "traffic-impact-study-5", "experiment_branch": "treatment-b", "advertiser": "glamazon", "metric": "unique_client_organic_visits", "value": {"count": 18645, "histogram": None}, "created_at": mock_datetime}]),
-            call(table=f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}", json_rows=[{"collection_start": "2025-09-08", "collection_end": "2025-09-14", "country_codes": '["US"]', "experiment_slug": "traffic-impact-study-5", "experiment_branch": "treatment-a", "advertiser": "glamazon", "metric": "unique_client_organic_visits", "value": {"count": 9645, "histogram": None}, "created_at": mock_datetime}])
+            call(
+                table=f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}",
+                json_rows=[
+                    {
+                        "collection_start": "2025-09-08",
+                        "collection_end": "2025-09-14",
+                        "country_codes": '["US"]',
+                        "experiment_slug": "traffic-impact-study-5",
+                        "experiment_branch": "control",
+                        "advertiser": "glamazon",
+                        "metric": "unique_client_organic_visits",
+                        "value": {"count": 13645, "histogram": None},
+                        "created_at": mock_datetime,
+                    }
+                ],
+            ),
+            call(
+                table=f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}",
+                json_rows=[
+                    {
+                        "collection_start": "2025-09-08",
+                        "collection_end": "2025-09-14",
+                        "country_codes": '["US"]',
+                        "experiment_slug": "traffic-impact-study-5",
+                        "experiment_branch": "treatment-b",
+                        "advertiser": "glamazon",
+                        "metric": "unique_client_organic_visits",
+                        "value": {"count": 18645, "histogram": None},
+                        "created_at": mock_datetime,
+                    }
+                ],
+            ),
+            call(
+                table=f"{bq_config.project}.{bq_config.namespace}.{bq_config.table}",
+                json_rows=[
+                    {
+                        "collection_start": "2025-09-08",
+                        "collection_end": "2025-09-14",
+                        "country_codes": '["US"]',
+                        "experiment_slug": "traffic-impact-study-5",
+                        "experiment_branch": "treatment-a",
+                        "advertiser": "glamazon",
+                        "metric": "unique_client_organic_visits",
+                        "value": {"count": 9645, "histogram": None},
+                        "created_at": mock_datetime,
+                    }
+                ],
+            ),
         ]
         bq_client.return_value.insert_rows_json.assert_has_calls(calls)
 
@@ -175,10 +234,11 @@ class TestHelpers(TestCase):
         with pytest.raises(Exception, match="BQ create dataset Uh-oh"):
             write_results_to_bq(mock_collected_tasks(), bq_config)
 
-            bq_client.return_value.create_dataset.assert_called_once_with(f"{bq_config.project}.{bq_config.namespace}", exists_ok=True)
+            bq_client.return_value.create_dataset.assert_called_once_with(
+                f"{bq_config.project}.{bq_config.namespace}", exists_ok=True
+            )
             bq_client.return_value.create_table.assert_not_called()
             bq_client.return_value.insert_rows_json.assert_not_called()
-
 
     @patch("google.cloud.bigquery.Client")
     def test_write_results_to_bq_create_table_fail(
@@ -192,12 +252,16 @@ class TestHelpers(TestCase):
 
         with pytest.raises(
             Exception,
-            match=f"Failed to create BQ table: {bq_config.project}.{bq_config.namespace}.{bq_config.table}"
+            match=f"Failed to create BQ table: {bq_config.project}.{bq_config.namespace}.{bq_config.table}",
         ):
 
             write_results_to_bq(mock_collected_tasks(), bq_config)
-            bq_client.return_value.create_dataset.assert_called_once_with(f"{bq_config.project}.{bq_config.namespace}", exists_ok=True)
-            bq_client.return_value.create_table.assert_called_once_with(mock_bq_table(), exists_ok=True)
+            bq_client.return_value.create_dataset.assert_called_once_with(
+                f"{bq_config.project}.{bq_config.namespace}", exists_ok=True
+            )
+            bq_client.return_value.create_table.assert_called_once_with(
+                mock_bq_table(), exists_ok=True
+            )
             bq_client.return_value.insert_rows_json.assert_not_called()
 
     @patch("google.cloud.bigquery.Client")
@@ -217,11 +281,60 @@ class TestHelpers(TestCase):
             ),
         ):
             write_results_to_bq(mock_collected_tasks(), bq_config)
-            bq_client.return_value.create_dataset.assert_called_once_with(f"{bq_config.project}.{bq_config.namespace}", exists_ok=True)
-            bq_client.return_value.create_table.assert_called_once_with(mock_bq_table(), exists_ok=True)
+            bq_client.return_value.create_dataset.assert_called_once_with(
+                f"{bq_config.project}.{bq_config.namespace}", exists_ok=True
+            )
+            bq_client.return_value.create_table.assert_called_once_with(
+                mock_bq_table(), exists_ok=True
+            )
             calls = [
-                call(table='some-gcp-project-id.ads_dap.incrementality', json_rows=[{'collection_start': '2025-09-08', 'collection_end': '2025-09-15', 'country_codes': '["US"]', 'experiment_slug': 'traffic-impact-study-5', 'experiment_branch': 'control', 'advertiser': 'glamazon', 'metric': 'unique_client_organic_visits', 'value': {'count': 13645, 'histogram': None}, 'created_at': datetime(2025, 9, 19, 16, 54, 34, 366228)}]),
-                call(table='some-gcp-project-id.ads_dap.incrementality', json_rows=[{'collection_start': '2025-09-08', 'collection_end': '2025-09-15', 'country_codes': '["US"]', 'experiment_slug': 'traffic-impact-study-5', 'experiment_branch': 'treatment-b', 'advertiser': 'glamazon', 'metric': 'unique_client_organic_visits', 'value': {'count': 18645, 'histogram': None}, 'created_at': datetime(2025, 9, 19, 16, 54, 34, 366228)}]),
-                call(table='some-gcp-project-id.ads_dap.incrementality', json_rows=[{'collection_start': '2025-09-08', 'collection_end': '2025-09-15', 'country_codes': '["US"]', 'experiment_slug': 'traffic-impact-study-5', 'experiment_branch': 'treatment-a', 'advertiser': 'glamazon', 'metric': 'unique_client_organic_visits', 'value': {'count': 9645, 'histogram': None}, 'created_at': datetime(2025, 9, 19, 16, 54, 34, 366228)}])
+                call(
+                    table="some-gcp-project-id.ads_dap.incrementality",
+                    json_rows=[
+                        {
+                            "collection_start": "2025-09-08",
+                            "collection_end": "2025-09-15",
+                            "country_codes": '["US"]',
+                            "experiment_slug": "traffic-impact-study-5",
+                            "experiment_branch": "control",
+                            "advertiser": "glamazon",
+                            "metric": "unique_client_organic_visits",
+                            "value": {"count": 13645, "histogram": None},
+                            "created_at": datetime(2025, 9, 19, 16, 54, 34, 366228),
+                        }
+                    ],
+                ),
+                call(
+                    table="some-gcp-project-id.ads_dap.incrementality",
+                    json_rows=[
+                        {
+                            "collection_start": "2025-09-08",
+                            "collection_end": "2025-09-15",
+                            "country_codes": '["US"]',
+                            "experiment_slug": "traffic-impact-study-5",
+                            "experiment_branch": "treatment-b",
+                            "advertiser": "glamazon",
+                            "metric": "unique_client_organic_visits",
+                            "value": {"count": 18645, "histogram": None},
+                            "created_at": datetime(2025, 9, 19, 16, 54, 34, 366228),
+                        }
+                    ],
+                ),
+                call(
+                    table="some-gcp-project-id.ads_dap.incrementality",
+                    json_rows=[
+                        {
+                            "collection_start": "2025-09-08",
+                            "collection_end": "2025-09-15",
+                            "country_codes": '["US"]',
+                            "experiment_slug": "traffic-impact-study-5",
+                            "experiment_branch": "treatment-a",
+                            "advertiser": "glamazon",
+                            "metric": "unique_client_organic_visits",
+                            "value": {"count": 9645, "histogram": None},
+                            "created_at": datetime(2025, 9, 19, 16, 54, 34, 366228),
+                        }
+                    ],
+                ),
             ]
             bq_client.return_value.insert_rows_json.assert_has_calls(calls)
