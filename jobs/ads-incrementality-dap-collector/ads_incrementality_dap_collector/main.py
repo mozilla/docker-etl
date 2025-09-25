@@ -62,16 +62,16 @@ def main(gcp_project, job_config_bucket, auth_token, hpke_private_key):
         write_job_logs_to_bucket(gcp_project, job_config_bucket)
     except Exception as e:
         logging.error(f"{e}\n{traceback.format_exc()}")
-        # write_job_logs_to_bucket(gcp_project, job_config_bucket)
+        write_job_logs_to_bucket(gcp_project, job_config_bucket)
 
 
 if __name__ == "__main__":
     logging.basicConfig(
-        # filename=LOG_FILE_NAME,
+        filename=LOG_FILE_NAME,
         filemode="a",
         format="%(asctime)s,%(msecs)03d %(name)s %(levelname)s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         level=logging.INFO,
     )
-    # logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger().setLevel(logging.INFO)
     main()

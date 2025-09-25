@@ -94,7 +94,7 @@ flake8 .
 or
 
 ```sh
-flake8 . --fix
+black .
 ```
 
 or
