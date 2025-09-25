@@ -26,6 +26,7 @@ from tests.test_mocks import (  # noqa: E402
     mock_tasks_to_collect,
     mock_dap_config,
     mock_experiment_config,
+    mock_experiment_config_with_default_duration,
     mock_dap_subprocess_success,
     mock_dap_subprocess_fail,
     mock_dap_subprocess_raise,
@@ -45,14 +46,22 @@ from ads_incrementality_dap_collector.helpers import (  # noqa: E402
     collect_dap_results,
     write_results_to_bq,
 )
-from  ads_incrementality_dap_collector.constants import COLLECTOR_RESULTS_SCHEMA
+from  ads_incrementality_dap_collector.constants import COLLECTOR_RESULTS_SCHEMA, DEFAULT_BATCH_DURATION
 
 
 class TestHelpers(TestCase):
     @patch("requests.get", side_effect=mock_nimbus_success)
     def test_get_experiment_success(self, mock_fetch):
         experiment = get_experiment(mock_experiment_config(), "nimbus_api_url")
-        self.assertEqual("traffic-impact-study-5", experiment.slug)
+        self.assertEqual('traffic-impact-study-5', experiment.slug)
+        self.assertEqual(mock_experiment_config().batch_duration, experiment.batchDuration)
+        self.assertEqual(1, mock_fetch.call_count)
+
+    @patch("requests.get", side_effect=mock_nimbus_success)
+    def test_get_experiment_with_default_duration_success(self, mock_fetch):
+        experiment = get_experiment(mock_experiment_config_with_default_duration(), "nimbus_api_url")
+        self.assertEqual('traffic-impact-study-5', experiment.slug)
+        self.assertEqual(DEFAULT_BATCH_DURATION, experiment.batchDuration)
         self.assertEqual(1, mock_fetch.call_count)
 
     @patch("requests.get", side_effect=mock_nimbus_fail)

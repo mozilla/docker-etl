@@ -147,6 +147,10 @@ def mock_experiment_config() -> SimpleNamespace:
     return SimpleNamespace(slug="traffic-impact-study-5", batch_duration=604800)
 
 
+def mock_experiment_config_with_default_duration() -> SimpleNamespace:
+    return SimpleNamespace(slug="traffic-impact-study-5")
+
+
 def mock_bq_config() -> SimpleNamespace:
     return SimpleNamespace(
         project="some-gcp-project-id", namespace="ads_dap", table="incrementality"
