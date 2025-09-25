@@ -152,8 +152,8 @@ class EverfiAPI():
                    fix_none(rec.get('attributes',{}).get('employee_id','')) + "|"+\
                    fix_none(str(rec.get('attributes',{}).get('location_id',''))) + "|"+\
                    is_manager  + "|"+\
-                   hire_date   + "|"+\
-                   rec.get('attributes',{}).get('sso_id','')
+                   fix_none(hire_date)   + "|"+\
+                   fix_none(rec.get('attributes',{}).get('sso_id',''))
         
         users_dict = {}
         hire_dates_inv = {v: k for k, v in hire_dates_inv.items()}
