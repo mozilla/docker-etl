@@ -1,12 +1,11 @@
 from google.cloud import bigquery
 from collections.abc import Mapping, Sequence
 from subprocess import CompletedProcess
+from types import SimpleNamespace
+
 from models import (
     IncrementalityBranchResultsRow,
     NimbusExperiment,
-    BQConfig,
-    DAPConfig,
-    ExperimentConfig,
 )
 from tests.test_mock_responses import (
     NIMBUS_SUCCESS,
@@ -135,8 +134,8 @@ def mock_collected_tasks() -> dict[str, dict[int, IncrementalityBranchResultsRow
     return tasks_to_collect
 
 
-def mock_dap_config() -> DAPConfig:
-    return DAPConfig(
+def mock_dap_config() -> SimpleNamespace:
+    return SimpleNamespace(
         hpke_config="AQAgAAEAAQAgpdceoGiuWvIiogA8SPCdprkhWMNtLq_y0GSePI7EhXE",
         auth_token="shh-secret-token",
         hpke_private_key="ssh-private-key",
@@ -144,12 +143,12 @@ def mock_dap_config() -> DAPConfig:
     )
 
 
-def mock_experiment_config() -> ExperimentConfig:
-    return ExperimentConfig(slug="traffic-impact-study-5", batch_duration=604800)
+def mock_experiment_config() -> SimpleNamespace:
+    return SimpleNamespace(slug="traffic-impact-study-5", batch_duration=604800)
 
 
-def mock_bq_config() -> BQConfig:
-    return BQConfig(
+def mock_bq_config() -> SimpleNamespace:
+    return SimpleNamespace(
         project="some-gcp-project-id", namespace="ads_dap", table="incrementality"
     )
 

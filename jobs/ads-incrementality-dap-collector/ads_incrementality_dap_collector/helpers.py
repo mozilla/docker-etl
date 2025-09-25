@@ -8,35 +8,34 @@ import time
 
 from google.cloud import bigquery
 from google.cloud import storage
+from types import SimpleNamespace
 from typing import Optional
 
 from constants import (
     COLLECTOR_RESULTS_SCHEMA,
     CONFIG_FILE_NAME,
     DAP_LEADER,
+    DEFAULT_BATCH_DURATION,
     LOG_FILE_NAME,
     PROCESS_TIMEOUT,
     VDAF,
 )
 from models import (
-    BQConfig,
-    DAPConfig,
-    ExperimentConfig,
     IncrementalityBranchResultsRow,
     NimbusExperiment,
-    IncrementalityConfig,
 )
-from types import SimpleNamespace
 
 
 # Nimbus Experimenter helper functions
 def get_experiment(
-    experiment_config: ExperimentConfig, api_url: str
+    experiment_config: SimpleNamespace, api_url: str
 ) -> Optional[NimbusExperiment]:
     """Fetch the experiment from Experimenter API and return the configuration."""
     logging.info(f"Fetching experiment: {experiment_config.slug}")
     try:
         nimbus_experiments_json = fetch(f"{api_url}/{experiment_config.slug}/")
+        if not hasattr(experiment_config, "batch_duration"):
+            experiment_config.batch_duration = DEFAULT_BATCH_DURATION
         nimbus_experiments_json["batchDuration"] = experiment_config.batch_duration
         nimbus_experiment = NimbusExperiment.from_dict(nimbus_experiments_json)
         logging.info(f"Fetched experiment json: {experiment_config.slug}")
@@ -154,8 +153,8 @@ def collect_dap_result(
 
 def collect_dap_results(
     tasks_to_collect: dict[str, dict[int, IncrementalityBranchResultsRow]],
-    config: DAPConfig,
-    experiment_config: ExperimentConfig,
+    config: SimpleNamespace,
+    experiment_config: SimpleNamespace,
 ):
     tasks = list(dict.fromkeys(tasks_to_collect))
     logging.info(f"Starting DAP collection for tasks: {tasks}.")
@@ -260,7 +259,7 @@ def insert_into_bq(row, bqclient, table_id: str):
             raise Exception(f"Error inserting rows into {table_id}: {insert_res}")
 
 
-def write_results_to_bq(collected_tasks: dict, config: BQConfig):
+def write_results_to_bq(collected_tasks: dict, config: SimpleNamespace):
     """Takes the collected results for each experiment branch and writes out rows to BQ."""
     records = [v for inner in collected_tasks.values() for v in inner.values()]
     logging.info(f"Inserting results rows into BQ: {records}")
@@ -286,7 +285,7 @@ def write_results_to_bq(collected_tasks: dict, config: BQConfig):
 # GCS helper functions
 def get_config(
     gcp_project: str, config_bucket: str, auth_token: str, hpke_private_key: str
-) -> IncrementalityConfig:
+) -> SimpleNamespace:
     """Gets the incrementality job's config from a file in a GCS bucket. See example_config.json for the structure."""
     client = storage.Client(project=gcp_project)
     try:
