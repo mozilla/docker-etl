@@ -9,6 +9,8 @@ PROCESS_TIMEOUT = 1200  # 20 mins
 CONFIG_FILE_NAME = "config.json"  # See example_config.json for the contents and structure of the job config file.
 LOG_FILE_NAME = f"{datetime.now()}-ads-incrementality-dap-collector.log"
 
+DEFAULT_BATCH_DURATION = 604800
+
 COLLECTOR_RESULTS_SCHEMA = [
     bigquery.SchemaField(
         "collection_start",

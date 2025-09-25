@@ -253,51 +253,6 @@ class DAPConfig:
     hpke_config: str
     batch_start: int
 
-
-@attr.s(auto_attribs=True)
-class ExperimentConfig:
-    """Encapsulates the experiments that should be collected from DAP and how far back to collect,
-    in seconds
-
-    Attributes:
-        slug:               Experiment slug
-        batch_duration:     Duration of the collection batch interval, in seconds
-    """
-
-    slug: str
-    batch_duration: int
-
-
-@attr.s(auto_attribs=True)
-class NimbusConfig:
-    """Encapsulates everything the job needs to connect to Nimbus
-
-    Attributes:
-        experiments:    Config for the incrementality experiments. Nimbus experiments
-                        branches store DAP task info that allows for branch results
-                        collection from DAP.
-        api_url:        API URL for fetching the Nimbus experiment info
-    """
-
-    experiments: list[ExperimentConfig]
-    api_url: str
-
-
-@attr.s(auto_attribs=True)
-class IncrementalityConfig:
-    """Encapsulates everything the job needs to connect to various 3rd party services
-
-    Attributes:
-        bq:         BigQuery config
-        dap:        Divviup's DAP service config
-        nimbus:     Nimbus Experiment framework config
-    """
-
-    bq: BQConfig
-    dap: DAPConfig
-    nimbus: NimbusConfig
-
-
 class ConfigEncoder(json.JSONEncoder):
     def default(self, o):
         return o.__dict__
