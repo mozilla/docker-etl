@@ -2,15 +2,14 @@ from dataclasses import asdict
 from typing import Any
 import pytest
 
+from fxci_etl.pulse import handler
 from fxci_etl.pulse.handler import BigQueryHandler, Event, storage
 
 
 @pytest.fixture(autouse=True)
-def mock_event_backup(mocker):
-    storage_mock = mocker.MagicMock()
-    storage_mock.bucket.return_value = mocker.MagicMock()
-
-    mocker.patch.object(storage, "Client", return_value=storage_mock)
+def setup_mocks(mocker):
+    mocker.patch.object(storage, "Client", return_value=mocker.MagicMock())
+    mocker.patch.object(handler, "BigQueryLoader", return_value=mocker.MagicMock())
 
 
 @pytest.fixture
