@@ -198,7 +198,6 @@ def correct_wraparound(num: int) -> int:
     field_size = 128
     cutoff = 2 ** (field_size - 1)
     if num > cutoff:
-        logging.info(f"Corrected {num} to {num - field_prime} ")
         return num - field_prime
     return num
 

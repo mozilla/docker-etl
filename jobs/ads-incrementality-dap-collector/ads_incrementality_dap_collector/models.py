@@ -222,7 +222,7 @@ class IncrementalityBranchResultsRow:
             f"IncrementalityBranchResultsRow(advertiser='{self.advertiser}', branch='{self.branch}', "
             f"bucket='{self.bucket}', batch_start='{self.batch_start}', batch_end='{self.batch_end}', "
             f"country_codes='{self.country_codes}', experiment_slug='{self.experiment_slug}', metric='{self.metric}', "
-            f"task_id='{self.task_id}', task_veclen='redacted', value_count='redacted')"
+            f"task_id='{self.task_id}', task_veclen='{self.task_veclen}', value_count='redacted')"
         )
 
     __repr__ = __str__
