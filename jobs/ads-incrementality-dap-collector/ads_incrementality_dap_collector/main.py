@@ -45,7 +45,6 @@ def main(gcp_project, job_config_bucket, auth_token, hpke_private_key):
         )
 
         for experiment_config in config.nimbus.experiments:
-            try:
                 experiment = get_experiment(experiment_config, config.nimbus.api_url)
 
                 tasks_to_collect = prepare_results_rows(experiment)
@@ -55,13 +54,10 @@ def main(gcp_project, job_config_bucket, auth_token, hpke_private_key):
                 )
 
                 write_results_to_bq(collected_tasks, config.bq)
-            except Exception as e:
-                logging.error(
-                    f"Collector job failed for {experiment_config.slug}. Error: {e}\n{traceback.format_exc()}"
-                )
-        write_job_logs_to_bucket(gcp_project, job_config_bucket)
     except Exception as e:
-        logging.error(f"{e}\n{traceback.format_exc()}")
+        logging.error(f"Collector job failed. Error: {e}\n{traceback.format_exc()}")
+        raise e
+    finally:
         write_job_logs_to_bucket(gcp_project, job_config_bucket)
 
 
