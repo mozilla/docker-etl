@@ -1,0 +1,31 @@
+{
+  "bq": {
+    "namespace": "ads_dap",
+    "table": "incrementality"
+  },
+  "dap": {
+    "hpke_config": "AQAgAAEAAQAgpdceoGiuWvIiogA8SPCdprkhWMNtLq_y0GSePI7EhXE"
+  },
+  "nimbus": {
+    "api_url": "https://stage.experimenter.nonprod.webservices.mozgcp.net/api/v6/experiments",
+    "experiments": [{
+      "slug": "traffic-impact-study-1"
+    },
+    {
+      "slug": "traffic-impact-study-2"
+    },
+    {
+      "slug": "traffic-impact-study-3"
+    },
+    {
+      "slug": "traffic-impact-study-4"
+    },
+    {
+      "slug": "traffic-impact-study-5"
+    },
+    {
+      "slug": "example-incrementality-study",
+      "batch_duration" : 432000
+    }]
+  }
+}
