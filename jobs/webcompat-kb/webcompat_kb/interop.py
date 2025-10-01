@@ -79,7 +79,9 @@ class GitHub:
             headers["Authorization"] = f"Bearer {self.token}"
         return headers
 
-    def issues(self, repo: str, labels: Iterable[str], last_updated: Optional[datetime]) -> Sequence[GitHubIssue]:
+    def issues(
+        self, repo: str, labels: Iterable[str], last_updated: Optional[datetime]
+    ) -> Sequence[GitHubIssue]:
         query = {}
         if labels is not None:
             query["labels"] = ",".join(labels)
@@ -87,9 +89,14 @@ class GitHub:
             query["since"] = last_updated.isoformat()
 
         url = f"https://api.github.com/repos/{repo}/issues?{urlencode(query)}"
-        return [GitHubIssue.model_validate(item) for item in get_paginated_json(url, self.headers())]
+        return [
+            GitHubIssue.model_validate(item)
+            for item in get_paginated_json(url, self.headers())
+        ]
 
-    def issue_comments(self, issue: GitHubIssue, all_pages: bool = False) -> Sequence[GitHubComment]:
+    def issue_comments(
+        self, issue: GitHubIssue, all_pages: bool = False
+    ) -> Sequence[GitHubComment]:
         if not all_pages:
             comments = get_json(issue.comments_url, self.headers())
             assert isinstance(comments, list)
@@ -169,7 +176,9 @@ def get_features(body: str) -> set[str]:
     return {m["feature_name"] for m in web_features_re.finditer(body)}
 
 
-def extract_issue_data(gh_client: GitHub, issue: GitHubIssue, proposal_type: str) -> InteropRow:
+def extract_issue_data(
+    gh_client: GitHub, issue: GitHubIssue, proposal_type: str
+) -> InteropRow:
     rv = InteropRow(
         year=issue.created_at.year + 1,
         issue=issue.number,
@@ -191,7 +200,9 @@ def extract_issue_data(gh_client: GitHub, issue: GitHubIssue, proposal_type: str
     return rv
 
 
-def update_interop_data(client: BigQuery, gh_client: GitHub, repo: str, recreate: bool) -> None:
+def update_interop_data(
+    client: BigQuery, gh_client: GitHub, repo: str, recreate: bool
+) -> None:
     runs_table, last_import = get_last_import(client)
     if last_import is None:
         recreate = True
@@ -206,7 +217,9 @@ def update_interop_data(client: BigQuery, gh_client: GitHub, repo: str, recreate
         }
 
         for number, issue in updated_issues.items():
-            interop_proposals[number] = extract_issue_data(gh_client, issue, proposal_type)
+            interop_proposals[number] = extract_issue_data(
+                gh_client, issue, proposal_type
+            )
 
     client.write_table(
         issues_table,

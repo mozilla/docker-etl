@@ -35,7 +35,9 @@ def parse_link_header(link: Optional[str]) -> LinkHeader:
     return rv
 
 
-def get_paginated_json(url: str, headers: Optional[Mapping[str, str]] = None) -> Sequence[Json]:
+def get_paginated_json(
+    url: str, headers: Optional[Mapping[str, str]] = None
+) -> Sequence[Json]:
     data = []
     next_url: Optional[str] = url
     while next_url is not None:
