@@ -7,7 +7,7 @@ from google.cloud import bigquery
 
 from .base import EtlJob
 from .bqhelpers import BigQuery
-from .metric import Metric, metrics, metric_types
+from .metrics.metrics import Metric, metrics, metric_types
 from .metric_changes import ScoreChange, insert_score_changes
 
 
@@ -19,9 +19,8 @@ class ConditionalMetric:
     def name(self) -> str:
         return self.metric.name
 
-    @property
-    def src_name(self) -> str:
-        return self.metric.site_reports_field
+    def condition(self, table: str) -> str:
+        return self.metric.condition(table)
 
     @property
     def is_old_field(self) -> str:
@@ -59,7 +58,7 @@ def score_bug_changes(
             ("new", metric.is_new_field),
         ]:
             src_table = f"{score_type}_scored_site_reports"
-            scores_query_fields.append(f"{src_table}.{metric.src_name} AS {field_name}")
+            scores_query_fields.append(f"{metric.condition(src_table)} AS {field_name}")
             query_fields.append(field_name)
 
     query_fields.append("new_score - old_score AS delta")
