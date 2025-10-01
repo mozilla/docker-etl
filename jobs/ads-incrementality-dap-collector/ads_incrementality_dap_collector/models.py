@@ -89,12 +89,12 @@ class NimbusExperiment:
     def latest_collectible_batch_start(self) -> date:
         latest_collectible_batch_start = self.startDate
         # If the experiment's start date is today or in the future, return it
-        if latest_collectible_batch_start >= self.todays_date():
+        if latest_collectible_batch_start >= date.today():
             return latest_collectible_batch_start
 
         # While the latest_collectible_batch_start variable is before the batch that includes today...
         while latest_collectible_batch_start < (
-            self.todays_date() - timedelta(seconds=self.batchDuration)
+            date.today() - timedelta(seconds=self.batchDuration)
         ):
             # Increment the latest_collectible_batch_start by the batch interval
             latest_collectible_batch_start = latest_collectible_batch_start + timedelta(
@@ -112,13 +112,10 @@ class NimbusExperiment:
     def next_collect_date(self) -> date:
         return self.latest_collectible_batch_end() + timedelta(days=1)
 
-    def todays_date(self) -> date:
-        return date.today()
-
     def collect_today(self) -> bool:
         return (
             self.latest_collectible_batch_end()
-            < self.todays_date()
+            < date.today()
             < (
                 self.latest_collectible_batch_end()
                 + timedelta(days=self.COLLECT_RETRY_DAYS)

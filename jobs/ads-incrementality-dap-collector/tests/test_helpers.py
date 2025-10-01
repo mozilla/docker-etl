@@ -51,6 +51,11 @@ from ads_incrementality_dap_collector.constants import (  # noqa: E402
     DEFAULT_BATCH_DURATION,
 )
 
+class MockDate(date):
+    "A fake replacement for date that can be mocked for testing."
+    def __new__(cls, *args, **kwargs):
+        return date.__new__(date, *args, **kwargs)
+
 
 class TestHelpers(TestCase):
     @patch("requests.get", side_effect=mock_nimbus_success)
@@ -133,10 +138,9 @@ class TestHelpers(TestCase):
     @patch("google.cloud.bigquery.Table")
     @patch("google.cloud.bigquery.Client")
     @patch("ads_incrementality_dap_collector.helpers.datetime")
-    @patch("ads_incrementality_dap_collector.models.NimbusExperiment.todays_date")
+    @patch("ads_incrementality_dap_collector.models.date", MockDate)
     def test_write_results_to_bq_success(
         self,
-        mock_todays_date,
         datetime_in_helpers,
         bq_client,
         bq_table,
@@ -149,7 +153,7 @@ class TestHelpers(TestCase):
         datetime_in_helpers.now.return_value = mock_datetime
         datetime_in_helpers.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
-        mock_todays_date.return_value = date(2025, 9, 19)
+        MockDate.today = classmethod(lambda cls: date(2025, 9, 19))
 
         bq_config = mock_bq_config()
         collected_tasks = mock_collected_tasks()
