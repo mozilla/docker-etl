@@ -22,6 +22,7 @@ dependencies = [
   "bugdantic==0.2.6",
   "google-cloud-bigquery==3.34.0",
   "httpx[http2]>=0.28.1",
+  "jinja2>=3.1.6",
   "pydantic==2.11.5",
   "web-features==3.0.0",
 ]
