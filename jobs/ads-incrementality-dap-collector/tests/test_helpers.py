@@ -182,7 +182,7 @@ class TestHelpers(TestCase):
                         "advertiser": "glamazon",
                         "metric": "unique_client_organic_visits",
                         "value": {"count": 13645, "histogram": None},
-                        "created_at": mock_datetime,
+                        "created_at": mock_datetime.isoformat(),
                     }
                 ],
             ),
@@ -198,7 +198,7 @@ class TestHelpers(TestCase):
                         "advertiser": "glamazon",
                         "metric": "unique_client_organic_visits",
                         "value": {"count": 18645, "histogram": None},
-                        "created_at": mock_datetime,
+                        "created_at": mock_datetime.isoformat(),
                     }
                 ],
             ),
@@ -214,7 +214,7 @@ class TestHelpers(TestCase):
                         "advertiser": "glamazon",
                         "metric": "unique_client_organic_visits",
                         "value": {"count": 9645, "histogram": None},
-                        "created_at": mock_datetime,
+                        "created_at": mock_datetime.isoformat(),
                     }
                 ],
             ),
@@ -273,6 +273,7 @@ class TestHelpers(TestCase):
         bq_client.return_value.create_table.side_effect = mock_create_table
         bq_client.return_value.insert_rows_json.side_effect = mock_insert_rows_json_fail
         bq_config = mock_bq_config()
+        mock_datetime = datetime(2025, 9, 19, 16, 54, 34, 366228)
 
         with pytest.raises(
             Exception,
@@ -300,7 +301,7 @@ class TestHelpers(TestCase):
                             "advertiser": "glamazon",
                             "metric": "unique_client_organic_visits",
                             "value": {"count": 13645, "histogram": None},
-                            "created_at": datetime(2025, 9, 19, 16, 54, 34, 366228),
+                            "created_at": mock_datetime.isoformat(),
                         }
                     ],
                 ),
@@ -316,7 +317,7 @@ class TestHelpers(TestCase):
                             "advertiser": "glamazon",
                             "metric": "unique_client_organic_visits",
                             "value": {"count": 18645, "histogram": None},
-                            "created_at": datetime(2025, 9, 19, 16, 54, 34, 366228),
+                            "created_at": mock_datetime.isoformat(),
                         }
                     ],
                 ),
@@ -332,7 +333,7 @@ class TestHelpers(TestCase):
                             "advertiser": "glamazon",
                             "metric": "unique_client_organic_visits",
                             "value": {"count": 9645, "histogram": None},
-                            "created_at": datetime(2025, 9, 19, 16, 54, 34, 366228),
+                            "created_at": mock_datetime.isoformat(),
                         }
                     ],
                 ),
