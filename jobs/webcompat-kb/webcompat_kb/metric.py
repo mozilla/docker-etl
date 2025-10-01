@@ -1,95 +1,12 @@
 import argparse
 import logging
-from abc import ABC, abstractmethod
 from datetime import date
-from typing import Optional
 
 from google.cloud import bigquery
 
 from .base import EtlJob
 from .bqhelpers import BigQuery
-
-
-class Metric:
-    def __init__(self, name: str):
-        self.name = name
-        self.conditional = name != "all"
-
-    @property
-    def site_reports_field(self) -> str:
-        return f"is_{self.name}"
-
-
-default_contexts = {"history", "daily"}
-
-
-class MetricType(ABC):
-    field_type: str
-
-    def __init__(
-        self,
-        name: str,
-        metric_type_field: Optional[str] = None,
-        contexts: Optional[set[str]] = None,
-    ):
-        self.name = name
-        self.metric_type_field = metric_type_field
-        self.contexts = default_contexts if contexts is None else contexts
-        if not self.contexts.issubset(default_contexts):
-            raise ValueError(f"Invalid contexts: {','.join(self.contexts)}")
-
-    @abstractmethod
-    def agg_function(self, table: str, metric: Metric) -> str: ...
-
-    def condition(self, table: str, metric: Metric) -> str:
-        """Condition applied to the scored_site_reports table to decide if the entry contributes to the metric score.
-
-        :param str table: Alias for scored_site_reports.
-        :param Metric metric: Metric for which the condition applies
-        :returns str: SQL condition that is TRUE when the scored_site_reports row is included in the metric.conditional
-        """
-        conds = []
-        if self.metric_type_field is not None:
-            conds.append(f"{table}.{self.metric_type_field}")
-        if metric.conditional:
-            conds.append(f"{table}.{metric.site_reports_field}")
-        if not conds:
-            return "TRUE"
-        return " AND ".join(conds)
-
-
-class CountMetricType(MetricType):
-    field_type = "INTEGER"
-
-    def agg_function(self, table: str, metric: Metric) -> str:
-        if not metric.conditional:
-            return f"COUNT({table}.number)"
-        return f"COUNTIF({self.condition(table, metric)})"
-
-
-class SumMetricType(MetricType):
-    field_type = "NUMERIC"
-
-    def agg_function(self, table: str, metric: Metric) -> str:
-        return f"SUM(IF({self.condition(table, metric)}, {table}.score, 0))"
-
-
-metrics = [
-    Metric("all"),
-    Metric("sightline"),
-    Metric("japan_1000"),
-    Metric("japan_1000_mobile"),
-    Metric("global_1000"),
-]
-
-
-metric_types = [
-    CountMetricType("bug_count", None),
-    SumMetricType("needs_diagnosis_score", "metric_type_needs_diagnosis"),
-    SumMetricType("not_supported_score", "metric_type_firefox_not_supported"),
-    SumMetricType("platform_score", "metric_type_platform_bug", contexts={"history"}),
-    SumMetricType("total_score", None),
-]
+from .metrics.metrics import metrics, metric_types
 
 
 def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> None:
@@ -242,7 +159,7 @@ ON
   DATE(bugs.creation_time) <= metric_daily.date
   AND IF (bugs.resolved_time IS NOT NULL, DATE(bugs.resolved_time) >= date, TRUE)
 WHERE
-  {metric.site_reports_field} AND {" AND ".join(conditions)}
+  {metric.condition("bugs")} AND {" AND ".join(conditions)}
 GROUP BY
   date
 ORDER BY date"""
