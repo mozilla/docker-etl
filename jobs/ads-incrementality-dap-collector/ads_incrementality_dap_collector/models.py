@@ -87,6 +87,8 @@ class NimbusExperiment:
         return converter.structure(d, cls)
 
     def latest_collectible_batch_start(self) -> date:
+        print(f"latest_collectible_batch_start, experiment start date is: {self.startDate}")
+        print(f"latest_collectible_batch_start, date.today() is: {date.today()}")
         latest_collectible_batch_start = self.startDate
         # If the experiment's start date is today or in the future, return it
         if latest_collectible_batch_start >= date.today():
@@ -199,6 +201,8 @@ class IncrementalityBranchResultsRow:
         branch_slug: str,
         visitCountingExperimentListItem: dict,
     ):
+        print(f"IncrementalityBranchResultsRow constructor, batch start: {experiment.latest_collectible_batch_start()}")
+        print(f"IncrementalityBranchResultsRow constructor, batch end: {experiment.latest_collectible_batch_end()}")
         self.advertiser = "not_set"
         urls = visitCountingExperimentListItem.get("urls")
         # Default to the first url in the list to determine the advertiser.
