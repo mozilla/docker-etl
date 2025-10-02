@@ -87,16 +87,14 @@ class NimbusExperiment:
         return converter.structure(d, cls)
 
     def latest_collectible_batch_start(self) -> date:
-        print(f"latest_collectible_batch_start, experiment start date is: {self.startDate}")
-        print(f"latest_collectible_batch_start, date.today() is: {date.today()}")
         latest_collectible_batch_start = self.startDate
         # If the experiment's start date is today or in the future, return it
-        if latest_collectible_batch_start >= date.today():
+        if latest_collectible_batch_start >= self.todays_date():
             return latest_collectible_batch_start
 
         # While the latest_collectible_batch_start variable is before the batch that includes today...
         while latest_collectible_batch_start < (
-            date.today() - timedelta(seconds=self.batchDuration)
+            self.todays_date() - timedelta(seconds=self.batchDuration)
         ):
             # Increment the latest_collectible_batch_start by the batch interval
             latest_collectible_batch_start = latest_collectible_batch_start + timedelta(
@@ -117,12 +115,15 @@ class NimbusExperiment:
     def collect_today(self) -> bool:
         return (
             self.latest_collectible_batch_end()
-            < date.today()
+            < self.todays_date()
             < (
                 self.latest_collectible_batch_end()
                 + timedelta(days=self.COLLECT_RETRY_DAYS)
             )
         )
+
+    def todays_date(self) -> date:
+        return date.today()
 
 
 def get_country_from_targeting(targeting: str) -> Optional[str]:
@@ -201,8 +202,6 @@ class IncrementalityBranchResultsRow:
         branch_slug: str,
         visitCountingExperimentListItem: dict,
     ):
-        print(f"IncrementalityBranchResultsRow constructor, batch start: {experiment.latest_collectible_batch_start()}")
-        print(f"IncrementalityBranchResultsRow constructor, batch end: {experiment.latest_collectible_batch_end()}")
         self.advertiser = "not_set"
         urls = visitCountingExperimentListItem.get("urls")
         # Default to the first url in the list to determine the advertiser.
