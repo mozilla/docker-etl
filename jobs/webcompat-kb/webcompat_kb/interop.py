@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from .base import EtlJob, dataset_arg
 from .bqhelpers import BigQuery
-from .httphelpers import get_json, get_paginated_json
+from .httphelpers import Json, get_json, get_paginated_json
 
 
 class GitHubUser(BaseModel):
@@ -67,6 +67,13 @@ class InteropRow(BaseModel):
     proposal_type: str
     bugs: list[int]
     features: list[str]
+    updated_at: datetime
+
+    def to_json(self) -> Mapping[str, Json]:
+        rv = self.dict()
+        if rv["updated_at"] is not None:
+            rv["updated_at"] = rv["updated_at"].replace(tzinfo=None).isoformat()
+        return rv
 
 
 class GitHub:
@@ -136,6 +143,7 @@ def get_interop_issues(
         bigquery.SchemaField("proposal_type", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("bugs", "INTEGER", mode="REPEATED"),
         bigquery.SchemaField("features", "STRING", mode="REPEATED"),
+        bigquery.SchemaField("updated_at", "DATETIME", mode="REQUIRED"),
     ]
     table = client.ensure_table("interop_proposals", schema)
     if recreate:
@@ -149,6 +157,7 @@ def get_interop_issues(
             proposal_type=row.proposal_type,
             bugs=row.bugs,
             features=row.features,
+            updated_at=row.updated_at,
         )
         for row in client.query(query)
     }
@@ -186,6 +195,7 @@ def extract_issue_data(
         proposal_type=proposal_type,
         bugs=[],
         features=[],
+        updated_at=issue.updated_at,
     )
     bugs = get_bugs(issue.body)
     web_features = get_features(issue.body)
@@ -212,8 +222,23 @@ def update_interop_data(
         ("focus-area", "focus-area-proposal"),
         ("investigation", "investigation-proposal"),
     ]:
+        last_updated = None
+        if not recreate:
+            update_times = [
+                item.updated_at
+                for item in interop_proposals.values()
+                if item.proposal_type == proposal_type and item.updated_at is not None
+            ]
+            if update_times:
+                last_updated = max(update_times)
+
         updated_issues = {
-            item.number: item for item in gh_client.issues(repo, [label], last_import)
+            item.number: item
+            for item in gh_client.issues(
+                repo=repo,
+                labels=[label],
+                last_updated=last_updated,
+            )
         }
 
         for number, issue in updated_issues.items():
@@ -224,7 +249,7 @@ def update_interop_data(
     client.write_table(
         issues_table,
         issues_table.schema,
-        [item.dict() for item in interop_proposals.values()],
+        [item.to_json() for item in interop_proposals.values()],
         True,
     )
     client.insert_rows(runs_table, [{"run_at": datetime.now().isoformat()}])
