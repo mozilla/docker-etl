@@ -192,7 +192,6 @@ def collect_dap_results(
     return tasks_to_collect
 
 
-# TODO Trigger Airflow errors
 def correct_wraparound(num: int) -> int:
     field_prime = 340282366920938462946865773367900766209
     field_size = 128
