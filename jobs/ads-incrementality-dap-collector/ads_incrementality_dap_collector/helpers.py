@@ -293,7 +293,6 @@ def get_config(
         config = json.load(reader, object_hook=lambda d: SimpleNamespace(**d))
         config.dap.auth_token = auth_token
         config.dap.hpke_private_key = hpke_private_key
-        config.bq.project = gcp_project
         return config
     except Exception as e:
         raise Exception(

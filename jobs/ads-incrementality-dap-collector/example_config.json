@@ -1,5 +1,6 @@
 {
   "bq": {
+    "project": "example-gcp-project",
     "namespace": "ads_dap",
     "table": "incrementality"
   },

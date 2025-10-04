@@ -14,7 +14,9 @@ from helpers import (
 
 
 @click.command()
-@click.option("--gcp_project", help="GCP project id", required=True)
+@click.option("--job_config_gcp_project",
+    help="GCP project id for the GCS bucket where this job will look for a configuration file. ",
+    required=True)
 @click.option(
     "--job_config_bucket",
     help="GCS bucket where the configuration for this job can be found. See example_config.json for format details.",
@@ -32,13 +34,13 @@ from helpers import (
     help="The 'private_key' defined in the collector credentials, used to decrypt shares from the leader and helper",
     required=True,
 )
-def main(gcp_project, job_config_bucket, auth_token, hpke_private_key):
+def main(job_config_gcp_project, job_config_bucket, auth_token, hpke_private_key):
     try:
         logging.info(
-            f"Starting collector job with configuration from gcs bucket: {job_config_bucket}"
+            f"Starting collector job with configuration from gcp project: {job_config_gcp_project} and gcs bucket: {job_config_bucket}"
         )
         config = get_config(
-            gcp_project, job_config_bucket, auth_token, hpke_private_key
+            job_config_gcp_project, job_config_bucket, auth_token, hpke_private_key
         )
         logging.info(
             f"Starting collector job for experiments: {config.nimbus.experiments}."
@@ -48,7 +50,6 @@ def main(gcp_project, job_config_bucket, auth_token, hpke_private_key):
                 experiment = get_experiment(experiment_config, config.nimbus.api_url)
 
                 tasks_to_collect = prepare_results_rows(experiment)
-
                 collected_tasks = collect_dap_results(
                     tasks_to_collect, config.dap, experiment_config
                 )
@@ -58,7 +59,7 @@ def main(gcp_project, job_config_bucket, auth_token, hpke_private_key):
         logging.error(f"Collector job failed. Error: {e}\n{traceback.format_exc()}")
         raise e
     finally:
-        write_job_logs_to_bucket(gcp_project, job_config_bucket)
+        write_job_logs_to_bucket(job_config_gcp_project, job_config_bucket)
 
 
 if __name__ == "__main__":
