@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from dataclasses import fields, is_dataclass, dataclass
-from typing import Any, Optional, Type
+from typing import Any, Optional, Type, List
 from typing import TypeAlias, Union, get_args, get_origin
 
 import dacite
@@ -16,6 +16,7 @@ class BigQueryTypes(Enum, settings=NoAlias):  # type: ignore
     INTEGER: TypeAlias = int
     STRING: TypeAlias = str
     TIMESTAMP: TypeAlias = int
+    JSON: TypeAlias = dict
 
 
 def generate_schema(cls):
@@ -121,6 +122,33 @@ class Metrics(Record):
         return f"worker {self.instance_id}"
 
 
+@dataclass
+class TaskDefinitions(Record):
+    taskId: BigQueryTypes.STRING
+    created: BigQueryTypes.TIMESTAMP
+    deadline: BigQueryTypes.TIMESTAMP
+    dependencies: List[BigQueryTypes.STRING]
+    expires: BigQueryTypes.TIMESTAMP
+    extra: BigQueryTypes.JSON
+    metadata: BigQueryTypes.JSON
+    payload: BigQueryTypes.JSON
+    priority: BigQueryTypes.STRING
+    projectId: BigQueryTypes.STRING
+    provisionerId: BigQueryTypes.STRING
+    requires: BigQueryTypes.STRING
+    retries: BigQueryTypes.INTEGER
+    routes: List[BigQueryTypes.STRING]
+    schedulerId: BigQueryTypes.STRING
+    scopes: List[BigQueryTypes.STRING]
+    tags: BigQueryTypes.JSON
+    taskGroupId: BigQueryTypes.STRING
+    taskQueueId: BigQueryTypes.STRING
+    workerType: BigQueryTypes.STRING
+
+    def __str__(self):
+        return self.taskId
+
+
 def get_record_cls(table_type: str) -> Type[Record]:
     """Return the record class corresponding to the given table type.
 
@@ -130,7 +158,7 @@ def get_record_cls(table_type: str) -> Type[Record]:
     Returns:
         Type[Record]: The record class for the corresponding table.
     """
-    assert table_type in ("tasks", "runs", "metrics")
+    assert table_type in ("tasks", "runs", "metrics", "taskdefinitions")
     for name, obj in globals().items():
         if name.lower() == table_type and issubclass(obj, Record):
             return obj
