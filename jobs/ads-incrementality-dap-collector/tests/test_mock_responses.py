@@ -1,5 +1,5 @@
 NIMBUS_SUCCESS = {
-    "slug": "traffic-impact-study-5",
+    "slug": "interesting-study-5",
     "appName": "firefox_desktop",
     "appId": "firefox-desktop",
     "channel": "nightly",

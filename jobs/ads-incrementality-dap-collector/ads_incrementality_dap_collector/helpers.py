@@ -244,7 +244,7 @@ def create_bq_row(
         "advertiser": advertiser,
         "metric": metric,
         "value": {"count": value_count, "histogram": value_histogram},
-        "created_at": datetime.now().isoformat(),
+        "created_timestamp": datetime.now().isoformat(),
     }
     return row
 

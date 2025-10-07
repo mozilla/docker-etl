@@ -64,7 +64,7 @@ COLLECTOR_RESULTS_SCHEMA = [
         ],
     ),
     bigquery.SchemaField(
-        "created_at",
+        "created_timestamp",
         "TIMESTAMP",
         mode="REQUIRED",
         description="Timestamp for when this row was written.",

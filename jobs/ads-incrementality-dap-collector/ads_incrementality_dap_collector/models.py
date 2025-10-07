@@ -93,16 +93,14 @@ class NimbusExperiment:
             return latest_collectible_batch_start
 
         # While the latest_collectible_batch_start variable is before the batch that includes today...
-        while latest_collectible_batch_start < (
-            self.todays_date() - timedelta(seconds=self.batchDuration)
-        ):
+        while latest_collectible_batch_start <= self.todays_date():
             # Increment the latest_collectible_batch_start by the batch interval
             latest_collectible_batch_start = latest_collectible_batch_start + timedelta(
                 seconds=self.batchDuration
             )
         # After the loop, we have the batch start date for the batch that includes today.
         # We need to return the previous batch, which is now complete and ready for collection.
-        return latest_collectible_batch_start - timedelta(seconds=self.batchDuration)
+        return latest_collectible_batch_start - timedelta(seconds=self.batchDuration) - timedelta(seconds=self.batchDuration)
 
     def latest_collectible_batch_end(self) -> date:
         return self.latest_collectible_batch_start() + timedelta(
@@ -129,13 +127,11 @@ class NimbusExperiment:
 def get_country_from_targeting(targeting: str) -> Optional[str]:
     """Parses the region/country from the targeting string and
     returns a JSON formatted list of country codes."""
-    # match = re.findall(r"region\s+in\s+(^]+)", targeting)
     match = re.search(r"region\s+in\s+\[([^]]+)]", targeting)
 
     if match:
         inner = match.group(1)
         regions = [r.strip().strip("'\"") for r in inner.split(",")]
-        # logging.info("regions: %s", regions)
         return json.dumps(regions)
     return None
 

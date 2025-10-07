@@ -56,7 +56,7 @@ class TestHelpers(TestCase):
     @patch("requests.get", side_effect=mock_nimbus_success)
     def test_get_experiment_success(self, mock_fetch):
         experiment = get_experiment(mock_experiment_config(), "nimbus_api_url")
-        self.assertEqual("traffic-impact-study-5", experiment.slug)
+        self.assertEqual("interesting-study-5", experiment.slug)
         self.assertEqual(
             mock_experiment_config().batch_duration, experiment.batchDuration
         )
@@ -67,7 +67,7 @@ class TestHelpers(TestCase):
         experiment = get_experiment(
             mock_experiment_config_with_default_duration(), "nimbus_api_url"
         )
-        self.assertEqual("traffic-impact-study-5", experiment.slug)
+        self.assertEqual("interesting-study-5", experiment.slug)
         self.assertEqual(DEFAULT_BATCH_DURATION, experiment.batchDuration)
         self.assertEqual(1, mock_fetch.call_count)
 
@@ -75,7 +75,7 @@ class TestHelpers(TestCase):
     def test_get_experiment_fail(self, mock_fetch):
         with pytest.raises(
             Exception,
-            match="Failed getting experiment: traffic-impact-study-5 from: nimbus_api_url",
+            match="Failed getting experiment: interesting-study-5 from: nimbus_api_url",
         ):
             _ = get_experiment(mock_experiment_config(), "nimbus_api_url")
             self.assertEqual(1, mock_fetch.call_count)
@@ -176,12 +176,12 @@ class TestHelpers(TestCase):
                         "collection_start": "2025-09-08",
                         "collection_end": "2025-09-14",
                         "country_codes": '["US"]',
-                        "experiment_slug": "traffic-impact-study-5",
+                        "experiment_slug": "interesting-study-5",
                         "experiment_branch": "control",
                         "advertiser": "glamazon",
                         "metric": "unique_client_organic_visits",
                         "value": {"count": 13645, "histogram": None},
-                        "created_at": mock_datetime.isoformat(),
+                        "created_timestamp": mock_datetime.isoformat(),
                     }
                 ],
             ),
@@ -192,12 +192,12 @@ class TestHelpers(TestCase):
                         "collection_start": "2025-09-08",
                         "collection_end": "2025-09-14",
                         "country_codes": '["US"]',
-                        "experiment_slug": "traffic-impact-study-5",
+                        "experiment_slug": "interesting-study-5",
                         "experiment_branch": "treatment-b",
                         "advertiser": "glamazon",
                         "metric": "unique_client_organic_visits",
                         "value": {"count": 18645, "histogram": None},
-                        "created_at": mock_datetime.isoformat(),
+                        "created_timestamp": mock_datetime.isoformat(),
                     }
                 ],
             ),
@@ -208,12 +208,12 @@ class TestHelpers(TestCase):
                         "collection_start": "2025-09-08",
                         "collection_end": "2025-09-14",
                         "country_codes": '["US"]',
-                        "experiment_slug": "traffic-impact-study-5",
+                        "experiment_slug": "interesting-study-5",
                         "experiment_branch": "treatment-a",
                         "advertiser": "glamazon",
                         "metric": "unique_client_organic_visits",
                         "value": {"count": 9645, "histogram": None},
-                        "created_at": mock_datetime.isoformat(),
+                        "created_timestamp": mock_datetime.isoformat(),
                     }
                 ],
             ),
@@ -295,12 +295,12 @@ class TestHelpers(TestCase):
                             "collection_start": "2025-09-08",
                             "collection_end": "2025-09-15",
                             "country_codes": '["US"]',
-                            "experiment_slug": "traffic-impact-study-5",
+                            "experiment_slug": "interesting-study-5",
                             "experiment_branch": "control",
                             "advertiser": "glamazon",
                             "metric": "unique_client_organic_visits",
                             "value": {"count": 13645, "histogram": None},
-                            "created_at": mock_datetime.isoformat(),
+                            "created_timestamp": mock_datetime.isoformat(),
                         }
                     ],
                 ),
@@ -311,12 +311,12 @@ class TestHelpers(TestCase):
                             "collection_start": "2025-09-08",
                             "collection_end": "2025-09-15",
                             "country_codes": '["US"]',
-                            "experiment_slug": "traffic-impact-study-5",
+                            "experiment_slug": "interesting-study-5",
                             "experiment_branch": "treatment-b",
                             "advertiser": "glamazon",
                             "metric": "unique_client_organic_visits",
                             "value": {"count": 18645, "histogram": None},
-                            "created_at": mock_datetime.isoformat(),
+                            "created_timestamp": mock_datetime.isoformat(),
                         }
                     ],
                 ),
@@ -327,12 +327,12 @@ class TestHelpers(TestCase):
                             "collection_start": "2025-09-08",
                             "collection_end": "2025-09-15",
                             "country_codes": '["US"]',
-                            "experiment_slug": "traffic-impact-study-5",
+                            "experiment_slug": "interesting-study-5",
                             "experiment_branch": "treatment-a",
                             "advertiser": "glamazon",
                             "metric": "unique_client_organic_visits",
                             "value": {"count": 9645, "histogram": None},
-                            "created_at": mock_datetime.isoformat(),
+                            "created_timestamp": mock_datetime.isoformat(),
                         }
                     ],
                 ),

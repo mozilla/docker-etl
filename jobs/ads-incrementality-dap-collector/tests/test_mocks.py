@@ -144,11 +144,11 @@ def mock_dap_config() -> SimpleNamespace:
 
 
 def mock_experiment_config() -> SimpleNamespace:
-    return SimpleNamespace(slug="traffic-impact-study-5", batch_duration=604800)
+    return SimpleNamespace(slug="interesting-study-5", batch_duration=604800)
 
 
 def mock_experiment_config_with_default_duration() -> SimpleNamespace:
-    return SimpleNamespace(slug="traffic-impact-study-5")
+    return SimpleNamespace(slug="interesting-study-5")
 
 
 def mock_bq_config() -> SimpleNamespace:
@@ -339,7 +339,7 @@ def mock_bq_table() -> bigquery.Table:
                 None,
             ),
             bigquery.SchemaField(
-                "created_at",
+                "created_timestamp",
                 "TIMESTAMP",
                 "REQUIRED",
                 None,
