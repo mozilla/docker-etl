@@ -292,9 +292,12 @@ BUG_QUERIES: Mapping[str, Mapping[str, str | list[str]]] = {
         "f10": "bug_status",
         "o10": "changedafter",
         "v10": "2020-01-01",
-        "f11": "resolution",
-        "o11": "isempty",
-        "f12": "CP",
+        "f11": "delta_ts",
+        "o11": "greaterthaneq",
+        "v11": "2025-01-01",
+        "f12": "resolution",
+        "o13": "isempty",
+        "f13": "CP",
     },
 }
 
