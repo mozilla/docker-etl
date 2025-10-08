@@ -2,17 +2,7 @@
 
 ## Background
 
-Incrementality is a way to measure the effectiveness of our ads in a general, agreggated, privacy-preserving way --
-without knowing anything about specific users.
-
-Incrementality works by dividing clients into various Nimbus experiment branches that vary how/whether an ad is shown.
-Separately, a [DAP](https://docs.divviup.org/) task is configured to store the metrics for each experiment branch in a
-different DAP bucket.
-
-Firefox is instrumented with [DAP telemetry functionality](https://github.com/mozilla-firefox/firefox/tree/main/toolkit/components/telemetry/dap), which allows it to send metrics and reports into the correct DAP buckets as configured in the experiment.
-
-Then this job can go out and collect metrics from DAP (using bucket info from the experiment's data), and write them
-to BQ.
+This job collects metrics from DAP for incrementality experiments, and write the results them to BQ.
 
 ## Overview
 
