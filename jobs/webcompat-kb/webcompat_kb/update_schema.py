@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .base import EtlJob
 from .bqhelpers import BigQuery
-from .metrics.metrics import metrics, metric_types
+from .metrics import metrics
 
 here = os.path.dirname(__file__)
 
@@ -417,10 +417,12 @@ class SchemaCreator:
         self.view_ids = view_ids
         self.routine_ids = routine_ids
 
+        metric_dfns, metric_types = metrics.load()
+
         self.jinja_env = jinja2.Environment()
         self.jinja_env.globals = {
             "project": project,
-            "metrics": {item.name: item for item in metrics},
+            "metrics": {item.name: item for item in metric_dfns},
             "metric_types": metric_types,
         }
 

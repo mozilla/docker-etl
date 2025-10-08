@@ -18,6 +18,9 @@ from . import (
 )
 from .base import ALL_JOBS, EtlJob, dataset_arg, project_arg
 from .bqhelpers import get_client, BigQuery
+from .metrics import metrics
+
+metrics.load()
 
 
 def get_parser() -> argparse.ArgumentParser:
