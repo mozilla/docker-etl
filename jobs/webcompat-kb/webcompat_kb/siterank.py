@@ -3,7 +3,7 @@ import csv
 import logging
 from dataclasses import dataclass
 from datetime import datetime, UTC
-from typing import Iterator, Self
+from typing import Iterator, Optional, Self
 
 import httpx
 from google.cloud import bigquery
@@ -28,6 +28,40 @@ class Config:
             bq_tranco_dataset=args.bq_tranco_dataset,
             write=args.write,
         )
+
+
+@dataclass
+class HostMinRanksColumn:
+    name: str
+    crux_condition: Optional[str]
+    output_columns: Optional[dict[str, str]] = None
+
+
+host_min_ranks_columns = [
+    HostMinRanksColumn(
+        name="global",
+        crux_condition='country_code = "global"',
+        output_columns={
+            "global_rank": """IF(crux_ranks.global_rank IS NOT NULL AND tranco_ranks.rank_bucket IS NOT NULL,
+   LEAST(crux_ranks.global_rank, tranco_ranks.rank_bucket),
+   IFNULL(crux_ranks.global_rank, tranco_ranks.rank_bucket))""",
+            "global_rank_crux": "crux_ranks.global_rank",
+            "global_rank_tranco": "tranco_ranks.rank",
+        },
+    ),
+    HostMinRanksColumn(
+        name="local",
+        crux_condition='country_code != "global"',
+    ),
+    HostMinRanksColumn(
+        name="sightline",
+        crux_condition='country_code IN UNNEST(["global", "us", "fr", "de", "es", "it", "mx"])',
+    ),
+    HostMinRanksColumn(
+        name="japan",
+        crux_condition='country_code = "jp"',
+    ),
+]
 
 
 def get_last_import(client: BigQuery, config: Config) -> int:
@@ -165,8 +199,28 @@ WHERE
 
 
 def update_min_rank_data(client: BigQuery, config: Config, yyyymm: int) -> None:
+    schema = [
+        bigquery.SchemaField("yyyymm", "INTEGER", mode="REQUIRED"),
+        bigquery.SchemaField("host", "STRING", mode="REQUIRED"),
+    ]
+    crux_ranks_columns = []
+    host_min_rank_output_names = []
+    host_min_rank_output_columns = []
+    for item in host_min_ranks_columns:
+        col_name = f"{item.name}_rank"
+        crux_ranks_columns.append(f"MIN(IF({item.crux_condition}, origin_ranks.rank, NULL)) AS {col_name}")
+        output_columns = (
+            item.output_columns
+            if item.output_columns is not None
+            else {col_name: col_name}
+        )
+        for name, query in output_columns.items():
+            host_min_rank_output_names.append(name)
+            host_min_rank_output_columns.append(f"{query} AS {name}")
+            schema.append(bigquery.SchemaField(col_name, "INTEGER"))
+
     if config.write:
-        insert_str = f"INSERT `{config.bq_project}.{config.bq_crux_dataset}.host_min_ranks` (yyyymm, host, global_rank, global_rank_crux, global_rank_tranco, local_rank, sightline_rank, japan_rank)"
+        insert_str = f"INSERT `{config.bq_project}.{config.bq_crux_dataset}.host_min_ranks` (yyyymm, host, {', '.join(host_min_rank_output_names)})"
     else:
         insert_str = ""
 
@@ -177,18 +231,7 @@ WITH
   crux_ranks AS (
   SELECT
     NET.HOST(origin) AS host,
-    MIN(
-    IF
-      (origin_ranks.country_code = "global", origin_ranks.rank, NULL)) AS global_rank,
-    MIN(
-    IF
-      (origin_ranks.country_code != "global", origin_ranks.rank, NULL)) AS local_rank,
-    MIN(
-    IF
-      (country_code IN UNNEST(["global", "us", "fr", "de", "es", "it", "mx"]), origin_ranks.rank, NULL)) AS sightline_rank,
-    MIN(
-    IF
-      (country_code = "jp", origin_ranks.rank, NULL)) AS japan_rank
+    {",\n  ".join(crux_ranks_columns)}
   FROM
     `moz-fx-dev-dschubert-wckb.crux_imported.origin_ranks` AS origin_ranks
   WHERE
@@ -217,31 +260,11 @@ WITH
 SELECT
   @yyyymm as yyyymm,
   host,
-IF (crux_ranks.global_rank IS NOT NULL AND tranco_ranks.rank_bucket IS NOT NULL,
-    LEAST(crux_ranks.global_rank, tranco_ranks.rank_bucket),
-    IFNULL(crux_ranks.global_rank, tranco_ranks.rank_bucket)) AS global_rank,
-  crux_ranks.global_rank AS global_rank_crux,
-  tranco_ranks.rank AS global_rank_tranco,
-  local_rank,
-  sightline_rank,
-  japan_rank
-FROM
-  crux_ranks
-FULL OUTER JOIN
-  tranco_ranks
-USING
-  (host)
+  {",\n  ".join(host_min_rank_output_columns)}
+FROM crux_ranks
+FULL OUTER JOIN tranco_ranks USING(host)
 """
-    schema = [
-        bigquery.SchemaField("yyyymm", "INTEGER", mode="REQUIRED"),
-        bigquery.SchemaField("host", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("global_rank", "INTEGER"),
-        bigquery.SchemaField("global_rank_crux", "INTEGER"),
-        bigquery.SchemaField("global_rank_tranco", "INTEGER"),
-        bigquery.SchemaField("local_rank", "INTEGER"),
-        bigquery.SchemaField("sightline_rank", "INTEGER"),
-        bigquery.SchemaField("japan_rank", "INTEGER"),
-    ]
+
     parameters = [bigquery.ScalarQueryParameter("yyyymm", "INTEGER", yyyymm)]
     logging.info("Updating host_min_ranks data")
     table = client.ensure_table(
