@@ -3,7 +3,7 @@ import csv
 import logging
 from dataclasses import dataclass
 from datetime import datetime, UTC
-from typing import Iterator, Optional, Self
+from typing import Iterator, Self
 
 import httpx
 from google.cloud import bigquery
@@ -11,6 +11,7 @@ from google.cloud import bigquery
 from .base import Context, EtlJob, dataset_arg
 from .bqhelpers import BigQuery, Json, RangePartition, get_client
 from .httphelpers import get_json
+from .metrics import ranks
 
 
 @dataclass
@@ -28,40 +29,6 @@ class Config:
             bq_tranco_dataset=args.bq_tranco_dataset,
             write=args.write,
         )
-
-
-@dataclass
-class HostMinRanksColumn:
-    name: str
-    crux_condition: Optional[str]
-    output_columns: Optional[dict[str, str]] = None
-
-
-host_min_ranks_columns = [
-    HostMinRanksColumn(
-        name="global",
-        crux_condition='country_code = "global"',
-        output_columns={
-            "global_rank": """IF(crux_ranks.global_rank IS NOT NULL AND tranco_ranks.rank_bucket IS NOT NULL,
-   LEAST(crux_ranks.global_rank, tranco_ranks.rank_bucket),
-   IFNULL(crux_ranks.global_rank, tranco_ranks.rank_bucket))""",
-            "global_rank_crux": "crux_ranks.global_rank",
-            "global_rank_tranco": "tranco_ranks.rank",
-        },
-    ),
-    HostMinRanksColumn(
-        name="local",
-        crux_condition='country_code != "global"',
-    ),
-    HostMinRanksColumn(
-        name="sightline",
-        crux_condition='country_code IN UNNEST(["global", "us", "fr", "de", "es", "it", "mx"])',
-    ),
-    HostMinRanksColumn(
-        name="japan",
-        crux_condition='country_code = "jp"',
-    ),
-]
 
 
 def get_last_import(client: BigQuery, config: Config) -> int:
@@ -192,45 +159,35 @@ WHERE
     client.ensure_table(
         "sightline_top_1000", schema, partition=RangePartition("yyyymm", 201701, 202501)
     )
-    client.query(query)
+    client.insert_query(
+        "sightline_top_1000",
+        ["yyyymm", "host"],
+        query,
+        dataset_id=config.bq_crux_dataset,
+    )
 
 
 def update_min_rank_data(client: BigQuery, config: Config, yyyymm: int) -> None:
-    schema = [
-        bigquery.SchemaField("yyyymm", "INTEGER", mode="REQUIRED"),
-        bigquery.SchemaField("host", "STRING", mode="REQUIRED"),
-    ]
-    crux_ranks_columns = []
-    host_min_rank_output_names = []
-    host_min_rank_output_columns = []
-    for item in host_min_ranks_columns:
-        col_name = f"{item.name}_rank"
-        crux_ranks_columns.append(f"MIN(IF({item.crux_condition}, origin_ranks.rank, NULL)) AS {col_name}")
-        output_columns = (
-            item.output_columns
-            if item.output_columns is not None
-            else {col_name: col_name}
-        )
-        for name, query in output_columns.items():
-            host_min_rank_output_names.append(name)
-            host_min_rank_output_columns.append(f"{query} AS {name}")
-            schema.append(bigquery.SchemaField(col_name, "INTEGER"))
+    rank_columns = ranks.load()
+    column_names = [f"{item.name}" for item in rank_columns]
 
-    if config.write:
-        insert_str = f"INSERT `{config.bq_project}.{config.bq_crux_dataset}.host_min_ranks` (yyyymm, host, {', '.join(host_min_rank_output_names)})"
-    else:
-        insert_str = ""
-
+    crux_columns = ",\n    ".join(
+        f"MIN(IF({column.crux_condition}, crux_ranks.rank, NULL)) as {column.name}"
+        for column in rank_columns
+        if column.crux_condition
+    )
+    host_min_rank_columns = ",\n  ".join(
+        f"{column.rank} as {column.name}" if column.rank else column.name
+        for column in rank_columns
+    )
     query = f"""
-{insert_str}
-
 WITH
   crux_ranks AS (
   SELECT
     NET.HOST(origin) AS host,
-    {",\n  ".join(crux_ranks_columns)}
+    {crux_columns}
   FROM
-    `moz-fx-dev-dschubert-wckb.crux_imported.origin_ranks` AS origin_ranks
+    `moz-fx-dev-dschubert-wckb.crux_imported.origin_ranks` AS crux_ranks
   WHERE
     yyyymm = @yyyymm
   GROUP BY
@@ -257,22 +214,41 @@ WITH
 SELECT
   @yyyymm as yyyymm,
   host,
-  {",\n  ".join(host_min_rank_output_columns)}
-FROM crux_ranks
-FULL OUTER JOIN tranco_ranks USING(host)
+  {host_min_rank_columns}
+FROM
+  crux_ranks
+FULL OUTER JOIN
+  tranco_ranks
+USING
+  (host)
 """
-
+    schema = [
+        bigquery.SchemaField("yyyymm", "INTEGER", mode="REQUIRED"),
+        bigquery.SchemaField("host", "STRING", mode="REQUIRED"),
+    ]
+    schema.extend(
+        bigquery.SchemaField(column.name, "INTEGER") for column in rank_columns
+    )
     parameters = [bigquery.ScalarQueryParameter("yyyymm", "INTEGER", yyyymm)]
     logging.info("Updating host_min_ranks data")
     table = client.ensure_table(
-        "host_min_ranks", schema, partition=RangePartition("yyyymm", 201701, 202501)
+        "host_min_ranks",
+        schema,
+        partition=RangePartition("yyyymm", 201701, 202501),
+        update_fields=True,
     )
     if config.write:
         client.query(
             f"DELETE FROM `{table.table_id}` WHERE yyyymm = @yyyymm",
             parameters=parameters,
         )
-    client.query(query, parameters=parameters)
+    client.insert_query(
+        "host_min_ranks",
+        column_names,
+        query,
+        dataset_id=config.bq_crux_dataset,
+        parameters=parameters,
+    )
 
 
 def update_import_date(
