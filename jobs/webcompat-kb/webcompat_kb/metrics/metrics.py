@@ -1,5 +1,9 @@
+import os
+import tomllib
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Literal, Mapping, Optional, Sequence
+
+from pydantic import BaseModel, RootModel
 
 
 class Metric(ABC):
@@ -11,6 +15,12 @@ class Metric(ABC):
     @abstractmethod
     def condition(self, table: str) -> str: ...
 
+    def host_min_ranks_condition(self) -> Optional[str]:
+        return None
+
+    def site_reports_condition(self, table: str) -> Optional[str]:
+        return None
+
 
 class UnconditionalMetric(Metric):
     conditional = False
@@ -20,8 +30,50 @@ class UnconditionalMetric(Metric):
 
 
 class SiteReportsFieldMetric(Metric):
+    def __init__(
+        self,
+        name: str,
+        host_min_ranks_condition: Optional[str],
+        site_reports_conditions: Optional[list[str]],
+    ):
+        super().__init__(name)
+        self._host_min_ranks_condition = host_min_ranks_condition
+        self._site_reports_conditions = site_reports_conditions
+
     def condition(self, table: str) -> str:
         return f"{table}.is_{self.name}"
+
+    def host_min_ranks_condition(self) -> Optional[str]:
+        return self._host_min_ranks_condition
+
+    def site_reports_condition(self, table: str) -> Optional[str]:
+        if self._site_reports_conditions:
+            return " AND ".join(
+                item.format(table=table) for item in self._site_reports_conditions
+            )
+        return f"IFNULL({table}.is_{self.name}, FALSE)"
+
+
+class UnconditionalMetricData(BaseModel):
+    type: Literal["unconditional"]
+
+    def to_metric(self, name: str) -> UnconditionalMetric:
+        return UnconditionalMetric(name)
+
+
+class SiteReportsFieldMetricData(BaseModel):
+    type: Literal["site_reports_field"]
+    host_min_ranks_condition: Optional[str] = None
+    conditions: Optional[list[str]] = None
+
+    def to_metric(self, name: str) -> SiteReportsFieldMetric:
+        return SiteReportsFieldMetric(
+            name, self.host_min_ranks_condition, self.conditions
+        )
+
+
+class MetricData(RootModel):
+    root: Mapping[str, UnconditionalMetricData | SiteReportsFieldMetricData]
 
 
 default_contexts = {"history", "daily"}
@@ -87,19 +139,35 @@ class SumMetricType(MetricType):
         return f"SUM(IF({self.condition(table, metric, include_metric_condition)}, {table}.score, 0))"
 
 
-metrics = [
-    UnconditionalMetric("all"),
-    SiteReportsFieldMetric("sightline"),
-    SiteReportsFieldMetric("japan_1000"),
-    SiteReportsFieldMetric("japan_1000_mobile"),
-    SiteReportsFieldMetric("global_1000"),
-]
+_metrics: dict[str, Sequence[Metric]] = {}
 
-
-metric_types = [
+_metric_types = [
     CountMetricType("bug_count", None),
     SumMetricType("needs_diagnosis_score", "metric_type_needs_diagnosis"),
     SumMetricType("not_supported_score", "metric_type_firefox_not_supported"),
     SumMetricType("platform_score", "metric_type_platform_bug", contexts={"history"}),
     SumMetricType("total_score", None),
 ]
+
+
+def load(path: Optional[str] = None) -> tuple[Sequence[Metric], Sequence[MetricType]]:
+    if path is None:
+        path = os.path.join(
+            os.path.dirname(__file__),
+            os.pardir,
+            os.pardir,
+            "data",
+            "metrics",
+            "metrics.toml",
+        )
+    path = os.path.abspath(path)
+    if path not in _metrics:
+        metrics = []
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+
+        for name, metric_data in MetricData.model_validate(data).root.items():
+            metrics.append(metric_data.to_metric(name))
+        _metrics[path] = metrics
+
+    return _metrics[path], _metric_types
