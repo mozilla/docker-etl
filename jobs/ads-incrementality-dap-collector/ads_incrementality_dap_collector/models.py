@@ -88,18 +88,20 @@ class NimbusExperiment:
 
         # While the batch_interval_start variable is before the batch that includes today...
         while batch_interval_start <= self.todays_date():
-            # Increment the latest_collectible_batch_start by the batch interval.
+            # Increment the batch_interval_start by the batch interval.
             batch_interval_start = batch_interval_start + timedelta(
                 seconds=self.batchDuration
             )
         # After the loop, the batch batch_interval_start is the next batch after the batch that includes today.
         # We need to go back two batch interval start dates to get the start of the latest collectible batch.
 
-        # This handles the edge case where today's date is within the first batch of the experiment
-        if ((batch_interval_start - timedelta(seconds=2 * self.batchDuration)) < self.startDate):
+        # First, handle the edge case where today's date is within the first batch of the experiment
+        if (
+            batch_interval_start - timedelta(seconds=2 * self.batchDuration)
+        ) < self.startDate:
             return self.startDate
 
-        # Now we can return the previous batch, which is now complete and ready for collection.
+        # Now we can return the start date that's two intervals back
         return batch_interval_start - timedelta(seconds=2 * self.batchDuration)
 
     def latest_collectible_batch_end(self) -> date:

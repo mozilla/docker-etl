@@ -54,9 +54,7 @@ def prepare_results_rows(
     to BQ."""
     tasks_to_process: dict[str, dict[int, IncrementalityBranchResultsRow]] = {}
     if not experiment.collect_today():
-        logging.info(
-            f"Skipping collection for {experiment.slug} today."
-        )
+        logging.info(f"Skipping collection for {experiment.slug} today.")
         return tasks_to_process
 
     for branch in experiment.branches:

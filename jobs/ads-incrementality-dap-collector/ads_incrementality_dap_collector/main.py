@@ -14,9 +14,11 @@ from helpers import (
 
 
 @click.command()
-@click.option("--job_config_gcp_project",
+@click.option(
+    "--job_config_gcp_project",
     help="GCP project id for the GCS bucket where this job will look for a configuration file. ",
-    required=True)
+    required=True,
+)
 @click.option(
     "--job_config_bucket",
     help="GCS bucket where the configuration for this job can be found. See example_config.json for format details.",
@@ -37,7 +39,8 @@ from helpers import (
 def main(job_config_gcp_project, job_config_bucket, auth_token, hpke_private_key):
     try:
         logging.info(
-            f"Starting collector job with configuration from gcp project: {job_config_gcp_project} and gcs bucket: {job_config_bucket}"
+            f"""Starting collector job with configuration from gcp project: {job_config_gcp_project}
+            and gcs bucket: {job_config_bucket}"""
         )
         config = get_config(
             job_config_gcp_project, job_config_bucket, auth_token, hpke_private_key
@@ -47,14 +50,14 @@ def main(job_config_gcp_project, job_config_bucket, auth_token, hpke_private_key
         )
 
         for experiment_config in config.nimbus.experiments:
-                experiment = get_experiment(experiment_config, config.nimbus.api_url)
+            experiment = get_experiment(experiment_config, config.nimbus.api_url)
 
-                tasks_to_collect = prepare_results_rows(experiment)
-                collected_tasks = collect_dap_results(
-                    tasks_to_collect, config.dap, experiment_config
-                )
+            tasks_to_collect = prepare_results_rows(experiment)
+            collected_tasks = collect_dap_results(
+                tasks_to_collect, config.dap, experiment_config
+            )
 
-                write_results_to_bq(collected_tasks, config.bq)
+            write_results_to_bq(collected_tasks, config.bq)
     except Exception as e:
         logging.error(f"Collector job failed. Error: {e}\n{traceback.format_exc()}")
         raise e
