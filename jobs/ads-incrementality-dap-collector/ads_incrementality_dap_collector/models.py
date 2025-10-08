@@ -42,7 +42,6 @@ class NimbusExperiment:
 
         startDate:              The day the experiment will begin enrolling users.
         endDate:                The day the experiment will be turned off.
-        enrollmentEndDate:      The day the experiment's enrollment phase ends.
 
     """
 
@@ -60,7 +59,6 @@ class NimbusExperiment:
 
     startDate: date
     endDate: Optional[date]
-    enrollmentEndDate: Optional[date]
 
     @classmethod
     def from_dict(cls, d) -> "NimbusExperiment":
