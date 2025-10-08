@@ -15,8 +15,12 @@ from . import (
     chrome_use_counters,  # noqa: F401
     interop,  # noqa: F401
 )
+
 from .base import ALL_JOBS, Context, Config, EtlJob, dataset_arg, project_arg
 from .bqhelpers import get_client, BigQuery, DatasetId
+from .metrics import metrics
+
+metrics.load()
 
 
 def get_parser() -> argparse.ArgumentParser:

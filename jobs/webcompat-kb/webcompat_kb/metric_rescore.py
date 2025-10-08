@@ -7,12 +7,12 @@ from google.cloud import bigquery
 
 from .base import Context, EtlJob
 from .bqhelpers import BigQuery
-from .metrics.metrics import Metric, metrics, metric_types
+from .metrics import metrics
 from .metric_changes import ScoreChange, insert_score_changes
 
 
 class ConditionalMetric:
-    def __init__(self, metric: Metric):
+    def __init__(self, metric: metrics.Metric):
         self.metric = metric
 
     @property
@@ -31,7 +31,16 @@ class ConditionalMetric:
         return f"is_{self.name}_new"
 
 
-conditional_metrics = [ConditionalMetric(item) for item in metrics if item.conditional]
+_conditional_metrics = None
+
+
+def conditional_metrics() -> Sequence[ConditionalMetric]:
+    global _conditional_metrics
+    if _conditional_metrics is None:
+        _conditional_metrics = [
+            ConditionalMetric(item) for item in metrics.load()[0] if item.conditional
+        ]
+    return _conditional_metrics
 
 
 def score_bug_changes(
@@ -51,7 +60,7 @@ def score_bug_changes(
         scores_query_fields.append(f"{src_table}.score AS {field_name}")
         query_fields.append(field_name)
 
-    for metric in conditional_metrics:
+    for metric in conditional_metrics():
         score_deltas[metric.name] = 0
         for score_type, field_name in [
             ("old", metric.is_old_field),
@@ -82,14 +91,14 @@ FROM scores
             )
         has_change = bug.delta != 0 or any(
             bug[metric.is_old_field] != bug[metric.is_new_field]
-            for metric in conditional_metrics
+            for metric in conditional_metrics()
         )
         if has_change:
             reasons = []
             if bug.delta:
                 reasons.append("rescore")
             score_deltas["all"] += bug.delta
-            for metric in conditional_metrics:
+            for metric in conditional_metrics():
                 if metric.name == "all":
                     continue
                 in_old_metric = bug[metric.is_old_field]
@@ -127,6 +136,7 @@ def insert_metric_changes(
 ) -> None:
     """Add a row to the webcompat_topline_metric_rescores table with the datetime,
     before and after scores, and a reason for the rescore."""
+    metric_dfns, metric_types = metrics.load()
     bq_dataset_id = client.default_dataset_id
 
     change_states = ["before", "after"]
@@ -145,7 +155,7 @@ def insert_metric_changes(
         for metric_type in metric_types:
             if "daily" not in metric_type.contexts:
                 continue
-            for metric in metrics:
+            for metric in metric_dfns:
                 score_change_schema.append(
                     bigquery.SchemaField(
                         f"{change_state}_{metric_type.name}_{metric.name}",
@@ -186,7 +196,7 @@ INSERT {bq_dataset_id}.{table.table_id}
         result = list(client.query(query, parameters=parameters))[0]
         assert all(hasattr(result, item.name) for item in score_change_schema)
         changes = []
-        for metric in metrics:
+        for metric in metric_dfns:
             score_change = (
                 result[f"after_total_score_{metric.name}"]
                 - result[f"before_total_score_{metric.name}"]
