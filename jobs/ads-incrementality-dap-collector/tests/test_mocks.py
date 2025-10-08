@@ -3,7 +3,7 @@ from collections.abc import Mapping, Sequence
 from subprocess import CompletedProcess
 from types import SimpleNamespace
 
-from models import (
+from ads_incrementality_dap_collector.models import (
     IncrementalityBranchResultsRow,
     NimbusExperiment,
 )

@@ -20,7 +20,7 @@ from constants import (
     PROCESS_TIMEOUT,
     VDAF,
 )
-from models import (
+from ads_incrementality_dap_collector.models import (
     IncrementalityBranchResultsRow,
     NimbusExperiment,
 )
@@ -55,8 +55,7 @@ def prepare_results_rows(
     tasks_to_process: dict[str, dict[int, IncrementalityBranchResultsRow]] = {}
     if not experiment.collect_today():
         logging.info(
-            f"Skipping collection for {experiment.slug} today. \
-            Next collection date will be {experiment.next_collect_date()}"
+            f"Skipping collection for {experiment.slug} today."
         )
         return tasks_to_process
 

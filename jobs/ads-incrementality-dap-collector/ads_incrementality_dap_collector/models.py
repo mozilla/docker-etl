@@ -62,12 +62,6 @@ class NimbusExperiment:
     endDate: Optional[date]
     enrollmentEndDate: Optional[date]
 
-    # Experiment results are removed from DAP after 2 weeks, so our window to collect results for
-    # an experiment is up to 2 weeks after the experiment's latest_collectible_batch_end.
-    # However, we don't need to collect every day of those two weeks (this job runs daily). So this
-    # constant defines how many days after latest_collectible_batch_end to go out and collect and write to BQ.
-    COLLECT_RETRY_DAYS = 7
-
     @classmethod
     def from_dict(cls, d) -> "NimbusExperiment":
         """Load an experiment from dict."""
@@ -87,38 +81,34 @@ class NimbusExperiment:
         return converter.structure(d, cls)
 
     def latest_collectible_batch_start(self) -> date:
-        latest_collectible_batch_start = self.startDate
+        batch_interval_start = self.startDate
         # If the experiment's start date is today or in the future, return it
-        if latest_collectible_batch_start >= self.todays_date():
-            return latest_collectible_batch_start
+        if batch_interval_start >= self.todays_date():
+            return self.startDate
 
-        # While the latest_collectible_batch_start variable is before the batch that includes today...
-        while latest_collectible_batch_start <= self.todays_date():
-            # Increment the latest_collectible_batch_start by the batch interval
-            latest_collectible_batch_start = latest_collectible_batch_start + timedelta(
+        # While the batch_interval_start variable is before the batch that includes today...
+        while batch_interval_start <= self.todays_date():
+            # Increment the latest_collectible_batch_start by the batch interval.
+            batch_interval_start = batch_interval_start + timedelta(
                 seconds=self.batchDuration
             )
-        # After the loop, we have the batch start date for the batch that includes today.
-        # We need to return the previous batch, which is now complete and ready for collection.
-        return latest_collectible_batch_start - timedelta(seconds=self.batchDuration) - timedelta(seconds=self.batchDuration)
+        # After the loop, the batch batch_interval_start is the next batch after the batch that includes today.
+        # We need to go back two batch interval start dates to get the start of the latest collectible batch.
+
+        # This handles the edge case where today's date is within the first batch of the experiment
+        if ((batch_interval_start - timedelta(seconds=2 * self.batchDuration)) < self.startDate):
+            return self.startDate
+
+        # Now we can return the previous batch, which is now complete and ready for collection.
+        return batch_interval_start - timedelta(seconds=2 * self.batchDuration)
 
     def latest_collectible_batch_end(self) -> date:
         return self.latest_collectible_batch_start() + timedelta(
             seconds=self.batchDuration, days=-1
         )
 
-    def next_collect_date(self) -> date:
-        return self.latest_collectible_batch_end() + timedelta(days=1)
-
     def collect_today(self) -> bool:
-        return (
-            self.latest_collectible_batch_end()
-            < self.todays_date()
-            < (
-                self.latest_collectible_batch_end()
-                + timedelta(days=self.COLLECT_RETRY_DAYS)
-            )
-        )
+        return self.latest_collectible_batch_end() < self.todays_date()
 
     def todays_date(self) -> date:
         return date.today()
@@ -182,7 +172,7 @@ class IncrementalityBranchResultsRow:
     advertiser: str
     batch_start: date
     batch_end: date
-    batch_duration: date
+    batch_duration: int
     branch: str
     bucket: int
     country_codes: Optional[str]
