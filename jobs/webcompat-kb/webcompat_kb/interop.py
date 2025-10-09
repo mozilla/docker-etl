@@ -1,4 +1,5 @@
 import argparse
+import logging
 import re
 import os
 from dataclasses import dataclass
@@ -82,10 +83,9 @@ class InteropRow(BaseModel):
 class InteropYear:
     year: int
     proposals_open: datetime
-    proposals_closed: datetime
 
 
-interop_years = [InteropYear(2026, datetime(2025, 9, 4), datetime(2025, 9, 25))]
+interop_years = [InteropYear(2026, datetime(2025, 9, 4))]
 
 
 class GitHub:
@@ -231,9 +231,10 @@ def extract_issue_data(
 
 def get_proposal_year(issue: GitHubIssue) -> Optional[int]:
     for interop_year in interop_years:
+        created_at = issue.created_at.date()
         if (
-            issue.created_at.date() >= interop_year.proposals_open.date()
-            and issue.created_at.date() <= interop_year.proposals_closed.date()
+            created_at >= interop_year.proposals_open.date()
+            and created_at.year == interop_year.proposals_open.year
         ):
             return interop_year.year
     return None
@@ -269,7 +270,7 @@ def update_interop_data(
                 last_updated=last_updated,
             )
         }
-
+        logging.debug(f"Found {len(updated_issues)} updated proposals on GitHub")
         for number, issue in updated_issues.items():
             year = get_proposal_year(issue)
             if year is None:
