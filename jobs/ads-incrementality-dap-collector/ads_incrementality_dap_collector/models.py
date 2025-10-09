@@ -108,7 +108,7 @@ class NimbusExperiment:
         )
 
     def collect_today(self, process_date: date) -> bool:
-        return self.latest_collectible_batch_end(process_date) < process_date
+        return self.latest_collectible_batch_end(process_date) == process_date - timedelta(days=1)
 
 
 def get_country_from_targeting(targeting: str) -> Optional[str]:

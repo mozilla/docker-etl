@@ -57,7 +57,7 @@ class TestHelpers(TestCase):
         # Mock experiment starts on 2025-08-18 and has batch duration 7 days
         experiment = mock_nimbus_experiment()
 
-        self.assertEqual(True, experiment.collect_today(mock_date))
+        self.assertEqual(False, experiment.collect_today(mock_date))
         self.assertEqual(date(2025, 9, 29), experiment.latest_collectible_batch_start(mock_date))
         self.assertEqual(date(2025, 10, 5), experiment.latest_collectible_batch_end(mock_date))
 
@@ -66,7 +66,7 @@ class TestHelpers(TestCase):
         # Mock experiment starts on 2025-08-18 and has batch duration 7 days
         experiment = mock_nimbus_experiment()
 
-        self.assertEqual(True, experiment.collect_today(mock_date))
+        self.assertEqual(False, experiment.collect_today(mock_date))
         self.assertEqual(date(2025, 9, 1), experiment.latest_collectible_batch_start(mock_date))
         self.assertEqual(date(2025, 9, 7), experiment.latest_collectible_batch_end(mock_date))
 
@@ -107,7 +107,7 @@ class TestHelpers(TestCase):
         # Mock experiment starts on 2025-08-18 and has batch duration 5 days
         experiment.batchDuration = 432000
 
-        self.assertEqual(True, experiment.collect_today(mock_date))
+        self.assertEqual(False, experiment.collect_today(mock_date))
         self.assertEqual(date(2025, 8, 23), experiment.latest_collectible_batch_start(mock_date))
         self.assertEqual(date(2025, 8, 27), experiment.latest_collectible_batch_end(mock_date))
 
@@ -117,6 +117,6 @@ class TestHelpers(TestCase):
         # Mock experiment starts on 2025-08-18 and has batch duration 5 days
         experiment.batchDuration = 432000
 
-        self.assertEqual(True, experiment.collect_today(mock_date))
+        self.assertEqual(False, experiment.collect_today(mock_date))
         self.assertEqual(date(2025, 8, 23), experiment.latest_collectible_batch_start(mock_date))
         self.assertEqual(date(2025, 8, 27), experiment.latest_collectible_batch_end(mock_date))
