@@ -5,6 +5,7 @@ import logging
 import requests
 import subprocess
 import time
+from datetime import date
 
 from google.cloud import bigquery
 from google.cloud import storage
@@ -20,7 +21,7 @@ from constants import (
     PROCESS_TIMEOUT,
     VDAF,
 )
-from ads_incrementality_dap_collector.models import (
+from models import (
     IncrementalityBranchResultsRow,
     NimbusExperiment,
 )
@@ -48,12 +49,13 @@ def get_experiment(
 
 def prepare_results_rows(
     experiment: NimbusExperiment,
+    process_date: date
 ) -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
     """Pull info out of the experiment metadata to set up experiment branch results rows. The info
     here will be used to call DAP and get results data for each branch, and ultimately written
     to BQ."""
     tasks_to_process: dict[str, dict[int, IncrementalityBranchResultsRow]] = {}
-    if not experiment.collect_today():
+    if not experiment.collect_today(process_date):
         logging.info(f"Skipping collection for {experiment.slug} today.")
         return tasks_to_process
 
@@ -71,7 +73,7 @@ def prepare_results_rows(
 
             for visit_counting_list_item in visit_counting_experiment_list:
                 incrementality = IncrementalityBranchResultsRow(
-                    experiment, branch.slug, visit_counting_list_item
+                    experiment, branch.slug, visit_counting_list_item, process_date
                 )
                 task_id = incrementality.task_id
 

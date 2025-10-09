@@ -36,11 +36,17 @@ from helpers import (
     help="The 'private_key' defined in the collector credentials, used to decrypt shares from the leader and helper",
     required=True,
 )
-def main(job_config_gcp_project, job_config_bucket, auth_token, hpke_private_key):
+@click.option(
+    "--process_date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Current processing date (ds)",
+    required=True,
+)
+def main(job_config_gcp_project, job_config_bucket, auth_token, hpke_private_key, process_date):
     try:
         logging.info(
-            f"""Starting collector job with configuration from gcp project: {job_config_gcp_project}
-            and gcs bucket: {job_config_bucket}"""
+            f"Starting collector job with configuration from gcp project: {job_config_gcp_project} "
+            f"and gcs bucket: {job_config_bucket} for process date: {process_date}"
         )
         config = get_config(
             job_config_gcp_project, job_config_bucket, auth_token, hpke_private_key
@@ -52,7 +58,7 @@ def main(job_config_gcp_project, job_config_bucket, auth_token, hpke_private_key
         for experiment_config in config.nimbus.experiments:
             experiment = get_experiment(experiment_config, config.nimbus.api_url)
 
-            tasks_to_collect = prepare_results_rows(experiment)
+            tasks_to_collect = prepare_results_rows(experiment, process_date.date())
             collected_tasks = collect_dap_results(
                 tasks_to_collect, config.dap, experiment_config
             )

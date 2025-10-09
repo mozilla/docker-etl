@@ -2,6 +2,7 @@ from google.cloud import bigquery
 from collections.abc import Mapping, Sequence
 from subprocess import CompletedProcess
 from types import SimpleNamespace
+from datetime import date
 
 from ads_incrementality_dap_collector.models import (
     IncrementalityBranchResultsRow,
@@ -51,7 +52,7 @@ def mock_task_id() -> str:
     return "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o"
 
 
-def mock_control_row(experiment) -> IncrementalityBranchResultsRow:
+def mock_control_row(experiment, processed_date: date) -> IncrementalityBranchResultsRow:
     return IncrementalityBranchResultsRow(
         experiment,
         "control",
@@ -62,10 +63,11 @@ def mock_control_row(experiment) -> IncrementalityBranchResultsRow:
             "task_veclen": 4,
             "urls": ["*://*.glamazon.com/"],
         },
+        processed_date
     )
 
 
-def mock_treatment_a_row(experiment) -> IncrementalityBranchResultsRow:
+def mock_treatment_a_row(experiment, processed_date: date) -> IncrementalityBranchResultsRow:
     return IncrementalityBranchResultsRow(
         experiment,
         "treatment-a",
@@ -76,10 +78,11 @@ def mock_treatment_a_row(experiment) -> IncrementalityBranchResultsRow:
             "task_veclen": 4,
             "urls": ["*://*.glamazon.com/"],
         },
+        processed_date
     )
 
 
-def mock_treatment_b_row(experiment) -> IncrementalityBranchResultsRow:
+def mock_treatment_b_row(experiment, processed_date: date) -> IncrementalityBranchResultsRow:
     return IncrementalityBranchResultsRow(
         experiment,
         "treatment-b",
@@ -93,6 +96,7 @@ def mock_treatment_b_row(experiment) -> IncrementalityBranchResultsRow:
                 "*://*.glamazon.com/*tag=admarketus*ref=*mfadid=adm",
             ],
         },
+        processed_date
     )
 
 
@@ -102,24 +106,24 @@ def mock_nimbus_unparseable_experiment() -> NimbusExperiment:
     return NimbusExperiment.from_dict(nimbus_unparseable_json)
 
 
-def mock_tasks_to_collect() -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
+def mock_tasks_to_collect(processed_date: date) -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
     experiment = mock_nimbus_experiment()
     return {
         "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o": {
-            1: mock_control_row(experiment),
-            2: mock_treatment_b_row(experiment),
-            3: mock_treatment_a_row(experiment),
+            1: mock_control_row(experiment, processed_date),
+            2: mock_treatment_b_row(experiment, processed_date),
+            3: mock_treatment_a_row(experiment, processed_date),
         }
     }
 
 
-def mock_collected_tasks() -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
+def mock_collected_tasks(processed_date: date) -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
     experiment = mock_nimbus_experiment()
     tasks_to_collect = {
         "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o": {
-            1: mock_control_row(experiment),
-            2: mock_treatment_b_row(experiment),
-            3: mock_treatment_a_row(experiment),
+            1: mock_control_row(experiment, processed_date),
+            2: mock_treatment_b_row(experiment, processed_date),
+            3: mock_treatment_a_row(experiment, processed_date),
         }
     }
     tasks_to_collect["mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o"][

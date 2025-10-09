@@ -82,22 +82,22 @@ class TestHelpers(TestCase):
 
     def test_prepare_results_rows_success(self):
         experiment = mock_nimbus_experiment()
-        results_rows = prepare_results_rows(experiment)
+        results_rows = prepare_results_rows(experiment, date(2025, 8, 25))
         task_id = mock_task_id()
         self.assertEqual([task_id], list(results_rows.keys()))
-        self.assertEqual(mock_control_row(experiment), results_rows[task_id][1])
-        self.assertEqual(mock_treatment_a_row(experiment), results_rows[task_id][2])
-        self.assertEqual(mock_treatment_b_row(experiment), results_rows[task_id][3])
+        self.assertEqual(mock_control_row(experiment, date(2025, 8, 25)), results_rows[task_id][1])
+        self.assertEqual(mock_treatment_a_row(experiment, date(2025, 8, 25)), results_rows[task_id][2])
+        self.assertEqual(mock_treatment_b_row(experiment, date(2025, 8, 25)), results_rows[task_id][3])
 
     def test_prepare_results_row_unparseable_experiment(self):
         experiment = mock_nimbus_unparseable_experiment()
-        results_rows = prepare_results_rows(experiment)
+        results_rows = prepare_results_rows(experiment, date(2025, 8, 22))
         self.assertEqual({}, results_rows)
         self.assertEqual([], list(results_rows.keys()))
 
     @patch("subprocess.run", side_effect=mock_dap_subprocess_success)
     def test_collect_dap_results_success(self, mock_dap_subprocess_success):
-        tasks_to_collect = mock_tasks_to_collect()
+        tasks_to_collect = mock_tasks_to_collect(date(2025, 8, 22))
         task_id = list(tasks_to_collect.keys())[0]
         collect_dap_results(
             tasks_to_collect, mock_dap_config(), mock_experiment_config()
@@ -109,7 +109,7 @@ class TestHelpers(TestCase):
 
     @patch("subprocess.run", side_effect=mock_dap_subprocess_fail)
     def test_collect_dap_results_fail(self, mock_dap_subprocess_fail):
-        tasks_to_collect = mock_tasks_to_collect()
+        tasks_to_collect = mock_tasks_to_collect(date(2025, 9, 19))
         with pytest.raises(
             Exception, match="Failed to parse collected DAP results: None"
         ):
@@ -120,7 +120,7 @@ class TestHelpers(TestCase):
 
     @patch("subprocess.run", side_effect=mock_dap_subprocess_raise)
     def test_collect_dap_results_raise(self, mock_dap_subprocess_raise):
-        tasks_to_collect = mock_tasks_to_collect()
+        tasks_to_collect = mock_tasks_to_collect(date(2025, 9, 19))
         task_id = list(tasks_to_collect.keys())[0]
         with pytest.raises(
             Exception, match=f"Collection failed for {task_id}, 1, stderr: Uh-oh"
@@ -133,10 +133,8 @@ class TestHelpers(TestCase):
     @patch("google.cloud.bigquery.Table")
     @patch("google.cloud.bigquery.Client")
     @patch("ads_incrementality_dap_collector.helpers.datetime")
-    @patch("tests.test_mocks.NimbusExperiment.todays_date")
     def test_write_results_to_bq_success(
         self,
-        todays_date,
         datetime_in_helpers,
         bq_client,
         bq_table,
@@ -150,10 +148,9 @@ class TestHelpers(TestCase):
         datetime_in_helpers.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
         mock_date = date(2025, 9, 19)
-        todays_date.return_value = mock_date
 
         bq_config = mock_bq_config()
-        collected_tasks = mock_collected_tasks()
+        collected_tasks = mock_collected_tasks(mock_date)
         write_results_to_bq(collected_tasks, bq_config)
 
         bq_client.assert_called_once_with(project=bq_config.project)
@@ -231,7 +228,7 @@ class TestHelpers(TestCase):
         bq_config = mock_bq_config()
 
         with pytest.raises(Exception, match="BQ create dataset Uh-oh"):
-            write_results_to_bq(mock_collected_tasks(), bq_config)
+            write_results_to_bq(mock_collected_tasks(date(2025, 9, 19)), bq_config)
 
             bq_client.return_value.create_dataset.assert_called_once_with(
                 f"{bq_config.project}.{bq_config.namespace}", exists_ok=True
@@ -254,7 +251,7 @@ class TestHelpers(TestCase):
             match=f"Failed to create BQ table: {bq_config.project}.{bq_config.namespace}.{bq_config.table}",
         ):
 
-            write_results_to_bq(mock_collected_tasks(), bq_config)
+            write_results_to_bq(mock_collected_tasks(date(2025, 9, 19)), bq_config)
             bq_client.return_value.create_dataset.assert_called_once_with(
                 f"{bq_config.project}.{bq_config.namespace}", exists_ok=True
             )
@@ -280,7 +277,7 @@ class TestHelpers(TestCase):
                 "Error inserting rows into some-gcp-project-id.ads_dap.incrementality: [{'key': 0, 'errors': 'Problem writing bucket 1 results'}, {'key': 1, 'errors': 'Problem writing bucket 2 results'}, {'key': 2, 'errors': 'Problem writing bucket 3 results'}]"  # noqa: E501
             ),
         ):
-            write_results_to_bq(mock_collected_tasks(), bq_config)
+            write_results_to_bq(mock_collected_tasks(date(2025, 9, 19)), bq_config)
             bq_client.return_value.create_dataset.assert_called_once_with(
                 f"{bq_config.project}.{bq_config.namespace}", exists_ok=True
             )

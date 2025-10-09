@@ -78,14 +78,14 @@ class NimbusExperiment:
         )
         return converter.structure(d, cls)
 
-    def latest_collectible_batch_start(self) -> date:
+    def latest_collectible_batch_start(self, process_date: date) -> date:
         batch_interval_start = self.startDate
         # If the experiment's start date is today or in the future, return it
-        if batch_interval_start >= self.todays_date():
+        if batch_interval_start >= process_date:
             return self.startDate
 
         # While the batch_interval_start variable is before the batch that includes today...
-        while batch_interval_start <= self.todays_date():
+        while batch_interval_start <= process_date:
             # Increment the batch_interval_start by the batch interval.
             batch_interval_start = batch_interval_start + timedelta(
                 seconds=self.batchDuration
@@ -102,16 +102,13 @@ class NimbusExperiment:
         # Now we can return the start date that's two intervals back
         return batch_interval_start - timedelta(seconds=2 * self.batchDuration)
 
-    def latest_collectible_batch_end(self) -> date:
-        return self.latest_collectible_batch_start() + timedelta(
+    def latest_collectible_batch_end(self, process_date: date) -> date:
+        return self.latest_collectible_batch_start(process_date) + timedelta(
             seconds=self.batchDuration, days=-1
         )
 
-    def collect_today(self) -> bool:
-        return self.latest_collectible_batch_end() < self.todays_date()
-
-    def todays_date(self) -> date:
-        return date.today()
+    def collect_today(self, process_date: date) -> bool:
+        return self.latest_collectible_batch_end(process_date) < process_date
 
 
 def get_country_from_targeting(targeting: str) -> Optional[str]:
@@ -140,7 +137,7 @@ def get_advertiser_from_url(url: str) -> Optional[str]:
     return ext.domain
 
 
-@attr.s(auto_attribs=True, auto_detect=True, eq=True)
+@attr.s(auto_attribs=True, auto_detect=True, eq=False)
 class IncrementalityBranchResultsRow:
     """This object encapsulates all the data for an incrementality experiment branch that uses the
     Nimbus dapTelemetry feature. It is used as an intermediate data structure, first to hold the
@@ -182,27 +179,43 @@ class IncrementalityBranchResultsRow:
     task_veclen: int
     value_count: int
 
+    def __eq__(self, other):
+        return (
+            self.advertiser == other.advertiser and
+            self.batch_start == other.batch_start and
+            self.batch_end == other.batch_end and
+            self.batch_duration == other.batch_duration and
+            self.branch == other.branch and
+            self.bucket == other.bucket and
+            self.experiment_slug == other.experiment_slug and
+            self.metric == other.metric and
+            self.task_id == other.task_id and
+            self.task_veclen == other.task_veclen and
+            self.value_count == other.value_count
+        )
+
     def __init__(
         self,
         experiment: NimbusExperiment,
         branch_slug: str,
-        visitCountingExperimentListItem: dict,
+        visitCounting_experiment_list_item: dict,
+        process_date: date
     ):
         self.advertiser = "not_set"
-        urls = visitCountingExperimentListItem.get("urls")
+        urls = visitCounting_experiment_list_item.get("urls")
         # Default to the first url in the list to determine the advertiser.
         if len(urls) > 0:
             self.advertiser = get_advertiser_from_url(urls[0])
         self.branch = branch_slug
-        self.bucket = visitCountingExperimentListItem.get("bucket")
-        self.batch_start = experiment.latest_collectible_batch_start()
-        self.batch_end = experiment.latest_collectible_batch_end()
+        self.bucket = visitCounting_experiment_list_item.get("bucket")
+        self.batch_start = experiment.latest_collectible_batch_start(process_date)
+        self.batch_end = experiment.latest_collectible_batch_end(process_date)
         self.batch_duration = experiment.batchDuration
         self.country_codes = get_country_from_targeting(experiment.targeting)
         self.experiment_slug = experiment.slug
         self.metric = "unique_client_organic_visits"
-        self.task_id = visitCountingExperimentListItem.get("task_id")
-        self.task_veclen = visitCountingExperimentListItem.get("task_veclen")
+        self.task_id = visitCounting_experiment_list_item.get("task_id")
+        self.task_veclen = visitCounting_experiment_list_item.get("task_veclen")
         # This will be populated when we successfully fetch the count from DAP
         self.value_count = None
 
