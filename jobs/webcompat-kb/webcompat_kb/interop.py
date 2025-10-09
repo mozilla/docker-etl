@@ -250,7 +250,7 @@ def update_interop_data(
 
     for proposal_type, label in [
         ("focus-area", "focus-area-proposal"),
-        ("investigation", "investigation-proposal"),
+        ("investigation", "investigation-effort-proposal"),
     ]:
         last_updated = None
         if not recreate:
