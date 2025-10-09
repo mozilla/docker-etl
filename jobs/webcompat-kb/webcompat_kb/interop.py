@@ -1,6 +1,8 @@
 import argparse
+import logging
 import re
 import os
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable, Mapping, MutableMapping, Optional, Sequence
 from urllib.parse import urlencode
@@ -11,7 +13,7 @@ from pydantic import BaseModel
 
 from .base import EtlJob, dataset_arg
 from .bqhelpers import BigQuery
-from .httphelpers import get_json, get_paginated_json
+from .httphelpers import Json, get_json, get_paginated_json
 
 
 class GitHubUser(BaseModel):
@@ -67,6 +69,23 @@ class InteropRow(BaseModel):
     proposal_type: str
     bugs: list[int]
     features: list[str]
+    updated_at: datetime
+    state: str
+
+    def to_json(self) -> Mapping[str, Json]:
+        rv = self.dict()
+        if rv["updated_at"] is not None:
+            rv["updated_at"] = rv["updated_at"].replace(tzinfo=None).isoformat()
+        return rv
+
+
+@dataclass
+class InteropYear:
+    year: int
+    proposals_open: datetime
+
+
+interop_years = [InteropYear(2026, datetime(2025, 9, 4))]
 
 
 class GitHub:
@@ -80,9 +99,13 @@ class GitHub:
         return headers
 
     def issues(
-        self, repo: str, labels: Iterable[str], last_updated: Optional[datetime]
+        self,
+        repo: str,
+        labels: Iterable[str],
+        last_updated: Optional[datetime],
+        state: Optional[str] = "all",
     ) -> Sequence[GitHubIssue]:
-        query = {}
+        query = {"state": state}
         if labels is not None:
             query["labels"] = ",".join(labels)
         if last_updated is not None:
@@ -136,6 +159,8 @@ def get_interop_issues(
         bigquery.SchemaField("proposal_type", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("bugs", "INTEGER", mode="REPEATED"),
         bigquery.SchemaField("features", "STRING", mode="REPEATED"),
+        bigquery.SchemaField("updated_at", "DATETIME", mode="REQUIRED"),
+        bigquery.SchemaField("state", "STRING", mode="REQUIRED"),
     ]
     table = client.ensure_table("interop_proposals", schema)
     if recreate:
@@ -149,6 +174,8 @@ def get_interop_issues(
             proposal_type=row.proposal_type,
             bugs=row.bugs,
             features=row.features,
+            updated_at=row.updated_at,
+            state=row.state,
         )
         for row in client.query(query)
     }
@@ -177,15 +204,17 @@ def get_features(body: str) -> set[str]:
 
 
 def extract_issue_data(
-    gh_client: GitHub, issue: GitHubIssue, proposal_type: str
+    gh_client: GitHub, issue: GitHubIssue, proposal_type: str, year: int
 ) -> InteropRow:
     rv = InteropRow(
-        year=issue.created_at.year + 1,
+        year=year,
         issue=issue.number,
         title=issue.title,
         proposal_type=proposal_type,
         bugs=[],
         features=[],
+        updated_at=issue.updated_at,
+        state=issue.state,
     )
     bugs = get_bugs(issue.body)
     web_features = get_features(issue.body)
@@ -200,6 +229,17 @@ def extract_issue_data(
     return rv
 
 
+def get_proposal_year(issue: GitHubIssue) -> Optional[int]:
+    for interop_year in interop_years:
+        created_at = issue.created_at.date()
+        if (
+            created_at >= interop_year.proposals_open.date()
+            and created_at.year == interop_year.proposals_open.year
+        ):
+            return interop_year.year
+    return None
+
+
 def update_interop_data(
     client: BigQuery, gh_client: GitHub, repo: str, recreate: bool
 ) -> None:
@@ -210,21 +250,39 @@ def update_interop_data(
 
     for proposal_type, label in [
         ("focus-area", "focus-area-proposal"),
-        ("investigation", "investigation-proposal"),
+        ("investigation", "investigation-effort-proposal"),
     ]:
-        updated_issues = {
-            item.number: item for item in gh_client.issues(repo, [label], last_import)
-        }
+        last_updated = None
+        if not recreate:
+            update_times = [
+                item.updated_at
+                for item in interop_proposals.values()
+                if item.proposal_type == proposal_type and item.updated_at is not None
+            ]
+            if update_times:
+                last_updated = max(update_times)
 
+        updated_issues = {
+            item.number: item
+            for item in gh_client.issues(
+                repo=repo,
+                labels=[label],
+                last_updated=last_updated,
+            )
+        }
+        logging.debug(f"Found {len(updated_issues)} updated proposals on GitHub")
         for number, issue in updated_issues.items():
+            year = get_proposal_year(issue)
+            if year is None:
+                continue
             interop_proposals[number] = extract_issue_data(
-                gh_client, issue, proposal_type
+                gh_client, issue, proposal_type, year
             )
 
     client.write_table(
         issues_table,
         issues_table.schema,
-        [item.dict() for item in interop_proposals.values()],
+        [item.to_json() for item in interop_proposals.values()],
         True,
     )
     client.insert_rows(runs_table, [{"run_at": datetime.now().isoformat()}])
