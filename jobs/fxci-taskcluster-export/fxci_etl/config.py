@@ -33,7 +33,16 @@ class PulseConfig:
             exchange="exchange/taskcluster-queue/v1/task-exception",
             routing_key="#",
         ),
+        "task-defined": PulseExchangeConfig(
+            exchange="exchange/taskcluster-queue/v1/task-defined",
+            routing_key="#",
+        ),
     }
+
+
+@dataclass(frozen=True)
+class TaskclusterConfig:
+    rootUrl: str = "https://firefox-ci-tc.services.mozilla.com"
 
 
 @dataclass(frozen=True)
@@ -41,6 +50,7 @@ class BigQueryTableConfig:
     metrics: str = "worker_metrics_v1"
     tasks: str = "tasks_v2"
     runs: str = "task_runs_v1"
+    taskdefinitions: str = "task_definitions_v1"
 
 
 @dataclass(frozen=True)
@@ -75,6 +85,7 @@ class Config:
     # configs may not be necessary.
     pulse: Optional[PulseConfig]
     monitoring: MonitoringConfig = MonitoringConfig()
+    taskcluster: Optional[TaskclusterConfig] = TaskclusterConfig()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Config":

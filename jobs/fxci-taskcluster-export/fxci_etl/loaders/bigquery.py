@@ -20,10 +20,11 @@ from fxci_etl.config import Config
 
 
 class BigQueryLoader:
-    CHUNK_SIZE = 5000
+    DEFAULT_CHUNK_SIZE = 5000
 
-    def __init__(self, config: Config, table_type: str):
+    def __init__(self, config: Config, table_type: str, chunk_size: int = DEFAULT_CHUNK_SIZE):
         self.config = config
+        self.chunk_size = chunk_size
 
         if config.bigquery.credentials:
             self.client = Client.from_service_account_info(
@@ -125,7 +126,7 @@ class BigQueryLoader:
         # There's a 10MB limit on the `insert_rows` request, submit rows in
         # batches to avoid exceeding it.
         errors = []
-        for batch in batched(records, self.CHUNK_SIZE):
+        for batch in batched(records, self.chunk_size):
             logger.debug(f"Inserting batch of {len(batch)} records")
             errors.extend(
                 self.client.insert_rows(
