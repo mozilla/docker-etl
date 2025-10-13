@@ -2,7 +2,6 @@ from google.cloud import bigquery
 from collections.abc import Mapping, Sequence
 from subprocess import CompletedProcess
 from types import SimpleNamespace
-from datetime import date
 
 from ads_incrementality_dap_collector.models import (
     IncrementalityBranchResultsRow,
@@ -42,9 +41,10 @@ def mock_nimbus_fail(*args, **kwargs) -> MockResponse:
     return MockResponse({}, 404)
 
 
-def mock_nimbus_experiment() -> NimbusExperiment:
+def mock_nimbus_experiment(process_date="2025-08-22") -> NimbusExperiment:
     nimbus_success_json = NIMBUS_SUCCESS
     nimbus_success_json["batchDuration"] = mock_experiment_config().batch_duration
+    nimbus_success_json["processDate"] = process_date
     return NimbusExperiment.from_dict(nimbus_success_json)
 
 
@@ -52,7 +52,7 @@ def mock_task_id() -> str:
     return "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o"
 
 
-def mock_control_row(experiment, processed_date: date) -> IncrementalityBranchResultsRow:
+def mock_control_row(experiment) -> IncrementalityBranchResultsRow:
     return IncrementalityBranchResultsRow(
         experiment,
         "control",
@@ -63,11 +63,10 @@ def mock_control_row(experiment, processed_date: date) -> IncrementalityBranchRe
             "task_veclen": 4,
             "urls": ["*://*.glamazon.com/"],
         },
-        processed_date
     )
 
 
-def mock_treatment_a_row(experiment, processed_date: date) -> IncrementalityBranchResultsRow:
+def mock_treatment_a_row(experiment) -> IncrementalityBranchResultsRow:
     return IncrementalityBranchResultsRow(
         experiment,
         "treatment-a",
@@ -78,11 +77,10 @@ def mock_treatment_a_row(experiment, processed_date: date) -> IncrementalityBran
             "task_veclen": 4,
             "urls": ["*://*.glamazon.com/"],
         },
-        processed_date
     )
 
 
-def mock_treatment_b_row(experiment, processed_date: date) -> IncrementalityBranchResultsRow:
+def mock_treatment_b_row(experiment) -> IncrementalityBranchResultsRow:
     return IncrementalityBranchResultsRow(
         experiment,
         "treatment-b",
@@ -96,34 +94,36 @@ def mock_treatment_b_row(experiment, processed_date: date) -> IncrementalityBran
                 "*://*.glamazon.com/*tag=admarketus*ref=*mfadid=adm",
             ],
         },
-        processed_date
     )
 
 
 def mock_nimbus_unparseable_experiment() -> NimbusExperiment:
     nimbus_unparseable_json = NIMBUS_NOT_AN_INCREMENTALITY_EXPERIMENT
     nimbus_unparseable_json["batchDuration"] = mock_experiment_config().batch_duration
+    nimbus_unparseable_json["processDate"] = "2025-09-19"
     return NimbusExperiment.from_dict(nimbus_unparseable_json)
 
 
-def mock_tasks_to_collect(processed_date: date) -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
+def mock_tasks_to_collect() -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
     experiment = mock_nimbus_experiment()
     return {
         "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o": {
-            1: mock_control_row(experiment, processed_date),
-            2: mock_treatment_b_row(experiment, processed_date),
-            3: mock_treatment_a_row(experiment, processed_date),
+            1: mock_control_row(experiment),
+            2: mock_treatment_b_row(experiment),
+            3: mock_treatment_a_row(experiment),
         }
     }
 
 
-def mock_collected_tasks(processed_date: date) -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
-    experiment = mock_nimbus_experiment()
+def mock_collected_tasks(
+    process_date="2025-09-13",
+) -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
+    experiment = mock_nimbus_experiment(process_date)
     tasks_to_collect = {
         "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o": {
-            1: mock_control_row(experiment, processed_date),
-            2: mock_treatment_b_row(experiment, processed_date),
-            3: mock_treatment_a_row(experiment, processed_date),
+            1: mock_control_row(experiment),
+            2: mock_treatment_b_row(experiment),
+            3: mock_treatment_a_row(experiment),
         }
     }
     tasks_to_collect["mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o"][

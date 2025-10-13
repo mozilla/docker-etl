@@ -5,7 +5,6 @@ import logging
 import requests
 import subprocess
 import time
-from datetime import date
 
 from google.cloud import bigquery
 from google.cloud import storage
@@ -29,7 +28,7 @@ from models import (
 
 # Nimbus Experimenter helper functions
 def get_experiment(
-    experiment_config: SimpleNamespace, api_url: str
+    experiment_config: SimpleNamespace, api_url: str, process_date: str
 ) -> Optional[NimbusExperiment]:
     """Fetch the experiment from Experimenter API and return the configuration."""
     logging.info(f"Fetching experiment: {experiment_config.slug}")
@@ -38,6 +37,7 @@ def get_experiment(
         if not hasattr(experiment_config, "batch_duration"):
             experiment_config.batch_duration = DEFAULT_BATCH_DURATION
         nimbus_experiments_json["batchDuration"] = experiment_config.batch_duration
+        nimbus_experiments_json["processDate"] = process_date
         nimbus_experiment = NimbusExperiment.from_dict(nimbus_experiments_json)
         logging.info(f"Fetched experiment json: {experiment_config.slug}")
         return nimbus_experiment
@@ -49,13 +49,12 @@ def get_experiment(
 
 def prepare_results_rows(
     experiment: NimbusExperiment,
-    process_date: date
 ) -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
     """Pull info out of the experiment metadata to set up experiment branch results rows. The info
     here will be used to call DAP and get results data for each branch, and ultimately written
     to BQ."""
     tasks_to_process: dict[str, dict[int, IncrementalityBranchResultsRow]] = {}
-    if not experiment.collect_today(process_date):
+    if not experiment.collect_today():
         logging.info(f"Skipping collection for {experiment.slug} today.")
         return tasks_to_process
 
@@ -73,7 +72,7 @@ def prepare_results_rows(
 
             for visit_counting_list_item in visit_counting_experiment_list:
                 incrementality = IncrementalityBranchResultsRow(
-                    experiment, branch.slug, visit_counting_list_item, process_date
+                    experiment, branch.slug, visit_counting_list_item
                 )
                 task_id = incrementality.task_id
 

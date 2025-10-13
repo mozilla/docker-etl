@@ -21,9 +21,11 @@ class Branch:
 @attr.s(auto_attribs=True)
 class NimbusExperiment:
     """Represents a v8 Nimbus experiment from Experimenter. Most of these values get read from
-        Nimbus's GET experiment endpoint's json response. The notable exception is batch_duration,
-        which currently comes from the experiment's configuration in config.json, but we add it
-        to this model so we can conveniently figure out when the data should be collected.
+        Nimbus's GET experiment endpoint's json response. The notable exceptions are batch_duration,
+        which currently comes from the experiment's configuration in config.json. We also add the
+        process_date to this model, which comes from Airflow's job run. Both are present on this model
+        so we can conveniently figure out when the data should be collected and what "batch interval"
+        start and end date to request collection from DAP.
 
     Attributes:
         appId:                  Id of the app we're experimenting on, something like 'firefox-desktop'.
@@ -42,7 +44,7 @@ class NimbusExperiment:
 
         startDate:              The day the experiment will begin enrolling users.
         endDate:                The day the experiment will be turned off.
-
+        processDate:            The date of batch collection (comes from airflow's daily run of the job)
     """
 
     appId: str
@@ -59,6 +61,7 @@ class NimbusExperiment:
 
     startDate: date
     endDate: Optional[date]
+    processDate: date
 
     @classmethod
     def from_dict(cls, d) -> "NimbusExperiment":
@@ -78,14 +81,14 @@ class NimbusExperiment:
         )
         return converter.structure(d, cls)
 
-    def latest_collectible_batch_start(self, process_date: date) -> date:
+    def latest_collectible_batch_start(self) -> date:
         batch_interval_start = self.startDate
         # If the experiment's start date is today or in the future, return it
-        if batch_interval_start >= process_date:
+        if batch_interval_start >= self.processDate:
             return self.startDate
 
         # While the batch_interval_start variable is before the batch that includes today...
-        while batch_interval_start <= process_date:
+        while batch_interval_start <= self.processDate:
             # Increment the batch_interval_start by the batch interval.
             batch_interval_start = batch_interval_start + timedelta(
                 seconds=self.batchDuration
@@ -102,13 +105,15 @@ class NimbusExperiment:
         # Now we can return the start date that's two intervals back
         return batch_interval_start - timedelta(seconds=2 * self.batchDuration)
 
-    def latest_collectible_batch_end(self, process_date: date) -> date:
-        return self.latest_collectible_batch_start(process_date) + timedelta(
+    def latest_collectible_batch_end(self) -> date:
+        return self.latest_collectible_batch_start() + timedelta(
             seconds=self.batchDuration, days=-1
         )
 
-    def collect_today(self, process_date: date) -> bool:
-        return self.latest_collectible_batch_end(process_date) == process_date - timedelta(days=1)
+    def collect_today(self) -> bool:
+        return self.latest_collectible_batch_end() == self.processDate - timedelta(
+            days=1
+        )
 
 
 def get_country_from_targeting(targeting: str) -> Optional[str]:
@@ -181,17 +186,17 @@ class IncrementalityBranchResultsRow:
 
     def __eq__(self, other):
         return (
-            self.advertiser == other.advertiser and
-            self.batch_start == other.batch_start and
-            self.batch_end == other.batch_end and
-            self.batch_duration == other.batch_duration and
-            self.branch == other.branch and
-            self.bucket == other.bucket and
-            self.experiment_slug == other.experiment_slug and
-            self.metric == other.metric and
-            self.task_id == other.task_id and
-            self.task_veclen == other.task_veclen and
-            self.value_count == other.value_count
+            self.advertiser == other.advertiser
+            and self.batch_start == other.batch_start
+            and self.batch_end == other.batch_end
+            and self.batch_duration == other.batch_duration
+            and self.branch == other.branch
+            and self.bucket == other.bucket
+            and self.experiment_slug == other.experiment_slug
+            and self.metric == other.metric
+            and self.task_id == other.task_id
+            and self.task_veclen == other.task_veclen
+            and self.value_count == other.value_count
         )
 
     def __init__(
@@ -199,7 +204,6 @@ class IncrementalityBranchResultsRow:
         experiment: NimbusExperiment,
         branch_slug: str,
         visitCounting_experiment_list_item: dict,
-        process_date: date
     ):
         self.advertiser = "not_set"
         urls = visitCounting_experiment_list_item.get("urls")
@@ -208,8 +212,8 @@ class IncrementalityBranchResultsRow:
             self.advertiser = get_advertiser_from_url(urls[0])
         self.branch = branch_slug
         self.bucket = visitCounting_experiment_list_item.get("bucket")
-        self.batch_start = experiment.latest_collectible_batch_start(process_date)
-        self.batch_end = experiment.latest_collectible_batch_end(process_date)
+        self.batch_start = experiment.latest_collectible_batch_start()
+        self.batch_end = experiment.latest_collectible_batch_end()
         self.batch_duration = experiment.batchDuration
         self.country_codes = get_country_from_targeting(experiment.targeting)
         self.experiment_slug = experiment.slug

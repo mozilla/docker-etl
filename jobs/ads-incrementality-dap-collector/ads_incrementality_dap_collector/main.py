@@ -42,7 +42,13 @@ from helpers import (
     help="Current processing date (ds)",
     required=True,
 )
-def main(job_config_gcp_project, job_config_bucket, auth_token, hpke_private_key, process_date):
+def main(
+    job_config_gcp_project,
+    job_config_bucket,
+    auth_token,
+    hpke_private_key,
+    process_date,
+):
     try:
         logging.info(
             f"Starting collector job with configuration from gcp project: {job_config_gcp_project} "
@@ -56,9 +62,11 @@ def main(job_config_gcp_project, job_config_bucket, auth_token, hpke_private_key
         )
 
         for experiment_config in config.nimbus.experiments:
-            experiment = get_experiment(experiment_config, config.nimbus.api_url)
+            experiment = get_experiment(
+                experiment_config, config.nimbus.api_url, process_date
+            )
 
-            tasks_to_collect = prepare_results_rows(experiment, process_date.date())
+            tasks_to_collect = prepare_results_rows(experiment)
             collected_tasks = collect_dap_results(
                 tasks_to_collect, config.dap, experiment_config
             )

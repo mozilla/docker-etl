@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import datetime
 import os
 import pytest
 import re
@@ -55,7 +55,9 @@ from ads_incrementality_dap_collector.constants import (  # noqa: E402
 class TestHelpers(TestCase):
     @patch("requests.get", side_effect=mock_nimbus_success)
     def test_get_experiment_success(self, mock_fetch):
-        experiment = get_experiment(mock_experiment_config(), "nimbus_api_url")
+        experiment = get_experiment(
+            mock_experiment_config(), "nimbus_api_url", "2025-10-13"
+        )
         self.assertEqual("interesting-study-5", experiment.slug)
         self.assertEqual(
             mock_experiment_config().batch_duration, experiment.batchDuration
@@ -65,7 +67,9 @@ class TestHelpers(TestCase):
     @patch("requests.get", side_effect=mock_nimbus_success)
     def test_get_experiment_with_default_duration_success(self, mock_fetch):
         experiment = get_experiment(
-            mock_experiment_config_with_default_duration(), "nimbus_api_url"
+            mock_experiment_config_with_default_duration(),
+            "nimbus_api_url",
+            "2025-09-19",
         )
         self.assertEqual("interesting-study-5", experiment.slug)
         self.assertEqual(DEFAULT_BATCH_DURATION, experiment.batchDuration)
@@ -77,27 +81,27 @@ class TestHelpers(TestCase):
             Exception,
             match="Failed getting experiment: interesting-study-5 from: nimbus_api_url",
         ):
-            _ = get_experiment(mock_experiment_config(), "nimbus_api_url")
+            _ = get_experiment(mock_experiment_config(), "nimbus_api_url", "2025-09-30")
             self.assertEqual(1, mock_fetch.call_count)
 
     def test_prepare_results_rows_success(self):
-        experiment = mock_nimbus_experiment()
-        results_rows = prepare_results_rows(experiment, date(2025, 8, 25))
+        experiment = mock_nimbus_experiment("2025-08-25")
+        results_rows = prepare_results_rows(experiment)
         task_id = mock_task_id()
         self.assertEqual([task_id], list(results_rows.keys()))
-        self.assertEqual(mock_control_row(experiment, date(2025, 8, 25)), results_rows[task_id][1])
-        self.assertEqual(mock_treatment_a_row(experiment, date(2025, 8, 25)), results_rows[task_id][2])
-        self.assertEqual(mock_treatment_b_row(experiment, date(2025, 8, 25)), results_rows[task_id][3])
+        self.assertEqual(mock_control_row(experiment), results_rows[task_id][1])
+        self.assertEqual(mock_treatment_a_row(experiment), results_rows[task_id][2])
+        self.assertEqual(mock_treatment_b_row(experiment), results_rows[task_id][3])
 
     def test_prepare_results_row_unparseable_experiment(self):
         experiment = mock_nimbus_unparseable_experiment()
-        results_rows = prepare_results_rows(experiment, date(2025, 8, 22))
+        results_rows = prepare_results_rows(experiment)
         self.assertEqual({}, results_rows)
         self.assertEqual([], list(results_rows.keys()))
 
     @patch("subprocess.run", side_effect=mock_dap_subprocess_success)
     def test_collect_dap_results_success(self, mock_dap_subprocess_success):
-        tasks_to_collect = mock_tasks_to_collect(date(2025, 8, 22))
+        tasks_to_collect = mock_tasks_to_collect()
         task_id = list(tasks_to_collect.keys())[0]
         collect_dap_results(
             tasks_to_collect, mock_dap_config(), mock_experiment_config()
@@ -109,7 +113,7 @@ class TestHelpers(TestCase):
 
     @patch("subprocess.run", side_effect=mock_dap_subprocess_fail)
     def test_collect_dap_results_fail(self, mock_dap_subprocess_fail):
-        tasks_to_collect = mock_tasks_to_collect(date(2025, 9, 19))
+        tasks_to_collect = mock_tasks_to_collect()
         with pytest.raises(
             Exception, match="Failed to parse collected DAP results: None"
         ):
@@ -120,7 +124,7 @@ class TestHelpers(TestCase):
 
     @patch("subprocess.run", side_effect=mock_dap_subprocess_raise)
     def test_collect_dap_results_raise(self, mock_dap_subprocess_raise):
-        tasks_to_collect = mock_tasks_to_collect(date(2025, 9, 19))
+        tasks_to_collect = mock_tasks_to_collect()
         task_id = list(tasks_to_collect.keys())[0]
         with pytest.raises(
             Exception, match=f"Collection failed for {task_id}, 1, stderr: Uh-oh"
@@ -147,10 +151,8 @@ class TestHelpers(TestCase):
         datetime_in_helpers.now.return_value = mock_datetime
         datetime_in_helpers.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
-        mock_date = date(2025, 9, 19)
-
         bq_config = mock_bq_config()
-        collected_tasks = mock_collected_tasks(mock_date)
+        collected_tasks = mock_collected_tasks("2025-09-19")
         write_results_to_bq(collected_tasks, bq_config)
 
         bq_client.assert_called_once_with(project=bq_config.project)
@@ -228,7 +230,7 @@ class TestHelpers(TestCase):
         bq_config = mock_bq_config()
 
         with pytest.raises(Exception, match="BQ create dataset Uh-oh"):
-            write_results_to_bq(mock_collected_tasks(date(2025, 9, 19)), bq_config)
+            write_results_to_bq(mock_collected_tasks(), bq_config)
 
             bq_client.return_value.create_dataset.assert_called_once_with(
                 f"{bq_config.project}.{bq_config.namespace}", exists_ok=True
@@ -251,7 +253,7 @@ class TestHelpers(TestCase):
             match=f"Failed to create BQ table: {bq_config.project}.{bq_config.namespace}.{bq_config.table}",
         ):
 
-            write_results_to_bq(mock_collected_tasks(date(2025, 9, 19)), bq_config)
+            write_results_to_bq(mock_collected_tasks(), bq_config)
             bq_client.return_value.create_dataset.assert_called_once_with(
                 f"{bq_config.project}.{bq_config.namespace}", exists_ok=True
             )
@@ -277,7 +279,7 @@ class TestHelpers(TestCase):
                 "Error inserting rows into some-gcp-project-id.ads_dap.incrementality: [{'key': 0, 'errors': 'Problem writing bucket 1 results'}, {'key': 1, 'errors': 'Problem writing bucket 2 results'}, {'key': 2, 'errors': 'Problem writing bucket 3 results'}]"  # noqa: E501
             ),
         ):
-            write_results_to_bq(mock_collected_tasks(date(2025, 9, 19)), bq_config)
+            write_results_to_bq(mock_collected_tasks("2025-09-19"), bq_config)
             bq_client.return_value.create_dataset.assert_called_once_with(
                 f"{bq_config.project}.{bq_config.namespace}", exists_ok=True
             )
