@@ -85,7 +85,7 @@ class TestHelpers(TestCase):
             self.assertEqual(1, mock_fetch.call_count)
 
     def test_prepare_results_rows_success(self):
-        experiment = mock_nimbus_experiment("2025-08-25")
+        experiment = mock_nimbus_experiment("2025-08-24")
         results_rows = prepare_results_rows(experiment)
         task_id = mock_task_id()
         self.assertEqual([task_id], list(results_rows.keys()))

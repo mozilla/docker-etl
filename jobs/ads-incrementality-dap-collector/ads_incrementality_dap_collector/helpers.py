@@ -54,7 +54,7 @@ def prepare_results_rows(
     here will be used to call DAP and get results data for each branch, and ultimately written
     to BQ."""
     tasks_to_process: dict[str, dict[int, IncrementalityBranchResultsRow]] = {}
-    if not experiment.collect_today():
+    if not experiment.should_collect_batch():
         logging.info(f"Skipping collection for {experiment.slug} today.")
         return tasks_to_process
 

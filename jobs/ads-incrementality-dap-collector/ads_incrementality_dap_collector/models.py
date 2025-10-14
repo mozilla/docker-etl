@@ -83,24 +83,28 @@ class NimbusExperiment:
 
     def latest_collectible_batch_start(self) -> date:
         batch_interval_start = self.startDate
-        # If the experiment's start date is today or in the future, return it
+        # If the experiment's start date is the processing date or in the future, return it
         if batch_interval_start >= self.processDate:
             return self.startDate
 
-        # While the batch_interval_start variable is before the batch that includes today...
+        # While the batch_interval_start variable is before the batch that includes the processing date...
         while batch_interval_start <= self.processDate:
             # Increment the batch_interval_start by the batch interval.
             batch_interval_start = batch_interval_start + timedelta(
                 seconds=self.batchDuration
             )
-        # After the loop, the batch batch_interval_start is the next batch after the batch that includes today.
+        # After the loop, the batch_interval_start is for the batch after the one that includes processing date.
         # We need to go back two batch interval start dates to get the start of the latest collectible batch.
 
-        # First, handle the edge case where today's date is within the first batch of the experiment
+        # Handle the edge case where the processing date is within the first batch of the experiment
         if (
             batch_interval_start - timedelta(seconds=2 * self.batchDuration)
         ) < self.startDate:
             return self.startDate
+
+        # Handle the edge case where the processing date is the end of the previous batch
+        if self.processDate == (batch_interval_start - timedelta(days=1)):
+            return batch_interval_start - timedelta(seconds=self.batchDuration)
 
         # Now we can return the start date that's two intervals back
         return batch_interval_start - timedelta(seconds=2 * self.batchDuration)
@@ -110,10 +114,8 @@ class NimbusExperiment:
             seconds=self.batchDuration, days=-1
         )
 
-    def collect_today(self) -> bool:
-        return self.latest_collectible_batch_end() == self.processDate - timedelta(
-            days=1
-        )
+    def should_collect_batch(self) -> bool:
+        return self.latest_collectible_batch_end() == self.processDate
 
 
 def get_country_from_targeting(targeting: str) -> Optional[str]:
