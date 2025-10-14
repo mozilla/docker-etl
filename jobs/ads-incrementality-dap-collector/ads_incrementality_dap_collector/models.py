@@ -28,15 +28,10 @@ class NimbusExperiment:
         start and end date to request collection from DAP.
 
     Attributes:
-        appId:                  Id of the app we're experimenting on, something like 'firefox-desktop'.
-        appName:                Name of the app we're experimenting on, something like 'firefox_desktop'.
         batchDuration:          The DAP agreggation time interval.
         branches:               A list of Branch objects for the experiment's branch data.
         bucketConfig:
-        channel:                The release channel for this experiment, something like 'nightly'.
         featureIds:             A list of all the features used in this experiment.
-        proposedEnrollment:
-        referenceBranch:        The slug of the control branch.
         slug:                   Normandy slug that uniquely identifies the experiment
                                 in Nimbus.
         targeting:              A string of js that evaluates to a boolean value indicating
@@ -47,21 +42,15 @@ class NimbusExperiment:
         processDate:            The date of batch collection (comes from airflow's daily run of the job)
     """
 
-    appId: str
-    appName: str
     batchDuration: int
     branches: List[Branch]
     bucketConfig: dict
-    channel: str
     featureIds: list[str]
-    proposedEnrollment: int
-    referenceBranch: Optional[str]
     slug: str
     targeting: str
-
     startDate: date
-    endDate: Optional[date]
-    processDate: date
+    endDate: Optional[date] = None
+    processDate: Optional[date] = None
 
     @classmethod
     def from_dict(cls, d) -> "NimbusExperiment":
@@ -80,6 +69,9 @@ class NimbusExperiment:
             ),
         )
         return converter.structure(d, cls)
+
+    def set_process_date(self, date: date) -> None:
+        self.processDate = date
 
     def latest_collectible_batch_start(self) -> date:
         # If the experiment's start date is on or after the processing date,

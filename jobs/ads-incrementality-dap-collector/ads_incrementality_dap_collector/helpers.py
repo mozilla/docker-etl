@@ -1,5 +1,5 @@
 import ast
-from datetime import datetime
+from datetime import datetime, date
 import json
 import logging
 import requests
@@ -28,7 +28,7 @@ from models import (
 
 # Nimbus Experimenter helper functions
 def get_experiment(
-    experiment_config: SimpleNamespace, api_url: str, process_date: str
+    experiment_config: SimpleNamespace, api_url: str, process_date: date
 ) -> Optional[NimbusExperiment]:
     """Fetch the experiment from Experimenter API and return the configuration."""
     logging.info(f"Fetching experiment: {experiment_config.slug}")
@@ -37,8 +37,8 @@ def get_experiment(
         if not hasattr(experiment_config, "batch_duration"):
             experiment_config.batch_duration = DEFAULT_BATCH_DURATION
         nimbus_experiments_json["batchDuration"] = experiment_config.batch_duration
-        nimbus_experiments_json["processDate"] = process_date
         nimbus_experiment = NimbusExperiment.from_dict(nimbus_experiments_json)
+        nimbus_experiment.set_process_date(process_date)
         logging.info(f"Fetched experiment json: {experiment_config.slug}")
         return nimbus_experiment
     except Exception as e:

@@ -63,7 +63,7 @@ def main(
 
         for experiment_config in config.nimbus.experiments:
             experiment = get_experiment(
-                experiment_config, config.nimbus.api_url, process_date
+                experiment_config, config.nimbus.api_url, process_date.date()
             )
 
             tasks_to_collect = prepare_results_rows(experiment)
