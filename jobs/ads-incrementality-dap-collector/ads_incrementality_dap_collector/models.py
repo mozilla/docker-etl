@@ -85,7 +85,10 @@ class NimbusExperiment:
         # If the experiment's start date is on or after the processing date,
         # Or the processing date is in the experiment's first batch (excluding end date),
         # Then return the experiment's start date as latest_collectible_batch_start
-        if (self.startDate >= self.processDate) or (self.startDate + timedelta(seconds=self.batchDuration, days=-1) > self.processDate):
+        if (self.startDate >= self.processDate) or (
+            self.startDate + timedelta(seconds=self.batchDuration, days=-1)
+            > self.processDate
+        ):
             return self.startDate
 
         batch_interval_start = self.startDate
