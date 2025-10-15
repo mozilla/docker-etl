@@ -1,0 +1,32 @@
+{
+  "bq": {
+    "project": "example-gcp-project",
+    "namespace": "ads_dap",
+    "table": "incrementality"
+  },
+  "dap": {
+    "hpke_config": "some-base64-encoded-stuff"
+  },
+  "nimbus": {
+    "api_url": "https://some-experimenter-api-url",
+    "experiments": [{
+      "slug": "some-experiment-1"
+    },
+    {
+      "slug": "some-experiment-2"
+    },
+    {
+      "slug": "some-experiment-3"
+    },
+    {
+      "slug": "some-experiment-4"
+    },
+    {
+      "slug": "some-experiment-5"
+    },
+    {
+      "slug": "example-incrementality-study",
+      "batch_duration" : 432000
+    }]
+  }
+}
