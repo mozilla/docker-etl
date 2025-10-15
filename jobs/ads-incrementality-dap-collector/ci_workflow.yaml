@@ -1,0 +1,13 @@
+job-ads-incrementality-dap-collector:
+  jobs:
+    - build-job-ads-incrementality-dap-collector
+    - gcp-gcr/build-and-push-image:
+        context: data-eng-airflow-gcr
+        docker-context: jobs/ads-incrementality-dap-collector/
+        path: jobs/ads-incrementality-dap-collector/
+        image: ads-incrementality-dap-collector_docker_etl
+        requires:
+          - build-job-ads-incrementality-dap-collector
+        filters:
+          branches:
+            only: main
