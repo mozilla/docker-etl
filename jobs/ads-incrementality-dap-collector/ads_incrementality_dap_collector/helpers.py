@@ -55,33 +55,32 @@ def prepare_results_rows(
     to BQ."""
     tasks_to_process: dict[str, dict[int, IncrementalityBranchResultsRow]] = {}
     if not experiment.should_collect_batch():
-        logging.info(f"Skipping collection for {experiment.slug} today.")
+        logging.info(
+            f"Skipping collection for {experiment.slug} on process date {experiment.processDate}."
+        )
         return tasks_to_process
 
     for branch in experiment.branches:
         logging.info(f"Processing experiment branch: {branch.slug}")
-        dap_telemetry_features = [
-            f for f in branch.features if f.get("featureId") == "dapTelemetry"
+        dap_incrementality_features = [
+            f for f in branch.features if f.get("featureId") == "dapIncrementality"
         ]
 
-        for feature in dap_telemetry_features:
-            logging.info(f"Processing dapTelemetry experiment feature: {feature}")
-            visit_counting_experiment_list = feature.get("value").get(
-                "visitCountingExperimentList"
+        for feature in dap_incrementality_features:
+            logging.info(f"Processing dapIncrementality experiment feature: {feature}")
+            feature_value = feature.get("value")
+
+            incrementality = IncrementalityBranchResultsRow(
+                experiment, branch.slug, feature_value
             )
+            task_id = incrementality.task_id
 
-            for visit_counting_list_item in visit_counting_experiment_list:
-                incrementality = IncrementalityBranchResultsRow(
-                    experiment, branch.slug, visit_counting_list_item
-                )
-                task_id = incrementality.task_id
-
-                if task_id not in tasks_to_process:
-                    tasks_to_process[task_id] = {}
-                tasks_to_process[task_id][incrementality.bucket] = incrementality
-                logging.info(
-                    f"Prepared intermediate result rows: {tasks_to_process[task_id]}"
-                )
+            if task_id not in tasks_to_process:
+                tasks_to_process[task_id] = {}
+            tasks_to_process[task_id][incrementality.bucket] = incrementality
+            logging.info(
+                f"Prepared intermediate result rows: {tasks_to_process[task_id]}"
+            )
 
         logging.info(f"Finished processing experiment branch: {branch.slug}.")
     return tasks_to_process
@@ -163,14 +162,14 @@ def collect_dap_results(
         # stored with each branch. So it's okay to just use the first branch
         # to populate these values for all the tasks here.
         firstBranch = list(results.values())[0]
-        task_veclen = firstBranch.task_veclen
+        task_length = firstBranch.task_length
         batch_start_epoch = int(
             datetime.combine(firstBranch.batch_start, datetime.min.time()).timestamp()
         )
         batch_duration = firstBranch.batch_duration
         collected = collect_dap_result(
             task_id,
-            task_veclen,
+            task_length,
             batch_start_epoch,
             batch_duration,
             config.auth_token,

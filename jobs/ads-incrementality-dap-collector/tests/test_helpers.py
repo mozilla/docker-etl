@@ -17,11 +17,17 @@ sys.path.append(
 from tests.test_mocks import (  # noqa: E402
     mock_nimbus_success,
     mock_nimbus_fail,
-    mock_nimbus_experiment,
-    mock_control_row,
-    mock_treatment_a_row,
-    mock_treatment_b_row,
-    mock_task_id,
+    mock_visit_experiment,
+    mock_referrer_experiment,
+    mock_unknown_measurement_experiment,
+    mock_visit_control_row,
+    mock_visit_treatment_a_row,
+    mock_visit_treatment_b_row,
+    mock_referrer_control_row,
+    mock_referrer_treatment_a_row,
+    mock_referrer_treatment_b_row,
+    mock_referrer_task_id,
+    mock_visit_task_id,
     mock_nimbus_unparseable_experiment,
     mock_tasks_to_collect,
     mock_dap_config,
@@ -84,14 +90,41 @@ class TestHelpers(TestCase):
             _ = get_experiment(mock_experiment_config(), "nimbus_api_url", "2025-09-30")
             self.assertEqual(1, mock_fetch.call_count)
 
-    def test_prepare_results_rows_success(self):
-        experiment = mock_nimbus_experiment("2025-08-24")
+    def test_prepare_visit_results_rows_success(self):
+        experiment = mock_visit_experiment("2025-08-24")
         results_rows = prepare_results_rows(experiment)
-        task_id = mock_task_id()
+        task_id = mock_visit_task_id()
         self.assertEqual([task_id], list(results_rows.keys()))
-        self.assertEqual(mock_control_row(experiment), results_rows[task_id][1])
-        self.assertEqual(mock_treatment_a_row(experiment), results_rows[task_id][2])
-        self.assertEqual(mock_treatment_b_row(experiment), results_rows[task_id][3])
+        self.assertEqual(mock_visit_control_row(experiment), results_rows[task_id][1])
+        self.assertEqual(
+            mock_visit_treatment_a_row(experiment), results_rows[task_id][2]
+        )
+        self.assertEqual(
+            mock_visit_treatment_b_row(experiment), results_rows[task_id][3]
+        )
+
+    def test_prepare_referrer_results_rows_success(self):
+        experiment = mock_referrer_experiment("2025-08-24")
+        results_rows = prepare_results_rows(experiment)
+        task_id = mock_referrer_task_id()
+        self.assertEqual([task_id], list(results_rows.keys()))
+        self.assertEqual(
+            mock_referrer_control_row(experiment), results_rows[task_id][1]
+        )
+        self.assertEqual(
+            mock_referrer_treatment_a_row(experiment), results_rows[task_id][2]
+        )
+        self.assertEqual(
+            mock_referrer_treatment_b_row(experiment), results_rows[task_id][3]
+        )
+
+    def test_unknown_measurement_results_row_raise(self):
+        experiment = mock_unknown_measurement_experiment("2025-08-31")
+        with pytest.raises(
+            Exception,
+            match="Unknown measurementType 'someUnknownMeasurementType' in dapIncrementality feature.",
+        ):
+            prepare_results_rows(experiment)
 
     def test_prepare_results_row_unparseable_experiment(self):
         experiment = mock_nimbus_unparseable_experiment()
@@ -177,8 +210,8 @@ class TestHelpers(TestCase):
                         "country_codes": '["US"]',
                         "experiment_slug": "interesting-study-5",
                         "experiment_branch": "control",
-                        "advertiser": "glamazon",
-                        "metric": "unique_client_organic_visits",
+                        "advertiser": "Bookshop",
+                        "metric": "organic_conversions",
                         "value": {"count": 13645, "histogram": None},
                         "created_timestamp": mock_datetime.isoformat(),
                     }
@@ -193,8 +226,8 @@ class TestHelpers(TestCase):
                         "country_codes": '["US"]',
                         "experiment_slug": "interesting-study-5",
                         "experiment_branch": "treatment-b",
-                        "advertiser": "glamazon",
-                        "metric": "unique_client_organic_visits",
+                        "advertiser": "Bookshop",
+                        "metric": "total_conversions_tile_pinned",
                         "value": {"count": 18645, "histogram": None},
                         "created_timestamp": mock_datetime.isoformat(),
                     }
@@ -209,8 +242,8 @@ class TestHelpers(TestCase):
                         "country_codes": '["US"]',
                         "experiment_slug": "interesting-study-5",
                         "experiment_branch": "treatment-a",
-                        "advertiser": "glamazon",
-                        "metric": "unique_client_organic_visits",
+                        "advertiser": "Bookshop",
+                        "metric": "organic_conversions_tile_pinned",
                         "value": {"count": 9645, "histogram": None},
                         "created_timestamp": mock_datetime.isoformat(),
                     }
@@ -296,7 +329,7 @@ class TestHelpers(TestCase):
                             "country_codes": '["US"]',
                             "experiment_slug": "interesting-study-5",
                             "experiment_branch": "control",
-                            "advertiser": "glamazon",
+                            "advertiser": "Bookshop",
                             "metric": "unique_client_organic_visits",
                             "value": {"count": 13645, "histogram": None},
                             "created_timestamp": mock_datetime.isoformat(),
@@ -312,7 +345,7 @@ class TestHelpers(TestCase):
                             "country_codes": '["US"]',
                             "experiment_slug": "interesting-study-5",
                             "experiment_branch": "treatment-b",
-                            "advertiser": "glamazon",
+                            "advertiser": "Bookshop",
                             "metric": "unique_client_organic_visits",
                             "value": {"count": 18645, "histogram": None},
                             "created_timestamp": mock_datetime.isoformat(),
@@ -328,7 +361,7 @@ class TestHelpers(TestCase):
                             "country_codes": '["US"]',
                             "experiment_slug": "interesting-study-5",
                             "experiment_branch": "treatment-a",
-                            "advertiser": "glamazon",
+                            "advertiser": "Bookshop",
                             "metric": "unique_client_organic_visits",
                             "value": {"count": 9645, "histogram": None},
                             "created_timestamp": mock_datetime.isoformat(),

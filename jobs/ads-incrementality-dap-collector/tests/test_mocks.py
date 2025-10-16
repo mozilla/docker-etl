@@ -8,8 +8,10 @@ from ads_incrementality_dap_collector.models import (
     NimbusExperiment,
 )
 from tests.test_mock_responses import (
-    NIMBUS_SUCCESS,
-    NIMBUS_NOT_AN_INCREMENTALITY_EXPERIMENT,
+    REFERRER_MEASUREMENT_EXPERIMENT_SUCCESS,
+    VISIT_MEASUREMENT_EXPERIMENT_SUCCESS,
+    UNKOWN_MEASUREMENT_EXPERIMENT_SUCCESS,
+    NOT_AN_INCREMENTALITY_EXPERIMENT_SUCCESS,
 )
 
 
@@ -32,7 +34,7 @@ class MockResponse:
 def mock_nimbus_success(*args, **kwargs) -> MockResponse:
     """Mock successful POST requests to Nimbus."""
 
-    return MockResponse(NIMBUS_SUCCESS, 200)
+    return MockResponse(REFERRER_MEASUREMENT_EXPERIMENT_SUCCESS, 200)
 
 
 def mock_nimbus_fail(*args, **kwargs) -> MockResponse:
@@ -41,76 +43,194 @@ def mock_nimbus_fail(*args, **kwargs) -> MockResponse:
     return MockResponse({}, 404)
 
 
-def mock_nimbus_experiment(process_date="2025-08-22") -> NimbusExperiment:
-    nimbus_success_json = NIMBUS_SUCCESS
+def mock_visit_experiment(process_date="2025-08-22") -> NimbusExperiment:
+    nimbus_success_json = VISIT_MEASUREMENT_EXPERIMENT_SUCCESS
     nimbus_success_json["batchDuration"] = mock_experiment_config().batch_duration
     nimbus_success_json["processDate"] = process_date
     return NimbusExperiment.from_dict(nimbus_success_json)
 
 
-def mock_task_id() -> str:
-    return "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o"
+def mock_referrer_experiment(process_date="2025-08-22") -> NimbusExperiment:
+    nimbus_success_json = REFERRER_MEASUREMENT_EXPERIMENT_SUCCESS
+    nimbus_success_json["batchDuration"] = mock_experiment_config().batch_duration
+    nimbus_success_json["processDate"] = process_date
+    return NimbusExperiment.from_dict(nimbus_success_json)
 
 
-def mock_control_row(experiment) -> IncrementalityBranchResultsRow:
+def mock_unknown_measurement_experiment(process_date="20254-08-22") -> NimbusExperiment:
+    nimbus_success_json = UNKOWN_MEASUREMENT_EXPERIMENT_SUCCESS
+    nimbus_success_json["batchDuration"] = mock_experiment_config().batch_duration
+    nimbus_success_json["processDate"] = process_date
+    return NimbusExperiment.from_dict(nimbus_success_json)
+
+
+def mock_referrer_task_id() -> str:
+    return "0QqFBHvuEk1_y4v4GIa9bTaa3vXXtLjsK64QeifzHpo"
+
+
+def mock_visit_task_id() -> str:
+    return "JASGxjh2Fptfv6gsSFpczwBcAib5oxaI-KPUqb7sHfs"
+
+
+def mock_visit_control_row(experiment) -> IncrementalityBranchResultsRow:
     return IncrementalityBranchResultsRow(
         experiment,
         "control",
         {
-            "name": "1841986",
-            "bucket": 1,
-            "task_id": "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o",
-            "task_veclen": 4,
-            "urls": ["*://*.glamazon.com/"],
+            "advertiser": "Fashion Brand",
+            "taskId": "JASGxjh2Fptfv6gsSFpczwBcAib5oxaI-KPUqb7sHfs",
+            "length": 4,
+            "timePrecision": 3600,
+            "measurementType": "visitMeasurement",
+            "visitCountUrls": [
+                {
+                    "url": "*://*.fashion-brand.com/",
+                    "bucket": 1,
+                    "metric_name": "organic_visits_tile_blocked",
+                }
+            ],
+            "unknownReferrerBucket": 1,
         },
     )
 
 
-def mock_treatment_a_row(experiment) -> IncrementalityBranchResultsRow:
+def mock_visit_treatment_a_row(experiment) -> IncrementalityBranchResultsRow:
     return IncrementalityBranchResultsRow(
         experiment,
         "treatment-a",
         {
-            "name": "1841986",
-            "bucket": 2,
-            "task_id": "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o",
-            "task_veclen": 4,
-            "urls": ["*://*.glamazon.com/"],
+            "advertiser": "Fashion Brand",
+            "taskId": "JASGxjh2Fptfv6gsSFpczwBcAib5oxaI-KPUqb7sHfs",
+            "length": 4,
+            "timePrecision": 3600,
+            "measurementType": "visitMeasurement",
+            "visitCountUrls": [
+                {
+                    "url": "*://*.fashion-brand.com/",
+                    "bucket": 2,
+                    "metric_name": "organic_visits_tile_pinned",
+                }
+            ],
+            "unknownReferrerBucket": 2,
         },
     )
 
 
-def mock_treatment_b_row(experiment) -> IncrementalityBranchResultsRow:
+def mock_visit_treatment_b_row(experiment) -> IncrementalityBranchResultsRow:
     return IncrementalityBranchResultsRow(
         experiment,
         "treatment-b",
         {
-            "name": "1841986",
-            "bucket": 3,
-            "task_id": "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o",
-            "task_veclen": 4,
-            "urls": [
-                "*://*.glamazon.com/",
-                "*://*.glamazon.com/*tag=admarketus*ref=*mfadid=adm",
+            "advertiser": "Fashion Brand",
+            "taskId": "JASGxjh2Fptfv6gsSFpczwBcAib5oxaI-KPUqb7sHfs",
+            "length": 4,
+            "timePrecision": 3600,
+            "measurementType": "visitMeasurement",
+            "visitCountUrls": [
+                {
+                    "url": "*://*.fashion-brand.com/*?tag=partnerus-20*ref=*mfadid=partner",
+                    "bucket": 3,
+                    "metric_name": "total_visits_tile_pinned",
+                },
+                {
+                    "url": "*://*.fashion-brand.com/",
+                    "bucket": 3,
+                    "metric_name": "total_visits_tile_pinned",
+                },
             ],
+            "unknownReferrerBucket": 3,
+        },
+    )
+
+
+def mock_referrer_control_row(experiment) -> IncrementalityBranchResultsRow:
+    return IncrementalityBranchResultsRow(
+        experiment,
+        "control",
+        {
+            "advertiser": "Bookshop",
+            "taskId": "0QqFBHvuEk1_y4v4GIa9bTaa3vXXtLjsK64QeifzHpo",
+            "length": 4,
+            "timePrecision": 3600,
+            "measurementType": "referrerMeasurement",
+            "referrerUrls": [
+                {
+                    "url": "*://*.bookshop.com/",
+                    "bucket": 1,
+                    "metric_name": "organic_conversions",
+                }
+            ],
+            "targetUrls": "*://*.bookshop.com/thankyou.html?*orderId*",
+            "unknownReferrerBucket": 1,
+        },
+    )
+
+
+def mock_referrer_treatment_a_row(experiment) -> IncrementalityBranchResultsRow:
+    return IncrementalityBranchResultsRow(
+        experiment,
+        "treatment-a",
+        {
+            "advertiser": "Bookshop",
+            "taskId": "0QqFBHvuEk1_y4v4GIa9bTaa3vXXtLjsK64QeifzHpo",
+            "length": 4,
+            "timePrecision": 3600,
+            "measurementType": "referrerMeasurement",
+            "referrerUrls": [
+                {
+                    "url": "*://*.bookshop.com/",
+                    "bucket": 2,
+                    "metric_name": "organic_conversions_tile_pinned",
+                }
+            ],
+            "targetUrls": "*://*.bookshop.com/thankyou.html?*orderId*",
+            "unknownReferrerBucket": 2,
+        },
+    )
+
+
+def mock_referrer_treatment_b_row(experiment) -> IncrementalityBranchResultsRow:
+    return IncrementalityBranchResultsRow(
+        experiment,
+        "treatment-b",
+        {
+            "advertiser": "Bookshop",
+            "taskId": "0QqFBHvuEk1_y4v4GIa9bTaa3vXXtLjsK64QeifzHpo",
+            "length": 4,
+            "timePrecision": 3600,
+            "measurementType": "referrerMeasurement",
+            "referrerUrls": [
+                {
+                    "url": "*://*.bookshop.com/*?tag=partnerus-20*ref=*mfadid=partner",
+                    "bucket": 3,
+                    "metric_name": "total_conversions_tile_pinned",
+                },
+                {
+                    "url": "*://*.bookshop.com/",
+                    "bucket": 3,
+                    "metric_name": "total_conversions_tile_pinned",
+                },
+            ],
+            "targetUrls": "*://*.bookshop.com/thankyou.html?*orderId*",
+            "unknownReferrerBucket": 3,
         },
     )
 
 
 def mock_nimbus_unparseable_experiment() -> NimbusExperiment:
-    nimbus_unparseable_json = NIMBUS_NOT_AN_INCREMENTALITY_EXPERIMENT
+    nimbus_unparseable_json = NOT_AN_INCREMENTALITY_EXPERIMENT_SUCCESS
     nimbus_unparseable_json["batchDuration"] = mock_experiment_config().batch_duration
     nimbus_unparseable_json["processDate"] = "2025-09-19"
     return NimbusExperiment.from_dict(nimbus_unparseable_json)
 
 
 def mock_tasks_to_collect() -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
-    experiment = mock_nimbus_experiment()
+    experiment = mock_referrer_experiment()
     return {
-        "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o": {
-            1: mock_control_row(experiment),
-            2: mock_treatment_b_row(experiment),
-            3: mock_treatment_a_row(experiment),
+        mock_referrer_task_id(): {
+            1: mock_referrer_control_row(experiment),
+            2: mock_referrer_treatment_b_row(experiment),
+            3: mock_referrer_treatment_a_row(experiment),
         }
     }
 
@@ -118,23 +238,17 @@ def mock_tasks_to_collect() -> dict[str, dict[int, IncrementalityBranchResultsRo
 def mock_collected_tasks(
     process_date="2025-09-13",
 ) -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
-    experiment = mock_nimbus_experiment(process_date)
+    experiment = mock_referrer_experiment(process_date)
     tasks_to_collect = {
-        "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o": {
-            1: mock_control_row(experiment),
-            2: mock_treatment_b_row(experiment),
-            3: mock_treatment_a_row(experiment),
+        mock_referrer_task_id(): {
+            1: mock_referrer_control_row(experiment),
+            2: mock_referrer_treatment_b_row(experiment),
+            3: mock_referrer_treatment_a_row(experiment),
         }
     }
-    tasks_to_collect["mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o"][
-        1
-    ].value_count = 13645
-    tasks_to_collect["mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o"][
-        2
-    ].value_count = 18645
-    tasks_to_collect["mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o"][
-        3
-    ].value_count = 9645
+    tasks_to_collect[mock_referrer_task_id()][1].value_count = 13645
+    tasks_to_collect[mock_referrer_task_id()][2].value_count = 18645
+    tasks_to_collect[mock_referrer_task_id()][3].value_count = 9645
     return tasks_to_collect
 
 
@@ -168,7 +282,7 @@ def mock_dap_subprocess_success(
         args=[
             "./collect",
             "--task-id",
-            "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o",
+            mock_referrer_task_id(),
             "--leader",
             "https://dap-leader-url",
             "--vdaf",
@@ -199,7 +313,7 @@ def mock_dap_subprocess_fail(
         args=[
             "./collect",
             "--task-id",
-            "mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o",
+            mock_referrer_task_id(),
             "--leader",
             "https://dap-09-3.api.divviup.org",
             "--vdaf",
@@ -227,7 +341,7 @@ def mock_dap_subprocess_raise(
     args: list[str], capture_output: bool, text: bool, check: bool, timeout: int
 ) -> CompletedProcess:
     raise Exception(
-        "Collection failed for mubArkO3So8Co1X98CBo62-lSCM4tB-NZPOUGJ83N1o, 1, stderr: Uh-oh"
+        f"Collection failed for {mock_referrer_task_id()}, 1, stderr: Uh-oh"
     ) from None
 
 
