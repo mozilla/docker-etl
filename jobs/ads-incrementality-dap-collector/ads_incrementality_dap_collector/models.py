@@ -109,23 +109,20 @@ class NimbusExperiment:
         return self.latest_collectible_batch_end() == self.processDate
 
 
-def get_metric_from_feature(feature: dict) -> str:
-    metric_type = feature.get("measurementType")
-    if metric_type == "referrerMeasurement":
-        return feature.get("referrerUrls")[0].get("metric_name")
-    if metric_type == "visitMeasurement":
-        return feature.get("visitCountUrls")[0].get("metric_name")
-    raise Exception(
-        f"Unknown measurementType '{metric_type}' in dapIncrementality feature."
-    )
+def get_metric_from_feature_urls(feature: dict) -> str:
+    return get_value_from_feature_urls(feature, "metric_name")
 
 
 def get_bucket_from_feature_urls(feature: dict) -> int:
+    return get_value_from_feature_urls(feature, "bucket")
+
+
+def get_value_from_feature_urls(feature: dict, value: str) -> int:
     metric_type = feature.get("measurementType")
     if metric_type == "referrerMeasurement":
-        return feature.get("referrerUrls")[0].get("bucket")
+        return feature.get("referrerUrls")[0].get(value)
     if metric_type == "visitMeasurement":
-        return feature.get("visitCountUrls")[0].get("bucket")
+        return feature.get("visitCountUrls")[0].get(value)
     raise Exception(
         f"Unknown measurementType '{metric_type}' in dapIncrementality feature."
     )
@@ -214,7 +211,7 @@ class IncrementalityBranchResultsRow:
         self.batch_duration = experiment.batchDuration
         self.country_codes = get_country_from_targeting(experiment.targeting)
         self.experiment_slug = experiment.slug
-        self.metric = get_metric_from_feature(feature)
+        self.metric = get_metric_from_feature_urls(feature)
         self.task_id = feature.get("taskId")
         self.task_length = feature.get("length")
         # This will be populated when we successfully fetch the count from DAP
