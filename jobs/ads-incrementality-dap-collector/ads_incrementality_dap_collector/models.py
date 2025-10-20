@@ -159,7 +159,7 @@ class IncrementalityBranchResultsRow:
                             can be collected.
         country_codes:      The countries where the experiment is active, as an array of ISO country code strings.
         experiment_slug:    The Nimbus experiment's URL slug
-        metric:             Currently hardcoded to "unique_client_organic_visits" for incrementality.
+        metric:             The kind of metric that this experiment is measuring.
         task_id:            Stored in Nimbus experiment metadata. The task id is returned when setting
                             up DAP counting, and is used to collect the experiment result counts.
         task_length:        Stored in Nimbus experiment metadata. The task_length is configured when

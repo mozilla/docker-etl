@@ -330,7 +330,7 @@ class TestHelpers(TestCase):
                             "experiment_slug": "interesting-study-5",
                             "experiment_branch": "control",
                             "advertiser": "Example Shop",
-                            "metric": "unique_client_organic_visits",
+                            "metric": "some_metric",
                             "value": {"count": 13645, "histogram": None},
                             "created_timestamp": mock_datetime.isoformat(),
                         }
@@ -346,7 +346,7 @@ class TestHelpers(TestCase):
                             "experiment_slug": "interesting-study-5",
                             "experiment_branch": "treatment-b",
                             "advertiser": "Example Shop",
-                            "metric": "unique_client_organic_visits",
+                            "metric": "some_metric",
                             "value": {"count": 18645, "histogram": None},
                             "created_timestamp": mock_datetime.isoformat(),
                         }
@@ -362,7 +362,7 @@ class TestHelpers(TestCase):
                             "experiment_slug": "interesting-study-5",
                             "experiment_branch": "treatment-a",
                             "advertiser": "Example Shop",
-                            "metric": "unique_client_organic_visits",
+                            "metric": "some_metric",
                             "value": {"count": 9645, "histogram": None},
                             "created_timestamp": mock_datetime.isoformat(),
                         }
