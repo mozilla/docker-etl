@@ -29,7 +29,6 @@ class NimbusExperiment:
     Attributes:
         batchDuration:          The DAP agreggation time interval.
         branches:               A list of Branch objects for the experiment's branch data.
-        bucketConfig:
         featureIds:             A list of all the features used in this experiment.
         slug:                   Normandy slug that uniquely identifies the experiment
                                 in Nimbus.
@@ -43,7 +42,6 @@ class NimbusExperiment:
 
     batchDuration: int
     branches: List[Branch]
-    bucketConfig: dict
     featureIds: list[str]
     slug: str
     targeting: str
