@@ -25,8 +25,8 @@ from helpers import (
     required=True,
 )
 @click.option(
-    "--auth_token",
-    envvar="DAP_AUTH_TOKEN",
+    "--bearer_token",
+    envvar="BEARER_TOKEN",
     help="The 'token' defined in the collector credentials, used to authenticate to the leader",
     required=True,
 )
@@ -45,7 +45,7 @@ from helpers import (
 def main(
     job_config_gcp_project,
     job_config_bucket,
-    auth_token,
+    bearer_token,
     hpke_private_key,
     process_date,
 ):
@@ -55,7 +55,7 @@ def main(
             f"and gcs bucket: {job_config_bucket} for process date: {process_date}"
         )
         config = get_config(
-            job_config_gcp_project, job_config_bucket, auth_token, hpke_private_key
+            job_config_gcp_project, job_config_bucket, bearer_token, hpke_private_key
         )
         logging.info(
             f"Starting collector job for experiments: {config.nimbus.experiments}."
@@ -68,7 +68,7 @@ def main(
 
             tasks_to_collect = prepare_results_rows(experiment)
             collected_tasks = collect_dap_results(
-                tasks_to_collect, config.dap, experiment_config
+                tasks_to_collect, config.dap
             )
 
             write_results_to_bq(collected_tasks, config.bq)

@@ -92,14 +92,14 @@ def collect_dap_result(
     vdaf_length: int,
     batch_start: int,
     duration: int,
-    auth_token: str,
+    bearer_token: str,
     hpke_config: str,
     hpke_private_key: str,
 ) -> dict:
     # Beware! This command string reveals secrets. Uncomment logging below only for debugging in local dev.
     #
     # command_str = (f"./collect --task-id {task_id} --leader {DAP_LEADER} --vdaf {VDAF} --length {vdaf_length} "
-    #                f"--authorization-bearer-token {auth_token} --batch-interval-start {batch_start} "
+    #                f"--authorization-bearer-token {bearer_token} --batch-interval-start {batch_start} "
     #                f"--batch-interval-duration {duration} --hpke-config {hpke_config} "
     #                f"--hpke-private-key {hpke_private_key}")
     # logging.debug(f"command_str: {command_str}")
@@ -117,7 +117,7 @@ def collect_dap_result(
                 "--length",
                 f"{vdaf_length}",
                 "--authorization-bearer-token",
-                auth_token,
+                bearer_token,
                 "--batch-interval-start",
                 f"{batch_start}",
                 "--batch-interval-duration",
@@ -151,7 +151,6 @@ def collect_dap_result(
 def collect_dap_results(
     tasks_to_collect: dict[str, dict[int, IncrementalityBranchResultsRow]],
     config: SimpleNamespace,
-    experiment_config: SimpleNamespace,
 ):
     tasks = list(dict.fromkeys(tasks_to_collect))
     logging.info(f"Starting DAP collection for tasks: {tasks}.")
@@ -172,7 +171,7 @@ def collect_dap_results(
             task_length,
             batch_start_epoch,
             batch_duration,
-            config.auth_token,
+            config.bearer_token,
             config.hpke_config,
             config.hpke_private_key,
         )
@@ -279,7 +278,7 @@ def write_results_to_bq(collected_tasks: dict, config: SimpleNamespace):
 
 # GCS helper functions
 def get_config(
-    gcp_project: str, config_bucket: str, auth_token: str, hpke_private_key: str
+    gcp_project: str, config_bucket: str, bearer_token: str, hpke_private_key: str
 ) -> SimpleNamespace:
     """Gets the incrementality job's config from a file in a GCS bucket. See example_config.json for the structure."""
     client = storage.Client(project=gcp_project)
@@ -288,7 +287,7 @@ def get_config(
         blob = bucket.blob(CONFIG_FILE_NAME)
         reader = blob.open("rt")
         config = json.load(reader, object_hook=lambda d: SimpleNamespace(**d))
-        config.dap.auth_token = auth_token
+        config.dap.bearer_token = bearer_token
         config.dap.hpke_private_key = hpke_private_key
         return config
     except Exception as e:

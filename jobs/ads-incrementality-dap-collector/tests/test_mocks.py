@@ -255,7 +255,7 @@ def mock_collected_tasks(
 def mock_dap_config() -> SimpleNamespace:
     return SimpleNamespace(
         hpke_config="AQAgAAEAAQAgpdceoGiuWvIiogA8SPCdprkhWMNtLq_y0GSePI7EhXE",
-        auth_token="shh-secret-token",
+        bearer_token="shh-secret-token",
         hpke_private_key="ssh-private-key",
         batch_start="1755291600",
     )

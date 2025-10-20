@@ -6,6 +6,6 @@ docker run -it --rm \
   ads_incrementality_dap_collector python ./ads_incrementality_dap_collector/main.py \
         --job_config_gcp_project moz-fx-dev-username-sandbox \
         --job_config_bucket moz-fx-dev-username-sandbox-incrementality-dap-collector-config \
-        --auth_token $DAP_AUTH_TOKEN \
+        --bearer_token $DAP_BEARER_TOKEN \
         --hpke_private_key  $DAP_PRIVATE_KEY \
         --process_date $PROCESS_DATE \
