@@ -1,12 +1,15 @@
 import argparse
 import difflib
 import enum
+import hashlib
 import json
 import logging
 import re
 import os
+import stat
 import tomllib
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Callable, Iterable, Mapping, Optional, Self, Sequence
 
 import jinja2
@@ -18,6 +21,81 @@ from .bqhelpers import BigQuery
 from .metrics.metrics import metrics, metric_types
 
 here = os.path.dirname(__file__)
+
+
+class Blob:
+    """Git-like Blob object
+
+    This represents the bytes content of a file, using the same representation as git."""
+
+    def __init__(self, data: bytes):
+        self.data = data
+
+    def serialize(self) -> bytes:
+        return b"blob %d\0%b" % (len(self.data), self.data)
+
+    def hash(self) -> bytes:
+        return hashlib.sha1(self.serialize()).digest()
+
+
+class Tree:
+    """Git-like Tree object
+
+    This represents the content of a directory, using the same representation as git."""
+
+    def __init__(self) -> None:
+        self.contents: list[TreeEntry] = []
+
+    def serialize(self) -> bytes:
+        data = b""
+        for item in sorted(self.contents, key=lambda x: x.path):
+            data += b"%b %b\0%b" % (item.mode, os.path.basename(item.path), item.hash())
+        return b"tree %d\0%b" % (len(data), data)
+
+    def hash(self) -> bytes:
+        return hashlib.sha1(self.serialize()).digest()
+
+
+class TreeEntry:
+    def __init__(self, path: bytes, mode: bytes, content: Blob | Tree):
+        self.path = path
+        self.mode = mode
+        self.content = content
+
+    def hash(self) -> bytes:
+        return self.content.hash()
+
+    @classmethod
+    def from_path(cls, path: bytes | str | os.PathLike) -> Self:
+        st = os.stat(path)
+
+        if isinstance(path, os.PathLike):
+            path = path.__fspath__()
+        if isinstance(path, bytes):
+            path_bytes = path
+        else:
+            path_bytes = str(path).encode("utf-8")
+
+        # These modes match the subset supported by git
+        if stat.S_ISDIR(st.st_mode):
+            mode = b"40000"
+            content: Tree | Blob = Tree()
+        else:
+            if stat.S_IXUSR & st.st_mode:
+                mode = b"100755"
+            elif stat.S_ISLNK(st.st_mode):
+                mode = b"120000"
+            else:
+                mode = b"100644"
+            with open(path, "rb") as f:
+                content = Blob(f.read())
+        return cls(path_bytes, mode, content)
+
+    def append(self, other: Self) -> None:
+        assert other != self
+        if isinstance(self.content, Blob):
+            raise ValueError("Cannot append to a Blob TreeEntry")
+        self.content.contents.append(other)
 
 
 class DatasetMetadata(BaseModel):
@@ -232,6 +310,22 @@ def load_schema_template(root_path: str, sql_name: str) -> list[SchemaTemplate]:
         )
 
     return templates
+
+
+def get_templates_hash(root: str | os.PathLike[str]) -> bytes:
+    root_path = str(root)
+    root_tree = TreeEntry.from_path(root_path)
+    tree_entries = {root_path: root_tree}
+    for dir_path, dir_names, file_names in os.walk(root_path):
+        parent_tree = tree_entries[dir_path]
+        assert isinstance(parent_tree.content, Tree)
+        for name in dir_names + file_names:
+            path = os.path.join(dir_path, name)
+            tree_entry = TreeEntry.from_path(path)
+            parent_tree.append(tree_entry)
+            assert path not in tree_entries
+            tree_entries[path] = tree_entry
+    return root_tree.hash()
 
 
 def load_templates(project: str, root_path: str) -> list[DatasetTemplates]:
@@ -587,6 +681,44 @@ def stage_dataset(dataset: DatasetId) -> DatasetId:
     return DatasetId(project=dataset.project, dataset=dataset.dataset + "_test")
 
 
+def get_last_update(
+    client: BigQuery, dataset: DatasetId
+) -> tuple[Optional[datetime], Optional[str]]:
+    schema = [
+        bigquery.SchemaField("run_at", "DATETIME", mode="REQUIRED"),
+        bigquery.SchemaField("schema_hash", "STRING", mode="REQUIRED"),
+    ]
+    client.ensure_table("schema_updates", schema, dataset_id=dataset.dataset)
+    try:
+        rows = list(
+            client.query(f"""SELECT run_at, schema_hash
+FROM `{dataset}.schema_updates`
+ORDER BY run_at DESC
+LIMIT 1""")
+        )
+    except Exception:
+        return None, None
+    if not rows:
+        return None, None
+
+    row = list(rows)[0]
+    return row.run_at, row.schema_hash
+
+
+def record_update(client: BigQuery, dataset: DatasetId, schema_hash: str) -> None:
+    if client.write:
+        parameters = [
+            bigquery.ScalarQueryParameter("schema_hash", "STRING", schema_hash)
+        ]
+        client.query(
+            f"""
+INSERT `{dataset}.schema_updates` (run_at, schema_hash) (
+  SELECT CURRENT_DATETIME(), @schema_hash
+)""",
+            parameters=parameters,
+        )
+
+
 class UpdateSchemaJob(EtlJob):
     name = "update-schema"
     default = False
@@ -613,14 +745,38 @@ class UpdateSchemaJob(EtlJob):
             dest="update_schema_delete_extra",
             help="Delete remote datasets that aren't in the local schema",
         )
+        group.add_argument(
+            "--update-schema-recreate",
+            action="store_true",
+            help="Force update from source files",
+        )
 
     def default_dataset(self, args: argparse.Namespace) -> str:
         return args.bq_kb_dataset
 
     def main(self, client: BigQuery, args: argparse.Namespace) -> None:
-        templates_by_dataset = load_templates(
-            client.project_id, args.update_schema_path
+        schema_path = os.path.abspath(args.update_schema_path)
+
+        metadata_dataset = DatasetId(client.project_id, "metadata")
+        if args.update_schema_stage:
+            metadata_dataset = stage_dataset(metadata_dataset)
+
+        src_hash = get_templates_hash(schema_path).hex()
+        last_update_time, last_update_hash = get_last_update(client, metadata_dataset)
+
+        logging.info(f"Templates have hash {src_hash}")
+        logging.info(f"Deployed schema have hash {last_update_hash}")
+
+        update_needed = (
+            args.update_schema_recreate
+            or last_update_hash != src_hash
+            or (last_update_time and last_update_time.date() < datetime.now().date())
         )
+        if not update_needed:
+            logging.info("No changes to deploy")
+            return
+
+        templates_by_dataset = load_templates(client.project_id, schema_path)
         if not lint_templates(templates_by_dataset):
             raise ValueError("Template lint failed")
 
@@ -649,3 +805,4 @@ class UpdateSchemaJob(EtlJob):
             schema_id_mapper,
             args.update_schema_delete_extra,
         )
+        record_update(client, metadata_dataset, src_hash)
