@@ -81,6 +81,7 @@ jobs:
           name: Test Code
           command: docker run app:build python3 -m pytest
 
+
   build-job-bq2sftp:
     docker:
       - image: << pipeline.parameters.git-image >>
@@ -361,6 +362,23 @@ jobs:
       - run:
           name: Lint Code
           command: docker run app:build flake8
+
+
+  build-job-release-scraping:
+    docker:
+      - image: << pipeline.parameters.git-image >>
+    steps:
+      - checkout
+      - compare-branch:
+          pattern: ^jobs/release_scraping/
+      - setup_remote_docker:
+          version: << pipeline.parameters.docker-version >>
+      - run:
+          name: Build Docker image
+          command: docker build -t app:build jobs/release_scraping/
+      - run:
+          name: Test Code
+          command: docker run app:build pytest --flake8 --black
 
 
   build-job-search-alert:
@@ -678,6 +696,21 @@ workflows:
           image: quicksuggest2bq_docker_etl
           requires:
             - build-job-quicksuggest2bq
+          filters:
+            branches:
+              only: main
+
+
+  job-release-scraping:
+    jobs:
+      - build-job-release-scraping
+      - gcp-gcr/build-and-push-image:
+          context: data-eng-airflow-gcr
+          docker-context: jobs/release_scraping/
+          path: jobs/release_scraping/
+          image: release_scraping_docker_etl
+          requires:
+            - build-job-release-scraping
           filters:
             branches:
               only: main
