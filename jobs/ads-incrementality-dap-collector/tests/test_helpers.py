@@ -136,9 +136,7 @@ class TestHelpers(TestCase):
     def test_collect_dap_results_success(self, mock_dap_subprocess_success):
         tasks_to_collect = mock_tasks_to_collect()
         task_id = list(tasks_to_collect.keys())[0]
-        collect_dap_results(
-            tasks_to_collect, mock_dap_config()
-        )
+        collect_dap_results(tasks_to_collect, mock_dap_config())
         self.assertEqual(1, mock_dap_subprocess_success.call_count)
         self.assertEqual(tasks_to_collect[task_id][1].value_count, 53)
         self.assertEqual(tasks_to_collect[task_id][2].value_count, 48)
@@ -150,9 +148,7 @@ class TestHelpers(TestCase):
         with pytest.raises(
             Exception, match="Failed to parse collected DAP results: None"
         ):
-            collect_dap_results(
-                tasks_to_collect, mock_dap_config()
-            )
+            collect_dap_results(tasks_to_collect, mock_dap_config())
             self.assertEqual(1, mock_dap_subprocess_success.call_count)
 
     @patch("subprocess.run", side_effect=mock_dap_subprocess_raise)
@@ -162,9 +158,7 @@ class TestHelpers(TestCase):
         with pytest.raises(
             Exception, match=f"Collection failed for {task_id}, 1, stderr: Uh-oh"
         ):
-            collect_dap_results(
-                tasks_to_collect, mock_dap_config()
-            )
+            collect_dap_results(tasks_to_collect, mock_dap_config())
             self.assertEqual(1, mock_dap_subprocess_success.call_count)
 
     @patch("google.cloud.bigquery.Table")

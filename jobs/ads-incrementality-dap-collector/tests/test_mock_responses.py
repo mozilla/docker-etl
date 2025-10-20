@@ -52,7 +52,7 @@ REFERRER_MEASUREMENT_EXPERIMENT_SUCCESS = {
                                 "metric_name": "some_metric",
                             }
                         ],
-                        "s": "*://*.example-book-store.com/page.html",
+                        "targetUrls": "*://*.example-book-store.com/page.html",
                         "unknownReferrerBucket": 2,
                     },
                 },
@@ -74,7 +74,7 @@ REFERRER_MEASUREMENT_EXPERIMENT_SUCCESS = {
                         "measurementType": "referrerMeasurement",
                         "referrerUrls": [
                             {
-                                "url": "*://*.example-book-store.com/*?tag=partnerus-20*ref=*mfadid=partner",
+                                "url": "*://*.example-book-store.com/page.html",
                                 "bucket": 3,
                                 "metric_name": "some_metric",
                             },
@@ -92,8 +92,10 @@ REFERRER_MEASUREMENT_EXPERIMENT_SUCCESS = {
             "firefoxLabsTitle": None,
         },
     ],
-    # noqa: E501
-    "targeting": "(browserSettings.update.channel == \"nightly\") && ((experiment.slug in activeExperiments) || ((\n        'browser.newtabpage.activity-stream.showSponsoredTopSites'|preferenceValue\n    ) && (version|versionCompare('140.!') >= 0) && (region in ['US'])))",  # noqa: E501
+    "targeting": '(browserSettings.update.channel == "nightly") && '
+    "((experiment.slug in activeExperiments) || "
+    "((\n        'browser.newtabpage.activity-stream.showSponsoredTopSites'|preferenceValue\n    ) && "
+    "(version|versionCompare('140.!') >= 0) && (region in ['US'])))",
     "startDate": "2025-08-18",
     "endDate": None,
     "proposedEnrollment": 7,
@@ -174,7 +176,7 @@ VISIT_MEASUREMENT_EXPERIMENT_SUCCESS = {
                         "measurementType": "visitMeasurement",
                         "visitCountUrls": [
                             {
-                                "url": "*://*.example-brand.com/*?tag=partnerus-20*ref=*mfadid=partner",
+                                "url": "*://*.example-brand.com/page.html",
                                 "bucket": 3,
                                 "metric_name": "another_metric",
                             },
@@ -191,8 +193,10 @@ VISIT_MEASUREMENT_EXPERIMENT_SUCCESS = {
             "firefoxLabsTitle": None,
         },
     ],
-    # noqa: E501
-    "targeting": "(browserSettings.update.channel == \"nightly\") && ((experiment.slug in activeExperiments) || ((\n        'browser.newtabpage.activity-stream.showSponsoredTopSites'|preferenceValue\n    ) && (version|versionCompare('140.!') >= 0) && (region in ['US'])))",  # noqa: E501
+    "targeting": '(browserSettings.update.channel == "nightly") && '
+    "((experiment.slug in activeExperiments) || "
+    "((\n        'browser.newtabpage.activity-stream.showSponsoredTopSites'|preferenceValue\n    ) && "
+    "(version|versionCompare('140.!') >= 0) && (region in ['US'])))",
     "startDate": "2025-08-18",
     "endDate": None,
     "proposedEnrollment": 7,
@@ -259,8 +263,10 @@ UNKOWN_MEASUREMENT_EXPERIMENT_SUCCESS = {
             "firefoxLabsTitle": None,
         },
     ],
-    # noqa: E501
-    "targeting": "(browserSettings.update.channel == \"nightly\") && ((experiment.slug in activeExperiments) || ((\n        'browser.newtabpage.activity-stream.showSponsoredTopSites'|preferenceValue\n    ) && (version|versionCompare('140.!') >= 0) && (region in ['US'])))",  # noqa: E501
+    "targeting": '(browserSettings.update.channel == "nightly") && '
+    "((experiment.slug in activeExperiments) || "
+    "((\n        'browser.newtabpage.activity-stream.showSponsoredTopSites'|preferenceValue\n    ) && "
+    "(version|versionCompare('140.!') >= 0) && (region in ['US'])))",
     "startDate": "2025-08-18",
     "endDate": None,
     "proposedEnrollment": 7,
@@ -338,7 +344,10 @@ NOT_AN_INCREMENTALITY_EXPERIMENT_SUCCESS = {
             "firefoxLabsTitle": None,
         },
     ],
-    "targeting": "(browserSettings.update.channel == \"nightly\") && ((experiment.slug in activeExperiments) || ((\n        'browser.newtabpage.activity-stream.showSponsoredTopSites'|preferenceValue\n    ) && (version|versionCompare('140.!') >= 0) && (region in ['US'])))",  # noqa: E501
+    "targeting": '(browserSettings.update.channel == "nightly") && '
+    "((experiment.slug in activeExperiments) || "
+    "((\n        'browser.newtabpage.activity-stream.showSponsoredTopSites'|preferenceValue\n    ) && "
+    "(version|versionCompare('140.!') >= 0) && (region in ['US'])))",
     "startDate": "2025-08-18",
     "endDate": "2025-09-15",
     "proposedEnrollment": 7,

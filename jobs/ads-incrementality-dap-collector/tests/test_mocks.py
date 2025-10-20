@@ -128,7 +128,7 @@ def mock_visit_treatment_b_row(experiment) -> IncrementalityBranchResultsRow:
             "measurementType": "visitMeasurement",
             "visitCountUrls": [
                 {
-                    "url": "*://*.example-brand.com/*?tag=partnerus-20*ref=*mfadid=partner",
+                    "url": "*://*.example-brand.com/page.html",
                     "bucket": 3,
                     "metric_name": "another_metric",
                 },
@@ -201,7 +201,7 @@ def mock_referrer_treatment_b_row(experiment) -> IncrementalityBranchResultsRow:
             "measurementType": "referrerMeasurement",
             "referrerUrls": [
                 {
-                    "url": "*://*.example-shop.com/*?tag=partnerus-20*ref=*mfadid=partner",
+                    "url": "*://*.example-shop.com/page.html",
                     "bucket": 3,
                     "metric_name": "some_metric",
                 },

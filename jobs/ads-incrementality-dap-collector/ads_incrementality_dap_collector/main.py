@@ -67,9 +67,7 @@ def main(
             )
 
             tasks_to_collect = prepare_results_rows(experiment)
-            collected_tasks = collect_dap_results(
-                tasks_to_collect, config.dap
-            )
+            collected_tasks = collect_dap_results(tasks_to_collect, config.dap)
 
             write_results_to_bq(collected_tasks, config.bq)
     except Exception as e:
