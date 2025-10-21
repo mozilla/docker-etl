@@ -42,8 +42,8 @@ def main():
     final_output_2 = soup.get_text(separator="\n", strip=True)
 
     # Open up a client to GCS
-    client = storage.Client()
-    bucket = client.get_bucket(BUCKET_NO_GS)
+    client = storage.Client(project="moz-fx-data-shared-prod")
+    bucket = client.bucket(BUCKET_NO_GS)
 
     blob = bucket.blob(final_output_fpath1)
     blob.upload_from_string(final_output_1)
