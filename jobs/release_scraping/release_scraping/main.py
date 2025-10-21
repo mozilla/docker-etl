@@ -19,6 +19,13 @@ RESULTS_FPATH_2 = "MARKET_RESEARCH/SCRAPED_INFO/ChromeAI/WebScraping_"
 TIMEOUT_IN_SECONDS = 20
 
 
+def get_latest_chrome_release_url(CHROME_RELEASES_MAIN_PAGE):
+    """Get the URL for the latest chrome release"""
+    # TODO Scrape CHROME_RELEASES_MAIN_PAGE to get latest release instead of hardcoding
+    latest_chrome_release_url = "https://developer.chrome.com/release-notes/141?hl=en"
+    return latest_chrome_release_url
+
+
 def main():
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("--date", required=True)
@@ -28,11 +35,17 @@ def main():
     logical_dag_date = datetime.strptime(args.date, "%Y-%m-%d").date()
     logical_dag_date_string = logical_dag_date.strftime("%Y%m%d")
 
+    # Make final output filepaths using DAG date
     final_output_fpath1 = RESULTS_FPATH_1 + logical_dag_date_string + ".txt"
     final_output_fpath2 = RESULTS_FPATH_2 + logical_dag_date_string + ".txt"
 
+    # Get latest chrome release URL
+    latest_chrome_release_url = get_latest_chrome_release_url(CHROME_RELEASES_URL)
+
     # Get latest Chrome release info
-    chrome_release_url_response = requests.get(CHROME_RELEASES_URL, timeout=TIMEOUT_IN_SECONDS)
+    chrome_release_url_response = requests.get(
+        latest_chrome_release_url, timeout=TIMEOUT_IN_SECONDS
+    )
     soup = BeautifulSoup(chrome_release_url_response.text, "html.parser")
     final_output_1 = soup.get_text(separator="\n", strip=True)
 
