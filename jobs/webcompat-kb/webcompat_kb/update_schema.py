@@ -7,6 +7,7 @@ import logging
 import re
 import os
 import stat
+import sys
 import tomllib
 from dataclasses import dataclass
 from datetime import datetime
@@ -312,7 +313,7 @@ def load_schema_template(root_path: str, sql_name: str) -> list[SchemaTemplate]:
     return templates
 
 
-def get_templates_hash(root: str | os.PathLike[str]) -> bytes:
+def build_tree(root: str | os.PathLike) -> TreeEntry:
     root_path = str(root)
     root_tree = TreeEntry.from_path(root_path)
     tree_entries = {root_path: root_tree}
@@ -325,6 +326,11 @@ def get_templates_hash(root: str | os.PathLike[str]) -> bytes:
             parent_tree.append(tree_entry)
             assert path not in tree_entries
             tree_entries[path] = tree_entry
+    return root_tree
+
+
+def get_templates_hash(root: str | os.PathLike) -> bytes:
+    root_tree = build_tree(root)
     return root_tree.hash()
 
 
@@ -577,30 +583,24 @@ def routine_needs_update(
     return True
 
 
-def update_schemas(
-    client: BigQuery,
-    templates_by_dataset: Iterable[DatasetTemplates],
-    dataset_mapping: Mapping[DatasetId, DatasetId],
+def create_schemas(
+    project: str,
     schema_id_mapper: Callable[[SchemaId, ReferenceType], SchemaId],
-    delete_missing: bool,
-) -> None:
+    templates_by_dataset: Iterable[DatasetTemplates],
+) -> tuple[Sequence[Schema], set[SchemaId], set[SchemaId]]:
     view_ids = {
-        SchemaId(client.project_id, dataset.id.dataset, template.metadata.name)
+        SchemaId(project, dataset.id.dataset, template.metadata.name)
         for dataset in templates_by_dataset
         for template in dataset.views
     }
     routine_ids = {
-        SchemaId(client.project_id, dataset.id.dataset, template.metadata.name)
+        SchemaId(project, dataset.id.dataset, template.metadata.name)
         for dataset in templates_by_dataset
         for template in dataset.routines
     }
 
-    schemas: dict[SchemaId, Schema] = {}
-
-    project = client.project_id
-
     creator = SchemaCreator(project, schema_id_mapper, view_ids, routine_ids)
-
+    schemas: dict[SchemaId, Schema] = {}
     for dataset_template in templates_by_dataset:
         schemas.update(
             creator.create_schemas(
@@ -608,7 +608,28 @@ def update_schemas(
             )
         )
 
+    output_view_ids = {
+        schema_id_mapper(schema, ReferenceType.view) for schema in view_ids
+    }
+    output_routine_ids = {
+        schema_id_mapper(schema, ReferenceType.routine) for schema in routine_ids
+    }
+
     schemas_list = topological_sort(schemas)
+
+    return schemas_list, output_view_ids, output_routine_ids
+
+
+def update_schemas(
+    client: BigQuery,
+    templates_by_dataset: Iterable[DatasetTemplates],
+    dataset_mapping: Mapping[DatasetId, DatasetId],
+    schema_id_mapper: Callable[[SchemaId, ReferenceType], SchemaId],
+    delete_missing: bool,
+) -> None:
+    schemas_list, output_view_ids, output_routine_ids = create_schemas(
+        client.project_id, schema_id_mapper, templates_by_dataset
+    )
 
     current_views, current_routines = get_current_schemas(
         client, [item.id for item in templates_by_dataset], dataset_mapping
@@ -633,13 +654,6 @@ def update_schemas(
                 )
         else:
             raise ValueError(f"Schema {schema.id} had unexpected type {schema.type}")
-
-    output_view_ids = {
-        schema_id_mapper(schema, ReferenceType.view) for schema in view_ids
-    }
-    output_routine_ids = {
-        schema_id_mapper(schema, ReferenceType.routine) for schema in routine_ids
-    }
 
     for item in current_views.keys():
         if item not in output_view_ids:
@@ -717,6 +731,30 @@ INSERT `{dataset}.schema_updates` (run_at, schema_hash) (
 )""",
             parameters=parameters,
         )
+
+
+def check_templates() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bq-project-id", action="store", help="BigQuery project ID")
+    parser.add_argument(
+        "--path",
+        action="store",
+        default=os.path.join(here, os.pardir, "sql"),
+        help="Path to directory containing sql",
+    )
+    args = parser.parse_args()
+
+    templates_by_dataset = load_templates(args.bq_project_id, args.path)
+    if not lint_templates(templates_by_dataset):
+        logging.error("Lint failed")
+        sys.exit(1)
+
+    schema_id_mapper = SchemaIdMapper({}, set())
+    try:
+        create_schemas(args.bq_project_id, schema_id_mapper, templates_by_dataset)
+    except Exception:
+        logging.error("Creating schemas failed")
+        raise
 
 
 class UpdateSchemaJob(EtlJob):
