@@ -32,12 +32,12 @@ def main():
     final_output_fpath2 = RESULTS_FPATH_2 + logical_dag_date_string + ".txt"
 
     # Get latest Chrome release info
-    chrome_release_url_response = requests.get(CHROME_RELEASES_URL)
+    chrome_release_url_response = requests.get(CHROME_RELEASES_URL, timeout=TIMEOUT_IN_SECONDS)
     soup = BeautifulSoup(chrome_release_url_response.text, "html.parser")
     final_output_1 = soup.get_text(separator="\n", strip=True)
 
     # Get info about AI on Chrome
-    chrome_ai_url_response = requests.get(AI_IN_CHROME_URL)
+    chrome_ai_url_response = requests.get(AI_IN_CHROME_URL, timeout=TIMEOUT_IN_SECONDS)
     soup = BeautifulSoup(chrome_ai_url_response.text, "html.parser")
     final_output_2 = soup.get_text(separator="\n", strip=True)
 
