@@ -55,33 +55,32 @@ def prepare_results_rows(
     to BQ."""
     tasks_to_process: dict[str, dict[int, IncrementalityBranchResultsRow]] = {}
     if not experiment.should_collect_batch():
-        logging.info(f"Skipping collection for {experiment.slug} today.")
+        logging.info(
+            f"Skipping collection for {experiment.slug} on process date {experiment.processDate}."
+        )
         return tasks_to_process
 
     for branch in experiment.branches:
         logging.info(f"Processing experiment branch: {branch.slug}")
-        dap_telemetry_features = [
-            f for f in branch.features if f.get("featureId") == "dapTelemetry"
+        dap_incrementality_features = [
+            f for f in branch.features if f.get("featureId") == "dapIncrementality"
         ]
 
-        for feature in dap_telemetry_features:
-            logging.info(f"Processing dapTelemetry experiment feature: {feature}")
-            visit_counting_experiment_list = feature.get("value").get(
-                "visitCountingExperimentList"
+        for feature in dap_incrementality_features:
+            logging.info(f"Processing dapIncrementality experiment feature: {feature}")
+            feature_value = feature.get("value")
+
+            incrementality = IncrementalityBranchResultsRow(
+                experiment, branch.slug, feature_value
             )
+            task_id = incrementality.task_id
 
-            for visit_counting_list_item in visit_counting_experiment_list:
-                incrementality = IncrementalityBranchResultsRow(
-                    experiment, branch.slug, visit_counting_list_item
-                )
-                task_id = incrementality.task_id
-
-                if task_id not in tasks_to_process:
-                    tasks_to_process[task_id] = {}
-                tasks_to_process[task_id][incrementality.bucket] = incrementality
-                logging.info(
-                    f"Prepared intermediate result rows: {tasks_to_process[task_id]}"
-                )
+            if task_id not in tasks_to_process:
+                tasks_to_process[task_id] = {}
+            tasks_to_process[task_id][incrementality.bucket] = incrementality
+            logging.info(
+                f"Prepared intermediate result rows: {tasks_to_process[task_id]}"
+            )
 
         logging.info(f"Finished processing experiment branch: {branch.slug}.")
     return tasks_to_process
@@ -93,14 +92,14 @@ def collect_dap_result(
     vdaf_length: int,
     batch_start: int,
     duration: int,
-    auth_token: str,
+    bearer_token: str,
     hpke_config: str,
     hpke_private_key: str,
 ) -> dict:
     # Beware! This command string reveals secrets. Uncomment logging below only for debugging in local dev.
     #
     # command_str = (f"./collect --task-id {task_id} --leader {DAP_LEADER} --vdaf {VDAF} --length {vdaf_length} "
-    #                f"--authorization-bearer-token {auth_token} --batch-interval-start {batch_start} "
+    #                f"--authorization-bearer-token {bearer_token} --batch-interval-start {batch_start} "
     #                f"--batch-interval-duration {duration} --hpke-config {hpke_config} "
     #                f"--hpke-private-key {hpke_private_key}")
     # logging.debug(f"command_str: {command_str}")
@@ -118,7 +117,7 @@ def collect_dap_result(
                 "--length",
                 f"{vdaf_length}",
                 "--authorization-bearer-token",
-                auth_token,
+                bearer_token,
                 "--batch-interval-start",
                 f"{batch_start}",
                 "--batch-interval-duration",
@@ -152,7 +151,6 @@ def collect_dap_result(
 def collect_dap_results(
     tasks_to_collect: dict[str, dict[int, IncrementalityBranchResultsRow]],
     config: SimpleNamespace,
-    experiment_config: SimpleNamespace,
 ):
     tasks = list(dict.fromkeys(tasks_to_collect))
     logging.info(f"Starting DAP collection for tasks: {tasks}.")
@@ -163,17 +161,17 @@ def collect_dap_results(
         # stored with each branch. So it's okay to just use the first branch
         # to populate these values for all the tasks here.
         firstBranch = list(results.values())[0]
-        task_veclen = firstBranch.task_veclen
+        task_length = firstBranch.task_length
         batch_start_epoch = int(
             datetime.combine(firstBranch.batch_start, datetime.min.time()).timestamp()
         )
         batch_duration = firstBranch.batch_duration
         collected = collect_dap_result(
             task_id,
-            task_veclen,
+            task_length,
             batch_start_epoch,
             batch_duration,
-            config.auth_token,
+            config.bearer_token,
             config.hpke_config,
             config.hpke_private_key,
         )
@@ -280,7 +278,7 @@ def write_results_to_bq(collected_tasks: dict, config: SimpleNamespace):
 
 # GCS helper functions
 def get_config(
-    gcp_project: str, config_bucket: str, auth_token: str, hpke_private_key: str
+    gcp_project: str, config_bucket: str, bearer_token: str, hpke_private_key: str
 ) -> SimpleNamespace:
     """Gets the incrementality job's config from a file in a GCS bucket. See example_config.json for the structure."""
     client = storage.Client(project=gcp_project)
@@ -289,7 +287,7 @@ def get_config(
         blob = bucket.blob(CONFIG_FILE_NAME)
         reader = blob.open("rt")
         config = json.load(reader, object_hook=lambda d: SimpleNamespace(**d))
-        config.dap.auth_token = auth_token
+        config.dap.bearer_token = bearer_token
         config.dap.hpke_private_key = hpke_private_key
         return config
     except Exception as e:
