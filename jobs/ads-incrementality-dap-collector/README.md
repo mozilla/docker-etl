@@ -31,7 +31,7 @@ Everything the job needs to connect to BigQuery.
 
 Everything the job needs to connect to DAP.
 
-- `auth_token`:           Token defined in the collector credentials, used to authenticate to the leader
+- `bearer_token`:         Token defined in the collector credentials, used to authenticate to the leader
 - `hpke_private_key`:     Private key defined in the collector credentials, used to decrypt shares from the leader
                           and helper
 - `hpke_config`:          base64 url-encoded version of public key defined in the collector credentials

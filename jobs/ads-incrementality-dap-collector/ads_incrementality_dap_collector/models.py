@@ -4,7 +4,6 @@ from datetime import date, datetime, timedelta
 import json
 import pytz
 import re
-import tldextract
 
 from typing import List, Optional
 
@@ -30,7 +29,6 @@ class NimbusExperiment:
     Attributes:
         batchDuration:          The DAP agreggation time interval.
         branches:               A list of Branch objects for the experiment's branch data.
-        bucketConfig:
         featureIds:             A list of all the features used in this experiment.
         slug:                   Normandy slug that uniquely identifies the experiment
                                 in Nimbus.
@@ -44,7 +42,6 @@ class NimbusExperiment:
 
     batchDuration: int
     branches: List[Branch]
-    bucketConfig: dict
     featureIds: list[str]
     slug: str
     targeting: str
@@ -110,6 +107,25 @@ class NimbusExperiment:
         return self.latest_collectible_batch_end() == self.processDate
 
 
+def get_metric_from_feature_urls(feature: dict) -> str:
+    return get_value_from_feature_urls(feature, "metric_name")
+
+
+def get_bucket_from_feature_urls(feature: dict) -> int:
+    return get_value_from_feature_urls(feature, "bucket")
+
+
+def get_value_from_feature_urls(feature: dict, value: str) -> int:
+    metric_type = feature.get("measurementType")
+    if metric_type == "referrerMeasurement":
+        return feature.get("referrerUrls")[0].get(value)
+    if metric_type == "visitMeasurement":
+        return feature.get("visitCountUrls")[0].get(value)
+    raise Exception(
+        f"Unknown measurementType '{metric_type}' in dapIncrementality feature."
+    )
+
+
 def get_country_from_targeting(targeting: str) -> Optional[str]:
     """Parses the region/country from the targeting string and
     returns a JSON formatted list of country codes."""
@@ -120,20 +136,6 @@ def get_country_from_targeting(targeting: str) -> Optional[str]:
         regions = [r.strip().strip("'\"") for r in inner.split(",")]
         return json.dumps(regions)
     return None
-
-
-def normalize_url(url: str) -> str:
-    # Replace wildcard with a dummy protocol and subdomain so urlparse can handle it
-    normalized = re.sub(r"^\*://\*\.?", "https://", url)
-    return normalized
-
-
-def get_advertiser_from_url(url: str) -> Optional[str]:
-    """Parses the advertiser name (domain) from the url"""
-    # tldextract cannot handle wildcards, replace with standard values.
-    normalized = normalize_url(url)
-    ext = tldextract.extract(normalized)
-    return ext.domain
 
 
 @attr.s(auto_attribs=True, auto_detect=True, eq=False)
@@ -157,10 +159,10 @@ class IncrementalityBranchResultsRow:
                             can be collected.
         country_codes:      The countries where the experiment is active, as an array of ISO country code strings.
         experiment_slug:    The Nimbus experiment's URL slug
-        metric:             Currently hardcoded to "unique_client_organic_visits" for incrementality.
+        metric:             The kind of metric that this experiment is measuring.
         task_id:            Stored in Nimbus experiment metadata. The task id is returned when setting
                             up DAP counting, and is used to collect the experiment result counts.
-        task_veclen:        Stored in Nimbus experiment metadata. The task_veclen is configured when
+        task_length:        Stored in Nimbus experiment metadata. The task_length is configured when
                             setting up DAP counting, and is needed to collect the experiment results.
         value_count:        The url visits count value collected from DAP for this experiment branch.
     """
@@ -175,7 +177,7 @@ class IncrementalityBranchResultsRow:
     experiment_slug: str
     metric: str
     task_id: str
-    task_veclen: int
+    task_length: int
     value_count: int
 
     def __eq__(self, other):
@@ -189,7 +191,7 @@ class IncrementalityBranchResultsRow:
             and self.experiment_slug == other.experiment_slug
             and self.metric == other.metric
             and self.task_id == other.task_id
-            and self.task_veclen == other.task_veclen
+            and self.task_length == other.task_length
             and self.value_count == other.value_count
         )
 
@@ -197,23 +199,19 @@ class IncrementalityBranchResultsRow:
         self,
         experiment: NimbusExperiment,
         branch_slug: str,
-        visitCounting_experiment_list_item: dict,
+        feature: dict,
     ):
-        self.advertiser = "not_set"
-        urls = visitCounting_experiment_list_item.get("urls")
-        # Default to the first url in the list to determine the advertiser.
-        if len(urls) > 0:
-            self.advertiser = get_advertiser_from_url(urls[0])
+        self.advertiser = feature.get("advertiser")
         self.branch = branch_slug
-        self.bucket = visitCounting_experiment_list_item.get("bucket")
+        self.bucket = get_bucket_from_feature_urls(feature)
         self.batch_start = experiment.latest_collectible_batch_start()
         self.batch_end = experiment.latest_collectible_batch_end()
         self.batch_duration = experiment.batchDuration
         self.country_codes = get_country_from_targeting(experiment.targeting)
         self.experiment_slug = experiment.slug
-        self.metric = "unique_client_organic_visits"
-        self.task_id = visitCounting_experiment_list_item.get("task_id")
-        self.task_veclen = visitCounting_experiment_list_item.get("task_veclen")
+        self.metric = get_metric_from_feature_urls(feature)
+        self.task_id = feature.get("taskId")
+        self.task_length = feature.get("length")
         # This will be populated when we successfully fetch the count from DAP
         self.value_count = None
 
@@ -222,7 +220,7 @@ class IncrementalityBranchResultsRow:
             f"IncrementalityBranchResultsRow(advertiser='{self.advertiser}', branch='{self.branch}', "
             f"bucket='{self.bucket}', batch_start='{self.batch_start}', batch_end='{self.batch_end}', "
             f"country_codes='{self.country_codes}', experiment_slug='{self.experiment_slug}', metric='{self.metric}', "
-            f"task_id='{self.task_id}', task_veclen='{self.task_veclen}', value_count='redacted')"
+            f"task_id='{self.task_id}', task_length='{self.task_length}', value_count='redacted')"
         )
 
     __repr__ = __str__
