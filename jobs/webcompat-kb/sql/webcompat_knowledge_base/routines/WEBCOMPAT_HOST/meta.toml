@@ -1,0 +1,2 @@
+name = "WEBCOMPAT_HOST"
+description = "Parse URL returning host in the format needed to look up site rank data"

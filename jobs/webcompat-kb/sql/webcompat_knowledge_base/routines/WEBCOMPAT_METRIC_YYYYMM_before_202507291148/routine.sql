@@ -1,0 +1,3 @@
+CREATE OR REPLACE FUNCTION `{{ ref(name) }}`() RETURNS INT64 AS (
+202409
+);
