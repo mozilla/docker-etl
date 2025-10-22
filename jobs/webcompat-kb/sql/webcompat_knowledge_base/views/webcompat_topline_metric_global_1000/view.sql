@@ -13,7 +13,7 @@ ON
   AND
 IF
   (bugs.resolved_time IS NOT NULL, DATE(bugs.resolved_time) >= date, TRUE)
-WHERER {{ metrics[metric_name].condition('bugs') }}
+WHERE {{ metrics[metric_name].condition('bugs') }}
 GROUP BY
   date
 order by date

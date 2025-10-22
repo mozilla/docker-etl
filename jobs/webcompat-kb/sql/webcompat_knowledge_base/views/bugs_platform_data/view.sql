@@ -22,7 +22,7 @@ feature_support_dates_browser AS (
     `{{ ref('web_features.features_latest') }}` AS web_features
   CROSS JOIN UNNEST(["firefox", "chrome", "safari"]) as browser
   LEFT JOIN UNNEST(web_features.support) as support ON support.browser = browser
-  LEFT JOIN ` {{ ref('web_features.browser_versions') }}` as browser_versions ON browser = browser_versions.browser_id AND support.browser_version = browser_versions.version
+  LEFT JOIN `{{ ref('web_features.browser_versions') }}` as browser_versions ON browser = browser_versions.browser_id AND support.browser_version = browser_versions.version
 ),
 
 feature_support_dates AS (

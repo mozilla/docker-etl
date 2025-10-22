@@ -63,7 +63,7 @@ WITH
     number,
     `{{ ref('WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK') }}`(keywords,
       user_story) AS triage_score_no_rank,
-    `{{ ref('WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFER') }}`(url,
+    `{{ ref('WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFIER') }}`(url,
       `{{ ref('WEBCOMPAT_METRIC_YYYYMM') }}`()) AS site_rank_score
   FROM
     `{{ project }}.{{ dataset }}.site_reports` AS site_reports),
@@ -82,6 +82,7 @@ WITH
     IFNULL(host_categories.is_global_1000, FALSE) AS is_global_1000,
     IFNULL(host_categories.is_sightline, FALSE) AS is_sightline,
     IFNULL(host_categories.is_japan_1000, FALSE) AS is_japan_1000,
+    IFNULL(host_categories.is_japan_1000, FALSE) AND is_mobile AS is_japan_1000_mobile,
   FROM
     `{{ ref('site_reports') }}` AS site_reports
   JOIN
