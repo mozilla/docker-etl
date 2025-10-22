@@ -19,11 +19,15 @@ CHROME_RELEASES_BASE_URL = "https://developer.chrome.com"
 # Website with AI in Chrome information
 AI_IN_CHROME_URL = "https://developer.chrome.com/docs/ai"
 
+# Chrome Dev Tools News
+CHROME_DEV_TOOLS = "https://developer.chrome.com/docs/devtools/news?hl=en#whats-new"
+
 # Define where to write the data in GCS
 GCS_BUCKET = "gs://moz-fx-data-prod-external-data/"
 BUCKET_NO_GS = "moz-fx-data-prod-external-data"
 RESULTS_FPATH_1 = "MARKET_RESEARCH/SCRAPED_INFO/ChromeReleaseNotes/WebScraping_"
 RESULTS_FPATH_2 = "MARKET_RESEARCH/SCRAPED_INFO/ChromeAI/WebScraping_"
+RESULTS_FPATH_3 = "MARKET_RESEARCH/SCRAPED_INFO/ChromeDevTools/WebScraping_"
 TIMEOUT_IN_SECONDS = 20
 DRIVER_TYP = "Chrome"
 BINARY_LOC = "/usr/bin/google-chrome-stable"
@@ -124,6 +128,7 @@ def main():
     # Make final output filepaths using DAG date
     final_output_fpath1 = RESULTS_FPATH_1 + logical_dag_date_string + ".txt"
     final_output_fpath2 = RESULTS_FPATH_2 + logical_dag_date_string + ".txt"
+    final_output_fpath3 = RESULTS_FPATH_3 + logical_dag_date_string + ".txt"
 
     # Initialize the driver
     driver = initialize_driver(DRIVER_TYP, BINARY_LOC, DRIVER_PATH)
@@ -146,6 +151,13 @@ def main():
     soup = BeautifulSoup(chrome_ai_url_response.text, "html.parser")
     final_output_2 = soup.get_text(separator="\n", strip=True)
 
+    # Get info on news for Chrome Dev Tools
+    chrome_dev_tools_response = requests.get(
+        CHROME_DEV_TOOLS, timeout=TIMEOUT_IN_SECONDS
+    )
+    soup = BeautifulSoup(chrome_dev_tools_response.text, "html.parser")
+    final_output_3 = soup.get_text(separator="\n", strip=True)
+
     # Open up a client to GCS
     client = storage.Client(project="moz-fx-data-shared-prod")
     bucket = client.bucket(BUCKET_NO_GS)
@@ -156,7 +168,11 @@ def main():
 
     blob2 = bucket.blob(final_output_fpath2)
     blob2.upload_from_string(final_output_2)
-    print(f"Summary uploaded to gs://{BUCKET_NO_GS}/{final_output_fpath1}")
+    print(f"Summary uploaded to gs://{BUCKET_NO_GS}/{final_output_fpath2}")
+
+    blob3 = bucket.blob(final_output_fpath3)
+    blob3.upload_from_string(final_output_3)
+    print(f"Summary uploaded to gs://{BUCKET_NO_GS}/{final_output_fpath3}")
 
 
 if __name__ == "__main__":
