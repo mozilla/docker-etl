@@ -56,7 +56,15 @@ CASE
   WHEN "webcompat:contact-ready" IN UNNEST(bugs.keywords) THEN "contact ready"
   WHEN "webcompat:contact-complete" IN UNNEST(bugs.keywords) AND CURRENT_DATE() > DATE_ADD(DATE(outreach_keyword_times.contact_complete_added), INTERVAL 14 DAY) THEN "revisit"
   WHEN "webcompat:contact-complete" IN UNNEST(bugs.keywords) THEN "complete"
-  WHEN "webcompat:contact-in-progress" IN UNNEST(bugs.keywords) AND CURRENT_DATE() > DATE_ADD(DATE(outreach_keyword_times.contact_in_progress_added), INTERVAL 14 DAY) OR (outreach_user_story_times.contact_date IS NOT NULL AND (outreach_user_story_times.response_date IS NULL OR outreach_user_story_times.contact_date > outreach_user_story_times.response_date)) AND CURRENT_DATE() > outreach_user_story_times.contact_date + outreach_user_story_times.outreach_wait_interval THEN "timed out"
+  WHEN "webcompat:contact-in-progress" IN UNNEST(bugs.keywords) AND
+    (
+      CURRENT_DATE() > DATE_ADD(DATE(outreach_keyword_times.contact_in_progress_added), INTERVAL 14 DAY) OR
+      (
+        outreach_user_story_times.contact_date IS NOT NULL AND
+        (outreach_user_story_times.response_date IS NULL OR outreach_user_story_times.contact_date > outreach_user_story_times.response_date) AND
+        CURRENT_DATE() > outreach_user_story_times.contact_date + outreach_user_story_times.outreach_wait_interval
+       )
+    ) THEN "timed out"
   WHEN "webcompat:contact-in-progress" IN UNNEST(bugs.keywords) THEN "in progress"
   WHEN "webcompat:contact-complete" NOT in UNNEST(bugs.keywords) AND "webcompat:contact-in-progress" NOT in UNNEST(bugs.keywords) AND (outreach_user_story_times.contact_date IS NOT NULL OR outreach_keyword_times.contact_in_progress_added IS NOT NULL) THEN "failed"
   ELSE NULL
