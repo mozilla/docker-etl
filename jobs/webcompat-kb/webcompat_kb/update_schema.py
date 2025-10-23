@@ -759,7 +759,6 @@ def check_templates() -> None:
 
 class UpdateSchemaJob(EtlJob):
     name = "update-schema"
-    default = False
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
