@@ -130,14 +130,17 @@ SELECT yyyymm, origin, "global" as country_code, experimental.popularity.rank as
         bigquery.SchemaField("country_code", "STRING", mode="REQUIRED", max_length=8),
         bigquery.SchemaField("rank", "INTEGER", mode="REQUIRED"),
     ]
-    if config.write:
-        query = f"INSERT `{config.bq_project}.{config.bq_crux_dataset}.origin_ranks` (yyyymm, origin, country_code, rank)\n({query})"
 
     logging.info("Updating CrUX data")
     client.ensure_table(
         "origin_ranks", schema, partition=RangePartition("yyyymm", 201701, 202501)
     )
-    client.query(query)
+    client.insert_query(
+        "origin_ranks",
+        ["yyyymm", "origin", "country_code", "rank"],
+        query,
+        dataset_id=config.bq_crux_dataset,
+    )
 
 
 def get_tranco_data() -> Iterator[tuple[int, str]]:
@@ -169,13 +172,7 @@ def update_tranco_data(
 
 
 def update_sightline_data(client: BigQuery, config: Config, yyyymm: int) -> None:
-    if config.write:
-        insert_str = f"INSERT `{config.bq_project}.{config.bq_crux_dataset}.sightline_top_1000` (yyyymm, host)"
-    else:
-        insert_str = ""
-
     query = f"""
-{insert_str}
 SELECT
   DISTINCT yyyymm,
   NET.HOST(origin) AS host
