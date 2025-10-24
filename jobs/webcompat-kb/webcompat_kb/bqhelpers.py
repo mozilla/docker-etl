@@ -3,7 +3,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from types import TracebackType
-from typing import Any, Iterable, Mapping, Optional, Self, Sequence, cast
+from typing import Any, Iterable, Iterator, Mapping, Optional, Self, Sequence, cast
 
 import google.auth
 from google.cloud import bigquery
@@ -130,6 +130,42 @@ class BigQuery:
     def get_routine(self, routine_id: str) -> bigquery.Routine:
         return self.client.get_routine(routine_id)
 
+    def get_routines(self, dataset_id: str) -> Iterator[bigquery.Routine]:
+        for item in self.client.list_routines(dataset_id):
+            yield item
+
+    def get_views(self, dataset_id: str) -> Iterator[bigquery.Table]:
+        for table_item in self.client.list_tables(dataset_id):
+            if table_item.table_type == "VIEW":
+                yield self.get_table(table_item.table_id, dataset_id)
+
+    def create_view(
+        self,
+        view_id: str,
+        view_query: str,
+        dataset_id: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> bigquery.Table:
+        view = bigquery.Table(self.get_table_id(dataset_id, view_id))
+        view.description = description
+        view.view_query = view_query
+        if self.write:
+            try:
+                self.delete_table(view, not_found_ok=True)
+                logging.info(f"Creating view {view}")
+                self.client.create_table(view)
+            except Exception as e:
+                logging.warning(
+                    f"Failed to create view {view_id}\n{e}\n{view.view_query}"
+                )
+        else:
+            logging.info(
+                f"Skiping writes, would create view {view.dataset_id}.{view.table_id}"
+            )
+            logging.debug(f"Query:\n{view_query}")
+
+        return view
+
     def query(
         self,
         query: str,
@@ -152,7 +188,20 @@ class BigQuery:
     def delete_table(
         self, table: bigquery.Table | str, not_found_ok: bool = False
     ) -> None:
-        return self.client.delete_table(table, not_found_ok=not_found_ok)
+        if self.write:
+            logging.info(f"Deleting table {table} (if it exists)")
+            self.client.delete_table(table, not_found_ok=not_found_ok)
+        else:
+            logging.info(f"Skipping writes, would delete table {table}")
+
+    def delete_routine(
+        self, routine: bigquery.Routine | str, not_found_ok: bool = False
+    ) -> None:
+        if self.write:
+            logging.info(f"Deleting routine {routine} (if it exists)")
+            self.client.delete_routine(routine, not_found_ok=not_found_ok)
+        else:
+            logging.info(f"Skipping writes, would delete table {routine}")
 
     def temporary_table(
         self,
