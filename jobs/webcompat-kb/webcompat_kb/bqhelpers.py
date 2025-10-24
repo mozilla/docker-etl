@@ -61,6 +61,7 @@ class BigQuery:
         schema: Iterable[bigquery.SchemaField],
         dataset_id: Optional[str] = None,
         partition: Optional[RangePartition] = None,
+        update_fields: Optional[bool] = False,
     ) -> bigquery.Table:
         table = bigquery.Table(self.get_table_id(dataset_id, table_id), schema=schema)
         if partition:
@@ -72,11 +73,64 @@ class BigQuery:
             )
 
         if self.write:
-            self.client.create_table(table, exists_ok=True)
+            table = self.client.create_table(table, exists_ok=True)
+        else:
+            table = self.get_table(table)
+        if update_fields:
+            table = self.add_table_fields(table, schema)
+        return table
+
+    def add_table_fields(
+        self,
+        table: str | bigquery.Table,
+        schema: Iterable[bigquery.SchemaField],
+        dataset_id: Optional[str] = None,
+    ) -> bigquery.Table:
+        if isinstance(table, str):
+            table = self.get_table(table)
+        table_id = self.get_table_id(dataset_id, table)
+        current_schema = table.schema
+        new_schema = list(schema)
+        if len(current_schema) > len(new_schema):
+            raise ValueError(
+                "Requested schema is shorter than new schema, deleting columns isn't supported"
+            )
+        for new_field, old_field in zip(schema, current_schema):
+            if (
+                new_field.name != old_field.name
+                or new_field.field_type != old_field.field_type
+            ):
+                raise ValueError(
+                    "Requested schema isn't an extension of existing schema"
+                )
+        new_fields = new_schema[len(current_schema) :]
+        if not new_fields:
+            logging.info(f"Updating {table_id}: nothing to do")
+            return table
+
+        for new_field in new_fields:
+            if new_field.mode == "REQUIRED":
+                raise ValueError("Adding required fields isn't supported")
+
+        for new_field in new_fields:
+            logging.info(
+                f"Updating {table_id}: Adding field {new_field.name} with type {new_field.field_type}"
+            )
+
+        table.schema = new_schema
+        if self.write:
+            table = self.client.update_table(table, ["schema"])
+        else:
+            logging.info(
+                f"Skipping writes, would have added {len(new_fields)} new fields"
+            )
+
+        if len(table.schema) != len(new_schema):
+            raise Exception("Table update failed")
         return table
 
     def get_table(
-        self, table_id: str, dataset_id: Optional[str] = None
+        self, table_id: str | bigquery.Table, dataset_id: Optional[str] = None
     ) -> bigquery.Table:
         table = self.get_table_id(dataset_id, table_id)
         return self.client.get_table(table)
