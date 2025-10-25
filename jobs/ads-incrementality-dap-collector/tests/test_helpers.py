@@ -20,6 +20,8 @@ from tests.test_mocks import (  # noqa: E402
     mock_visit_experiment,
     mock_referrer_experiment,
     mock_unknown_measurement_experiment,
+    mock_unparseable_experiment,
+    mock_unlaunched_experiment,
     mock_visit_control_row,
     mock_visit_treatment_a_row,
     mock_visit_treatment_b_row,
@@ -28,7 +30,6 @@ from tests.test_mocks import (  # noqa: E402
     mock_referrer_treatment_b_row,
     mock_referrer_task_id,
     mock_visit_task_id,
-    mock_nimbus_unparseable_experiment,
     mock_tasks_to_collect,
     mock_dap_config,
     mock_experiment_config,
@@ -127,7 +128,13 @@ class TestHelpers(TestCase):
             prepare_results_rows(experiment)
 
     def test_prepare_results_row_unparseable_experiment(self):
-        experiment = mock_nimbus_unparseable_experiment()
+        experiment = mock_unparseable_experiment()
+        results_rows = prepare_results_rows(experiment)
+        self.assertEqual({}, results_rows)
+        self.assertEqual([], list(results_rows.keys()))
+
+    def test_prepare_results_row_unlaunched_experiment(self):
+        experiment = mock_unlaunched_experiment()
         results_rows = prepare_results_rows(experiment)
         self.assertEqual({}, results_rows)
         self.assertEqual([], list(results_rows.keys()))
