@@ -57,11 +57,27 @@ def mock_referrer_experiment(process_date="2025-08-22") -> NimbusExperiment:
     return NimbusExperiment.from_dict(nimbus_success_json)
 
 
-def mock_unknown_measurement_experiment(process_date="20254-08-22") -> NimbusExperiment:
+def mock_unknown_measurement_experiment(process_date="2025-08-22") -> NimbusExperiment:
     nimbus_success_json = UNKOWN_MEASUREMENT_EXPERIMENT_SUCCESS
     nimbus_success_json["batchDuration"] = mock_experiment_config().batch_duration
     nimbus_success_json["processDate"] = process_date
     return NimbusExperiment.from_dict(nimbus_success_json)
+
+
+def mock_unparseable_experiment() -> NimbusExperiment:
+    nimbus_unparseable_json = NOT_AN_INCREMENTALITY_EXPERIMENT_SUCCESS
+    nimbus_unparseable_json["batchDuration"] = mock_experiment_config().batch_duration
+    nimbus_unparseable_json["processDate"] = "2025-09-19"
+    return NimbusExperiment.from_dict(nimbus_unparseable_json)
+
+
+def mock_unlaunched_experiment(process_date="2025-08-22") -> NimbusExperiment:
+    nimbus_success_json = VISIT_MEASUREMENT_EXPERIMENT_SUCCESS
+    nimbus_success_json["batchDuration"] = mock_experiment_config().batch_duration
+    nimbus_success_json["processDate"] = process_date
+    experiment = NimbusExperiment.from_dict(nimbus_success_json)
+    experiment.startDate = None
+    return experiment
 
 
 def mock_referrer_task_id() -> str:
@@ -215,13 +231,6 @@ def mock_referrer_treatment_b_row(experiment) -> IncrementalityBranchResultsRow:
             "unknownReferrerBucket": 3,
         },
     )
-
-
-def mock_nimbus_unparseable_experiment() -> NimbusExperiment:
-    nimbus_unparseable_json = NOT_AN_INCREMENTALITY_EXPERIMENT_SUCCESS
-    nimbus_unparseable_json["batchDuration"] = mock_experiment_config().batch_duration
-    nimbus_unparseable_json["processDate"] = "2025-09-19"
-    return NimbusExperiment.from_dict(nimbus_unparseable_json)
 
 
 def mock_tasks_to_collect() -> dict[str, dict[int, IncrementalityBranchResultsRow]]:

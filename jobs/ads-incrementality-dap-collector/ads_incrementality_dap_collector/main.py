@@ -12,7 +12,6 @@ from helpers import (
     write_results_to_bq,
 )
 
-
 @click.command()
 @click.option(
     "--job_config_gcp_project",
@@ -26,7 +25,7 @@ from helpers import (
 )
 @click.option(
     "--bearer_token",
-    envvar="BEARER_TOKEN",
+    envvar="DAP_BEARER_TOKEN",
     help="The 'token' defined in the collector credentials, used to authenticate to the leader",
     required=True,
 )
@@ -65,10 +64,8 @@ def main(
             experiment = get_experiment(
                 experiment_config, config.nimbus.api_url, process_date.date()
             )
-
             tasks_to_collect = prepare_results_rows(experiment)
             collected_tasks = collect_dap_results(tasks_to_collect, config.dap)
-
             write_results_to_bq(collected_tasks, config.bq)
     except Exception as e:
         logging.error(f"Collector job failed. Error: {e}\n{traceback.format_exc()}")

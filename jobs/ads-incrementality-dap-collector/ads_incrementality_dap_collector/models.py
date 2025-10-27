@@ -45,7 +45,7 @@ class NimbusExperiment:
     featureIds: list[str]
     slug: str
     targeting: str
-    startDate: date
+    startDate: Optional[date] = None
     endDate: Optional[date] = None
     processDate: Optional[date] = None
 
@@ -71,6 +71,8 @@ class NimbusExperiment:
         self.processDate = date
 
     def latest_collectible_batch_start(self) -> date:
+        if self.startDate is None:
+            raise Exception(f"Experiment {self.slug} is not launched, therefore does not have a latest collectible batch start.")
         # If the experiment's start date is on or after the processing date,
         # Or the processing date is in the experiment's first batch (excluding end date),
         # Then return the experiment's start date as latest_collectible_batch_start
@@ -99,11 +101,15 @@ class NimbusExperiment:
         return batch_interval_start - timedelta(seconds=2 * self.batchDuration)
 
     def latest_collectible_batch_end(self) -> date:
+        if self.startDate is None:
+            raise Exception(f"Experiment {self.slug} is not launched, therefore does not have a latest collectible batch end.")
         return self.latest_collectible_batch_start() + timedelta(
             seconds=self.batchDuration, days=-1
         )
 
     def should_collect_batch(self) -> bool:
+        if self.startDate is None:
+            return False
         return self.latest_collectible_batch_end() == self.processDate
 
 
