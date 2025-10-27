@@ -1,5 +1,6 @@
 from datetime import date
 from unittest import TestCase
+import pytest
 
 from tests.test_mocks import mock_visit_experiment  # noqa: E402
 
@@ -130,3 +131,23 @@ class TestHelpers(TestCase):
         self.assertEqual(True, experiment.should_collect_batch())
         self.assertEqual(date(2025, 8, 28), experiment.latest_collectible_batch_start())
         self.assertEqual(date(2025, 9, 1), experiment.latest_collectible_batch_end())
+
+    def test_experiment_that_isnt_launched_has_no_latest_collectible_batch(self,):
+        # Mock experiment has no start date, which means it has not been launched yet
+        # Process date is 2025-09-01
+        experiment = mock_visit_experiment("2025-09-01")
+        experiment.startDate = None
+
+        self.assertEqual(False, experiment.should_collect_batch())
+
+        with pytest.raises(
+            Exception,
+            match=f"Experiment {experiment.slug} is not launched, therefore does not have a latest collectible batch start.",
+        ):
+            self.assertEqual(date(2025, 8, 28), experiment.latest_collectible_batch_start())
+
+        with pytest.raises(
+            Exception,
+            match=f"Experiment {experiment.slug} is not launched, therefore does not have a latest collectible batch end.",
+        ):
+            self.assertEqual(date(2025, 9, 1), experiment.latest_collectible_batch_end())
