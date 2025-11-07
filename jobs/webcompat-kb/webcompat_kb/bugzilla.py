@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 import bugdantic
 from google.cloud import bigquery
 
-from .base import EtlJob
+from .base import Context, EtlJob
 from .bqhelpers import BigQuery
 
 
@@ -1475,28 +1475,28 @@ class BugzillaJob(EtlJob):
             help="Path to JSON file to load bug data from",
         )
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_kb_dataset
+    def default_dataset(self, context: Context) -> str:
+        return context.args.bq_kb_dataset
 
     def required_args(self) -> set[str | tuple[str, str]]:
         return {"bq_kb_dataset"}
 
-    def main(self, bq_client: BigQuery, args: argparse.Namespace) -> None:
+    def main(self, context: Context) -> None:
         bz_config = bugdantic.BugzillaConfig(
             "https://bugzilla.mozilla.org",
-            args.bugzilla_api_key,
-            allow_writes=args.write,
+            context.args.bugzilla_api_key,
+            allow_writes=context.config.write,
         )
         bz_client = bugdantic.Bugzilla(bz_config)
 
         run(
-            bq_client,
-            args.bq_kb_dataset,
+            context.bq_client,
+            context.args.bq_kb_dataset,
             bz_client,
-            args.write,
-            args.bugzilla_include_history,
-            args.bugzilla_recreate_bugs,
-            args.bugzilla_recreate_history,
-            args.bugzilla_write_bug_data,
-            args.bugzilla_load_bug_data,
+            context.config.write,
+            context.args.bugzilla_include_history,
+            context.args.bugzilla_recreate_bugs,
+            context.args.bugzilla_recreate_history,
+            context.args.bugzilla_write_bug_data,
+            context.args.bugzilla_load_bug_data,
         )

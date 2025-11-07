@@ -15,7 +15,7 @@ import jinja2
 from google.cloud import bigquery
 from pydantic import BaseModel, ConfigDict
 
-from .base import EtlJob
+from .base import Context, EtlJob
 from .bqhelpers import BigQuery, DatasetId, SchemaId, SchemaType
 from .metrics.metrics import metrics, metric_types
 from .treehash import hash_tree
@@ -640,24 +640,25 @@ class UpdateSchemaJob(EtlJob):
             help="Force update from source files",
         )
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_kb_dataset
+    def default_dataset(self, context: Context) -> str:
+        return context.args.bq_kb_dataset
 
-    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
-        schema_path = os.path.abspath(args.update_schema_path)
-
-        metadata_dataset = DatasetId(client.project_id, "metadata")
-        if args.update_schema_stage:
+    def main(self, context: Context) -> None:
+        schema_path = os.path.abspath(context.args.update_schema_path)
+        metadata_dataset = DatasetId(context.bq_client.project_id, "metadata")
+        if context.args.update_schema_stage:
             metadata_dataset = stage_dataset(metadata_dataset)
 
         src_hash = hash_tree(schema_path).hex()
-        last_update_time, last_update_hash = get_last_update(client, metadata_dataset)
+        last_update_time, last_update_hash = get_last_update(
+            context.bq_client, metadata_dataset
+        )
 
         logging.info(f"Templates have hash {src_hash}")
         logging.info(f"Deployed schema have hash {last_update_hash}")
 
         update_needed = (
-            args.update_schema_recreate
+            context.args.update_schema_recreate
             or last_update_hash != src_hash
             or (last_update_time and last_update_time.date() < datetime.now().date())
         )
@@ -665,13 +666,13 @@ class UpdateSchemaJob(EtlJob):
             logging.info("No changes to deploy")
             return
 
-        templates_by_dataset = load_templates(client.project_id, schema_path)
+        templates_by_dataset = load_templates(context.bq_client.project_id, schema_path)
         if not lint_templates(templates_by_dataset):
             raise ValueError("Template lint failed")
 
         dataset_mapping = {dataset.id: dataset.id for dataset in templates_by_dataset}
         rewrite_tables = set()
-        if args.update_schema_stage:
+        if context.args.update_schema_stage:
             dataset_mapping = {
                 dataset: stage_dataset(dataset) for dataset in dataset_mapping
             }
@@ -680,18 +681,22 @@ class UpdateSchemaJob(EtlJob):
             # copies of the tables in the _test datasets for various reasons.
             for dataset, target_dataset in dataset_mapping.items():
                 rewrite_tables |= set(
-                    SchemaId(client.project_id, dataset.dataset, item.table_id)
-                    for item in client.client.list_tables(target_dataset.dataset)
+                    SchemaId(
+                        context.bq_client.project_id, dataset.dataset, item.table_id
+                    )
+                    for item in context.bq_client.client.list_tables(
+                        target_dataset.dataset
+                    )
                     if item.table_type != "VIEW"
                 )
             logging.debug("\n".join(str(item) for item in rewrite_tables))
 
         schema_id_mapper = SchemaIdMapper(dataset_mapping, rewrite_tables)
         update_schemas(
-            client,
+            context.bq_client,
             templates_by_dataset,
             dataset_mapping,
             schema_id_mapper,
-            args.update_schema_delete_extra,
+            context.args.update_schema_delete_extra,
         )
-        record_update(client, metadata_dataset, src_hash)
+        record_update(context.bq_client, metadata_dataset, src_hash)

@@ -9,7 +9,7 @@ from google.cloud import bigquery
 from webfeatures import FeaturesFile
 from webfeatures.features import Feature, FeatureMoved, FeatureSplit
 
-from .base import EtlJob, dataset_arg
+from .base import Context, EtlJob, dataset_arg
 from .bqhelpers import BigQuery, Json
 
 
@@ -348,8 +348,8 @@ class WebFeaturesJob(EtlJob):
     def required_args(self) -> set[str | tuple[str, str]]:
         return {"bq_web_features_dataset"}
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_web_features_dataset
+    def default_dataset(self, context: Context) -> str:
+        return context.args.bq_web_features_dataset
 
-    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
-        update_web_features(client, args.recreate_web_features)
+    def main(self, context: Context) -> None:
+        update_web_features(context.bq_client, context.args.recreate_web_features)

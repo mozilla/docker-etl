@@ -1,6 +1,7 @@
 import argparse
 import re
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, MutableMapping
 
 from .bqhelpers import BigQuery
@@ -29,6 +30,20 @@ def dataset_arg(value: str) -> str:
     return value
 
 
+@dataclass
+class Config:
+    write: bool
+    stage: bool
+
+
+@dataclass
+class Context:
+    args: argparse.Namespace
+    bq_client: BigQuery
+    config: Config
+    jobs: list["EtlJob"]
+
+
 class EtlJob(ABC):
     name: str
     default = True
@@ -46,8 +61,8 @@ class EtlJob(ABC):
         return set()
 
     @abstractmethod
-    def default_dataset(self, args: argparse.Namespace) -> str: ...
+    def default_dataset(self, context: Context) -> str: ...
 
     @abstractmethod
-    def main(self, bq_client: BigQuery, args: argparse.Namespace) -> None:
+    def main(self, context: Context) -> None:
         pass

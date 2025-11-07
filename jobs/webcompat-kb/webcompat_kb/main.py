@@ -14,9 +14,8 @@ from . import (
     metric_rescore,  # noqa: F401
     chrome_use_counters,  # noqa: F401
     interop,  # noqa: F401
-    update_schema,  # noqa: F401
 )
-from .base import ALL_JOBS, EtlJob, dataset_arg, project_arg
+from .base import ALL_JOBS, Context, Config, EtlJob, dataset_arg, project_arg
 from .bqhelpers import get_client, BigQuery
 
 
@@ -41,6 +40,12 @@ def get_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--bq-kb-dataset", type=dataset_arg, help="BigQuery knowledge base dataset id"
+    )
+
+    parser.add_argument(
+        "--stage",
+        action="store_true",
+        help="Write to staging location (currently same project with _test suffix on dataset names)",
     )
 
     parser.add_argument(
@@ -113,14 +118,23 @@ def main() -> None:
 
         validate_args(parser, args, jobs.values())
 
+        config = Config(write=args.write, stage=args.stage)
+
         client = get_client(args.bq_project_id)
+        context = Context(
+            args=args,
+            bq_client=BigQuery(client, "", args.write),
+            config=config,
+            jobs=list(jobs.values()),
+        )
 
         for job_name, job in jobs.items():
             logging.info(f"Running job {job_name}")
-            bq_client = BigQuery(client, job.default_dataset(args), args.write)
+            bq_client = BigQuery(client, job.default_dataset(context), args.write)
 
+            context.bq_client = bq_client
             try:
-                job.main(bq_client, args)
+                job.main(context)
             except Exception as e:
                 if args.pdb or args.fail_on_error:
                     raise
