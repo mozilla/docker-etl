@@ -1,0 +1,8 @@
+[id]
+type = "STRING"
+mode = "REQUIRED"
+
+[name]
+type = "STRING"
+mode = "REQUIRED"
+

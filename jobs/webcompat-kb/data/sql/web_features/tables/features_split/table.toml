@@ -1,0 +1,12 @@
+[release]
+type = "STRING"
+mode = "REQUIRED"
+
+[feature]
+type = "STRING"
+mode = "REQUIRED"
+
+[redirect_target]
+type = "STRING"
+mode = "REPEATED"
+

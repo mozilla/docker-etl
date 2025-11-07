@@ -1,0 +1,17 @@
+[change_time]
+type = "DATETIME"
+mode = "REQUIRED"
+
+[reason]
+type = "STRING"
+mode = "NULLABLE"
+
+{% for direction in ["before", "after"] %}
+{% for metric_type in metric_types %}
+{% for metric in metrics.values() %}
+[{{ direction }}_{{ metric_type.name }}_{{ metric.name }}]
+type = "NUMERIC"
+mode = "REQUIRED"
+{% endfor %}
+{% endfor %}
+{% endfor %}

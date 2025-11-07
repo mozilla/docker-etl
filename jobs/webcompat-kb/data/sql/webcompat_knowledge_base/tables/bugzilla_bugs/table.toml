@@ -1,0 +1,100 @@
+[number]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[alias]
+type = "STRING"
+mode = "NULLABLE"
+
+[title]
+type = "STRING"
+mode = "REQUIRED"
+
+[status]
+type = "STRING"
+mode = "REQUIRED"
+
+[resolution]
+type = "STRING"
+mode = "REQUIRED"
+
+[product]
+type = "STRING"
+mode = "REQUIRED"
+
+[component]
+type = "STRING"
+mode = "REQUIRED"
+
+[creator]
+type = "STRING"
+mode = "REQUIRED"
+
+[severity]
+type = "INTEGER"
+mode = "NULLABLE"
+
+[priority]
+type = "INTEGER"
+mode = "NULLABLE"
+
+[creation_time]
+type = "TIMESTAMP"
+mode = "REQUIRED"
+
+[last_change_time]
+type = "TIMESTAMP"
+mode = "NULLABLE"
+
+[assigned_to]
+type = "STRING"
+mode = "NULLABLE"
+
+[keywords]
+type = "STRING"
+mode = "REPEATED"
+
+[url]
+type = "STRING"
+mode = "NULLABLE"
+
+[user_story]
+type = "JSON"
+mode = "NULLABLE"
+
+[user_story_raw]
+type = "STRING"
+mode = "NULLABLE"
+
+[resolved_time]
+type = "TIMESTAMP"
+mode = "NULLABLE"
+
+[size_estimate]
+type = "STRING"
+mode = "NULLABLE"
+
+[whiteboard]
+type = "STRING"
+mode = "NULLABLE"
+
+[webcompat_priority]
+type = "STRING"
+mode = "NULLABLE"
+
+[webcompat_score]
+type = "INTEGER"
+mode = "NULLABLE"
+
+[depends_on]
+type = "INTEGER"
+mode = "REPEATED"
+
+[blocks]
+type = "INTEGER"
+mode = "REPEATED"
+
+[see_also]
+type = "STRING"
+mode = "REPEATED"
+
