@@ -1,0 +1,31 @@
+[id]
+type = "STRING"
+mode = "REQUIRED"
+
+[name]
+type = "STRING"
+mode = "REQUIRED"
+
+[created_at]
+type = "TIMESTAMP"
+mode = "REQUIRED"
+
+[published_at]
+type = "TIMESTAMP"
+mode = "REQUIRED"
+
+[version]
+type = "RECORD"
+mode = "REQUIRED"
+
+[version.fields.major]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[version.fields.minor]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[version.fields.patch]
+type = "INTEGER"
+mode = "REQUIRED"

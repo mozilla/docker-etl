@@ -1,0 +1,8 @@
+[breakage_bug]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[etp_meta_bug]
+type = "INTEGER"
+mode = "REQUIRED"
+

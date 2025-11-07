@@ -1,0 +1,2 @@
+name = "webcompat_topline_metric_daily"
+etl = ["metric", "metric-backfill"]

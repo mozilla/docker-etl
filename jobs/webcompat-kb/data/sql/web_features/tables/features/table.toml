@@ -1,0 +1,80 @@
+[release]
+type = "STRING"
+mode = "REQUIRED"
+
+[feature]
+type = "STRING"
+mode = "REQUIRED"
+
+[name]
+type = "STRING"
+mode = "REQUIRED"
+
+[description]
+type = "STRING"
+mode = "REQUIRED"
+
+[description_html]
+type = "STRING"
+mode = "REQUIRED"
+
+[status_baseline]
+type = "STRING"
+mode = "REQUIRED"
+
+[status_baseline_high_date]
+type = "RECORD"
+mode = "NULLABLE"
+
+[status_baseline_high_date.fields.date]
+type = "DATE"
+mode = "REQUIRED"
+
+[status_baseline_high_date.fields.is_upper_bound]
+type = "BOOLEAN"
+mode = "REQUIRED"
+
+[status_baseline_low_date]
+type = "RECORD"
+mode = "NULLABLE"
+
+[status_baseline_low_date.fields.date]
+type = "DATE"
+mode = "REQUIRED"
+
+[status_baseline_low_date.fields.is_upper_bound]
+type = "BOOLEAN"
+mode = "REQUIRED"
+
+[support]
+type = "RECORD"
+mode = "REPEATED"
+
+[support.fields.browser]
+type = "STRING"
+mode = "REQUIRED"
+
+[support.fields.browser_version]
+type = "STRING"
+mode = "REQUIRED"
+
+[caniuse]
+type = "STRING"
+mode = "REPEATED"
+
+[compat_features]
+type = "STRING"
+mode = "REPEATED"
+
+[group]
+type = "STRING"
+mode = "REPEATED"
+
+[spec]
+type = "STRING"
+mode = "REPEATED"
+
+[snapshot]
+type = "STRING"
+mode = "REPEATED"
+

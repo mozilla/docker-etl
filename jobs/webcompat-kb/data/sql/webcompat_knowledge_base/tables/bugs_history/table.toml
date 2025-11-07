@@ -1,0 +1,27 @@
+[number]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[who]
+type = "STRING"
+mode = "REQUIRED"
+
+[change_time]
+type = "TIMESTAMP"
+mode = "REQUIRED"
+
+[changes]
+type = "RECORD"
+mode = "REPEATED"
+
+[changes.fields.field_name]
+type = "STRING"
+mode = "REQUIRED"
+
+[changes.fields.added]
+type = "STRING"
+mode = "REQUIRED"
+
+[changes.fields.removed]
+type = "STRING"
+mode = "REQUIRED"

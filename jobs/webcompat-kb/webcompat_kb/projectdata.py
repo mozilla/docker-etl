@@ -127,6 +127,8 @@ class SchemaTemplate(ABC, Generic[TemplateCls]):
     filename: ClassVar[str]
 
     def __init__(self, path: os.PathLike, metadata: TemplateCls, template: str):
+        """Base class for template files representing some part of the
+        schema e.g. a table, a view, or a routine"""
         self.path = path
         self.metadata = metadata
         self.template = template
@@ -222,6 +224,7 @@ class RoutineTemplate(SchemaTemplate):
 
 class DatasetTemplates:
     def __init__(self, id: DatasetId, description: Optional[str]):
+        """Metadata and templates for a specific dataset"""
         self.id = id
         self.description = description
         self.tables: list[TableTemplate] = []
@@ -231,6 +234,8 @@ class DatasetTemplates:
 
 @dataclass
 class ProjectData:
+    """Container for on-disk data used for a project including schema templates"""
+
     path: os.PathLike
     templates_by_dataset: Mapping[DatasetId, DatasetTemplates]
     metric_dfns: Sequence[metrics.Metric]
@@ -275,6 +280,9 @@ class Project:
         self.map_schema_id = schema_id_mapper
 
     def __getitem__(self, name: str) -> Dataset:
+        """Index getter for a dataset.
+
+        This allows writing project["dataset_name"] to access a dataset in the project"""
         try:
             dataset = self.datasets[name]
         except Exception as e:
@@ -292,6 +300,7 @@ class TableSchemaCreator:
         project_data: ProjectData,
         schema_id_mapper: Callable[[ReferenceType, SchemaId], SchemaId],
     ):
+        """Convert table schema metadata and template into a TableSchema"""
         self.schema_id_mapper = schema_id_mapper
         self.jinja_env = jinja2.Environment()
         self.jinja_env.globals = {
@@ -494,6 +503,7 @@ def create_datasets(
     dataset_id_mapper: Callable[[DatasetId], DatasetId],
     schema_id_mapper: Callable[[ReferenceType, SchemaId], SchemaId],
 ) -> Sequence[Dataset]:
+    """Get a list of Dataset objects for each dataset in the project"""
     creator = TableSchemaCreator(project_data, schema_id_mapper)
     datasets = []
     for dataset_templates in project_data.templates_by_dataset.values():
@@ -538,6 +548,16 @@ def load(
     etl_jobs: set[str],
     config: Config,
 ) -> Project:
+    """Load project data.
+
+    :param client: - BigQuery client, needed to query which tables already exist in
+                     staging mode.
+    :param project: - Name of the BigQuery project
+    :param data_path: - Path containing the data files for the project
+    :param etl_jobs: - List of ETL jobs that are running. This is used in staging mode
+                       to decide which table ids to use from the staging data vs from prod.
+    :param config: - Global configuration
+    """
     project_data = load_data(project, data_path)
 
     dataset_id_mapper = DatasetMapper(project_data, config.stage)

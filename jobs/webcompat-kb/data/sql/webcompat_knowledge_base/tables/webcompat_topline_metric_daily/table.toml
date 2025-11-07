@@ -1,0 +1,10 @@
+[date]
+type = "DATE"
+mode = "REQUIRED"
+{% for metric_type in metric_types -%}
+{% for metric in metrics.values() %}
+[{{ metric_type.name }}_{{ metric.name }}]
+{# Inconsistnecy we should clean up: we started making all new fields in this table NUMERIC but some bug_count fields are still INTEGER -#}
+type = "{{ metric_type.field_type if metric_type.name != "bug_count" or metric.name in ["all", "sightline", "global_1000"] else "NUMERIC" }}"
+{% endfor %}
+{% endfor %}

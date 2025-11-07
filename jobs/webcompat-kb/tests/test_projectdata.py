@@ -1,10 +1,17 @@
+import os
 import pytest
 
+from webcompat_kb.bqhelpers import SchemaField, TableSchema
+from webcompat_kb.metrics.ranks import RankColumn
 from webcompat_kb.projectdata import (
     DatasetId,
     ReferenceType,
     SchemaId,
     SchemaIdMapper,
+    TableSchemaCreator,
+    TableTemplate,
+    TableMetadata,
+    load_data,
     stage_dataset,
 )
 
@@ -83,3 +90,52 @@ def test_schema_id_mapper():
         ReferenceType.table,
         SchemaId("input_project", "input_dataset", "table_no_rewrite"),
     ) == SchemaId("input_project", "input_dataset", "table_no_rewrite")
+
+
+@pytest.fixture(scope="module")
+def data_dir():
+    here = os.path.dirname(__file__)
+    return os.path.abspath(os.path.join(here, os.pardir, "data"))
+
+
+@pytest.fixture
+def project_data(data_dir):
+    return load_data("test", data_dir)
+
+
+def test_table_schema_creator(project_data):
+    project_data.rank_dfns = [RankColumn("rank1"), RankColumn("rank2")]
+    creator = TableSchemaCreator(
+        project_data, lambda x, y: SchemaId(y.project, f"{y.dataset}_output", y.name)
+    )
+    # We don't depend on the schema template acually being in the project
+    template = TableTemplate(
+        os.path.join(project_data.path, "test", "tables", "test_table"),
+        TableMetadata(
+            name="test_table", description="Table description", etl=[], partition=None
+        ),
+        template="""
+[id]
+type="INTEGER"
+mode="REQUIRED"
+{% for rank in ranks -%}
+[{{rank.name}}]
+type="INTEGER"
+mode="NULLABLE"
+{% endfor %}
+""",
+    )
+    expected = TableSchema(
+        SchemaId("project", "dataset_output", "test_table"),
+        canonical_id=SchemaId("project", "dataset", "test_table"),
+        description="Table description",
+        fields=[
+            SchemaField("id", "INTEGER", "REQUIRED"),
+            SchemaField("rank1", "INTEGER", "NULLABLE"),
+            SchemaField("rank2", "INTEGER", "NULLABLE"),
+        ],
+        etl=set(),
+        partition=None,
+    )
+    actual = creator.create_table_schema(DatasetId("project", "dataset"), template)
+    assert actual == expected

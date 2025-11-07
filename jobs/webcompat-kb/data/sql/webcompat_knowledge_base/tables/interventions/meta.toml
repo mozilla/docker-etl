@@ -1,0 +1,2 @@
+name = "interventions"
+etl = ["bugzilla"]

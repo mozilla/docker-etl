@@ -1,0 +1,2 @@
+name = "webcompat_topline_metric_japan_1000_mobile_history"
+etl = ["metric"]
