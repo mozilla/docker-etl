@@ -7,7 +7,7 @@ from typing import Any, Iterable, Mapping
 import pytest
 import bugdantic.bugzilla
 
-from webcompat_kb.bqhelpers import get_client, BigQuery
+from webcompat_kb.bqhelpers import get_client, BigQuery, DatasetId
 from webcompat_kb.bugzilla import (
     Bug,
     BugHistoryChange,
@@ -1200,9 +1200,10 @@ def bq_client(mock_bq, mock_auth_default):
     mock_project_id = "placeholder_id"
     mock_auth_default.return_value = (mock_credentials, mock_project_id)
     mock_bq.return_value = Mock()
+    client = get_client(mock_project_id)
+    client.project = mock_project_id
 
-    mock_bq.return_value = Mock()
-    return BigQuery(get_client(mock_project_id), "test_dataset", True)
+    return BigQuery(client, DatasetId(mock_project_id, "test_dataset"), True)
 
 
 @pytest.fixture(scope="module")
