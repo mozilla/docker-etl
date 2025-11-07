@@ -1,23 +1,28 @@
 import argparse
 import difflib
-import enum
 import json
 import logging
 import re
 import os
-import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Iterable, Mapping, Optional, Sequence
 
 import jinja2
 from google.cloud import bigquery
-from pydantic import BaseModel, ConfigDict
 
-from .base import Context, EtlJob
-from .bqhelpers import BigQuery, DatasetId, SchemaId, SchemaType
-from .metrics import metrics
+from . import projectdata
+from .base import ALL_JOBS, Context, EtlJob
+from .bqhelpers import (
+    BigQuery,
+    DatasetId,
+    SchemaId,
+    SchemaType,
+    TableSchema,
+)
+from .projectdata import Project, ReferenceType, SchemaTemplate, lint_templates
 from .treehash import hash_tree
+
 
 here = os.path.dirname(__file__)
 
@@ -31,68 +36,133 @@ class SchemaDefinition:
     description: str = ""
 
 
-class DatasetMetadata(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    name: str
-    description: Optional[str] = None
-
-
-class SchemaMetadata(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    name: str
-    description: Optional[str] = None
-
-
-@dataclass(frozen=True)
-class SchemaTemplate:
-    path: str
-    metadata: SchemaMetadata
-    sql_template: str
-
-
-class DatasetTemplates:
-    def __init__(self, id: DatasetId):
-        self.id = id
-        self.views: list[SchemaTemplate] = []
-        self.routines: list[SchemaTemplate] = []
-
-
-class ReferenceType(enum.StrEnum):
-    view = "view"
-    routine = "routine"
-    table = "table"
-    external = "external"
+@dataclass
+class References:
+    views: set[SchemaId] = field(default_factory=set)
+    routines: set[SchemaId] = field(default_factory=set)
+    tables: set[SchemaId] = field(default_factory=set)
+    external: set[SchemaId] = field(default_factory=set)
 
 
 @dataclass
-class References:
-    views: set[SchemaId]
-    routines: set[SchemaId]
-    tables: set[SchemaId]
-    external: set[SchemaId]
+class RenderResult:
+    output: str
+    references: References
 
 
-class SchemaIdMapper:
+class SchemaCreator:
     def __init__(
         self,
-        dataset_mapping: Mapping[DatasetId, DatasetId],
-        rewrite_tables: set[SchemaId],
+        project: Project,
     ):
-        self.dataset_mapping = dataset_mapping
-        self.rewrite_tables = rewrite_tables
+        self.project = project
 
-    def __call__(self, ref: SchemaId, type: ReferenceType) -> SchemaId:
-        if type == ReferenceType.external:
-            return ref
+        self.known_references = {
+            schema.canonical_id: schema.type
+            for dataset in project
+            for schema in dataset
+        }
 
-        if ref.dataset_id in self.dataset_mapping and (
-            type != ReferenceType.table or ref in self.rewrite_tables
-        ):
-            new_dataset = self.dataset_mapping[ref.dataset_id]
-            return SchemaId(new_dataset.project, new_dataset.dataset, ref.name)
-        return ref
+        self.jinja_env = jinja2.Environment()
+        self.jinja_env.globals = {
+            "project": self.project.id,
+            "metrics": {item.name: item for item in project.data.metric_dfns},
+            "metric_types": project.data.metric_types,
+            "ranks": project.data.rank_dfns,
+        }
+
+    def create(
+        self, only_schema_ids: Optional[set[SchemaId]] = None
+    ) -> Mapping[SchemaId, SchemaDefinition]:
+        schemas: dict[SchemaId, SchemaDefinition] = {}
+
+        if only_schema_ids is not None and not only_schema_ids:
+            return schemas
+
+        for dataset_templates in self.project.data.templates_by_dataset.values():
+            for schema_type, src_templates in [
+                (SchemaType.view, dataset_templates.views),
+                (SchemaType.routine, dataset_templates.routines),
+            ]:
+                assert isinstance(src_templates, list)
+                for template in src_templates:
+                    schema_id = SchemaId(
+                        self.project.id,
+                        dataset_templates.id.dataset,
+                        template.metadata.name,
+                    )
+                    if only_schema_ids is not None and schema_id not in only_schema_ids:
+                        continue
+                    render_result = self.render(schema_id, schema_type, template)
+
+                    output_schema_id = self.project.map_schema_id(
+                        ReferenceType(schema_type), schema_id
+                    )
+
+                    if schema_type == SchemaType.routine:
+                        if not validate_routine_sql(
+                            output_schema_id, render_result.output
+                        ):
+                            raise ValueError(
+                                f"Invalid SQL for {schema_id} from {template.path}"
+                            )
+                        if template.metadata.description:
+                            render_result.output = add_routine_options(
+                                render_result.output,
+                                description=template.metadata.description,
+                            )
+
+                    depends_on = (
+                        render_result.references.views
+                        | render_result.references.routines
+                    )
+                    logging.debug(
+                        f"SQL for {output_schema_id}:\n{render_result.output}\n----"
+                    )
+                    schemas[output_schema_id] = SchemaDefinition(
+                        id=output_schema_id,
+                        description=template.metadata.description or "",
+                        type=schema_type,
+                        sql=render_result.output,
+                        depends_on=depends_on,
+                    )
+        return schemas
+
+    def render(
+        self,
+        schema_id: SchemaId,
+        schema_type: SchemaType,
+        schema: SchemaTemplate,
+    ) -> RenderResult:
+        try:
+            template = self.jinja_env.from_string(schema.template)
+        except Exception:
+            logging.critical(f"Failed loading template for {schema_id}")
+            raise
+
+        context = {}
+
+        references = References()
+        ref_mapper = ReferenceResolver(
+            schema_id,
+            self.project.map_schema_id,
+            self.known_references,
+            references,
+        )
+
+        context = {
+            "ref": ref_mapper,
+            "dataset": schema_id.dataset,
+            "name": schema_id.name,
+        }
+
+        try:
+            output = template.render(context)
+        except Exception:
+            logging.critical(f"Failed rendering template for {schema_id}")
+            raise
+
+        return RenderResult(output=output, references=references)
 
 
 class ReferenceResolver:
@@ -109,106 +179,33 @@ class ReferenceResolver:
     def __init__(
         self,
         schema_id: SchemaId,
-        schema_id_mapper: Callable[[SchemaId, ReferenceType], SchemaId],
-        view_ids: set[SchemaId],
-        routine_ids: set[SchemaId],
+        schema_id_mapper: Callable[[ReferenceType, SchemaId], SchemaId],
+        known_schema_ids: Mapping[SchemaId, SchemaType],
+        references: References,
     ):
         self.schema_id = schema_id
         self.schema_id_mapper = schema_id_mapper
-        self.view_ids = view_ids
-        self.routine_ids = routine_ids
-        self.references = References(set(), set(), set(), set())
+        self.known_schema_ids = known_schema_ids
+        self.type_map = {
+            SchemaType.view: (ReferenceType.view, references.views),
+            SchemaType.table: (ReferenceType.table, references.tables),
+            SchemaType.routine: (ReferenceType.routine, references.routines),
+            None: (ReferenceType.external, references.external),
+        }
 
     def __call__(self, name: str) -> SchemaId:
         schema_id = SchemaId.from_str(
             name, self.schema_id.project, self.schema_id.dataset
         )
-        if schema_id in self.view_ids:
-            ref_type = ReferenceType.view
-            dest = self.references.views
-        elif schema_id in self.routine_ids:
-            ref_type = ReferenceType.routine
-            dest = self.references.routines
-        elif schema_id.project == self.schema_id.project:
-            ref_type = ReferenceType.table
-            dest = self.references.tables
-        else:
-            ref_type = ReferenceType.external
-            dest = self.references.external
-        output_schema_id = self.schema_id_mapper(schema_id, ref_type)
+        schema_type = self.known_schema_ids.get(schema_id)
+        ref_type, dest = self.type_map[schema_type]
+        output_schema_id = self.schema_id_mapper(ref_type, schema_id)
         if schema_id != self.schema_id:
             # Generally a self-reference is an error, except in routine names or comments,
             # so we could consider handling it better
             dest.add(output_schema_id)
         assert str(output_schema_id).count(".") == 2
         return output_schema_id
-
-
-def load_schema_template(root_path: str, sql_name: str) -> list[SchemaTemplate]:
-    templates = []
-
-    for dir_name in os.listdir(root_path):
-        schema_dir = os.path.join(root_path, dir_name)
-        if not os.path.isdir(schema_dir):
-            continue
-
-        meta_path = os.path.join(schema_dir, "meta.toml")
-        try:
-            with open(meta_path, "rb") as f:
-                schema_data = tomllib.load(f)
-        except OSError:
-            logging.warning(f"Failed to find {meta_path}")
-            continue
-
-        metadata = SchemaMetadata.model_validate(schema_data)
-
-        sql_path = os.path.join(schema_dir, sql_name)
-        try:
-            with open(sql_path) as f:
-                sql_template = f.read()
-        except OSError:
-            logging.warning(f"Failed to find {sql_path}")
-            continue
-
-        templates.append(
-            SchemaTemplate(
-                path=os.path.abspath(sql_path),
-                metadata=metadata,
-                sql_template=sql_template,
-            )
-        )
-
-    return templates
-
-
-def load_templates(project: str, root_path: os.PathLike) -> list[DatasetTemplates]:
-    by_dataset = []
-    for dir_name in os.listdir(root_path):
-        dataset_dir = os.path.join(root_path, dir_name)
-        if not os.path.isdir(dataset_dir):
-            continue
-        meta_path = os.path.join(dataset_dir, "meta.toml")
-        try:
-            with open(meta_path, "rb") as f:
-                dataset_data = tomllib.load(f)
-        except OSError:
-            logging.warning(f"Failed to find {meta_path}")
-            continue
-
-        dataset_meta = DatasetMetadata.model_validate(dataset_data)
-        dataset = DatasetTemplates(DatasetId(project, dataset_meta.name))
-
-        routines_path = os.path.join(dataset_dir, "routines")
-        if os.path.exists(routines_path):
-            dataset.routines = load_schema_template(routines_path, "routine.sql")
-
-        views_path = os.path.join(dataset_dir, "views")
-        if os.path.exists(views_path):
-            dataset.views = load_schema_template(views_path, "view.sql")
-
-        by_dataset.append(dataset)
-
-    return by_dataset
 
 
 def topological_sort(
@@ -247,107 +244,6 @@ def topological_sort(
     return rv
 
 
-@dataclass
-class RenderResult:
-    sql: str
-    references: References
-
-
-class SchemaCreator:
-    def __init__(
-        self,
-        project: str,
-        schema_id_mapper: Callable[[SchemaId, ReferenceType], SchemaId],
-        view_ids: set[SchemaId],
-        routine_ids: set[SchemaId],
-    ):
-        self.project = project
-        self.schema_id_mapper = schema_id_mapper
-        self.view_ids = view_ids
-        self.routine_ids = routine_ids
-
-        metric_dfns, metric_types = metrics.load()
-
-        self.jinja_env = jinja2.Environment()
-        self.jinja_env.globals = {
-            "project": project,
-            "metrics": {item.name: item for item in metric_dfns},
-            "metric_types": metric_types,
-        }
-
-    def create_schemas(
-        self,
-        dataset_templates: DatasetTemplates,
-    ) -> Mapping[SchemaId, SchemaDefinition]:
-        schemas = {}
-
-        for schema_type, src_templates in [
-            (SchemaType.view, dataset_templates.views),
-            (SchemaType.routine, dataset_templates.routines),
-        ]:
-            for template in src_templates:
-                schema_id = SchemaId(
-                    self.project, dataset_templates.id.dataset, template.metadata.name
-                )
-                render_result = self.render_sql(schema_id, template)
-
-                output_schema_id = self.schema_id_mapper(
-                    schema_id, ReferenceType(schema_type)
-                )
-
-                if schema_type == SchemaType.routine:
-                    if not validate_routine_sql(output_schema_id, render_result.sql):
-                        raise ValueError(
-                            f"Invalid SQL for {schema_id} from {template.path}"
-                        )
-                    if template.metadata.description:
-                        render_result.sql = add_routine_options(
-                            render_result.sql, description=template.metadata.description
-                        )
-
-                depends_on = (
-                    render_result.references.views | render_result.references.routines
-                )
-                logging.debug(f"SQL for {output_schema_id}:\n{render_result.sql}\n----")
-                schemas[output_schema_id] = SchemaDefinition(
-                    id=output_schema_id,
-                    description=template.metadata.description or "",
-                    type=schema_type,
-                    sql=render_result.sql,
-                    depends_on=depends_on,
-                )
-        return schemas
-
-    def render_sql(
-        self,
-        schema_id: SchemaId,
-        schema: SchemaTemplate,
-    ) -> RenderResult:
-        try:
-            template = self.jinja_env.from_string(schema.sql_template)
-        except Exception:
-            logging.critical(f"Failed loading template for {schema_id}")
-            raise
-
-        ref_mapper = ReferenceResolver(
-            schema_id, self.schema_id_mapper, self.view_ids, self.routine_ids
-        )
-
-        context = {
-            "ref": ref_mapper,
-            "dataset": schema_id.dataset,
-            "name": schema_id.name,
-        }
-
-        try:
-            sql = template.render(context)
-        except Exception:
-            logging.critical(f"Failed rendering template for {schema_id}")
-            raise
-
-        return RenderResult(sql=sql, references=ref_mapper.references)
-
-
 def validate_routine_sql(schema_id: SchemaId, sql: str) -> bool:
     """Some basic validation of the generated SQL for routines
 
@@ -382,184 +278,220 @@ def add_routine_options(sql: str, description: str) -> str:
     return sql
 
 
+@dataclass
+class Schemas:
+    tables: dict[SchemaId, bigquery.Table] = field(default_factory=dict)
+    views: dict[SchemaId, bigquery.Table] = field(default_factory=dict)
+    routines: dict[SchemaId, bigquery.Routine] = field(default_factory=dict)
+
+
 def get_current_schemas(
-    client: BigQuery,
-    datasets: Iterable[DatasetId],
-    dataset_mapping: Mapping[DatasetId, DatasetId],
-) -> tuple[Mapping[SchemaId, bigquery.Table], Mapping[SchemaId, bigquery.Routine]]:
-    views = {}
-    routines = {}
+    client: BigQuery, datasets: Iterable[DatasetId], need_datasets: set[DatasetId]
+) -> Schemas:
+    schemas = Schemas()
+
     for dataset in datasets:
-        dataset_name = dataset_mapping[dataset].dataset
-        for view_table in client.get_views(dataset_name):
-            schema_id = SchemaId(dataset.project, dataset_name, view_table.table_id)
-            views[schema_id] = view_table
-        for routine in client.get_routines(dataset_name):
-            schema_id = SchemaId(dataset.project, dataset_name, routine.routine_id)
-            routines[schema_id] = routine
+        try:
+            tables = list(client.get_tables(dataset.dataset))
+        except Exception:
+            # If the dataset doesn't exist we don't want to fail here
+            if not client.write or dataset not in need_datasets:
+                continue
+            raise
+        for table in tables:
+            schema_id = SchemaId(dataset.project, dataset.dataset, table.table_id)
+            if table.table_type == "VIEW":
+                schemas.views[schema_id] = table
+            elif table.view_query is None:
+                schemas.tables[schema_id] = table
+        for routine in client.get_routines(dataset.dataset):
+            schema_id = SchemaId(dataset.project, dataset.dataset, routine.routine_id)
+            schemas.routines[schema_id] = routine
 
-    return views, routines
+    return schemas
 
 
-def view_needs_update(
-    current_view: Optional[bigquery.Table], new_view: SchemaDefinition
+def base_table_needs_update(
+    current_table: Optional[bigquery.Table], schema: TableSchema | SchemaDefinition
 ) -> bool:
-    if current_view is None:
-        logging.info(f"{new_view.id} does not exist")
+    if current_table is None:
+        logging.info(f"{schema.id} does not exist")
         return True
 
     if (
-        current_view.description
-        and new_view.description
-        and current_view.description != new_view.description
+        current_table.description
+        and schema.description
+        and current_table.description != schema.description
     ):
-        logging.info(f"{new_view.id} description updated")
-        return True
-
-    if current_view.view_query != new_view.sql:
-        logging.info(f"{new_view.id} query body updated")
-        diff = difflib.unified_diff(
-            current_view.view_query.splitlines(), new_view.sql.splitlines()
-        )
-        logging.info(f"\n{'\n'.join(diff)}")
+        logging.info(f"{schema.id} description updated")
         return True
 
     return False
 
 
-def routine_needs_update(
-    current_routine: Optional[bigquery.Routine], new_routine: SchemaDefinition
-) -> bool:
-    # Diffing routines is complicated by the fact that our input is a CREATE OR REPLACE FUNCTION statement
-    # but the Routine object has a parsed representation of the result of that operation.
-    # Fow now, just always update routines
-    return True
+class TableUpdater:
+    def __init__(self, current_tables: Mapping[SchemaId, bigquery.Table]):
+        self.current_tables = current_tables
 
+    def needs_update(self, schema: TableSchema) -> bool:
+        current_table = self.current_tables.get(schema.id)
 
-def create_schemas(
-    project: str,
-    schema_id_mapper: Callable[[SchemaId, ReferenceType], SchemaId],
-    templates_by_dataset: Iterable[DatasetTemplates],
-) -> tuple[Sequence[SchemaDefinition], set[SchemaId], set[SchemaId]]:
-    view_ids = {
-        SchemaId(project, dataset.id.dataset, template.metadata.name)
-        for dataset in templates_by_dataset
-        for template in dataset.views
-    }
-    routine_ids = {
-        SchemaId(project, dataset.id.dataset, template.metadata.name)
-        for dataset in templates_by_dataset
-        for template in dataset.routines
-    }
+        if base_table_needs_update(current_table, schema):
+            return True
 
-    creator = SchemaCreator(project, schema_id_mapper, view_ids, routine_ids)
-    schemas: dict[SchemaId, SchemaDefinition] = {}
-    for dataset_template in templates_by_dataset:
-        schemas.update(
-            creator.create_schemas(
-                dataset_template,
-            )
+        assert current_table is not None
+
+        if len(schema.fields) != len(current_table.schema):
+            logging.info(f"{schema.id} fields added")
+            return True
+
+        # We don't handle updates other than additions at the moment, could validate here that
+        # only additions are required
+
+        return False
+
+    def update(self, client: BigQuery, schema: TableSchema) -> None:
+        assert schema.id.project == client.project_id
+        logging.info(f"Updating table definition {schema}")
+        client.ensure_table(
+            schema,
+            schema.schema,
+            update_fields=True,
         )
 
-    output_view_ids = {
-        schema_id_mapper(schema, ReferenceType.view) for schema in view_ids
-    }
-    output_routine_ids = {
-        schema_id_mapper(schema, ReferenceType.routine) for schema in routine_ids
-    }
 
-    schemas_list = topological_sort(schemas)
+class ViewUpdater:
+    def __init__(self, current_views: Mapping[SchemaId, bigquery.Table]):
+        self.current_views = current_views
 
-    return schemas_list, output_view_ids, output_routine_ids
+    def needs_update(self, schema: SchemaDefinition) -> bool:
+        current_view = self.current_views.get(schema.id)
+
+        if base_table_needs_update(current_view, schema):
+            return True
+
+        assert current_view is not None
+
+        if current_view.view_query != schema.sql:
+            logging.info(f"{schema.id} query body updated")
+            diff = difflib.unified_diff(
+                current_view.view_query.splitlines(), schema.sql.splitlines()
+            )
+            logging.info(f"\n{'\n'.join(diff)}")
+            return True
+
+        return False
+
+    def update(self, client: BigQuery, schema: SchemaDefinition) -> None:
+        assert schema.id.project == client.project_id
+        client.create_view(
+            schema.id.name,
+            schema.sql,
+            dataset_id=schema.id.dataset,
+            description=schema.description,
+        )
+
+
+class RoutineUpdater:
+    def __init__(self, current_routines: Mapping[SchemaId, bigquery.Routine]):
+        self.current_routines = current_routines
+
+    def needs_update(self, schema: SchemaDefinition) -> bool:
+        # Diffing routines is complicated by the fact that our input is a CREATE OR REPLACE FUNCTION statement
+        # but the Routine object has a parsed representation of the result of that operation.
+        # Fow now, just always update routines
+        return True
+
+    def update(self, client: BigQuery, schema: SchemaDefinition) -> None:
+        assert schema.id.project == client.project_id
+        if client.write:
+            client.query(schema.sql, dataset_id=schema.id.dataset)
+        else:
+            logging.info(f"Skipping write, would create routine {schema.id}")
 
 
 def update_schemas(
     client: BigQuery,
-    templates_by_dataset: Iterable[DatasetTemplates],
-    dataset_mapping: Mapping[DatasetId, DatasetId],
-    schema_id_mapper: Callable[[SchemaId, ReferenceType], SchemaId],
+    project: Project,
+    etl_jobs: set[str],
     delete_missing: bool,
 ) -> None:
-    schemas_list, output_view_ids, output_routine_ids = create_schemas(
-        client.project_id, schema_id_mapper, templates_by_dataset
+    creator = SchemaCreator(project)
+    sql_schemas = creator.create()
+
+    sql_schemas_list = topological_sort(sql_schemas)
+    datasets = [
+        (project.map_dataset_id(item.id), item.description)
+        for item in project.data.templates_by_dataset.values()
+    ]
+
+    # Tables needed for a for a job that we'll run
+    etl_table_schemas = [
+        schema
+        for dataset in project
+        for schema in dataset.tables()
+        if schema.etl_jobs.intersection(etl_jobs)
+    ]
+
+    # Ensure we have any datasets which either have a view or routine
+    # or are needed for a job we'll run
+    need_datasets = {schema.id.dataset_id for schema in etl_table_schemas} | {
+        dataset.id
+        for dataset in project.data.templates_by_dataset.values()
+        if dataset.views or dataset.routines
+    }
+
+    for dataset_id, description in datasets:
+        if dataset_id in need_datasets:
+            client.ensure_dataset(dataset_id, description)
+
+    current_schemas = get_current_schemas(
+        client, [item[0] for item in datasets], need_datasets
     )
 
-    current_views, current_routines = get_current_schemas(
-        client, [item.id for item in templates_by_dataset], dataset_mapping
-    )
+    table_updater = TableUpdater(current_schemas.tables)
+    # Only create tables when they're needed for a job that we'll run
 
-    for schema in schemas_list:
-        if schema.type == ReferenceType.routine:
-            if routine_needs_update(current_routines.get(schema.id), schema):
-                assert schema.id.project == client.project_id
-                if client.write:
-                    client.query(schema.sql, dataset_id=schema.id.dataset)
-                else:
-                    logging.info(f"Skipping write, would create routine {schema.id}")
-        elif schema.type == ReferenceType.view:
-            if view_needs_update(current_views.get(schema.id), schema):
-                assert schema.id.project == client.project_id
-                client.create_view(
-                    schema.id.name,
-                    schema.sql,
-                    dataset_id=schema.id.dataset,
-                    description=schema.description,
-                )
-        else:
-            raise ValueError(f"Schema {schema.id} had unexpected type {schema.type}")
+    for table_schema in etl_table_schemas:
+        if table_updater.needs_update(table_schema):
+            table_updater.update(client, table_schema)
 
-    for item in current_views.keys():
+    updaters: Mapping[SchemaType, RoutineUpdater | ViewUpdater] = {
+        SchemaType.routine: RoutineUpdater(current_schemas.routines),
+        SchemaType.view: ViewUpdater(current_schemas.views),
+    }
+
+    for schema_dfn in sql_schemas_list:
+        updater = updaters[schema_dfn.type]
+        if updater.needs_update(schema_dfn):
+            updater.update(client, schema_dfn)
+
+    output_view_ids = {schema.id for dataset in project for schema in dataset.views()}
+    output_routine_ids = {
+        schema.id for dataset in project for schema in dataset.routines()
+    }
+
+    for item in current_schemas.views.keys():
         if item not in output_view_ids:
             logging.info(f"View {item} not found in local definition")
             if delete_missing:
                 client.delete_table(str(item))
 
-    for item in current_routines.keys():
+    for item in current_schemas.routines.keys():
         if item not in output_routine_ids:
             logging.info(f"Routine {item} not found in local definition")
             if delete_missing:
                 client.delete_routine(str(item))
 
 
-def lint_templates(templates_by_dataset: list[DatasetTemplates]) -> bool:
-    """Basic lint for the input templates.
-
-    Checks:
-    * Templates don't use project id directly
-    * Templates don't use dataset ids directly"""
-    success = True
-
-    for dataset_templates in templates_by_dataset:
-        project = dataset_templates.id.project
-        templates = dataset_templates.routines + dataset_templates.views
-        for template in templates:
-            if project in template.sql_template:
-                success = False
-                logging.error(f"Found project id in template {template.path}")
-            if dataset_templates.id.dataset in template.sql_template:
-                success = False
-                logging.error(f"Found dataset id in template for {template.path}")
-
-    return success
-
-
-def stage_dataset(dataset: DatasetId) -> DatasetId:
-    """Convert a DatasetId to the name of the equivalent in staging"""
-    return DatasetId(project=dataset.project, dataset=dataset.dataset + "_test")
-
-
 def get_last_update(
-    client: BigQuery, dataset: DatasetId
+    project: Project, client: BigQuery
 ) -> tuple[Optional[datetime], Optional[str]]:
-    schema = [
-        bigquery.SchemaField("run_at", "DATETIME", mode="REQUIRED"),
-        bigquery.SchemaField("schema_hash", "STRING", mode="REQUIRED"),
-    ]
-    client.ensure_table("schema_updates", schema, dataset_id=dataset.dataset)
+    table = project["metadata"]["schema_updates"]
     try:
         rows = list(
             client.query(f"""SELECT run_at, schema_hash
-FROM `{dataset}.schema_updates`
+FROM `{table}`
 ORDER BY run_at DESC
 LIMIT 1""")
         )
@@ -572,33 +504,28 @@ LIMIT 1""")
     return row.run_at, row.schema_hash
 
 
-def record_update(client: BigQuery, dataset: DatasetId, schema_hash: str) -> None:
-    if client.write:
-        parameters = [
-            bigquery.ScalarQueryParameter("schema_hash", "STRING", schema_hash)
-        ]
-        client.query(
-            f"""
-INSERT `{dataset}.schema_updates` (run_at, schema_hash) (
-  SELECT CURRENT_DATETIME(), @schema_hash
-)""",
-            parameters=parameters,
-        )
+def record_update(project: Project, client: BigQuery, schema_hash: str) -> None:
+    parameters = [bigquery.ScalarQueryParameter("schema_hash", "STRING", schema_hash)]
+    table = project["metadata"]["schema_updates"]
+    assert isinstance(table, TableSchema)
+    client.insert_query(
+        str(table),
+        columns=[item.name for item in table.fields],
+        query="SELECT CURRENT_DATETIME(), @schema_hash",
+        parameters=parameters,
+    )
 
 
 def update_schema_if_needed(
+    project: Project,
     client: BigQuery,
-    schema_path: os.PathLike,
+    etl_jobs_enabled: set[str],
     stage: bool,
     recreate: bool,
     delete_extra: bool,
 ) -> None:
-    metadata_dataset = DatasetId(client.project_id, "metadata")
-    if stage:
-        metadata_dataset = stage_dataset(metadata_dataset)
-
-    src_hash = hash_tree(schema_path).hex()
-    last_update_time, last_update_hash = get_last_update(client, metadata_dataset)
+    src_hash = hash_tree(project.data.path).hex()
+    last_update_time, last_update_hash = get_last_update(project, client)
 
     logging.info(f"Templates have hash {src_hash}")
     logging.info(f"Deployed schema have hash {last_update_hash}")
@@ -612,36 +539,17 @@ def update_schema_if_needed(
         logging.info("No changes to deploy")
         return
 
-    templates_by_dataset = load_templates(client.project_id, schema_path)
-    if not lint_templates(templates_by_dataset):
+    etl_jobs = {item for item in ALL_JOBS}
+    if not lint_templates(etl_jobs, project.data.templates_by_dataset.values()):
         raise ValueError("Template lint failed")
 
-    dataset_mapping = {dataset.id: dataset.id for dataset in templates_by_dataset}
-    rewrite_tables = set()
-    if stage:
-        dataset_mapping = {
-            dataset: stage_dataset(dataset) for dataset in dataset_mapping
-        }
-        # If a table is in the target dataset, use that, otherwise reuse the
-        # table in the source dataset. This is because we don't always have
-        # copies of the tables in the _test datasets for various reasons.
-        for dataset, target_dataset in dataset_mapping.items():
-            rewrite_tables |= set(
-                SchemaId(client.project_id, dataset.dataset, item.table_id)
-                for item in client.client.list_tables(target_dataset.dataset)
-                if item.table_type != "VIEW"
-            )
-        logging.debug("\n".join(str(item) for item in rewrite_tables))
-
-    schema_id_mapper = SchemaIdMapper(dataset_mapping, rewrite_tables)
     update_schemas(
         client,
-        templates_by_dataset,
-        dataset_mapping,
-        schema_id_mapper,
+        project,
+        etl_jobs_enabled,
         delete_extra,
     )
-    record_update(client, metadata_dataset, src_hash)
+    record_update(project, client, src_hash)
 
 
 class UpdateStagingData(EtlJob):
@@ -666,7 +574,9 @@ class UpdateStagingData(EtlJob):
     def main(self, context: Context) -> None:
         client = context.bq_client
         datasets = [DatasetId(client.project_id, context.args.bq_kb_dataset)]
-        dataset_mapping = {dataset: stage_dataset(dataset) for dataset in datasets}
+        dataset_mapping = {
+            dataset: projectdata.stage_dataset(dataset) for dataset in datasets
+        }
 
         for dataset in datasets:
             if client.write:
@@ -676,9 +586,9 @@ class UpdateStagingData(EtlJob):
                 for item in client.client.list_tables(dataset.dataset)
                 if item.table_type != "VIEW"
             )
-            schema_id_mapper = SchemaIdMapper(dataset_mapping, set(tables))
+            schema_id_mapper = projectdata.SchemaIdMapper(dataset_mapping, set(tables))
             for src_table in tables:
-                dest_table = schema_id_mapper(src_table, ReferenceType.table)
+                dest_table = schema_id_mapper(ReferenceType.table, src_table)
                 assert dest_table != src_table
                 logging.info(f"Creating {dest_table} from {src_table}")
                 if context.config.write:
@@ -702,8 +612,9 @@ CLONE `{src_table}`
         if context.args.update_staging_data_views:
             logging.info("Updating stage views")
             update_schema_if_needed(
+                context.project,
                 client,
-                schema_path=context.args.update_schema_path,
+                etl_jobs_enabled=set(),
                 stage=True,
                 recreate=True,
                 delete_extra=False,
@@ -717,17 +628,6 @@ class UpdateSchemaJob(EtlJob):
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         group = parser.add_argument_group(
             title="Update Schema", description="update-schema arguments"
-        )
-        group.add_argument(
-            "--update-schema-path",
-            action="store",
-            default=os.path.join(here, os.pardir, "data", "sql"),
-            help="Path to directory containing sql to deploy",
-        )
-        group.add_argument(
-            "--update-schema-stage",
-            action="store_true",
-            help="Write to staging location (currently same project with _test suffix on dataset names)",
         )
         group.add_argument(
             "--update-schema-delete-extra",
@@ -746,9 +646,10 @@ class UpdateSchemaJob(EtlJob):
 
     def main(self, context: Context) -> None:
         update_schema_if_needed(
+            context.project,
             context.bq_client,
-            schema_path=context.args.update_schema_path,
-            stage=context.args.update_schema_stage,
+            etl_jobs_enabled={item.name for item in context.jobs},
+            stage=context.config.stage,
             recreate=context.args.update_schema_recreate,
             delete_extra=context.args.update_schema_delete_extra,
         )
