@@ -1,9 +1,11 @@
 import argparse
 import re
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, MutableMapping
 
 from .bqhelpers import BigQuery
+from .config import Config
 
 # In the following we assume ascii-only characters for now. That's perhaps wrong,
 # but it covers everything we're currently using.
@@ -29,6 +31,14 @@ def dataset_arg(value: str) -> str:
     return value
 
 
+@dataclass
+class Context:
+    args: argparse.Namespace
+    bq_client: BigQuery
+    config: Config
+    jobs: list["EtlJob"]
+
+
 class EtlJob(ABC):
     name: str
     default = True
@@ -46,8 +56,8 @@ class EtlJob(ABC):
         return set()
 
     @abstractmethod
-    def default_dataset(self, args: argparse.Namespace) -> str: ...
+    def default_dataset(self, context: Context) -> str: ...
 
     @abstractmethod
-    def main(self, bq_client: BigQuery, args: argparse.Namespace) -> None:
+    def main(self, context: Context) -> None:
         pass
