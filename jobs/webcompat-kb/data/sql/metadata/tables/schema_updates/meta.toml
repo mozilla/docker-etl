@@ -1,0 +1,2 @@
+name = "schema_updates"
+etl = ["update-schema"]

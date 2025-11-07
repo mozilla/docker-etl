@@ -11,7 +11,7 @@ from google.cloud import bigquery
 from .base import Context, EtlJob, dataset_arg
 from .bqhelpers import BigQuery, Json, RangePartition, get_client
 from .httphelpers import get_json
-from .metrics import ranks
+from .projectdata import Project
 
 
 @dataclass
@@ -167,8 +167,10 @@ WHERE
     )
 
 
-def update_min_rank_data(client: BigQuery, config: Config, yyyymm: int) -> None:
-    rank_columns = ranks.load()
+def update_min_rank_data(
+    project: Project, client: BigQuery, config: Config, yyyymm: int
+) -> None:
+    rank_columns = project.data.rank_dfns
     column_names = [f"{item.name}" for item in rank_columns]
 
     crux_columns = ",\n    ".join(
@@ -390,7 +392,7 @@ class SiteRanksJob(EtlJob):
         if have_new_crux:
             update_sightline_data(client_crux, config, latest_yyyymm)
         if have_new_crux or context.args.site_ranks_force_host_min_ranks_update:
-            update_min_rank_data(client_crux, config, latest_yyyymm)
+            update_min_rank_data(context.project, client_crux, config, latest_yyyymm)
         if have_new_crux:
             update_import_date(client_crux, config, run_at, latest_yyyymm)
 
@@ -440,7 +442,9 @@ def create_new_scored_site_reports(
     return new_table_id
 
 
-def update_site_ranks(client: BigQuery, config: Config, yyyymm: int) -> None:
+def update_site_ranks(
+    project: Project, client: BigQuery, config: Config, yyyymm: int
+) -> None:
     from . import metric_rescore
 
     if not check_yyyymm(client, config, yyyymm):
@@ -455,6 +459,7 @@ def update_site_ranks(client: BigQuery, config: Config, yyyymm: int) -> None:
     logging.info(new_routine_id)
 
     metric_rescore.rescore(
+        project,
         client,
         new_site_reports.rsplit(".", 1)[1],
         f"Update site rank data to {yyyymm}",
@@ -487,6 +492,7 @@ class SiteRanksUpdateList(EtlJob):
     def main(self, context: Context) -> None:
         config = Config.from_args(context.args)
         update_site_ranks(
+            context.project,
             context.bq_client,
             config,
             context.args.site_ranks_update_yyyymm,

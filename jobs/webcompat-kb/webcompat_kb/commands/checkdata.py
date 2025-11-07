@@ -3,10 +3,12 @@ import logging
 import os
 import sys
 
+from .. import projectdata
+from ..base import ALL_JOBS
+from ..bqhelpers import get_client
+from ..config import Config
 from ..update_schema import (
-    SchemaIdMapper,
-    create_schemas,
-    load_templates,
+    SchemaCreator,
     lint_templates,
 )
 
@@ -17,22 +19,41 @@ here = os.path.dirname(__file__)
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bq-project-id", action="store", help="BigQuery project ID")
+    parser.add_argument("--pdb", action="store_true", help="Run debugger on failure")
     parser.add_argument(
         "--path",
         action="store",
-        default=os.path.join(here, os.pardir, os.pardir, "data", "sql"),
-        help="Path to directory containing sql",
+        default=os.path.join(here, os.pardir, os.pardir, "data"),
+        help="Path to directory containing data",
     )
-    args = parser.parse_args()
-
-    templates_by_dataset = load_templates(args.bq_project_id, args.path)
-    if not lint_templates(templates_by_dataset):
-        logging.error("Lint failed")
-        sys.exit(1)
-
-    schema_id_mapper = SchemaIdMapper({}, set())
     try:
-        create_schemas(args.bq_project_id, schema_id_mapper, templates_by_dataset)
+        # This should be unused
+        client = get_client("test")
+        args = parser.parse_args()
+
+        project = projectdata.load(
+            client,
+            args.bq_project_id,
+            os.path.normpath(args.path),
+            set(),
+            Config(write=False, stage=False),
+        )
+        if not lint_templates(
+            {item.name for item in ALL_JOBS.values()},
+            project.data.templates_by_dataset.values(),
+        ):
+            logging.error("Lint failed")
+            sys.exit(1)
+
+        try:
+            creator = SchemaCreator(project)
+            creator.create()
+        except Exception:
+            logging.error("Creating schemas failed")
+            raise
     except Exception:
-        logging.error("Creating schemas failed")
+        if args.pdb:
+            import pdb
+
+            pdb.post_mortem()
         raise

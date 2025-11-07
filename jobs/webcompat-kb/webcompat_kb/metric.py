@@ -6,11 +6,12 @@ from google.cloud import bigquery
 
 from .base import Context, EtlJob
 from .bqhelpers import BigQuery
-from .metrics import metrics
+from .projectdata import Project
 
 
-def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> None:
-    metric_dfns, metric_types = metrics.load()
+def update_metric_history(project: Project, client: BigQuery) -> None:
+    bq_dataset_id = project["webcompat_knowledge_base"].id.dataset
+    metric_dfns, metric_types = project.data.metric_dfns, project.data.metric_types
     history_metric_types = [
         metric_type for metric_type in metric_types if "history" in metric_type.contexts
     ]
@@ -71,8 +72,9 @@ def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> 
         client.insert_rows(history_table, rows)
 
 
-def update_metric_daily(client: BigQuery, bq_dataset_id: str, write: bool) -> None:
-    metric_dfns, metric_types = metrics.load()
+def update_metric_daily(project: Project, client: BigQuery) -> None:
+    bq_dataset_id = project["webcompat_knowledge_base"].id.dataset
+    metric_dfns, metric_types = project.data.metric_dfns, project.data.metric_types
     daily_metric_types = [
         metric_type for metric_type in metric_types if "daily" in metric_type.contexts
     ]
@@ -110,22 +112,25 @@ def update_metric_daily(client: BigQuery, bq_dataset_id: str, write: bool) -> No
 SELECT
   {",\n  ".join(query_fields)}
 FROM
-  `{bq_dataset_id}.scored_site_reports` AS bugs
+  `{project["webcompat_knowledge_base"]["scored_site_reports"]}` AS bugs
 WHERE bugs.resolution = ""
 """
 
     client.insert_query(
-        "webcompat_topline_metric_daily",
+        history_table,
         insert_fields,
         metrics_query,
-        dataset_id=bq_dataset_id,
     )
 
 
 def backfill_metric_daily(
-    client: BigQuery, bq_dataset_id: str, write: bool, metric_name: str
+    project: Project,
+    client: BigQuery,
+    write: bool,
+    metric_name: str,
 ) -> None:
-    metric_dfns, metric_types = metrics.load()
+    bq_dataset_id = project["webcompat_knowledge_base"].id.dataset
+    metric_dfns, metric_types = project.data.metric_dfns, project.data.metric_types
     daily_metric_types = [
         metric_type for metric_type in metric_types if "daily" in metric_type.contexts
     ]
@@ -182,18 +187,17 @@ WHERE new_data.date = metric_daily.date
 class MetricJob(EtlJob):
     name = "metric"
 
-    def required_args(self) -> set[str | tuple[str, str]]:
-        return {"bq_kb_dataset"}
-
     def default_dataset(self, context: Context) -> str:
-        return context.args.bq_kb_dataset
+        return "webcompat_knowledge_base"
 
     def main(self, context: Context) -> None:
         update_metric_history(
-            context.bq_client, context.args.bq_kb_dataset, context.config.write
+            context.project,
+            context.bq_client,
         )
         update_metric_daily(
-            context.bq_client, context.args.bq_kb_dataset, context.config.write
+            context.project,
+            context.bq_client,
         )
 
 
@@ -211,15 +215,15 @@ class MetricBackfillJob(EtlJob):
         )
 
     def required_args(self) -> set[str | tuple[str, str]]:
-        return {"bq_kb_dataset", "metric_backfill_metric"}
+        return {"metric_backfill_metric"}
 
     def default_dataset(self, context: Context) -> str:
-        return context.args.bq_kb_dataset
+        return "webcompat_knowledge_base"
 
     def main(self, context: Context) -> None:
         backfill_metric_daily(
+            context.project,
             context.bq_client,
-            context.args.bq_dataset_id,
             context.config.write,
             context.args.metric_backfill_metric,
         )

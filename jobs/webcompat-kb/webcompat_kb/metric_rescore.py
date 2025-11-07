@@ -9,6 +9,7 @@ from .base import Context, EtlJob
 from .bqhelpers import BigQuery
 from .metrics import metrics
 from .metric_changes import ScoreChange, insert_score_changes
+from .projectdata import Project
 
 
 class ConditionalMetric:
@@ -34,17 +35,22 @@ class ConditionalMetric:
 _conditional_metrics = None
 
 
-def conditional_metrics() -> Sequence[ConditionalMetric]:
+def conditional_metrics(project: Project) -> Sequence[ConditionalMetric]:
     global _conditional_metrics
     if _conditional_metrics is None:
         _conditional_metrics = [
-            ConditionalMetric(item) for item in metrics.load()[0] if item.conditional
+            ConditionalMetric(item)
+            for item in project.data.metric_dfns
+            if item.conditional
         ]
     return _conditional_metrics
 
 
 def score_bug_changes(
-    client: BigQuery, new_scored_site_reports: str, change_time: datetime
+    project: Project,
+    client: BigQuery,
+    new_scored_site_reports: str,
+    change_time: datetime,
 ) -> Mapping[int, Sequence[ScoreChange]]:
     score_changes = {}
 
@@ -60,7 +66,7 @@ def score_bug_changes(
         scores_query_fields.append(f"{src_table}.score AS {field_name}")
         query_fields.append(field_name)
 
-    for metric in conditional_metrics():
+    for metric in conditional_metrics(project):
         score_deltas[metric.name] = 0
         for score_type, field_name in [
             ("old", metric.is_old_field),
@@ -91,14 +97,14 @@ FROM scores
             )
         has_change = bug.delta != 0 or any(
             bug[metric.is_old_field] != bug[metric.is_new_field]
-            for metric in conditional_metrics()
+            for metric in conditional_metrics(project)
         )
         if has_change:
             reasons = []
             if bug.delta:
                 reasons.append("rescore")
             score_deltas["all"] += bug.delta
-            for metric in conditional_metrics():
+            for metric in conditional_metrics(project):
                 if metric.name == "all":
                     continue
                 in_old_metric = bug[metric.is_old_field]
@@ -132,11 +138,15 @@ FROM scores
 
 
 def insert_metric_changes(
-    client: BigQuery, new_scored_site_reports: str, reason: str, change_time: datetime
+    project: Project,
+    client: BigQuery,
+    new_scored_site_reports: str,
+    reason: str,
+    change_time: datetime,
 ) -> None:
     """Add a row to the webcompat_topline_metric_rescores table with the datetime,
     before and after scores, and a reason for the rescore."""
-    metric_dfns, metric_types = metrics.load()
+    metric_dfns, metric_types = project.data.metric_dfns, project.data.metric_types
     bq_dataset_id = client.default_dataset_id
 
     change_states = ["before", "after"]
@@ -370,6 +380,7 @@ def get_routines(
 
 
 def rescore(
+    project: Project,
     client: BigQuery,
     new_scored_site_reports: str,
     reason: str,
@@ -381,8 +392,10 @@ def rescore(
     view_definitions = get_view_definitions(
         client, new_scored_site_reports, routines_map, archive_suffix
     )
-    score_changes = score_bug_changes(client, new_scored_site_reports, change_time)
-    insert_metric_changes(client, new_scored_site_reports, reason, change_time)
+    score_changes = score_bug_changes(
+        project, client, new_scored_site_reports, change_time
+    )
+    insert_metric_changes(project, client, new_scored_site_reports, reason, change_time)
     insert_score_changes(client, score_changes)
     update_views(
         client, new_scored_site_reports, routines_map, view_definitions, archive_suffix
@@ -427,6 +440,7 @@ class MetricRescoreJob(EtlJob):
 
     def main(self, context: Context) -> None:
         rescore(
+            context.project,
             context.bq_client,
             context.args.new_scored_site_reports,
             context.args.metric_rescore_reason,
