@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 import pydantic
 from google.cloud import bigquery
 
-from .base import EtlJob, dataset_arg
+from .base import Context, EtlJob, dataset_arg
 from .bqhelpers import BigQuery
 from .httphelpers import get_json
 
@@ -165,13 +165,15 @@ class ChromeUseCountersJob(EtlJob):
             help="Recreate Chrome use counters data",
         )
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_chrome_use_counters_dataset
+    def default_dataset(self, context: Context) -> str:
+        return context.args.bq_chrome_use_counters_dataset
 
     def required_args(self) -> set[str | tuple[str, str]]:
         return {"bq_chrome_use_counters_dataset", "bq_web_features_dataset"}
 
-    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
+    def main(self, context: Context) -> None:
         update_chrome_use_counters(
-            client, args.bq_web_features_dataset, args.chrome_use_counters_recreate
+            context.bq_client,
+            context.args.bq_web_features_dataset,
+            context.args.chrome_use_counters_recreate,
         )
