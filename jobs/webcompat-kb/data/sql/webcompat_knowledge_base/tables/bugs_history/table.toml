@@ -1,0 +1,16 @@
+[number]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[who]
+type = "STRING"
+mode = "REQUIRED"
+
+[change_time]
+type = "TIMESTAMP"
+mode = "REQUIRED"
+
+[changes]
+type = "RECORD"
+mode = "REPEATED"
+

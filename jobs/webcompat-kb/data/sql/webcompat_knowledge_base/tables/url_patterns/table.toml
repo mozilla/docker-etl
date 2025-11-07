@@ -1,0 +1,8 @@
+[bug]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[url_pattern]
+type = "STRING"
+mode = "REQUIRED"
+

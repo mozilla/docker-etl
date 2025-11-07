@@ -1,0 +1,12 @@
+[browser_id]
+type = "STRING"
+mode = "REQUIRED"
+
+[version]
+type = "STRING"
+mode = "REQUIRED"
+
+[date]
+type = "DATE"
+mode = "REQUIRED"
+

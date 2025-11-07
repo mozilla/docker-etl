@@ -1,0 +1,16 @@
+[release]
+type = "STRING"
+mode = "REQUIRED"
+
+[feature]
+type = "STRING"
+mode = "REQUIRED"
+
+[browser]
+type = "STRING"
+mode = "REQUIRED"
+
+[browser_version]
+type = "STRING"
+mode = "REQUIRED"
+

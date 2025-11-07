@@ -1,0 +1,9 @@
+[date]
+type = "DATE"
+mode = "REQUIRED"
+{% for metric_type in metric_types -%}
+{% for metric in metrics.values() %}
+[{{ metric_type.name }}_{{ metric.name }}]
+type = "{{ metric_type.field_type }}"
+{% endfor %}
+{% endfor %}
