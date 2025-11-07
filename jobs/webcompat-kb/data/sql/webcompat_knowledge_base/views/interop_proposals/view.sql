@@ -13,7 +13,7 @@ web_features_bugs as (
 ),
 
 webcompat_scores AS (
-  SELECT bugs.number AS NUMBER,
+  SELECT bugs.number AS number,
   SUM(scored_site_reports.score) AS webcompat_score
   FROM `{{ ref('bugs_platform_data') }}` AS bugs
   JOIN UNNEST(webcompat_bugs) as webcompat_bug
