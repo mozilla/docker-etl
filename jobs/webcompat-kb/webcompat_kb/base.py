@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, MutableMapping
 
 from .bqhelpers import BigQuery
+from .projectdata import Project
 
 # In the following we assume ascii-only characters for now. That's perhaps wrong,
 # but it covers everything we're currently using.
@@ -42,6 +43,7 @@ class Context:
     bq_client: BigQuery
     config: Config
     jobs: list["EtlJob"]
+    project: Project
 
 
 class EtlJob(ABC):

@@ -1,10 +1,13 @@
 import argparse
 import logging
+import os
 import sys
 from typing import Iterable
 
 # These imports are required to populate ALL_JOBS
+# Unhappily the ordering here is significant
 from . import (
+    update_schema,  # noqa: F401
     bugzilla,  # noqa: F401
     siterank,  # noqa: F401
     metric,  # noqa: F401
@@ -18,9 +21,10 @@ from . import (
 
 from .base import ALL_JOBS, Context, Config, EtlJob, dataset_arg, project_arg
 from .bqhelpers import get_client, BigQuery, DatasetId
-from .metrics import metrics
+from . import projectdata
 
-metrics.load()
+
+here = os.path.dirname(__file__)
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -44,6 +48,12 @@ def get_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--bq-kb-dataset", type=dataset_arg, help="BigQuery knowledge base dataset id"
+    )
+    parser.add_argument(
+        "--data-path",
+        action="store",
+        default=os.path.join(here, os.pardir, "data"),
+        help="Path to directory containing sql to deploy",
     )
 
     parser.add_argument(
@@ -125,11 +135,20 @@ def main() -> None:
         config = Config(write=args.write, stage=args.stage)
 
         client = get_client(args.bq_project_id)
+        project = projectdata.load(
+            client,
+            args.bq_project_id,
+            args.data_path,
+            set(jobs.keys()),
+            args.stage,
+        )
+
         context = Context(
             args=args,
             bq_client=BigQuery(client, DatasetId(args.bq_project_id, ""), args.write),
             config=config,
             jobs=list(jobs.values()),
+            project=project,
         )
 
         for job_name, job in jobs.items():
