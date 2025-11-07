@@ -8,7 +8,7 @@ from typing import Iterator, Optional, Self
 import httpx
 from google.cloud import bigquery
 
-from .base import EtlJob, dataset_arg
+from .base import Context, EtlJob, dataset_arg
 from .bqhelpers import BigQuery, Json, RangePartition, get_client
 from .httphelpers import get_json
 
@@ -377,14 +377,17 @@ class SiteRanksJob(EtlJob):
             help="Update hosts-min-rank data even if there isn't any new CrUX data",
         )
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_crux_dataset
+    def default_dataset(self, context: Context) -> str:
+        return context.args.bq_crux_dataset
 
-    def main(self, client_crux: BigQuery, args: argparse.Namespace) -> None:
+    def main(self, context: Context) -> None:
         run_at = datetime.now(UTC)
-        config = Config.from_args(args)
+        config = Config.from_args(context.args)
+        client_crux = context.bq_client
         client_tranco = BigQuery(
-            get_client(args.bq_project_id), args.bq_tranco_dataset, write=args.write
+            get_client(context.args.bq_project_id),
+            context.args.bq_tranco_dataset,
+            write=context.config.write,
         )
 
         last_month_yyyymm = get_previous_month_yyyymm(run_at)
@@ -394,7 +397,7 @@ class SiteRanksJob(EtlJob):
         logging.debug(f"Last site-ranks import was {last_import_yyyymm}")
 
         if (
-            not args.site_ranks_force_tranco_update
+            not context.args.site_ranks_force_tranco_update
             and last_import_yyyymm >= last_month_yyyymm
         ):
             logging.info("Site-ranks data is up to date")
@@ -403,17 +406,17 @@ class SiteRanksJob(EtlJob):
         latest_yyyymm, have_new_crux = update_crux(
             client_crux, config, last_import_yyyymm
         )
-        if have_new_crux or args.site_ranks_force_tranco_update:
+        if have_new_crux or context.args.site_ranks_force_tranco_update:
             update_tranco(
                 client_tranco,
                 config,
                 latest_yyyymm,
-                args.site_ranks_force_tranco_update,
+                context.args.site_ranks_force_tranco_update,
             )
 
         if have_new_crux:
             update_sightline_data(client_crux, config, latest_yyyymm)
-        if have_new_crux or args.site_ranks_force_host_min_ranks_update:
+        if have_new_crux or context.args.site_ranks_force_host_min_ranks_update:
             update_min_rank_data(client_crux, config, latest_yyyymm)
         if have_new_crux:
             update_import_date(client_crux, config, run_at, latest_yyyymm)
@@ -490,8 +493,8 @@ class SiteRanksUpdateList(EtlJob):
     name = "site-ranks-update"
     default = False
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_kb_dataset
+    def default_dataset(self, context: Context) -> str:
+        return context.args.bq_kb_dataset
 
     def required_args(self) -> set[str | tuple[str, str]]:
         return {"bq_kb_dataset", "site_ranks_update_yyyymm"}
@@ -508,6 +511,10 @@ class SiteRanksUpdateList(EtlJob):
             help="New site rank data to use in the format YYYYMM",
         )
 
-    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
-        config = Config.from_args(args)
-        update_site_ranks(client, config, args.site_ranks_update_yyyymm)
+    def main(self, context: Context) -> None:
+        config = Config.from_args(context.args)
+        update_site_ranks(
+            context.bq_client,
+            config,
+            context.args.site_ranks_update_yyyymm,
+        )

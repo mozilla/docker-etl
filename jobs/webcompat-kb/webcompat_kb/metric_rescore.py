@@ -5,7 +5,7 @@ from typing import Iterable, Mapping, Sequence
 
 from google.cloud import bigquery
 
-from .base import EtlJob
+from .base import Context, EtlJob
 from .bqhelpers import BigQuery
 from .metrics.metrics import Metric, metrics, metric_types
 from .metric_changes import ScoreChange, insert_score_changes
@@ -383,8 +383,8 @@ class MetricRescoreJob(EtlJob):
     name = "metric-rescore"
     default = False
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_kb_dataset
+    def default_dataset(self, context: Context) -> str:
+        return context.args.bq_kb_dataset
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
@@ -415,10 +415,10 @@ class MetricRescoreJob(EtlJob):
             "metric_rescore_reason",
         }
 
-    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
+    def main(self, context: Context) -> None:
         rescore(
-            client,
-            args.new_scored_site_reports,
-            args.metric_rescore_reason,
-            args.metric_rescore_update_routine or [],
+            context.bq_client,
+            context.args.new_scored_site_reports,
+            context.args.metric_rescore_reason,
+            context.args.metric_rescore_update_routine or [],
         )
