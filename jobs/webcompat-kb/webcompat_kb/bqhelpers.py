@@ -193,6 +193,16 @@ class Schema(ABC):
     def __str__(self) -> str:
         return str(self.id)
 
+    def __eq__(self, other: Any) -> bool:
+        if type(self) is not type(other):
+            return False
+
+        return (
+            self.id == other.id
+            and self.canonical_id == other.canonical_id
+            and self.description == other.description
+        )
+
     @abstractmethod
     def bq(self) -> bigquery.Table | bigquery.Routine:
         """Convert to BigQuery representation"""
@@ -251,6 +261,15 @@ class TableSchema(Schema):
             field.name == partition.field for field in fields
         ):
             raise ValueError(f"Partition field {partition.field} not found in table")
+
+    def __eq__(self, other: Any) -> bool:
+        if not super().__eq__(other):
+            return False
+        return (
+            self.fields == other.fields
+            and self.etl_jobs == other.etl_jobs
+            and self.partition == other.partition
+        )
 
     @property
     def schema(self) -> Sequence[bigquery.SchemaField]:
