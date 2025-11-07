@@ -1,11 +1,5 @@
 from webcompat_kb import update_schema
-from webcompat_kb.bqhelpers import DatasetId, SchemaId
-
-
-def test_stage_dataset():
-    assert update_schema.stage_dataset(DatasetId("project", "dataset")) == DatasetId(
-        "project", "dataset_test"
-    )
+from webcompat_kb.projectdata import DatasetId, SchemaId, SchemaIdMapper, SchemaType
 
 
 def test_add_routine_options():
@@ -17,62 +11,8 @@ def test_add_routine_options():
     assert update_schema.add_routine_options(sql, "Test routine") == expected
 
 
-def test_schema_id_mapper():
-    mapper = update_schema.SchemaIdMapper(
-        dataset_mapping={
-            DatasetId("input_project", "input_dataset"): DatasetId(
-                "output_project", "output_dataset"
-            )
-        },
-        rewrite_tables={SchemaId("input_project", "input_dataset", "table_rewrite")},
-    )
-
-    # Things we do rewrite
-    assert mapper(
-        SchemaId("input_project", "input_dataset", "view"),
-        type=update_schema.ReferenceType.view,
-    ) == SchemaId("output_project", "output_dataset", "view")
-    assert mapper(
-        SchemaId("input_project", "input_dataset", "routine"),
-        type=update_schema.ReferenceType.routine,
-    ) == SchemaId("output_project", "output_dataset", "routine")
-    assert mapper(
-        SchemaId("input_project", "input_dataset", "table_rewrite"),
-        type=update_schema.ReferenceType.table,
-    ) == SchemaId("output_project", "output_dataset", "table_rewrite")
-
-    # Things we don't rewrite
-    assert mapper(
-        SchemaId("input_project", "input_dataset", "view"),
-        type=update_schema.ReferenceType.external,
-    ) == SchemaId("input_project", "input_dataset", "view")
-
-    assert mapper(
-        SchemaId("other_project", "input_dataset", "view"),
-        type=update_schema.ReferenceType.view,
-    ) == SchemaId("other_project", "input_dataset", "view")
-    assert mapper(
-        SchemaId("input_project", "other_dataset", "view"),
-        type=update_schema.ReferenceType.view,
-    ) == SchemaId("input_project", "other_dataset", "view")
-
-    assert mapper(
-        SchemaId("other_project", "input_dataset", "routine"),
-        type=update_schema.ReferenceType.routine,
-    ) == SchemaId("other_project", "input_dataset", "routine")
-    assert mapper(
-        SchemaId("input_project", "other_dataset", "routine"),
-        type=update_schema.ReferenceType.routine,
-    ) == SchemaId("input_project", "other_dataset", "routine")
-
-    assert mapper(
-        SchemaId("input_project", "input_dataset", "table_no_rewrite"),
-        type=update_schema.ReferenceType.table,
-    ) == SchemaId("input_project", "input_dataset", "table_no_rewrite")
-
-
 def test_reference_resolver():
-    mapper = update_schema.SchemaIdMapper(
+    mapper = SchemaIdMapper(
         dataset_mapping={
             DatasetId("input_project", "input_dataset"): DatasetId(
                 "output_project", "output_dataset"
@@ -81,17 +21,19 @@ def test_reference_resolver():
         rewrite_tables={SchemaId("input_project", "input_dataset", "table")},
     )
 
+    references = update_schema.References()
     resolver = update_schema.ReferenceResolver(
         schema_id=SchemaId("input_project", "input_dataset", "source"),
         schema_id_mapper=mapper,
-        view_ids={
-            SchemaId("input_project", "input_dataset", "view"),
-            SchemaId("input_project", "other_dataset", "view"),
+        known_schema_ids={
+            SchemaId("input_project", "input_dataset", "table"): SchemaType.table,
+            SchemaId("input_project", "other_dataset", "table"): SchemaType.table,
+            SchemaId("input_project", "input_dataset", "view"): SchemaType.view,
+            SchemaId("input_project", "other_dataset", "view"): SchemaType.view,
+            SchemaId("input_project", "input_dataset", "routine"): SchemaType.routine,
+            SchemaId("input_project", "other_dataset", "routine"): SchemaType.routine,
         },
-        routine_ids={
-            SchemaId("input_project", "input_dataset", "routine"),
-            SchemaId("input_project", "other_dataset", "routine"),
-        },
+        references=references,
     )
 
     assert resolver("table") == SchemaId("output_project", "output_dataset", "table")
@@ -131,7 +73,7 @@ def test_reference_resolver():
         "input_project", "other_dataset", "routine"
     )
 
-    assert resolver.references == update_schema.References(
+    assert references == update_schema.References(
         views={
             SchemaId("output_project", "output_dataset", "view"),
             SchemaId("input_project", "other_dataset", "view"),
@@ -143,7 +85,9 @@ def test_reference_resolver():
         tables={
             SchemaId("output_project", "output_dataset", "table"),
             SchemaId("input_project", "other_dataset", "table"),
+        },
+        external={
+            SchemaId("other_project", "input_dataset", "table"),
             SchemaId("input_project", "input_dataset", "other_table"),
         },
-        external={SchemaId("other_project", "input_dataset", "table")},
     )
