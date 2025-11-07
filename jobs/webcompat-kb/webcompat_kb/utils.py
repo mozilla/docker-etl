@@ -7,7 +7,7 @@ from typing import Mapping
 
 from google.cloud import bigquery
 
-from .bqhelpers import BigQuery, Json, get_client
+from .bqhelpers import BigQuery, DatasetId, Json, get_client
 
 
 def get_parser_create_test_dataset() -> argparse.ArgumentParser:
@@ -114,7 +114,11 @@ def do_create_test_dataset(args: argparse.Namespace) -> None:
     if res != "y":
         sys.exit(1)
 
-    client = BigQuery(get_client(args.bq_project_id), test_dataset_name, args.write)
+    client = BigQuery(
+        get_client(args.bq_project_id),
+        DatasetId(args.bq_project_id, test_dataset_name),
+        args.write,
+    )
 
     if not args.write:
         logging.info("Not writing; pass --write to commit changes")

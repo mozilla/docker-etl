@@ -16,7 +16,7 @@ from . import (
     interop,  # noqa: F401
 )
 from .base import ALL_JOBS, Context, Config, EtlJob, dataset_arg, project_arg
-from .bqhelpers import get_client, BigQuery
+from .bqhelpers import get_client, BigQuery, DatasetId
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -123,15 +123,18 @@ def main() -> None:
         client = get_client(args.bq_project_id)
         context = Context(
             args=args,
-            bq_client=BigQuery(client, "", args.write),
+            bq_client=BigQuery(client, DatasetId(args.bq_project_id, ""), args.write),
             config=config,
             jobs=list(jobs.values()),
         )
 
         for job_name, job in jobs.items():
             logging.info(f"Running job {job_name}")
-            bq_client = BigQuery(client, job.default_dataset(context), args.write)
-
+            bq_client = BigQuery(
+                client,
+                DatasetId(args.bq_project_id, job.default_dataset(context)),
+                args.write,
+            )
             context.bq_client = bq_client
             try:
                 job.main(context)
