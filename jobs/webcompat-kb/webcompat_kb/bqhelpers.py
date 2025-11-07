@@ -321,8 +321,11 @@ class RangePartition:
 
 
 class BigQuery:
-    def __init__(self, client: bigquery.Client, default_dataset_id: str, write: bool):
+    def __init__(
+        self, client: bigquery.Client, default_dataset_id: DatasetId, write: bool
+    ):
         self.client = client
+        assert default_dataset_id.project == client.project
         self.project_id = client.project
         self.default_dataset_id = default_dataset_id
         self.write = write
@@ -331,7 +334,7 @@ class BigQuery:
         self, dataset_id: Optional[str | Dataset | DatasetId]
     ) -> DatasetId:
         if dataset_id is None:
-            return DatasetId.from_str(self.default_dataset_id, self.project_id)
+            return self.default_dataset_id
         if isinstance(dataset_id, DatasetId):
             return dataset_id
         if isinstance(dataset_id, Dataset):
