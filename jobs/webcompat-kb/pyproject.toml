@@ -49,7 +49,7 @@ test = [
 webcompat-etl = "webcompat_kb.main:main"
 webcompat-create-test-dataset = "webcompat_kb.utils:create_test_dataset"
 webcompat-backfill-history = "webcompat_kb.utils:backfill_history"
-webcompat-check-templates = "webcompat_kb.update_schema:check_templates"
+webcompat-check-templates = "webcompat_kb.checkdata:check_templates"
 
 
 [tool.pytest]
