@@ -43,6 +43,12 @@ def get_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--stage",
+        action="store_true",
+        help="Write to staging location (currently same project with _test suffix on dataset names)",
+    )
+
+    parser.add_argument(
         "--no-write",
         dest="write",
         action="store_false",
@@ -112,7 +118,7 @@ def main() -> None:
 
         validate_args(parser, args, jobs.values())
 
-        config = Config(write=args.write)
+        config = Config(write=args.write, stage=args.stage)
 
         client = get_client(args.bq_project_id)
         context = Context(
