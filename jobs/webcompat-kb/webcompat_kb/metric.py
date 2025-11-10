@@ -2,38 +2,28 @@ import argparse
 import logging
 from datetime import date
 
-from google.cloud import bigquery
-
-from .base import EtlJob
+from .base import Context, EtlJob
 from .bqhelpers import BigQuery
-from .metrics.metrics import metrics, metric_types
+from .projectdata import Project
 
 
-def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> None:
+def update_metric_history(project: Project, client: BigQuery) -> None:
+    metric_dfns, metric_types = project.data.metric_dfns, project.data.metric_types
     history_metric_types = [
         metric_type for metric_type in metric_types if "history" in metric_type.contexts
     ]
 
-    for metric in metrics:
-        metrics_table_name = f"webcompat_topline_metric_{metric.name}"
-        history_table_name = f"webcompat_topline_metric_{metric.name}_history"
-
-        history_schema = [
-            bigquery.SchemaField("recorded_date", "DATE", mode="REQUIRED"),
-            bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
-        ]
-        for metric_type in history_metric_types:
-            history_schema.append(
-                bigquery.SchemaField(
-                    metric_type.name, metric_type.field_type, mode="REQUIRED"
-                )
-            )
-
-        history_table = client.ensure_table(history_table_name, history_schema)
+    for metric in metric_dfns:
+        metrics_table = project["webcompat_knowledge_base"][
+            f"webcompat_topline_metric_{metric.name}"
+        ].view()
+        history_table = project["webcompat_knowledge_base"][
+            f"webcompat_topline_metric_{metric.name}_history"
+        ].table()
 
         query = f"""
                 SELECT recorded_date
-                FROM `{bq_dataset_id}.{history_table_name}`
+                FROM `{history_table}`
                 ORDER BY recorded_date DESC
                 LIMIT 1
             """
@@ -49,10 +39,7 @@ def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> 
             )
             continue
 
-        query = f"""
-                SELECT *
-                FROM `{bq_dataset_id}.{metrics_table_name}`
-            """
+        query = f"SELECT * FROM `{metrics_table}`"
         rows = []
         for row in client.query(query):
             row_data = {
@@ -70,12 +57,15 @@ def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> 
         client.insert_rows(history_table, rows)
 
 
-def update_metric_daily(client: BigQuery, bq_dataset_id: str, write: bool) -> None:
+def update_metric_daily(project: Project, client: BigQuery) -> None:
+    metric_dfns, metric_types = project.data.metric_dfns, project.data.metric_types
     daily_metric_types = [
         metric_type for metric_type in metric_types if "daily" in metric_type.contexts
     ]
 
-    history_table = f"{bq_dataset_id}.webcompat_topline_metric_daily"
+    history_table = project["webcompat_knowledge_base"][
+        "webcompat_topline_metric_daily"
+    ].table()
     query = f"""
             SELECT date
             FROM `{history_table}`
@@ -96,7 +86,7 @@ def update_metric_daily(client: BigQuery, bq_dataset_id: str, write: bool) -> No
     query_fields = ["CURRENT_DATE() AS date"]
     insert_fields = ["date"]
 
-    for metric in metrics:
+    for metric in metric_dfns:
         for metric_type in daily_metric_types:
             field_name = f"{metric_type.name}_{metric.name}"
             agg_function = metric_type.agg_function("bugs", metric)
@@ -108,31 +98,30 @@ def update_metric_daily(client: BigQuery, bq_dataset_id: str, write: bool) -> No
 SELECT
   {",\n  ".join(query_fields)}
 FROM
-  `{bq_dataset_id}.scored_site_reports` AS bugs
+  `{project["webcompat_knowledge_base"]["scored_site_reports"]}` AS bugs
 WHERE bugs.resolution = ""
 """
 
-    if write:
-        insert_query = f"""
-INSERT `{bq_dataset_id}.webcompat_topline_metric_daily`
-  ({",\n  ".join(insert_fields)})
-  ({metrics_query})"""
-        client.query(insert_query)
-        logging.info("Updated daily metric")
-    else:
-        result = client.query(metrics_query)
-        logging.info(f"Would insert {list(result)[0]}")
+    client.insert_query(
+        history_table,
+        insert_fields,
+        metrics_query,
+    )
 
 
 def backfill_metric_daily(
-    client: BigQuery, bq_dataset_id: str, write: bool, metric_name: str
+    project: Project,
+    client: BigQuery,
+    write: bool,
+    metric_name: str,
 ) -> None:
+    metric_dfns, metric_types = project.data.metric_dfns, project.data.metric_types
     daily_metric_types = [
         metric_type for metric_type in metric_types if "daily" in metric_type.contexts
     ]
 
     metric = None
-    for metric in metrics:
+    for metric in metric_dfns:
         if metric.name == metric_name:
             break
     else:
@@ -153,8 +142,8 @@ SELECT
   date,
   {",\n  ".join(select_fields)}
 FROM
-  `{bq_dataset_id}.scored_site_reports` AS bugs
-  JOIN `{bq_dataset_id}.webcompat_topline_metric_daily` as metric_daily
+  `{project["webcompat_knowledge_base"]["scored_site_reports"]}` AS bugs
+  JOIN `{project["webcompat_knowledge_base"]["webcompat_topline_metric_daily"]}` as metric_daily
 ON
   DATE(bugs.creation_time) <= metric_daily.date
   AND IF (bugs.resolved_time IS NOT NULL, DATE(bugs.resolved_time) >= date, TRUE)
@@ -165,7 +154,7 @@ GROUP BY
 ORDER BY date"""
 
     update_query = f"""
-UPDATE `{bq_dataset_id}.webcompat_topline_metric_daily` AS metric_daily
+UPDATE `{project["webcompat_knowledge_base"]["webcompat_topline_metric_daily"]}` AS metric_daily
 SET
   {",\n  ".join(f"metric_daily.{field_name}=new_data.{field_name}" for field_name in field_names)}
 FROM ({select_query}) AS new_data
@@ -183,15 +172,18 @@ WHERE new_data.date = metric_daily.date
 class MetricJob(EtlJob):
     name = "metric"
 
-    def required_args(self) -> set[str | tuple[str, str]]:
-        return {"bq_kb_dataset"}
+    def default_dataset(self, context: Context) -> str:
+        return "webcompat_knowledge_base"
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_kb_dataset
-
-    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
-        update_metric_history(client, args.bq_kb_dataset, args.write)
-        update_metric_daily(client, args.bq_kb_dataset, args.write)
+    def main(self, context: Context) -> None:
+        update_metric_history(
+            context.project,
+            context.bq_client,
+        )
+        update_metric_daily(
+            context.project,
+            context.bq_client,
+        )
 
 
 class MetricBackfillJob(EtlJob):
@@ -208,12 +200,15 @@ class MetricBackfillJob(EtlJob):
         )
 
     def required_args(self) -> set[str | tuple[str, str]]:
-        return {"bq_kb_dataset", "metric_backfill_metric"}
+        return {"metric_backfill_metric"}
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_kb_dataset
+    def default_dataset(self, context: Context) -> str:
+        return "webcompat_knowledge_base"
 
-    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
+    def main(self, context: Context) -> None:
         backfill_metric_daily(
-            client, args.bq_kb_dataset, args.write, args.metric_backfill_metric
+            context.project,
+            context.bq_client,
+            context.config.write,
+            context.args.metric_backfill_metric,
         )

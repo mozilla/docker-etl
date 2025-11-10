@@ -1,0 +1,8 @@
+[country]
+type = "STRING"
+mode = "NULLABLE"
+
+[mau]
+type = "INTEGER"
+mode = "NULLABLE"
+

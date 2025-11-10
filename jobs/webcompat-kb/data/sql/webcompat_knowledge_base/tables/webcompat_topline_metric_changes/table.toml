@@ -1,0 +1,28 @@
+[number]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[who]
+type = "STRING"
+mode = "REQUIRED"
+
+[change_time]
+type = "TIMESTAMP"
+mode = "REQUIRED"
+
+[old_score]
+type = "NUMERIC"
+mode = "REQUIRED"
+
+[new_score]
+type = "NUMERIC"
+mode = "REQUIRED"
+
+[score_delta]
+type = "NUMERIC"
+mode = "REQUIRED"
+
+[reasons]
+type = "STRING"
+mode = "REPEATED"
+

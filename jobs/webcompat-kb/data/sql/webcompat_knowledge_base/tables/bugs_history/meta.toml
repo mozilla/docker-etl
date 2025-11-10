@@ -1,0 +1,3 @@
+name = "bugs_history"
+description = "Bugs history table"
+etl = ["bugzilla"]

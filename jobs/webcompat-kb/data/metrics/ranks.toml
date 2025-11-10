@@ -1,0 +1,19 @@
+# Note that the order in this file must match the order of the fields in crux_imported.host_min_ranks
+
+[global_rank]
+rank = "IF (crux_ranks.global_rank_crux IS NOT NULL AND tranco_ranks.rank_bucket IS NOT NULL, LEAST(crux_ranks.global_rank_crux, tranco_ranks.rank_bucket), IFNULL(crux_ranks.global_rank_crux, tranco_ranks.rank_bucket))"
+
+[local_rank]
+crux_exclude = ["global"]
+
+[sightline_rank]
+crux_include = ["global", "us", "fr", "de", "es", "it", "mx"]
+
+[japan_rank]
+crux_include = ["jp"]
+
+[global_rank_crux]
+crux_include = ["global"]
+
+[global_rank_tranco]
+rank = "tranco_ranks.rank"

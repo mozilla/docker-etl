@@ -1,0 +1,7 @@
+[run_at]
+type = "DATETIME"
+mode = "REQUIRED"
+
+[schema_hash]
+type = "STRING"
+mode = "REQUIRED"

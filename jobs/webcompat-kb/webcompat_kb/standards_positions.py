@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from google.cloud import bigquery
 import pydantic
 
-from .base import EtlJob, dataset_arg
+from .base import Context, EtlJob, dataset_arg
 from .bqhelpers import BigQuery
 from .httphelpers import get_json
 
@@ -233,8 +233,8 @@ class StandardsPositionsJob(EtlJob):
     def required_args(self) -> set[str | tuple[str, str]]:
         return {"bq_standards_positions_dataset"}
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_standards_positions_dataset
+    def default_dataset(self, context: Context) -> str:
+        return context.args.bq_standards_positions_dataset
 
-    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
-        update_standards_positions(client)
+    def main(self, context: Context) -> None:
+        update_standards_positions(context.bq_client)
