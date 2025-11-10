@@ -1,1 +1,2 @@
 name = "releases"
+etl = ["web-features"]

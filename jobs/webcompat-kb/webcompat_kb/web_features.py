@@ -2,19 +2,19 @@ import argparse
 from dataclasses import dataclass
 import logging
 from datetime import datetime
-from typing import Mapping, Optional, Union
+from typing import Mapping, Union
 
 import webfeatures
-from google.cloud import bigquery
 from webfeatures import FeaturesFile
 from webfeatures.features import Feature, FeatureMoved, FeatureSplit
 
 from .base import Context, EtlJob, dataset_arg
-from .bqhelpers import BigQuery, Json
+from .bqhelpers import BigQuery, Json, TableSchema
+from .projectdata import Project
 
 
-def get_imported_releases(client: BigQuery) -> dict[str, datetime]:
-    query = "SELECT name, published_at FROM releases"
+def get_imported_releases(client: BigQuery, table: TableSchema) -> dict[str, datetime]:
+    query = f"SELECT name, published_at FROM {table}"
     try:
         return {item.name: item.published_at for item in client.query(query)}
     except Exception:
@@ -24,26 +24,10 @@ def get_imported_releases(client: BigQuery) -> dict[str, datetime]:
 
 def update_releases(
     client: BigQuery,
+    releases_table: TableSchema,
     release: webfeatures.github.Release,
     recreate: bool,
 ) -> None:
-    releases_schema = [
-        bigquery.SchemaField("id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("name", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
-        bigquery.SchemaField("published_at", "TIMESTAMP", mode="REQUIRED"),
-        bigquery.SchemaField(
-            "version",
-            "RECORD",
-            mode="REQUIRED",
-            fields=[
-                bigquery.SchemaField("major", "INTEGER", mode="REQUIRED"),
-                bigquery.SchemaField("minor", "INTEGER", mode="REQUIRED"),
-                bigquery.SchemaField("patch", "INTEGER", mode="REQUIRED"),
-            ],
-        ),
-    ]
-    releases_table = client.ensure_table("releases", releases_schema)
     version = release.parsed_version
     rows: list[Mapping[str, Json]] = [
         {
@@ -60,41 +44,29 @@ def update_releases(
     ]
     client.write_table(
         releases_table,
-        releases_schema,
+        releases_table.schema,
         rows,
         recreate,
     )
 
 
 def update_browsers(
+    project: Project,
     client: BigQuery,
     browser_data: Mapping[str, webfeatures.features.BrowserData],
     recreate: bool,
 ) -> None:
-    browsers_schema = [
-        bigquery.SchemaField("id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("name", "STRING", mode="REQUIRED"),
-    ]
-    browser_versions_schema = [
-        bigquery.SchemaField("browser_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("version", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
-    ]
-    browsers_table = client.ensure_table("browsers", browsers_schema)
-    browser_versions_table = client.ensure_table(
-        "browser_versions",
-        browser_versions_schema,
-    )
+    browsers_table = project["web_features"]["browsers"].table()
+    browser_versions_table = project["web_features"]["browser_versions"].table()
 
     if not recreate:
         known_browsers = {
-            item.id
-            for item in client.query(f"SELECT id FROM `{browsers_table.table_id}`")
+            item.id for item in client.query(f"SELECT id FROM `{browsers_table}`")
         }
         known_versions = {
             (item.browser_id, item.version): item.date
             for item in client.query(
-                f"SELECT browser_id, version, date FROM `{browser_versions_table.table_id}`"
+                f"SELECT browser_id, version, date FROM `{browser_versions_table}`"
             )
         }
     else:
@@ -121,102 +93,44 @@ def update_browsers(
                         f"Recorded date of {known_versions[key]} for {browser_id} {release.version} but data has {release.date}"
                     )
 
-    for table, schema, rows, desc in [
-        (browsers_table, browsers_schema, insert_browsers, "browsers"),
+    for table, rows, desc in [
+        (browsers_table, insert_browsers, "browsers"),
         (
             browser_versions_table,
-            browser_versions_schema,
             insert_versions,
             "browser versions",
         ),
     ]:
-        client.write_table(table, schema, rows, recreate)
+        client.write_table(table, table.schema, rows, recreate)
 
 
 @dataclass
 class FeaturesTable:
-    table_name: str
-    schema: list[bigquery.SchemaField]
+    table: TableSchema
     rows: list[dict[str, Json]]
-    table: Optional[bigquery.Table] = None
 
 
 def update_features(
+    project: Project,
     client: BigQuery,
     release_name: str,
     features_data: Mapping[str, Union[Feature, FeatureMoved, FeatureSplit]],
     recreate: bool,
 ) -> None:
     features = FeaturesTable(
-        table_name="features",
-        schema=[
-            bigquery.SchemaField("release", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("feature", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("name", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("description", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("description_html", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("status_baseline", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField(
-                "status_baseline_high_date",
-                "RECORD",
-                fields=[
-                    bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
-                    bigquery.SchemaField("is_upper_bound", "BOOL", mode="REQUIRED"),
-                ],
-            ),
-            bigquery.SchemaField(
-                "status_baseline_low_date",
-                "RECORD",
-                fields=[
-                    bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
-                    bigquery.SchemaField("is_upper_bound", "BOOL", mode="REQUIRED"),
-                ],
-            ),
-            bigquery.SchemaField(
-                "support",
-                "RECORD",
-                mode="REPEATED",
-                fields=[
-                    bigquery.SchemaField("browser", "STRING", mode="REQUIRED"),
-                    bigquery.SchemaField("browser_version", "STRING", mode="REQUIRED"),
-                ],
-            ),
-            # Optional Data
-            bigquery.SchemaField("caniuse", "STRING", mode="REPEATED"),
-            bigquery.SchemaField("compat_features", "STRING", mode="REPEATED"),
-            bigquery.SchemaField("group", "STRING", mode="REPEATED"),
-            bigquery.SchemaField("spec", "STRING", mode="REPEATED"),
-            bigquery.SchemaField("snapshot", "STRING", mode="REPEATED"),
-        ],
+        table=project["web_features"]["features"].table(),
         rows=[],
     )
 
     features_moved = FeaturesTable(
-        table_name="features_moved",
-        schema=[
-            bigquery.SchemaField("release", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("feature", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("redirect_target", "STRING", mode="REQUIRED"),
-        ],
+        table=project["web_features"]["features_moved"].table(),
         rows=[],
     )
 
     features_split = FeaturesTable(
-        table_name="features_split",
-        schema=[
-            bigquery.SchemaField("release", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("feature", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("redirect_target", "STRING", mode="REPEATED"),
-        ],
+        table=project["web_features"]["features_split"].table(),
         rows=[],
     )
-
-    tables = [features, features_moved, features_split]
-    for table_dfn in tables:
-        table_dfn.table = client.ensure_table(
-            table_dfn.table_name,
-            table_dfn.schema,
-        )
 
     for feature_id, data in features_data.items():
         if isinstance(data, Feature):
@@ -271,15 +185,19 @@ def update_features(
                 }
             )
 
-    for table_dfn in tables:
+    for table_dfn in [features, features_moved, features_split]:
         assert table_dfn.table is not None
-        client.write_table(table_dfn.table, table_dfn.schema, table_dfn.rows, recreate)
+        client.write_table(
+            table_dfn.table, table_dfn.table.schema, table_dfn.rows, recreate
+        )
 
 
 def import_release(
+    project: Project,
     client: BigQuery,
-    recreate: bool,
+    releases_table: TableSchema,
     release: webfeatures.github.Release,
+    recreate: bool,
 ) -> None:
     data = webfeatures.github.get_data(release)
     try:
@@ -287,22 +205,26 @@ def import_release(
     except Exception:
         logging.warning(f"Failed to get web features data for {release.name}")
         return
-    update_browsers(client, features.browsers, recreate)
+    update_browsers(project, client, features.browsers, recreate)
     update_features(
+        project,
         client,
         release.name,
         features.features,
         recreate,
     )
-    update_releases(client, release, recreate)
+    update_releases(client, releases_table, release, recreate)
 
 
-def update_web_features(client: BigQuery, recreate: bool) -> None:
+def update_web_features(project: Project, client: BigQuery, recreate: bool) -> None:
     github_releases = webfeatures.github.get_releases()
     imported_releases = {}
     last_published_import = None
+
+    releases_table = project["web_features"]["releases"].table()
+
     if not recreate:
-        imported_releases = get_imported_releases(client)
+        imported_releases = get_imported_releases(client, releases_table)
         if imported_releases:
             last_published_import = max(imported_releases.values())
 
@@ -317,7 +239,7 @@ def update_web_features(client: BigQuery, recreate: bool) -> None:
         ):
             try:
                 logging.info(f"Reading web features data for {release.name}")
-                import_release(client, recreate, release)
+                import_release(project, client, releases_table, release, recreate)
             except KeyError as e:
                 logging.warning(
                     f"Failed to read web-featured data for {release.name}: {e}"
@@ -327,17 +249,16 @@ def update_web_features(client: BigQuery, recreate: bool) -> None:
 
 
 class WebFeaturesJob(EtlJob):
-    name = "web_features"
+    name = "web-features"
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         group = parser.add_argument_group(
             title="Web Features", description="Web Features arguments"
         )
+        # Legacy: BigQuery Web Features dataset id
         group.add_argument(
-            "--bq-web-features-dataset",
-            type=dataset_arg,
-            help="BigQuery Web Features dataset id",
+            "--bq-web-features-dataset", type=dataset_arg, help=argparse.SUPPRESS
         )
         group.add_argument(
             "--recreate-web-features",
@@ -345,11 +266,10 @@ class WebFeaturesJob(EtlJob):
             help="Delete and recreate web features tables from scratch",
         )
 
-    def required_args(self) -> set[str | tuple[str, str]]:
-        return {"bq_web_features_dataset"}
-
     def default_dataset(self, context: Context) -> str:
-        return context.args.bq_web_features_dataset
+        return "web_features"
 
     def main(self, context: Context) -> None:
-        update_web_features(context.bq_client, context.args.recreate_web_features)
+        update_web_features(
+            context.project, context.bq_client, context.args.recreate_web_features
+        )
