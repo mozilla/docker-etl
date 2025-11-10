@@ -55,6 +55,12 @@ class BigQuery:
         dataset_id = self.get_dataset(dataset_id)
         return f"{self.client.project}.{dataset_id}.{table}"
 
+    def ensure_dataset(self, dataset_id: str, description: Optional[str]) -> None:
+        dataset = bigquery.Dataset(str(dataset_id))
+        dataset.description = description
+        if self.write:
+            self.client.create_dataset(dataset, exists_ok=True)
+
     def ensure_table(
         self,
         table_id: str,
