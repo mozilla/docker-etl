@@ -296,7 +296,7 @@ BUG_QUERIES: Mapping[str, Mapping[str, str | list[str]]] = {
         "o11": "greaterthaneq",
         "v11": "2025-01-01",
         "f12": "resolution",
-        "o13": "isempty",
+        "o12": "isempty",
         "f13": "CP",
     },
 }
@@ -436,6 +436,39 @@ def bigquery_last_import(bq_client: BigQuery) -> Optional[datetime]:
     res = bq_client.query(query)
     row = list(res)[0]
     return row["last_run_at"]
+
+
+def get_recursive_dependencies(
+    starting_bugs: set[BugId],
+    all_bugs: Mapping[BugId, Bug],
+) -> set[BugId]:
+    """Recursively find all dependencies of the given bugs."""
+    dependency_ids = set()
+    to_process = starting_bugs.copy()
+    processed = set()
+
+    while to_process:
+        bug_id = to_process.pop()
+        if bug_id in processed:
+            continue
+        processed.add(bug_id)
+
+        if bug_id in all_bugs:
+            bug = all_bugs[bug_id]
+
+            if bug.depends_on:
+                for dep_id in bug.depends_on:
+                    dependency_ids.add(dep_id)
+                    if dep_id not in processed:
+                        to_process.add(dep_id)
+
+            if bug.blocks:
+                for block_id in bug.blocks:
+                    dependency_ids.add(block_id)
+                    if block_id not in processed:
+                        to_process.add(block_id)
+
+    return dependency_ids - starting_bugs
 
 
 class BugCache(Mapping):
@@ -629,6 +662,26 @@ def get_etp_breakage_reports(
     return rv
 
 
+def get_relevant_bug_ids_from_bugzilla(bz_client: bugdantic.Bugzilla) -> set[BugId]:
+    logging.info("Querying Bugzilla for all bug ids that match current filter")
+
+    valid_ids = set()
+
+    for category, filter_config in BUG_QUERIES.items():
+        try:
+            bugs = bz_client.search(
+                query=filter_config, include_fields=["id"], page_size=1000
+            )
+            ids = {bug.id for bug in bugs if bug.id is not None}
+            valid_ids |= ids
+            logging.info(f"Got {len(ids)} bug ids for {category}")
+        except Exception as e:
+            logging.error(f"Error fetching ids for {category}: {e}")
+            raise
+
+    return valid_ids
+
+
 def fetch_all_bugs(
     bq_client: BigQuery,
     bz_client: bugdantic.Bugzilla,
@@ -644,15 +697,15 @@ def fetch_all_bugs(
     if last_import_time is not None:
         bug_cache.bq_fetch_bugs()
 
-    for category, filter_config in BUG_QUERIES.items():
-        if last_import_time:
-            filter_config = add_datetime_limit(filter_config, last_import_time)
-        logging.info(f"Fetching {category} bugs")
-        fetched_bugs = bug_cache.bz_fetch_bugs(params=filter_config)
-        if last_import_time:
-            logging.info(
-                f"Fetched bugs {','.join(str(item) for item in fetched_bugs)} updated since {last_import_time.isoformat()}"
-            )
+    relevant_ids = get_relevant_bug_ids_from_bugzilla(bz_client)
+
+    ids_to_fetch = relevant_ids - set(bug_cache.keys())
+
+    if ids_to_fetch:
+        logging.info(
+            f"Fetching {','.join(str(item) for item in ids_to_fetch)} from Bugzilla"
+        )
+        bug_cache.bz_fetch_bugs(bug_ids=list(ids_to_fetch))
 
     tried_to_fetch: set[BugId] = set()
     missing_relations = None
@@ -689,6 +742,20 @@ def fetch_all_bugs(
         logging.warning(
             f"Failed to fetch all dependencies after {recurse_limit} attempts"
         )
+
+    dependency_ids = get_recursive_dependencies(
+        relevant_ids, {bug.id: bug for bug in bug_cache.values()}
+    )
+    bugs_to_keep = relevant_ids | dependency_ids
+    stale_bugs = set(bug_cache.keys()) - bugs_to_keep
+
+    if stale_bugs:
+        logging.warning(
+            f"Found {','.join(str(item) for item in stale_bugs)} in cache that no longer match filters. "
+            f"These will be excluded from import."
+        )
+        for bug_id in stale_bugs:
+            del bug_cache.bugs[bug_id]
 
     return bug_cache.into_mapping()
 

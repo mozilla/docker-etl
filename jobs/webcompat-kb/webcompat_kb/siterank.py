@@ -208,7 +208,9 @@ def update_min_rank_data(client: BigQuery, config: Config, yyyymm: int) -> None:
     host_min_rank_output_columns = []
     for item in host_min_ranks_columns:
         col_name = f"{item.name}_rank"
-        crux_ranks_columns.append(f"MIN(IF({item.crux_condition}, origin_ranks.rank, NULL)) AS {col_name}")
+        crux_ranks_columns.append(
+            f"MIN(IF({item.crux_condition}, origin_ranks.rank, NULL)) AS {col_name}"
+        )
         output_columns = (
             item.output_columns
             if item.output_columns is not None

@@ -20,6 +20,7 @@ from webcompat_kb.bugzilla import (
     get_etp_breakage_reports,
     get_kb_bug_core_bugs,
     get_kb_bug_site_report,
+    get_recursive_dependencies,
     group_bugs,
     load_bugs,
     parse_user_story,
@@ -1800,3 +1801,120 @@ def test_add_datetime_limit_error():
             },
             datetime(2025, 5, 10, 0, 30),
         )
+
+
+def _bug_defaults():
+    return {
+        "alias": None,
+        "summary": "Test bug",
+        "status": "NEW",
+        "resolution": "",
+        "product": "Web Compatibility",
+        "component": "Site Reports",
+        "creator": "nobody@mozilla.org",
+        "see_also": [],
+        "priority": None,
+        "severity": None,
+        "creation_time": datetime(2025, 1, 1),
+        "assigned_to": None,
+        "keywords": [],
+        "url": "",
+        "user_story": "",
+        "last_resolved": None,
+        "last_change_time": datetime(2025, 10, 1),
+        "size_estimate": None,
+        "whiteboard": "",
+        "webcompat_priority": None,
+        "webcompat_score": None,
+    }
+
+
+def test_get_recursive_dependencies_simple():
+    """Test simple one-level dependency chain"""
+    bugs = {
+        1000: Bug(id=1000, depends_on=[2000], blocks=[], **_bug_defaults()),
+        2000: Bug(id=2000, depends_on=[], blocks=[], **_bug_defaults()),
+        3000: Bug(id=3000, depends_on=[], blocks=[], **_bug_defaults()),
+    }
+
+    result = get_recursive_dependencies({1000}, bugs)
+
+    assert result == {2000}
+
+
+def test_get_recursive_dependencies_multiple():
+    """Test multiple starting bugs"""
+    bugs = {
+        1000: Bug(id=1000, depends_on=[3000], blocks=[], **_bug_defaults()),
+        2000: Bug(id=2000, depends_on=[3000], blocks=[], **_bug_defaults()),
+        3000: Bug(id=3000, depends_on=[4000], blocks=[], **_bug_defaults()),
+        4000: Bug(id=4000, depends_on=[], blocks=[], **_bug_defaults()),
+    }
+
+    result = get_recursive_dependencies({1000, 2000}, bugs)
+
+    assert result == {3000, 4000}
+
+
+def test_get_recursive_dependencies_blocks():
+    """Test that blocks relationships are also traversed"""
+    bugs = {
+        1000: Bug(id=1000, depends_on=[], blocks=[2000], **_bug_defaults()),
+        2000: Bug(id=2000, depends_on=[], blocks=[3000], **_bug_defaults()),
+        3000: Bug(id=3000, depends_on=[], blocks=[], **_bug_defaults()),
+    }
+
+    result = get_recursive_dependencies({1000}, bugs)
+
+    assert result == {2000, 3000}
+
+
+def test_get_recursive_dependencies_mixed():
+    """Test mix of depends_on and blocks relationships"""
+    bugs = {
+        1000: Bug(id=1000, depends_on=[2000], blocks=[3000], **_bug_defaults()),
+        2000: Bug(id=2000, depends_on=[4000], blocks=[], **_bug_defaults()),
+        3000: Bug(id=3000, depends_on=[], blocks=[5000], **_bug_defaults()),
+        4000: Bug(id=4000, depends_on=[], blocks=[], **_bug_defaults()),
+        5000: Bug(id=5000, depends_on=[], blocks=[], **_bug_defaults()),
+    }
+
+    result = get_recursive_dependencies({1000}, bugs)
+
+    assert result == {2000, 3000, 4000, 5000}
+
+
+def test_get_recursive_dependencies_circular():
+    """Test circular dependencies don't cause infinite loop"""
+    bugs = {
+        1000: Bug(id=1000, depends_on=[2000], blocks=[], **_bug_defaults()),
+        2000: Bug(id=2000, depends_on=[3000], blocks=[], **_bug_defaults()),
+        3000: Bug(id=3000, depends_on=[1000], blocks=[], **_bug_defaults()),
+    }
+
+    result = get_recursive_dependencies({1000}, bugs)
+
+    assert result == {2000, 3000}
+
+
+def test_get_recursive_dependencies_missing_bug():
+    """Test that missing bugs in dependency chain are handled"""
+    bugs = {
+        1000: Bug(id=1000, depends_on=[2000, 9999], blocks=[], **_bug_defaults()),
+        2000: Bug(id=2000, depends_on=[], blocks=[], **_bug_defaults()),
+    }
+
+    result = get_recursive_dependencies({1000}, bugs)
+
+    assert result == {2000, 9999}
+
+
+def test_get_recursive_dependencies_empty():
+    """Test with no dependencies"""
+    bugs = {
+        1000: Bug(id=1000, depends_on=[], blocks=[], **_bug_defaults()),
+    }
+
+    result = get_recursive_dependencies({1000}, bugs)
+
+    assert result == set()
