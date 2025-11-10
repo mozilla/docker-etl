@@ -6,7 +6,7 @@ import time
 
 from google.cloud import bigquery
 
-BUGBUG_HTTP_SERVER = "https://bugbug.herokuapp.com"
+BUGBUG_HTTP_SERVER = "https://bugbug.moz.tools"
 CLASSIFICATION_LABELS = {0: "valid", 1: "invalid"}
 
 
