@@ -10,8 +10,9 @@ from typing import Iterator, Mapping, Optional, Sequence, cast
 from google.cloud import bigquery
 
 from .base import Context, EtlJob
-from .bqhelpers import BigQuery, Json
+from .bqhelpers import BigQuery, Json, TableSchema
 from .bugzilla import parse_user_story
+from .projectdata import Project
 
 FIXED_STATES = {"RESOLVED", "VERIFIED"}
 MIN_CHANGE_DATE = datetime(2024, 1, 1, tzinfo=timezone.utc)
@@ -73,10 +74,8 @@ class ChangeKey:
     change_time: datetime
 
 
-def get_last_recorded_date(client: BigQuery) -> datetime:
-    query = """
-SELECT MAX(change_time) as change_time
-FROM webcompat_topline_metric_changes"""
+def get_last_recorded_date(client: BigQuery, table: TableSchema) -> datetime:
+    query = f"SELECT MAX(change_time) as change_time FROM `{table}`"
     result = list(client.query(query))
 
     if result:
@@ -85,13 +84,13 @@ FROM webcompat_topline_metric_changes"""
 
 
 def get_bug_changes(
-    client: BigQuery, last_change_time: datetime
+    project: Project, client: BigQuery, last_change_time: datetime
 ) -> Mapping[int, list[BugChange]]:
     rv: dict[int, list[BugChange]] = {}
 
-    query = """
+    query = f"""
 SELECT number, who, change_time, changes
-FROM bugs_history
+FROM `{project["webcompat_knowledge_base"]["bugs_history"]}`
 WHERE change_time > @last_change_time
 ORDER BY change_time ASC
 """
@@ -116,11 +115,11 @@ ORDER BY change_time ASC
 
 
 def get_recorded_changes(
-    client: BigQuery, bugs: Iterator[int]
+    client: BigQuery, table: TableSchema, bugs: Iterator[int]
 ) -> Mapping[int, set[ChangeKey]]:
-    query = """
+    query = f"""
 SELECT number, who, change_time
-FROM webcompat_topline_metric_changes
+FROM `{table}`
 WHERE number IN UNNEST(@bugs)
 """
 
@@ -134,15 +133,16 @@ WHERE number IN UNNEST(@bugs)
 
 
 def get_bugs(
+    project: Project,
     client: BigQuery,
     last_change_time: datetime,
     bugs: Iterator[int],
 ) -> Mapping[int, BugData]:
     rv: dict[int, BugData] = {}
 
-    query = """
+    query = f"""
 SELECT number, status, resolution, product, component, creator, creation_time, resolved_time, keywords, url, user_story_raw
-FROM bugzilla_bugs
+FROM `{project["webcompat_knowledge_base"]["bugzilla_bugs"]}`
 WHERE number IN UNNEST(@bugs) OR creation_time > @last_change_time
 """
     query_parameters = [
@@ -311,9 +311,10 @@ def bugs_historic_states(
     return rv
 
 
-def get_current_scores(client: BigQuery) -> Mapping[int, Decimal]:
+def get_current_scores(project: Project, client: BigQuery) -> Mapping[int, Decimal]:
     rv: dict[int, Decimal] = {}
-    query = "SELECT number, CAST(IFNULL(triage_score, 0) as NUMERIC) as score from scored_site_reports"
+    query = f"""SELECT number, CAST(IFNULL(triage_score, 0) as NUMERIC) AS score
+FROM {project["webcompat_knowledge_base"]["scored_site_reports"]}"""
 
     for row in client.query(query):
         rv[row.number] = row.score
@@ -512,29 +513,12 @@ def compute_score_changes(
     return rv
 
 
-def get_metric_changes_table(client: BigQuery) -> bigquery.Table:
-    changes_table_name = "webcompat_topline_metric_changes"
-
-    schema = [
-        bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
-        bigquery.SchemaField("who", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("change_time", "TIMESTAMP", mode="REQUIRED"),
-        bigquery.SchemaField("old_score", "NUMERIC", mode="REQUIRED"),
-        bigquery.SchemaField("new_score", "NUMERIC", mode="REQUIRED"),
-        bigquery.SchemaField("score_delta", "NUMERIC", mode="REQUIRED"),
-        bigquery.SchemaField("reasons", "STRING", mode="REPEATED"),
-    ]
-    return client.ensure_table(changes_table_name, schema=schema)
-
-
 def insert_score_changes(
     client: BigQuery,
     score_changes: Mapping[int, Sequence[ScoreChange]],
-    changes_table: Optional[bigquery.Table] = None,
+    changes_table: TableSchema,
     overwrite: bool = False,
 ) -> None:
-    if changes_table is None:
-        changes_table = get_metric_changes_table(client)
     rows: list[dict[str, Json]] = []
     for bug_id, changes in score_changes.items():
         for change in changes:
@@ -552,24 +536,30 @@ def insert_score_changes(
     client.write_table(changes_table, changes_table.schema, rows, overwrite=overwrite)
 
 
-def update_metric_changes(client: BigQuery, recreate: bool) -> None:
-    changes_table = get_metric_changes_table(client)
+def update_metric_changes(project: Project, client: BigQuery, recreate: bool) -> None:
+    changes_table = project["webcompat_knowledge_base"][
+        "webcompat_topline_metric_changes"
+    ].table()
     last_recorded_date = (
-        get_last_recorded_date(client) if not recreate else MIN_CHANGE_DATE
+        get_last_recorded_date(client, changes_table)
+        if not recreate
+        else MIN_CHANGE_DATE
     )
     logging.info(f"Last change time {last_recorded_date}")
-    changes_by_bug = get_bug_changes(client, last_recorded_date)
+    changes_by_bug = get_bug_changes(project, client, last_recorded_date)
     if not changes_by_bug:
         logging.info("No bug changes found")
         return
-    current_bug_data = get_bugs(client, last_recorded_date, iter(changes_by_bug.keys()))
+    current_bug_data = get_bugs(
+        project, client, last_recorded_date, iter(changes_by_bug.keys())
+    )
     recorded_changes = (
-        get_recorded_changes(client, iter(changes_by_bug.keys()))
+        get_recorded_changes(client, changes_table, iter(changes_by_bug.keys()))
         if not recreate
         else {}
     )
     historic_states = bugs_historic_states(current_bug_data, changes_by_bug)
-    current_scores = get_current_scores(client)
+    current_scores = get_current_scores(project, client)
     historic_scores = compute_historic_scores(client, historic_states, current_scores)
     score_changes = compute_score_changes(
         changes_by_bug,
@@ -583,13 +573,10 @@ def update_metric_changes(client: BigQuery, recreate: bool) -> None:
 
 
 class MetricChangesJob(EtlJob):
-    name = "metric_changes"
+    name = "metric-changes"
 
     def default_dataset(self, context: Context) -> str:
-        return context.args.bq_kb_dataset
-
-    def required_args(self) -> set[str | tuple[str, str]]:
-        return {"bq_kb_dataset"}
+        return "webcompat_knowledge_base"
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
@@ -604,4 +591,6 @@ class MetricChangesJob(EtlJob):
         )
 
     def main(self, context: Context) -> None:
-        update_metric_changes(context.bq_client, context.args.recreate_metric_changes)
+        update_metric_changes(
+            context.project, context.bq_client, context.args.recreate_metric_changes
+        )

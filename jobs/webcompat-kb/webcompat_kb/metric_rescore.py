@@ -396,7 +396,10 @@ def rescore(
         project, client, new_scored_site_reports, change_time
     )
     insert_metric_changes(project, client, new_scored_site_reports, reason, change_time)
-    insert_score_changes(client, score_changes)
+    changes_table = project["webcompat_knowledge_base"][
+        "webcompat_topline_metric_changes"
+    ].table()
+    insert_score_changes(client, score_changes, changes_table)
     update_views(
         client, new_scored_site_reports, routines_map, view_definitions, archive_suffix
     )
