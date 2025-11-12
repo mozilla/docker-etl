@@ -1,5 +1,7 @@
 import argparse
 import re
+import pathlib
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, MutableMapping
@@ -7,6 +9,9 @@ from typing import Any, MutableMapping
 from .bqhelpers import BigQuery
 from .config import Config
 from .projectdata import Project
+
+
+here = pathlib.Path(os.path.dirname(__file__))
 
 # In the following we assume ascii-only characters for now. That's perhaps wrong,
 # but it covers everything we're currently using.
@@ -18,6 +23,8 @@ VALID_DATASET_ID = re.compile(r"^[a-zA-Z_0-9]{1,1024}$")
 
 # This is automatically populated when EtlJob subclasses are defined
 ALL_JOBS: MutableMapping[str, type["EtlJob"]] = {}
+
+DEFAULT_DATA_DIR = (here / os.pardir / "data").absolute()
 
 
 def project_arg(value: str) -> str:

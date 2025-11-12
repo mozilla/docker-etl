@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import pathlib
 import sys
 from typing import Iterable
 
@@ -18,7 +19,15 @@ from . import (
     chrome_use_counters,  # noqa: F401
     interop,  # noqa: F401
 )
-from .base import ALL_JOBS, Context, Config, EtlJob, dataset_arg, project_arg
+from .base import (
+    ALL_JOBS,
+    Context,
+    Config,
+    DEFAULT_DATA_DIR,
+    EtlJob,
+    dataset_arg,
+    project_arg,
+)
 from .bqhelpers import get_client, BigQuery, DatasetId
 from . import projectdata
 
@@ -51,7 +60,8 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--data-path",
         action="store",
-        default=os.path.join(here, os.pardir, "data"),
+        type=pathlib.Path,
+        default=DEFAULT_DATA_DIR,
         help="Path to directory containing sql to deploy",
     )
 
