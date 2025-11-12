@@ -7,13 +7,13 @@ from datetime import datetime
 from typing import Iterable, Mapping, MutableMapping, Optional, Sequence
 from urllib.parse import urlencode
 
-from google.cloud import bigquery
 from google.api_core.exceptions import NotFound
 from pydantic import BaseModel
 
 from .base import Context, EtlJob, dataset_arg
-from .bqhelpers import BigQuery
+from .bqhelpers import BigQuery, TableSchema
 from .httphelpers import Json, get_json, get_paginated_json
+from .projectdata import Project
 
 
 class GitHubUser(BaseModel):
@@ -130,43 +130,27 @@ class GitHub:
 
 def get_last_import(
     client: BigQuery,
-) -> tuple[bigquery.Table, Optional[datetime]]:
-    runs_table = client.ensure_table(
-        "import_runs",
-        [
-            bigquery.SchemaField("run_at", "DATETIME", mode="REQUIRED"),
-        ],
-    )
-    query = "SELECT run_at FROM import_runs ORDER BY run_at DESC LIMIT 1"
+    import_runs_table: TableSchema,
+) -> Optional[datetime]:
+    query = f"SELECT run_at FROM {import_runs_table} ORDER BY run_at DESC LIMIT 1"
     try:
         result = list(client.query(query))
     except NotFound:
         # If we're running with --no-write and the table doesn't yet exist
-        return runs_table, None
+        return None
     if len(result):
         row = result[0]
-        return runs_table, row.run_at
-    return runs_table, None
+        return row.run_at
+    return None
 
 
 def get_interop_issues(
-    client: BigQuery, recreate: bool = False
-) -> tuple[bigquery.Table, MutableMapping[int, InteropRow]]:
-    schema = [
-        bigquery.SchemaField("year", "INTEGER", mode="REQUIRED"),
-        bigquery.SchemaField("issue", "INTEGER", mode="REQUIRED"),
-        bigquery.SchemaField("title", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("proposal_type", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("bugs", "INTEGER", mode="REPEATED"),
-        bigquery.SchemaField("features", "STRING", mode="REPEATED"),
-        bigquery.SchemaField("updated_at", "DATETIME", mode="REQUIRED"),
-        bigquery.SchemaField("state", "STRING", mode="REQUIRED"),
-    ]
-    table = client.ensure_table("interop_proposals", schema)
+    client: BigQuery, interop_proposals_table: TableSchema, recreate: bool = False
+) -> MutableMapping[int, InteropRow]:
     if recreate:
-        return table, {}
-    query = f"""SELECT * FROM {table.table_id}"""
-    return table, {
+        return {}
+    query = f"""SELECT * FROM {interop_proposals_table}"""
+    return {
         row.issue: InteropRow(
             year=row.year,
             issue=row.issue,
@@ -241,12 +225,15 @@ def get_proposal_year(issue: GitHubIssue) -> Optional[int]:
 
 
 def update_interop_data(
-    client: BigQuery, gh_client: GitHub, repo: str, recreate: bool
+    project: Project, client: BigQuery, gh_client: GitHub, repo: str, recreate: bool
 ) -> None:
-    runs_table, last_import = get_last_import(client)
+    import_runs_table = project["interop"]["import_runs"].table()
+    last_import = get_last_import(client, import_runs_table)
     if last_import is None:
         recreate = True
-    issues_table, interop_proposals = get_interop_issues(client, recreate)
+
+    issues_table = project["interop"]["interop_proposals"].table()
+    interop_proposals = get_interop_issues(client, issues_table, recreate)
 
     for proposal_type, label in [
         ("focus-area", "focus-area-proposal"),
@@ -285,7 +272,7 @@ def update_interop_data(
         [item.to_json() for item in interop_proposals.values()],
         True,
     )
-    client.insert_rows(runs_table, [{"run_at": datetime.now().isoformat()}])
+    client.insert_rows(import_runs_table, [{"run_at": datetime.now().isoformat()}])
 
 
 def repo_arg(value: str) -> str:
@@ -305,7 +292,8 @@ class InteropJob(EtlJob):
         group.add_argument(
             "--bq-interop-dataset",
             type=dataset_arg,
-            help="BigQuery Interop dataset id",
+            # Legacy: BigQuery Interop dataset id
+            help=argparse.SUPPRESS,
         )
         group.add_argument(
             "--interop-repo",
@@ -324,15 +312,13 @@ class InteropJob(EtlJob):
             help="GitHub token",
         )
 
-    def required_args(self) -> set[str | tuple[str, str]]:
-        return {"bq_interop_dataset"}
-
     def default_dataset(self, context: Context) -> str:
-        return context.args.bq_interop_dataset
+        return "interop"
 
     def main(self, context: Context) -> None:
         gh_client = GitHub(context.args.interop_github_token)
         update_interop_data(
+            context.project,
             context.bq_client,
             gh_client,
             context.args.interop_repo,

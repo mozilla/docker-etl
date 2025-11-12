@@ -1,0 +1,31 @@
+[year]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[issue]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[title]
+type = "STRING"
+mode = "REQUIRED"
+
+[proposal_type]
+type = "STRING"
+mode = "REQUIRED"
+
+[bugs]
+type = "INTEGER"
+mode = "REPEATED"
+
+[features]
+type = "STRING"
+mode = "REPEATED"
+
+[updated_at]
+type = "DATETIME"
+mode = "REQUIRED"
+
+[state]
+type = "STRING"
+mode = "REQUIRED"
