@@ -150,7 +150,9 @@ def main() -> None:
 
         context = Context(
             args=args,
-            bq_client=BigQuery(client, DatasetId(args.bq_project_id, ""), args.write),
+            bq_client=BigQuery(
+                client, DatasetId(args.bq_project_id, ""), args.write, set()
+            ),
             config=config,
             jobs=list(jobs.values()),
             project=project,
@@ -162,6 +164,7 @@ def main() -> None:
                 client,
                 DatasetId(args.bq_project_id, job.default_dataset(context)),
                 args.write,
+                job.write_targets(project),
             )
             context.bq_client = bq_client
             try:
