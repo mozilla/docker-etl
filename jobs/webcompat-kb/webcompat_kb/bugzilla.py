@@ -682,6 +682,30 @@ def get_relevant_bug_ids_from_bugzilla(bz_client: bugdantic.Bugzilla) -> set[Bug
     return valid_ids
 
 
+def update_changed_bugs(
+    bug_cache: BugCache, last_import_time: Optional[datetime]
+) -> None:
+    for category, filter_config in BUG_QUERIES.items():
+        if last_import_time:
+            filter_config = add_datetime_limit(filter_config, last_import_time)
+        logging.info(f"Fetching {category} bugs")
+        fetched_bugs = bug_cache.bz_fetch_bugs(params=filter_config)
+        if last_import_time:
+            logging.info(
+                f"Fetched bugs {','.join(str(item) for item in fetched_bugs)} updated since {last_import_time.isoformat()}"
+            )
+
+
+def fetch_new_bugs(relevant_ids: set[BugId], bug_cache: BugCache) -> None:
+    """Fetch new bugs in case there was a change in the filter"""
+    new_ids_to_fetch = relevant_ids - set(bug_cache.keys())
+    if new_ids_to_fetch:
+        logging.info(
+            f"Fetching {','.join(str(item) for item in new_ids_to_fetch)} from Bugzilla"
+        )
+        bug_cache.bz_fetch_bugs(bug_ids=list(new_ids_to_fetch))
+
+
 def fetch_all_bugs(
     bq_client: BigQuery,
     bz_client: bugdantic.Bugzilla,
@@ -697,15 +721,9 @@ def fetch_all_bugs(
     if last_import_time is not None:
         bug_cache.bq_fetch_bugs()
 
+    update_changed_bugs(bug_cache, last_import_time)
     relevant_ids = get_relevant_bug_ids_from_bugzilla(bz_client)
-
-    ids_to_fetch = relevant_ids - set(bug_cache.keys())
-
-    if ids_to_fetch:
-        logging.info(
-            f"Fetching {','.join(str(item) for item in ids_to_fetch)} from Bugzilla"
-        )
-        bug_cache.bz_fetch_bugs(bug_ids=list(ids_to_fetch))
+    fetch_new_bugs(relevant_ids, bug_cache)
 
     tried_to_fetch: set[BugId] = set()
     missing_relations = None
