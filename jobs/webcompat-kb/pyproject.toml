@@ -49,6 +49,7 @@ test = [
 webcompat-etl = "webcompat_kb.main:main"
 webcompat-backfill-history = "webcompat_kb.utils:backfill_history"
 webcompat-check-templates = "webcompat_kb.commands.checkdata:main"
+webcompat-render = "webcompat_kb.commands.render:main"
 
 
 [tool.pytest]
