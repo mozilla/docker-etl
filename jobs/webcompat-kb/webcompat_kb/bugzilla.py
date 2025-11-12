@@ -22,7 +22,8 @@ import bugdantic
 from google.cloud import bigquery
 
 from .base import Context, EtlJob
-from .bqhelpers import BigQuery
+from .bqhelpers import BigQuery, TableSchema
+from .projectdata import Project
 
 
 class BugLoadError(Exception):
@@ -427,17 +428,6 @@ def parse_user_story(input_string: str) -> Mapping[str, str | list[str]]:
     return result_dict
 
 
-def bigquery_last_import(bq_client: BigQuery) -> Optional[datetime]:
-    query = """
-            SELECT MAX(run_at) AS last_run_at
-            FROM import_runs
-            WHERE is_history_fetch_completed = TRUE
-        """
-    res = bq_client.query(query)
-    row = list(res)[0]
-    return row["last_run_at"]
-
-
 def get_recursive_dependencies(
     starting_bugs: set[BugId],
     all_bugs: Mapping[BugId, Bug],
@@ -486,8 +476,8 @@ class BugCache(Mapping):
     def __iter__(self) -> Iterator[BugId]:
         yield from self.bugs
 
-    def bq_fetch_bugs(self) -> None:
-        for bug in self.bq_client.query("SELECT * from bugzilla_bugs"):
+    def bq_fetch_bugs(self, bugs_table: TableSchema) -> None:
+        for bug in self.bq_client.query(f"SELECT * FROM {bugs_table}"):
             self.bugs[bug.number] = Bug(
                 id=bug.number,
                 alias=bug.alias,
@@ -709,6 +699,7 @@ def fetch_new_bugs(relevant_ids: set[BugId], bug_cache: BugCache) -> None:
 def fetch_all_bugs(
     bq_client: BigQuery,
     bz_client: bugdantic.Bugzilla,
+    bugs_table: TableSchema,
     last_import_time: Optional[datetime],
 ) -> BugsById:
     """Get all the bugs that should be imported into BigQuery.
@@ -719,7 +710,7 @@ def fetch_all_bugs(
     bug_cache = BugCache(bq_client, bz_client)
 
     if last_import_time is not None:
-        bug_cache.bq_fetch_bugs()
+        bug_cache.bq_fetch_bugs(bugs_table)
 
     update_changed_bugs(bug_cache, last_import_time)
     relevant_ids = get_relevant_bug_ids_from_bugzilla(bz_client)
@@ -781,11 +772,14 @@ def fetch_all_bugs(
 class BugHistoryUpdater:
     def __init__(
         self,
+        project: Project,
         bq_client: BigQuery,
         bz_client: bugdantic.Bugzilla,
     ):
         self.bq_client = bq_client
         self.bz_client = bz_client
+        self.bugs_table = project["webcompat_knowledge_base"]["bugzilla_bugs"].table()
+        self.history_table = project["webcompat_knowledge_base"]["bugs_history"].table()
 
     def run(
         self, all_bugs: BugsById, last_import_time: Optional[datetime]
@@ -880,7 +874,7 @@ class BugHistoryUpdater:
         return self.unflatten_history(item for item in new_history if item in diff)
 
     def bigquery_fetch_imported_ids(self) -> set[int]:
-        query = """SELECT number FROM bugzilla_bugs"""
+        query = f"""SELECT number FROM {self.bugs_table}"""
         res = self.bq_client.query(query)
         rows = list(res)
 
@@ -974,13 +968,9 @@ class BugHistoryUpdater:
 
     def bigquery_fetch_history(self, bug_ids: Iterable[int]) -> HistoryByBug:
         rv: defaultdict[int, list[BugHistoryEntry]] = defaultdict(list)
-        formatted_numbers = ", ".join(str(bug_id) for bug_id in bug_ids)
-        query = f"""
-                    SELECT *
-                    FROM bugs_history
-                    WHERE number IN ({formatted_numbers})
-                """
-        result = self.bq_client.query(query)
+        parameters = [bigquery.ArrayQueryParameter("bugs", "INT64", list(bug_ids))]
+        query = f"SELECT * FROM {self.history_table} WHERE number IN UNNEST(@bugs)"
+        result = self.bq_client.query(query, parameters=parameters)
         for row in result:
             rv[row["number"]].append(
                 BugHistoryEntry(
@@ -1127,18 +1117,17 @@ class BugHistoryUpdater:
 class BigQueryImporter:
     """Class to handle all writes to BigQuery"""
 
-    def __init__(self, bq_client: BigQuery):
+    def __init__(self, project: Project, bq_client: BigQuery):
+        self.project = project
         self.client = bq_client
 
     def write_table(
         self,
-        table_name: str,
-        schema: list[bigquery.SchemaField],
+        table: TableSchema,
         rows: Sequence[Mapping[str, Any]],
         overwrite: bool,
     ) -> None:
-        table = self.client.ensure_table(table_name, schema)
-        self.client.write_table(table, schema, rows, overwrite)
+        self.client.write_table(table, table.schema, rows, overwrite=overwrite)
 
     def convert_bug(self, bug: Bug) -> Mapping[str, Any]:
         return {
@@ -1186,80 +1175,44 @@ class BigQueryImporter:
             ],
         }
 
+    def last_import(self) -> Optional[datetime]:
+        table = self.project["webcompat_knowledge_base"]["import_runs"].table()
+        query = f"""SELECT MAX(run_at) AS last_run_at
+FROM {table}
+WHERE is_history_fetch_completed = TRUE"""
+        res = self.client.query(query)
+        rows = list(res)
+        if rows:
+            return rows[0].last_run_at
+        return None
+
     def insert_bugs(self, all_bugs: BugsById) -> None:
-        table = "bugzilla_bugs"
-        schema = [
-            bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
-            bigquery.SchemaField("alias", "STRING"),
-            bigquery.SchemaField("title", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("status", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("resolution", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("product", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("component", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("creator", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("severity", "INTEGER"),
-            bigquery.SchemaField("priority", "INTEGER"),
-            bigquery.SchemaField("creation_time", "TIMESTAMP", mode="REQUIRED"),
-            bigquery.SchemaField("last_change_time", "TIMESTAMP"),
-            bigquery.SchemaField("assigned_to", "STRING"),
-            bigquery.SchemaField("keywords", "STRING", mode="REPEATED"),
-            bigquery.SchemaField("url", "STRING"),
-            bigquery.SchemaField("user_story", "JSON"),
-            bigquery.SchemaField("user_story_raw", "STRING"),
-            bigquery.SchemaField("resolved_time", "TIMESTAMP"),
-            bigquery.SchemaField("size_estimate", "STRING"),
-            bigquery.SchemaField("whiteboard", "STRING"),
-            bigquery.SchemaField("webcompat_priority", "STRING"),
-            bigquery.SchemaField("webcompat_score", "INTEGER"),
-            bigquery.SchemaField("depends_on", "INTEGER", mode="REPEATED"),
-            bigquery.SchemaField("blocks", "INTEGER", mode="REPEATED"),
-            bigquery.SchemaField("see_also", "STRING", mode="REPEATED"),
-        ]
+        table = self.project["webcompat_knowledge_base"]["bugzilla_bugs"].table()
         rows = [self.convert_bug(bug) for bug in all_bugs.values()]
-        self.write_table(table, schema, rows, overwrite=True)
+        self.write_table(table, rows, overwrite=True)
 
     def insert_history_changes(
         self, history_entries: HistoryByBug, recreate: bool
     ) -> None:
-        schema = [
-            bigquery.SchemaField("number", "INTEGER", mode="REQUIRED"),
-            bigquery.SchemaField("who", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("change_time", "TIMESTAMP", mode="REQUIRED"),
-            bigquery.SchemaField(
-                "changes",
-                "RECORD",
-                mode="REPEATED",
-                fields=[
-                    bigquery.SchemaField("field_name", "STRING", mode="REQUIRED"),
-                    bigquery.SchemaField("added", "STRING", mode="REQUIRED"),
-                    bigquery.SchemaField("removed", "STRING", mode="REQUIRED"),
-                ],
-            ),
-        ]
-
+        table = self.project["webcompat_knowledge_base"]["bugs_history"].table()
         rows = [
             self.convert_history_entry(entry)
             for entries in history_entries.values()
             for entry in entries
         ]
-        self.write_table("bugs_history", schema, rows, overwrite=recreate)
+        self.write_table(table, rows, overwrite=recreate)
 
     def insert_bug_list(
         self, table_name: str, field_name: str, bugs: Iterable[BugId]
     ) -> None:
-        schema = [bigquery.SchemaField(field_name, "INTEGER", mode="REQUIRED")]
+        table = self.project["webcompat_knowledge_base"][table_name].table()
         rows = [{field_name: bug_id} for bug_id in bugs]
-        self.write_table(table_name, schema, rows, overwrite=True)
+        self.write_table(table, rows, overwrite=True)
 
     def insert_bug_links(
         self, link_config: BugLinkConfig, links_by_bug: Mapping[BugId, Iterable[BugId]]
     ) -> None:
-        schema = [
-            bigquery.SchemaField(
-                link_config.from_field_name, "INTEGER", mode="REQUIRED"
-            ),
-            bigquery.SchemaField(link_config.to_field_name, "INTEGER", mode="REQUIRED"),
-        ]
+        table = self.project["webcompat_knowledge_base"][link_config.table_name].table()
         rows = [
             {
                 link_config.from_field_name: from_bug_id,
@@ -1268,23 +1221,20 @@ class BigQueryImporter:
             for from_bug_id, to_bug_ids in links_by_bug.items()
             for to_bug_id in to_bug_ids
         ]
-        self.write_table(link_config.table_name, schema, rows, overwrite=True)
+        self.write_table(table, rows, overwrite=True)
 
     def insert_external_links(
         self,
         link_config: ExternalLinkConfig,
         links_by_bug: Mapping[BugId, Iterable[str]],
     ) -> None:
-        schema = [
-            bigquery.SchemaField("knowledge_base_bug", "INTEGER", mode="REQUIRED"),
-            bigquery.SchemaField(link_config.field_name, "STRING", mode="REQUIRED"),
-        ]
+        table = self.project["webcompat_knowledge_base"][link_config.table_name].table()
         rows = [
             {"knowledge_base_bug": bug_id, link_config.field_name: link_text}
             for bug_id, links in links_by_bug.items()
             for link_text in links
         ]
-        self.write_table(link_config.table_name, schema, rows, overwrite=True)
+        self.write_table(table, rows, overwrite=True)
 
     def record_import_run(
         self,
@@ -1293,18 +1243,10 @@ class BigQueryImporter:
         history_count: Optional[int],
         last_change_time: datetime,
     ) -> None:
+        table = self.project["webcompat_knowledge_base"]["import_runs"].table()
         elapsed_time = time.monotonic() - start_time
         elapsed_time_delta = timedelta(seconds=elapsed_time)
         run_at = last_change_time - elapsed_time_delta
-
-        schema = [
-            bigquery.SchemaField("run_at", "TIMESTAMP", mode="REQUIRED"),
-            bigquery.SchemaField("bugs_imported", "INTEGER", mode="REQUIRED"),
-            bigquery.SchemaField("bugs_history_updated", "INTEGER", mode="REQUIRED"),
-            bigquery.SchemaField(
-                "is_history_fetch_completed", "BOOLEAN", mode="REQUIRED"
-            ),
-        ]
 
         rows_to_insert = [
             {
@@ -1316,8 +1258,7 @@ class BigQueryImporter:
                 "is_history_fetch_completed": history_count is not None,
             },
         ]
-        import_runs_table = self.client.ensure_table("import_runs", schema=schema)
-        self.client.insert_rows(import_runs_table, rows_to_insert)
+        self.client.insert_rows(table, rows_to_insert)
 
 
 def get_kb_entries(all_bugs: BugsById, site_report_blockers: set[BugId]) -> set[BugId]:
@@ -1395,6 +1336,7 @@ def write_bugs(
 
 
 def load_bugs(
+    project: Project,
     bq_client: BigQuery,
     bz_client: bugdantic.Bugzilla,
     load_bug_data_path: Optional[str],
@@ -1413,7 +1355,12 @@ def load_bugs(
             raise BugLoadError(f"Reading bugs from {load_bug_data_path} failed") from e
     else:
         try:
-            return fetch_all_bugs(bq_client, bz_client, last_import_time)
+            return fetch_all_bugs(
+                bq_client,
+                bz_client,
+                project["webcompat_knowledge_base"]["bugzilla_bugs"].table(),
+                last_import_time,
+            )
         except Exception as e:
             raise BugLoadError(
                 "Fetching bugs from Bugzilla was not completed due to an error, aborting."
@@ -1421,8 +1368,8 @@ def load_bugs(
 
 
 def run(
+    project: Project,
     bq_client: BigQuery,
-    bq_dataset_id: str,
     bz_client: bugdantic.Bugzilla,
     write: bool,
     include_history: bool,
@@ -1433,14 +1380,17 @@ def run(
 ) -> None:
     start_time = time.monotonic()
 
+    importer = BigQueryImporter(project, bq_client)
+
     last_import_time = (
-        bigquery_last_import(bq_client)
+        importer.last_import()
         if not recreate_bugs or (include_history and not recreate_history)
         else None
     )
 
     bugs_last_import_time = last_import_time if not recreate_bugs else None
     all_bugs = load_bugs(
+        project,
         bq_client,
         bz_client,
         load_bug_data_path,
@@ -1449,7 +1399,7 @@ def run(
 
     history_changes = None
     if include_history:
-        history_updater = BugHistoryUpdater(bq_client, bz_client)
+        history_updater = BugHistoryUpdater(project, bq_client, bz_client)
         history_last_import_time = last_import_time if not recreate_history else None
         try:
             history_changes = history_updater.run(all_bugs, history_last_import_time)
@@ -1498,7 +1448,6 @@ def run(
     last_change_time_max = max(bug.last_change_time for bug in all_bugs.values())
 
     # Finally do the actual import
-    importer = BigQueryImporter(bq_client)
     importer.insert_bugs(all_bugs)
     if history_changes is not None:
         importer.insert_history_changes(history_changes, recreate=recreate_history)
@@ -1561,10 +1510,7 @@ class BugzillaJob(EtlJob):
         )
 
     def default_dataset(self, context: Context) -> str:
-        return context.args.bq_kb_dataset
-
-    def required_args(self) -> set[str | tuple[str, str]]:
-        return {"bq_kb_dataset"}
+        return "webcompat_knowledge_base"
 
     def main(self, context: Context) -> None:
         bz_config = bugdantic.BugzillaConfig(
@@ -1575,8 +1521,8 @@ class BugzillaJob(EtlJob):
         bz_client = bugdantic.Bugzilla(bz_config)
 
         run(
+            context.project,
             context.bq_client,
-            context.args.bq_kb_dataset,
             bz_client,
             context.config.write,
             context.args.bugzilla_include_history,
