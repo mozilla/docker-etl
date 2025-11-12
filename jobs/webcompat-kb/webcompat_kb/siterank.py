@@ -219,7 +219,7 @@ def update_min_rank_data(client: BigQuery, config: Config, yyyymm: int) -> None:
         for name, query in output_columns.items():
             host_min_rank_output_names.append(name)
             host_min_rank_output_columns.append(f"{query} AS {name}")
-            schema.append(bigquery.SchemaField(col_name, "INTEGER"))
+            schema.append(bigquery.SchemaField(name, "INTEGER"))
 
     if config.write:
         insert_str = f"INSERT `{config.bq_project}.{config.bq_crux_dataset}.host_min_ranks` (yyyymm, host, {', '.join(host_min_rank_output_names)})"
