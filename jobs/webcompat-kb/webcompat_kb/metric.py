@@ -4,7 +4,7 @@ from datetime import date
 
 from google.cloud import bigquery
 
-from .base import EtlJob
+from .base import Context, EtlJob
 from .bqhelpers import BigQuery
 from .metrics.metrics import metrics, metric_types
 
@@ -186,12 +186,16 @@ class MetricJob(EtlJob):
     def required_args(self) -> set[str | tuple[str, str]]:
         return {"bq_kb_dataset"}
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_kb_dataset
+    def default_dataset(self, context: Context) -> str:
+        return context.args.bq_kb_dataset
 
-    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
-        update_metric_history(client, args.bq_kb_dataset, args.write)
-        update_metric_daily(client, args.bq_kb_dataset, args.write)
+    def main(self, context: Context) -> None:
+        update_metric_history(
+            context.bq_client, context.args.bq_kb_dataset, context.config.write
+        )
+        update_metric_daily(
+            context.bq_client, context.args.bq_kb_dataset, context.config.write
+        )
 
 
 class MetricBackfillJob(EtlJob):
@@ -210,10 +214,13 @@ class MetricBackfillJob(EtlJob):
     def required_args(self) -> set[str | tuple[str, str]]:
         return {"bq_kb_dataset", "metric_backfill_metric"}
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_kb_dataset
+    def default_dataset(self, context: Context) -> str:
+        return context.args.bq_kb_dataset
 
-    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
+    def main(self, context: Context) -> None:
         backfill_metric_daily(
-            client, args.bq_kb_dataset, args.write, args.metric_backfill_metric
+            context.bq_client,
+            context.args.bq_dataset_id,
+            context.config.write,
+            context.args.metric_backfill_metric,
         )
