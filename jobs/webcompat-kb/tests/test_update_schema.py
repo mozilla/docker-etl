@@ -1,7 +1,5 @@
-import pytest
-
 from webcompat_kb import update_schema
-from webcompat_kb.update_schema import DatasetId, SchemaId
+from webcompat_kb.bqhelpers import DatasetId, SchemaId
 
 
 def test_stage_dataset():
@@ -17,22 +15,6 @@ def test_add_routine_options():
 );"""
     expected = f"""{sql[:-1]}\nOPTIONS(description="Test routine");"""
     assert update_schema.add_routine_options(sql, "Test routine") == expected
-
-
-@pytest.mark.parametrize(
-    "input,expected",
-    [
-        ("table", ("default_project", "default_dataset", "table")),
-        ("dataset.table", ("default_project", "dataset", "table")),
-        ("project.dataset.table", ("project", "dataset", "table")),
-    ],
-)
-def test_schema_id_from_str(input, expected):
-    expected_id = SchemaId(*expected)
-    actual_id = SchemaId.from_str(input, "default_project", "default_dataset")
-    assert expected_id == actual_id
-    expected_dataset_id = DatasetId(*expected[:2])
-    assert expected_dataset_id == actual_id.dataset_id
 
 
 def test_schema_id_mapper():

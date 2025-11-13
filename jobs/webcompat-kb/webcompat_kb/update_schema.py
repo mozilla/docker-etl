@@ -9,18 +9,27 @@ import sys
 import tomllib
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable, Iterable, Mapping, Optional, Self, Sequence
+from typing import Callable, Iterable, Mapping, Optional, Sequence
 
 import jinja2
 from google.cloud import bigquery
 from pydantic import BaseModel, ConfigDict
 
 from .base import EtlJob
-from .bqhelpers import BigQuery
+from .bqhelpers import BigQuery, DatasetId, SchemaId, SchemaType
 from .metrics.metrics import metrics, metric_types
 from .treehash import hash_tree
 
 here = os.path.dirname(__file__)
+
+
+@dataclass
+class SchemaDefinition:
+    id: SchemaId
+    type: SchemaType
+    sql: str
+    depends_on: set[SchemaId]
+    description: str = ""
 
 
 class DatasetMetadata(BaseModel):
@@ -44,75 +53,11 @@ class SchemaTemplate:
     sql_template: str
 
 
-@dataclass(frozen=True)
-class DatasetId:
-    project: str
-    dataset: str
-
-    def __str__(self) -> str:
-        assert self.project != ""
-        assert self.dataset != ""
-        return f"{self.project}.{self.dataset}"
-
-
 class DatasetTemplates:
     def __init__(self, id: DatasetId):
         self.id = id
         self.views: list[SchemaTemplate] = []
         self.routines: list[SchemaTemplate] = []
-
-
-@dataclass(frozen=True)
-class SchemaId:
-    project: str
-    dataset: str
-    name: str
-
-    def __str__(self) -> str:
-        assert self.project != ""
-        assert self.dataset != ""
-        assert self.name != ""
-        return f"{self.project}.{self.dataset}.{self.name}"
-
-    @property
-    def dataset_id(self) -> DatasetId:
-        return DatasetId(self.project, self.dataset)
-
-    @classmethod
-    def from_str(
-        cls,
-        ref: str,
-        default_project: str,
-        default_dataset: str,
-    ) -> Self:
-        parts = ref.split(".")
-        num_parts = len(parts)
-        if num_parts == 1:
-            project = default_project
-            dataset = default_dataset
-            name = ref
-        elif num_parts == 2:
-            project = default_project
-            dataset, name = parts
-        elif num_parts == 3:
-            project, dataset, name = parts
-        else:
-            raise ValueError(f"Invalid id {ref}")
-        return cls(project, dataset, name)
-
-
-class SchemaType(enum.StrEnum):
-    view = "view"
-    routine = "routine"
-
-
-@dataclass
-class Schema:
-    id: SchemaId
-    type: SchemaType
-    sql: str
-    depends_on: set[SchemaId]
-    description: str = ""
 
 
 class ReferenceType(enum.StrEnum):
@@ -267,7 +212,9 @@ def load_templates(project: str, root_path: os.PathLike) -> list[DatasetTemplate
     return by_dataset
 
 
-def topological_sort(nodes: Mapping[SchemaId, Schema]) -> Sequence[Schema]:
+def topological_sort(
+    nodes: Mapping[SchemaId, SchemaDefinition],
+) -> Sequence[SchemaDefinition]:
     """Sort nodes so that dependencies come before their dependents"""
     rv = []
 
@@ -275,7 +222,7 @@ def topological_sort(nodes: Mapping[SchemaId, Schema]) -> Sequence[Schema]:
     # During processing complete is False, after processing it's True
     seen_nodes: dict[SchemaId, bool] = {}
 
-    def visit(node: Schema) -> None:
+    def visit(node: SchemaDefinition) -> None:
         if node.id in seen_nodes:
             if seen_nodes[node.id]:
                 return
@@ -330,7 +277,7 @@ class SchemaCreator:
     def create_schemas(
         self,
         dataset_templates: DatasetTemplates,
-    ) -> Mapping[SchemaId, Schema]:
+    ) -> Mapping[SchemaId, SchemaDefinition]:
         schemas = {}
 
         for schema_type, src_templates in [
@@ -361,7 +308,7 @@ class SchemaCreator:
                     render_result.references.views | render_result.references.routines
                 )
                 logging.debug(f"SQL for {output_schema_id}:\n{render_result.sql}\n----")
-                schemas[output_schema_id] = Schema(
+                schemas[output_schema_id] = SchemaDefinition(
                     id=output_schema_id,
                     description=template.metadata.description or "",
                     type=schema_type,
@@ -453,7 +400,9 @@ def get_current_schemas(
     return views, routines
 
 
-def view_needs_update(current_view: Optional[bigquery.Table], new_view: Schema) -> bool:
+def view_needs_update(
+    current_view: Optional[bigquery.Table], new_view: SchemaDefinition
+) -> bool:
     if current_view is None:
         logging.info(f"{new_view.id} does not exist")
         return True
@@ -478,7 +427,7 @@ def view_needs_update(current_view: Optional[bigquery.Table], new_view: Schema) 
 
 
 def routine_needs_update(
-    current_routine: Optional[bigquery.Routine], new_routine: Schema
+    current_routine: Optional[bigquery.Routine], new_routine: SchemaDefinition
 ) -> bool:
     # Diffing routines is complicated by the fact that our input is a CREATE OR REPLACE FUNCTION statement
     # but the Routine object has a parsed representation of the result of that operation.
@@ -490,7 +439,7 @@ def create_schemas(
     project: str,
     schema_id_mapper: Callable[[SchemaId, ReferenceType], SchemaId],
     templates_by_dataset: Iterable[DatasetTemplates],
-) -> tuple[Sequence[Schema], set[SchemaId], set[SchemaId]]:
+) -> tuple[Sequence[SchemaDefinition], set[SchemaId], set[SchemaId]]:
     view_ids = {
         SchemaId(project, dataset.id.dataset, template.metadata.name)
         for dataset in templates_by_dataset
@@ -503,7 +452,7 @@ def create_schemas(
     }
 
     creator = SchemaCreator(project, schema_id_mapper, view_ids, routine_ids)
-    schemas: dict[SchemaId, Schema] = {}
+    schemas: dict[SchemaId, SchemaDefinition] = {}
     for dataset_template in templates_by_dataset:
         schemas.update(
             creator.create_schemas(
