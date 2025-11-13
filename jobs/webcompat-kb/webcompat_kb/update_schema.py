@@ -739,7 +739,7 @@ def check_templates() -> None:
     parser.add_argument(
         "--path",
         action="store",
-        default=os.path.join(here, os.pardir, "sql"),
+        default=os.path.join(here, os.pardir, "data", "sql"),
         help="Path to directory containing sql",
     )
     args = parser.parse_args()
@@ -893,7 +893,7 @@ class UpdateSchemaJob(EtlJob):
         group.add_argument(
             "--update-schema-path",
             action="store",
-            default=os.path.join(here, os.pardir, "sql"),
+            default=os.path.join(here, os.pardir, "data", "sql"),
             help="Path to directory containing sql to deploy",
         )
         group.add_argument(
