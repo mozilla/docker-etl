@@ -1,102 +1,35 @@
 import argparse
 import difflib
 import enum
-import hashlib
 import json
 import logging
 import re
 import os
-import stat
 import sys
 import tomllib
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable, Iterable, Mapping, Optional, Self, Sequence
+from typing import Callable, Iterable, Mapping, Optional, Sequence
 
 import jinja2
 from google.cloud import bigquery
 from pydantic import BaseModel, ConfigDict
 
 from .base import EtlJob
-from .bqhelpers import BigQuery
+from .bqhelpers import BigQuery, DatasetId, SchemaId, SchemaType
 from .metrics.metrics import metrics, metric_types
+from .treehash import hash_tree
 
 here = os.path.dirname(__file__)
 
 
-class Blob:
-    """Git-like Blob object
-
-    This represents the bytes content of a file, using the same representation as git."""
-
-    def __init__(self, data: bytes):
-        self.data = data
-
-    def serialize(self) -> bytes:
-        return b"blob %d\0%b" % (len(self.data), self.data)
-
-    def hash(self) -> bytes:
-        return hashlib.sha1(self.serialize()).digest()
-
-
-class Tree:
-    """Git-like Tree object
-
-    This represents the content of a directory, using the same representation as git."""
-
-    def __init__(self) -> None:
-        self.contents: list[TreeEntry] = []
-
-    def serialize(self) -> bytes:
-        data = b""
-        for item in sorted(self.contents, key=lambda x: x.path):
-            data += b"%b %b\0%b" % (item.mode, os.path.basename(item.path), item.hash())
-        return b"tree %d\0%b" % (len(data), data)
-
-    def hash(self) -> bytes:
-        return hashlib.sha1(self.serialize()).digest()
-
-
-class TreeEntry:
-    def __init__(self, path: bytes, mode: bytes, content: Blob | Tree):
-        self.path = path
-        self.mode = mode
-        self.content = content
-
-    def hash(self) -> bytes:
-        return self.content.hash()
-
-    @classmethod
-    def from_path(cls, path: bytes | str | os.PathLike) -> Self:
-        st = os.stat(path)
-
-        if isinstance(path, os.PathLike):
-            path = path.__fspath__()
-        if isinstance(path, bytes):
-            path_bytes = path
-        else:
-            path_bytes = str(path).encode("utf-8")
-
-        # These modes match the subset supported by git
-        if stat.S_ISDIR(st.st_mode):
-            mode = b"40000"
-            content: Tree | Blob = Tree()
-        else:
-            if stat.S_IXUSR & st.st_mode:
-                mode = b"100755"
-            elif stat.S_ISLNK(st.st_mode):
-                mode = b"120000"
-            else:
-                mode = b"100644"
-            with open(path, "rb") as f:
-                content = Blob(f.read())
-        return cls(path_bytes, mode, content)
-
-    def append(self, other: Self) -> None:
-        assert other != self
-        if isinstance(self.content, Blob):
-            raise ValueError("Cannot append to a Blob TreeEntry")
-        self.content.contents.append(other)
+@dataclass
+class SchemaDefinition:
+    id: SchemaId
+    type: SchemaType
+    sql: str
+    depends_on: set[SchemaId]
+    description: str = ""
 
 
 class DatasetMetadata(BaseModel):
@@ -120,75 +53,11 @@ class SchemaTemplate:
     sql_template: str
 
 
-@dataclass(frozen=True)
-class DatasetId:
-    project: str
-    dataset: str
-
-    def __str__(self) -> str:
-        assert self.project != ""
-        assert self.dataset != ""
-        return f"{self.project}.{self.dataset}"
-
-
 class DatasetTemplates:
     def __init__(self, id: DatasetId):
         self.id = id
         self.views: list[SchemaTemplate] = []
         self.routines: list[SchemaTemplate] = []
-
-
-@dataclass(frozen=True)
-class SchemaId:
-    project: str
-    dataset: str
-    name: str
-
-    def __str__(self) -> str:
-        assert self.project != ""
-        assert self.dataset != ""
-        assert self.name != ""
-        return f"{self.project}.{self.dataset}.{self.name}"
-
-    @property
-    def dataset_id(self) -> DatasetId:
-        return DatasetId(self.project, self.dataset)
-
-    @classmethod
-    def from_str(
-        cls,
-        ref: str,
-        default_project: str,
-        default_dataset: str,
-    ) -> Self:
-        parts = ref.split(".")
-        num_parts = len(parts)
-        if num_parts == 1:
-            project = default_project
-            dataset = default_dataset
-            name = ref
-        elif num_parts == 2:
-            project = default_project
-            dataset, name = parts
-        elif num_parts == 3:
-            project, dataset, name = parts
-        else:
-            raise ValueError(f"Invalid id {ref}")
-        return cls(project, dataset, name)
-
-
-class SchemaType(enum.StrEnum):
-    view = "view"
-    routine = "routine"
-
-
-@dataclass
-class Schema:
-    id: SchemaId
-    type: SchemaType
-    sql: str
-    depends_on: set[SchemaId]
-    description: str = ""
 
 
 class ReferenceType(enum.StrEnum):
@@ -313,27 +182,6 @@ def load_schema_template(root_path: str, sql_name: str) -> list[SchemaTemplate]:
     return templates
 
 
-def build_tree(root: str | os.PathLike) -> TreeEntry:
-    root_path = str(root)
-    root_tree = TreeEntry.from_path(root_path)
-    tree_entries = {root_path: root_tree}
-    for dir_path, dir_names, file_names in os.walk(root_path):
-        parent_tree = tree_entries[dir_path]
-        assert isinstance(parent_tree.content, Tree)
-        for name in dir_names + file_names:
-            path = os.path.join(dir_path, name)
-            tree_entry = TreeEntry.from_path(path)
-            parent_tree.append(tree_entry)
-            assert path not in tree_entries
-            tree_entries[path] = tree_entry
-    return root_tree
-
-
-def get_templates_hash(root: str | os.PathLike) -> bytes:
-    root_tree = build_tree(root)
-    return root_tree.hash()
-
-
 def load_templates(project: str, root_path: os.PathLike) -> list[DatasetTemplates]:
     by_dataset = []
     for dir_name in os.listdir(root_path):
@@ -364,7 +212,9 @@ def load_templates(project: str, root_path: os.PathLike) -> list[DatasetTemplate
     return by_dataset
 
 
-def topological_sort(nodes: Mapping[SchemaId, Schema]) -> Sequence[Schema]:
+def topological_sort(
+    nodes: Mapping[SchemaId, SchemaDefinition],
+) -> Sequence[SchemaDefinition]:
     """Sort nodes so that dependencies come before their dependents"""
     rv = []
 
@@ -372,7 +222,7 @@ def topological_sort(nodes: Mapping[SchemaId, Schema]) -> Sequence[Schema]:
     # During processing complete is False, after processing it's True
     seen_nodes: dict[SchemaId, bool] = {}
 
-    def visit(node: Schema) -> None:
+    def visit(node: SchemaDefinition) -> None:
         if node.id in seen_nodes:
             if seen_nodes[node.id]:
                 return
@@ -427,7 +277,7 @@ class SchemaCreator:
     def create_schemas(
         self,
         dataset_templates: DatasetTemplates,
-    ) -> Mapping[SchemaId, Schema]:
+    ) -> Mapping[SchemaId, SchemaDefinition]:
         schemas = {}
 
         for schema_type, src_templates in [
@@ -458,7 +308,7 @@ class SchemaCreator:
                     render_result.references.views | render_result.references.routines
                 )
                 logging.debug(f"SQL for {output_schema_id}:\n{render_result.sql}\n----")
-                schemas[output_schema_id] = Schema(
+                schemas[output_schema_id] = SchemaDefinition(
                     id=output_schema_id,
                     description=template.metadata.description or "",
                     type=schema_type,
@@ -550,7 +400,9 @@ def get_current_schemas(
     return views, routines
 
 
-def view_needs_update(current_view: Optional[bigquery.Table], new_view: Schema) -> bool:
+def view_needs_update(
+    current_view: Optional[bigquery.Table], new_view: SchemaDefinition
+) -> bool:
     if current_view is None:
         logging.info(f"{new_view.id} does not exist")
         return True
@@ -575,7 +427,7 @@ def view_needs_update(current_view: Optional[bigquery.Table], new_view: Schema) 
 
 
 def routine_needs_update(
-    current_routine: Optional[bigquery.Routine], new_routine: Schema
+    current_routine: Optional[bigquery.Routine], new_routine: SchemaDefinition
 ) -> bool:
     # Diffing routines is complicated by the fact that our input is a CREATE OR REPLACE FUNCTION statement
     # but the Routine object has a parsed representation of the result of that operation.
@@ -587,7 +439,7 @@ def create_schemas(
     project: str,
     schema_id_mapper: Callable[[SchemaId, ReferenceType], SchemaId],
     templates_by_dataset: Iterable[DatasetTemplates],
-) -> tuple[Sequence[Schema], set[SchemaId], set[SchemaId]]:
+) -> tuple[Sequence[SchemaDefinition], set[SchemaId], set[SchemaId]]:
     view_ids = {
         SchemaId(project, dataset.id.dataset, template.metadata.name)
         for dataset in templates_by_dataset
@@ -600,7 +452,7 @@ def create_schemas(
     }
 
     creator = SchemaCreator(project, schema_id_mapper, view_ids, routine_ids)
-    schemas: dict[SchemaId, Schema] = {}
+    schemas: dict[SchemaId, SchemaDefinition] = {}
     for dataset_template in templates_by_dataset:
         schemas.update(
             creator.create_schemas(
@@ -739,7 +591,7 @@ def check_templates() -> None:
     parser.add_argument(
         "--path",
         action="store",
-        default=os.path.join(here, os.pardir, "sql"),
+        default=os.path.join(here, os.pardir, "data", "sql"),
         help="Path to directory containing sql",
     )
     args = parser.parse_args()
@@ -764,13 +616,11 @@ def update_schema_if_needed(
     recreate: bool,
     delete_extra: bool,
 ) -> None:
-    schema_path = os.path.abspath(schema_path)
-
     metadata_dataset = DatasetId(client.project_id, "metadata")
     if stage:
         metadata_dataset = stage_dataset(metadata_dataset)
 
-    src_hash = get_templates_hash(schema_path).hex()
+    src_hash = hash_tree(schema_path).hex()
     last_update_time, last_update_hash = get_last_update(client, metadata_dataset)
 
     logging.info(f"Templates have hash {src_hash}")
@@ -893,7 +743,7 @@ class UpdateSchemaJob(EtlJob):
         group.add_argument(
             "--update-schema-path",
             action="store",
-            default=os.path.join(here, os.pardir, "sql"),
+            default=os.path.join(here, os.pardir, "data", "sql"),
             help="Path to directory containing sql to deploy",
         )
         group.add_argument(
