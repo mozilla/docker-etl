@@ -2,9 +2,9 @@ WITH
   host_categories AS (
   SELECT
     `{{ ref('WEBCOMPAT_HOST') }}`(host) as webcompat_host,
-    MIN(sightline_rank) <= 1000 OR MIN(global_rank) <= 1000 as is_sightline,
-    MIN(global_rank) <= 1000 as is_global_1000,
-    MIN(japan_rank) <= 1000 as is_japan_1000
+    {% for metric in metrics.values() if metric.host_min_ranks_condition() -%}
+      {{ metric.host_min_ranks_condition() }} AS is_{{ metric.name }}{{ ',' if not loop.last }}
+    {% endfor %}
   FROM
     `{{ ref('crux_imported.host_min_ranks') }}`
   WHERE
@@ -55,10 +55,11 @@ WITH
     `{{ project }}.{{ dataset }}.dim_bug_score` AS weights
   GROUP BY
     number),
-  /* Computed scores for each bug
 
-  These could be inlined, but it's slightly easier to read if they're computed in one place
-  */ computed_scores AS (
+/* Computed scores for each bug
+
+These could be inlined, but it's slightly easier to read if they're computed in one place*/
+computed_scores AS (
   SELECT
     number,
     `{{ ref('WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK') }}`(keywords,
@@ -66,8 +67,10 @@ WITH
     `{{ ref('WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFIER') }}`(url,
       `{{ ref('WEBCOMPAT_METRIC_YYYYMM') }}`()) AS site_rank_score
   FROM
-    `{{ project }}.{{ dataset }}.site_reports` AS site_reports),
-  site_report_scores AS (
+    `{{ project }}.{{ dataset }}.site_reports` AS site_reports
+),
+
+site_report_scores AS (
   SELECT
     site_reports.*,
     severity_score,
@@ -79,10 +82,9 @@ WITH
     site_rank_score,
     branch_score,
     triage_score_no_rank * site_rank_score AS triage_score,
-    IFNULL(host_categories.is_global_1000, FALSE) AS is_global_1000,
-    IFNULL(host_categories.is_sightline, FALSE) AS is_sightline,
-    IFNULL(host_categories.is_japan_1000, FALSE) AS is_japan_1000,
-    IFNULL(host_categories.is_japan_1000, FALSE) AND is_mobile AS is_japan_1000_mobile,
+    {% for metric in metrics.values() if metric.site_reports_condition('host_categories') -%}
+      {{ metric.site_reports_condition('host_categories') }} AS is_{{ metric.name }}{{ ',' if not loop.last }}
+    {% endfor %}
   FROM
     `{{ ref('site_reports') }}` AS site_reports
   JOIN
