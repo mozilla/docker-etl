@@ -143,11 +143,12 @@ class TestHelpers(TestCase):
     def test_collect_dap_results_success(self, mock_dap_subprocess_success):
         tasks_to_collect = mock_tasks_to_collect()
         task_id = list(tasks_to_collect.keys())[0]
-        collect_dap_results(tasks_to_collect, mock_dap_config())
+        collected_tasks = collect_dap_results(tasks_to_collect, mock_dap_config())
         self.assertEqual(1, mock_dap_subprocess_success.call_count)
-        self.assertEqual(tasks_to_collect[task_id][1].value_count, 53)
-        self.assertEqual(tasks_to_collect[task_id][2].value_count, 48)
-        self.assertEqual(tasks_to_collect[task_id][3].value_count, 56)
+        self.assertEqual(len(collected_tasks[task_id].keys()), 3)
+        self.assertEqual(collected_tasks[task_id][1].value_count, 53)
+        self.assertEqual(collected_tasks[task_id][2].value_count, 48)
+        self.assertEqual(collected_tasks[task_id][3].value_count, 56)
 
     @patch("subprocess.run", side_effect=mock_dap_subprocess_fail)
     def test_collect_dap_results_fail(self, mock_dap_subprocess_fail):
@@ -226,10 +227,10 @@ class TestHelpers(TestCase):
                         "collection_end": "2025-09-14",
                         "country_codes": '["US"]',
                         "experiment_slug": "interesting-study-5",
-                        "experiment_branch": "treatment-b",
+                        "experiment_branch": "treatment-a",
                         "advertiser": "Example Shop",
                         "metric": "some_metric",
-                        "value": {"count": 18645, "histogram": None},
+                        "value": {"count": 9645, "histogram": None},
                         "created_timestamp": mock_datetime.isoformat(),
                     }
                 ],
@@ -242,10 +243,10 @@ class TestHelpers(TestCase):
                         "collection_end": "2025-09-14",
                         "country_codes": '["US"]',
                         "experiment_slug": "interesting-study-5",
-                        "experiment_branch": "treatment-a",
+                        "experiment_branch": "treatment-b",
                         "advertiser": "Example Shop",
                         "metric": "some_metric",
-                        "value": {"count": 9645, "histogram": None},
+                        "value": {"count": 18645, "histogram": None},
                         "created_timestamp": mock_datetime.isoformat(),
                     }
                 ],

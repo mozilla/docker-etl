@@ -156,7 +156,7 @@ def collect_dap_result(
 def collect_dap_results(
     tasks_to_collect: dict[str, dict[int, IncrementalityBranchResultsRow]],
     config: SimpleNamespace,
-):
+) -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
     tasks = list(dict.fromkeys(tasks_to_collect))
     logging.info(f"Starting DAP collection for tasks: {tasks}.")
     for task_id in tasks:

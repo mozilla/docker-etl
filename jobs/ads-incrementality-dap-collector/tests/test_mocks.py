@@ -238,8 +238,8 @@ def mock_tasks_to_collect() -> dict[str, dict[int, IncrementalityBranchResultsRo
     return {
         mock_referrer_task_id(): {
             1: mock_referrer_control_row(experiment),
-            2: mock_referrer_treatment_b_row(experiment),
-            3: mock_referrer_treatment_a_row(experiment),
+            2: mock_referrer_treatment_a_row(experiment),
+            3: mock_referrer_treatment_b_row(experiment),
         }
     }
 
@@ -251,13 +251,13 @@ def mock_collected_tasks(
     tasks_to_collect = {
         mock_referrer_task_id(): {
             1: mock_referrer_control_row(experiment),
-            2: mock_referrer_treatment_b_row(experiment),
-            3: mock_referrer_treatment_a_row(experiment),
+            2: mock_referrer_treatment_a_row(experiment),
+            3: mock_referrer_treatment_b_row(experiment),
         }
     }
     tasks_to_collect[mock_referrer_task_id()][1].value_count = 13645
-    tasks_to_collect[mock_referrer_task_id()][2].value_count = 18645
-    tasks_to_collect[mock_referrer_task_id()][3].value_count = 9645
+    tasks_to_collect[mock_referrer_task_id()][2].value_count = 9645
+    tasks_to_collect[mock_referrer_task_id()][3].value_count = 18645
     return tasks_to_collect
 
 
