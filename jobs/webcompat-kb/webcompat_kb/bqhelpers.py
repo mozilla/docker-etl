@@ -472,6 +472,29 @@ class BigQuery:
             )
             self.query(query, parameters=parameters)
 
+    def delete_query(
+        self,
+        table: str | bigquery.Table,
+        condition: str,
+        dataset_id: Optional[str] = None,
+        parameters: Optional[Sequence[bigquery.query._AbstractQueryParameter]] = None,
+    ) -> None:
+        table_ref = self.get_table_id(dataset_id, table)
+
+        if self.write:
+            query = f"DELETE FROM `{table_ref}` WHERE {condition}"
+            result = self.query(query, parameters=parameters)
+            if result.num_dml_affected_rows:
+                logging.info(
+                    f"Deleted {result.num_dml_affected_rows} rows from {table_ref}"
+                )
+        else:
+            query = f"SELECT COUNT(*) as row_count FROM `{table_ref}` WHERE {condition}"
+            result = self.query(query, parameters=parameters)
+            count = next(result).row_count
+            if count:
+                logging.info(f"Would delete {count} rows from {table_ref}")
+
     def get_routine(
         self, routine_id: str | SchemaId | RoutineSchema
     ) -> bigquery.Routine:
