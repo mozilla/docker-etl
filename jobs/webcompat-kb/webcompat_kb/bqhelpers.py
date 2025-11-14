@@ -445,10 +445,10 @@ class BigQuery:
         rows: Sequence[Mapping[str, Any]],
         dataset_id: Optional[str] = None,
     ) -> None:
-        table_id = self.get_table_id(dataset_id, table)
+        table = self.get_table(self.get_table_id(dataset_id, table), dataset_id)
 
         if self.write:
-            errors = self.client.insert_rows(str(table_id), rows)
+            errors = self.client.insert_rows(table, rows)
             if errors:
                 logging.error(errors)
         else:
