@@ -372,6 +372,12 @@ class BigQuery:
             routine, default_dataset.project, default_dataset.dataset
         )
 
+    def ensure_dataset(self, dataset_id: str, description: Optional[str]) -> None:
+        dataset = bigquery.Dataset(str(dataset_id))
+        dataset.description = description
+        if self.write:
+            self.client.create_dataset(dataset, exists_ok=True)
+
     def ensure_table(
         self,
         table_id: str | TableSchema | SchemaId,
