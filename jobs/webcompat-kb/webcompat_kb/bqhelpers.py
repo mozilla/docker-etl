@@ -352,9 +352,7 @@ class BigQuery:
         default_dataset = self.get_dataset_id(dataset_id)
 
         if isinstance(table, bigquery.Table):
-            return SchemaId.from_str(
-                table.full_table_id, default_dataset.project, default_dataset.dataset
-            )
+            return SchemaId(table.project, table.dataset_id, table.table_id)
 
         return SchemaId.from_str(
             table, default_dataset.project, default_dataset.dataset
@@ -381,7 +379,9 @@ class BigQuery:
         dataset_id: Optional[str] = None,
         partition: Optional[RangePartition] = None,
     ) -> bigquery.Table:
-        table = bigquery.Table(self.get_table_id(dataset_id, table_id), schema=schema)
+        table = bigquery.Table(
+            str(self.get_table_id(dataset_id, table_id)), schema=schema
+        )
         if partition:
             table.range_partitioning = bigquery.table.RangePartitioning(
                 bigquery.table.PartitionRange(
@@ -391,7 +391,7 @@ class BigQuery:
             )
 
         if self.write:
-            table = self.client.create_table(str(table), exists_ok=True)
+            table = self.client.create_table(table, exists_ok=True)
         else:
             table = self.get_table(table)
         return table
@@ -435,7 +435,7 @@ class BigQuery:
 
     def insert_rows(
         self,
-        table: bigquery.Table | TableSchema,
+        table: str | bigquery.Table | SchemaId | TableSchema,
         rows: Sequence[Mapping[str, Any]],
         dataset_id: Optional[str] = None,
     ) -> None:
@@ -452,10 +452,10 @@ class BigQuery:
 
     def insert_query(
         self,
-        table: str | bigquery.Table,
+        table: str | bigquery.Table | SchemaId | TableSchema,
         columns: Iterable[str],
         query: str,
-        dataset_id: Optional[str],
+        dataset_id: Optional[str] = None,
         parameters: Optional[Sequence[bigquery.query._AbstractQueryParameter]] = None,
     ) -> None:
         table_ref = self.get_table_id(dataset_id, table)
@@ -474,7 +474,7 @@ class BigQuery:
 
     def delete_query(
         self,
-        table: str | bigquery.Table,
+        table: str | bigquery.Table | SchemaId | TableSchema,
         condition: str,
         dataset_id: Optional[str] = None,
         parameters: Optional[Sequence[bigquery.query._AbstractQueryParameter]] = None,
