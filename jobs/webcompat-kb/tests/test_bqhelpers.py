@@ -79,6 +79,7 @@ class MockClient:
     def get_table(self, table):
         self._record()
         assert isinstance(table, (str, bigquery.Table))
+        return bigquery.Table(table)
 
     def load_table_from_json(self, rows, table, job_config):
         self._record()
@@ -309,15 +310,17 @@ def test_write_table(bq_client, table):
 def test_insert_rows(bq_client, table):
     rows = [{"id": 1}]
     bq_client.insert_rows(table, rows)
-    assert bq_client.client.called == [
-        Call(
-            function="insert_rows",
-            arguments={
-                "rows": rows,
-                "table": "project.dataset.table",
-            },
-        )
-    ]
+    assert bq_client.client.called[0] == Call(
+        function="get_table",
+        arguments={
+            "table": "project.dataset.table",
+        },
+    )
+    insert_rows_call = bq_client.client.called[1]
+    assert insert_rows_call.function == "insert_rows"
+    assert set(insert_rows_call.arguments.keys()) == {"rows", "table"}
+    assert insert_rows_call.arguments["rows"] == rows
+    assert isinstance(insert_rows_call.arguments["table"], bigquery.Table)
 
 
 @pytest.mark.parametrize(
