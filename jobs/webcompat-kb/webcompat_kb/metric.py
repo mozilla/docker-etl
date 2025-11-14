@@ -112,16 +112,12 @@ FROM
 WHERE bugs.resolution = ""
 """
 
-    if write:
-        insert_query = f"""
-INSERT `{bq_dataset_id}.webcompat_topline_metric_daily`
-  ({",\n  ".join(insert_fields)})
-  ({metrics_query})"""
-        client.query(insert_query)
-        logging.info("Updated daily metric")
-    else:
-        result = client.query(metrics_query)
-        logging.info(f"Would insert {list(result)[0]}")
+    client.insert_query(
+        "webcompat_topline_metric_daily",
+        insert_fields,
+        metrics_query,
+        dataset_id=bq_dataset_id,
+    )
 
 
 def backfill_metric_daily(

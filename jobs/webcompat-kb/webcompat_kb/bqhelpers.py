@@ -450,6 +450,28 @@ class BigQuery:
             for row in rows:
                 logging.debug(f"  {row}")
 
+    def insert_query(
+        self,
+        table: str | bigquery.Table,
+        columns: Iterable[str],
+        query: str,
+        dataset_id: Optional[str],
+        parameters: Optional[Sequence[bigquery.query._AbstractQueryParameter]] = None,
+    ) -> None:
+        table_ref = self.get_table_id(dataset_id, table)
+        insert_str = f"INSERT `{table_ref}` ({', '.join(columns)})"
+
+        insert_query = f"""{insert_str}
+({query})"""
+
+        if self.write:
+            self.query(insert_query, parameters=parameters)
+        else:
+            logging.info(
+                f"Skipping writes, would have run insert with query:\n{insert_query}"
+            )
+            self.query(query, parameters=parameters)
+
     def get_routine(
         self, routine_id: str | SchemaId | RoutineSchema
     ) -> bigquery.Routine:
