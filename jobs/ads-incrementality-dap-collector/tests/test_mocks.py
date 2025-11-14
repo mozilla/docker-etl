@@ -238,8 +238,8 @@ def mock_tasks_to_collect() -> dict[str, dict[int, IncrementalityBranchResultsRo
     return {
         mock_referrer_task_id(): {
             1: mock_referrer_control_row(experiment),
-            2: mock_referrer_treatment_b_row(experiment),
-            3: mock_referrer_treatment_a_row(experiment),
+            2: mock_referrer_treatment_a_row(experiment),
+            3: mock_referrer_treatment_b_row(experiment),
         }
     }
 
@@ -251,13 +251,13 @@ def mock_collected_tasks(
     tasks_to_collect = {
         mock_referrer_task_id(): {
             1: mock_referrer_control_row(experiment),
-            2: mock_referrer_treatment_b_row(experiment),
-            3: mock_referrer_treatment_a_row(experiment),
+            2: mock_referrer_treatment_a_row(experiment),
+            3: mock_referrer_treatment_b_row(experiment),
         }
     }
     tasks_to_collect[mock_referrer_task_id()][1].value_count = 13645
-    tasks_to_collect[mock_referrer_task_id()][2].value_count = 18645
-    tasks_to_collect[mock_referrer_task_id()][3].value_count = 9645
+    tasks_to_collect[mock_referrer_task_id()][2].value_count = 9645
+    tasks_to_collect[mock_referrer_task_id()][3].value_count = 18645
     return tasks_to_collect
 
 
@@ -310,7 +310,7 @@ def mock_dap_subprocess_success(
             "ssh-secret-private-key",
         ],
         returncode=0,
-        stdout="Number of reports: 150\nInterval start: 2025-08-27 23:32:00 UTC\nInterval end: 2025-08-27 23:34:00 UTC\nInterval length: 120s\nAggregation result: [53, 48, 56]\n",  # noqa: E501
+        stdout="Number of reports: 150\nInterval start: 2025-08-27 23:32:00 UTC\nInterval end: 2025-08-27 23:34:00 UTC\nInterval length: 120s\nAggregation result: [763205, 51649, 1016, 250361]\n",  # noqa: E501
         stderr="",
     )
 
