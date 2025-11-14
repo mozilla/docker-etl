@@ -156,7 +156,7 @@ def collect_dap_result(
 def collect_dap_results(
     tasks_to_collect: dict[str, dict[int, IncrementalityBranchResultsRow]],
     config: SimpleNamespace,
-):
+) -> dict[str, dict[int, IncrementalityBranchResultsRow]]:
     tasks = list(dict.fromkeys(tasks_to_collect))
     logging.info(f"Starting DAP collection for tasks: {tasks}.")
     for task_id in tasks:
@@ -204,9 +204,7 @@ def correct_wraparound(num: int) -> int:
 
 def parse_histogram(histogram_str: str) -> dict:
     parsed_list = ast.literal_eval(histogram_str)
-    # Experiment branches are indexed starting from 1, DAP bucket results from 0,
-    # so use i + 1 as the key here when parsing the histogram
-    return {i + 1: correct_wraparound(val) for i, val in enumerate(parsed_list)}
+    return {i: correct_wraparound(val) for i, val in enumerate(parsed_list)}
 
 
 # BigQuery helper functions
