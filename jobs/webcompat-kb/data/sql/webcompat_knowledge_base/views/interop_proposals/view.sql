@@ -23,7 +23,7 @@ webcompat_scores AS (
 
 user_story_data AS (
   SELECT bugs.number AS NUMBER,
-  CASE UPPER(JSON_VALUE(site_reports.user_story, "$.a11y-size"))
+  CASE UPPER(JSON_VALUE(user_story, "$.a11y-size"))
     WHEN "XL" THEN "XL"
     WHEN "L" THEN "L"
     WHEN "M" THEN "M"
@@ -31,20 +31,20 @@ user_story_data AS (
     WHEN "XS" THEN "XS"
     ELSE NULL
   END AS a11y_size_estimate,
-  CASE LOWER(JSON_VALUE(site_reports.user_story, "$.a11y-impact"))
+  CASE LOWER(JSON_VALUE(user_story, "$.a11y-impact"))
     WHEN "positive" THEN "Positive"
     WHEN "negative" THEN "Negative"
     WHEN "none" THEN "None"
     ELSE NULL
   END AS a11y_impact,
-  CASE LOWER(JSON_VALUE(site_reports.user_story, "$.performance-impact"))
+  CASE LOWER(JSON_VALUE(user_story, "$.performance-impact"))
     WHEN "high" THEN "High"
     WHEN "medium" THEN "Medium"
     WHEN "none" THEN "None"
     WHEN "negative" THEN "Negative"
     ELSE NULL
   END AS performance_impact,
-  CASE LOWER(JSON_VALUE(site_reports.user_story, "$.privacy-impact"))
+  CASE LOWER(JSON_VALUE(user_story, "$.privacy-impact"))
     WHEN "positive" THEN "Positive"
     WHEN "negative" THEN "Negative"
     WHEN "none" THEN "None"

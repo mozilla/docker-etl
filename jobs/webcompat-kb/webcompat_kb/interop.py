@@ -11,7 +11,7 @@ from google.cloud import bigquery
 from google.api_core.exceptions import NotFound
 from pydantic import BaseModel
 
-from .base import EtlJob, dataset_arg
+from .base import Context, EtlJob, dataset_arg
 from .bqhelpers import BigQuery
 from .httphelpers import Json, get_json, get_paginated_json
 
@@ -327,9 +327,14 @@ class InteropJob(EtlJob):
     def required_args(self) -> set[str | tuple[str, str]]:
         return {"bq_interop_dataset"}
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_interop_dataset
+    def default_dataset(self, context: Context) -> str:
+        return context.args.bq_interop_dataset
 
-    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
-        gh_client = GitHub(args.interop_github_token)
-        update_interop_data(client, gh_client, args.interop_repo, args.interop_recreate)
+    def main(self, context: Context) -> None:
+        gh_client = GitHub(context.args.interop_github_token)
+        update_interop_data(
+            context.bq_client,
+            gh_client,
+            context.args.interop_repo,
+            context.args.interop_recreate,
+        )

@@ -14,7 +14,7 @@ import jinja2
 from google.cloud import bigquery
 from pydantic import BaseModel, ConfigDict
 
-from .base import EtlJob
+from .base import Context, EtlJob
 from .bqhelpers import BigQuery, DatasetId, SchemaId, SchemaType
 from .metrics.metrics import metrics, metric_types
 from .treehash import hash_tree
@@ -658,11 +658,12 @@ class UpdateStagingData(EtlJob):
             help="Redeploy views to staging",
         )
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_kb_dataset
+    def default_dataset(self, context: Context) -> str:
+        return context.args.bq_kb_dataset
 
-    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
-        datasets = [DatasetId(client.project_id, args.bq_kb_dataset)]
+    def main(self, context: Context) -> None:
+        client = context.bq_client
+        datasets = [DatasetId(client.project_id, context.args.bq_kb_dataset)]
         dataset_mapping = {dataset: stage_dataset(dataset) for dataset in datasets}
 
         for dataset in datasets:
@@ -678,7 +679,7 @@ class UpdateStagingData(EtlJob):
                 dest_table = schema_id_mapper(src_table, ReferenceType.table)
                 assert dest_table != src_table
                 logging.info(f"Creating {dest_table} from {src_table}")
-                if args.write:
+                if context.config.write:
                     client.delete_table(str(dest_table), not_found_ok=True)
                 else:
                     logging.info(f"Would delete table {dest_table}")
@@ -687,7 +688,7 @@ class UpdateStagingData(EtlJob):
 CREATE TABLE `{dest_table}`
 CLONE `{src_table}`
 """
-                if client.write:
+                if context.config.write:
                     logging.info(f"Creating table {dest_table} from {src_table}")
                     try:
                         client.query(query)
@@ -696,11 +697,11 @@ CLONE `{src_table}`
                 else:
                     logging.info(f"Would run query:{query}")
 
-        if args.update_staging_data_views:
+        if context.args.update_staging_data_views:
             logging.info("Updating stage views")
             update_schema_if_needed(
                 client,
-                schema_path=args.update_schema_path,
+                schema_path=context.args.update_schema_path,
                 stage=True,
                 recreate=True,
                 delete_extra=False,
@@ -738,14 +739,14 @@ class UpdateSchemaJob(EtlJob):
             help="Force update from source files",
         )
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_kb_dataset
+    def default_dataset(self, context: Context) -> str:
+        return context.args.bq_kb_dataset
 
-    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
+    def main(self, context: Context) -> None:
         update_schema_if_needed(
-            client,
-            schema_path=args.update_schema_path,
-            stage=args.update_schema_stage,
-            recreate=args.update_schema_recreate,
-            delete_extra=args.update_schema_delete_extra,
+            context.bq_client,
+            schema_path=context.args.update_schema_path,
+            stage=context.args.update_schema_stage,
+            recreate=context.args.update_schema_recreate,
+            delete_extra=context.args.update_schema_delete_extra,
         )

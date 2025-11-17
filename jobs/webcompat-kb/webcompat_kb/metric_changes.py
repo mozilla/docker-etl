@@ -9,7 +9,7 @@ from typing import Iterator, Mapping, Optional, Sequence, cast
 
 from google.cloud import bigquery
 
-from .base import EtlJob
+from .base import Context, EtlJob
 from .bqhelpers import BigQuery, Json
 from .bugzilla import parse_user_story
 
@@ -582,8 +582,8 @@ def update_metric_changes(client: BigQuery, recreate: bool) -> None:
 class MetricChangesJob(EtlJob):
     name = "metric_changes"
 
-    def default_dataset(self, args: argparse.Namespace) -> str:
-        return args.bq_kb_dataset
+    def default_dataset(self, context: Context) -> str:
+        return context.args.bq_kb_dataset
 
     def required_args(self) -> set[str | tuple[str, str]]:
         return {"bq_kb_dataset"}
@@ -600,5 +600,5 @@ class MetricChangesJob(EtlJob):
             help="Delete and recreate changes table from scratch",
         )
 
-    def main(self, client: BigQuery, args: argparse.Namespace) -> None:
-        update_metric_changes(client, args.recreate_metric_changes)
+    def main(self, context: Context) -> None:
+        update_metric_changes(context.bq_client, context.args.recreate_metric_changes)
