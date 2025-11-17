@@ -6,15 +6,16 @@ from google.cloud import bigquery
 
 from .base import Context, EtlJob
 from .bqhelpers import BigQuery
-from .metrics.metrics import metrics, metric_types
+from .metrics import metrics
 
 
 def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> None:
+    metric_dfns, metric_types = metrics.load()
     history_metric_types = [
         metric_type for metric_type in metric_types if "history" in metric_type.contexts
     ]
 
-    for metric in metrics:
+    for metric in metric_dfns:
         metrics_table_name = f"webcompat_topline_metric_{metric.name}"
         history_table_name = f"webcompat_topline_metric_{metric.name}_history"
 
@@ -71,6 +72,7 @@ def update_metric_history(client: BigQuery, bq_dataset_id: str, write: bool) -> 
 
 
 def update_metric_daily(client: BigQuery, bq_dataset_id: str, write: bool) -> None:
+    metric_dfns, metric_types = metrics.load()
     daily_metric_types = [
         metric_type for metric_type in metric_types if "daily" in metric_type.contexts
     ]
@@ -96,7 +98,7 @@ def update_metric_daily(client: BigQuery, bq_dataset_id: str, write: bool) -> No
     query_fields = ["CURRENT_DATE() AS date"]
     insert_fields = ["date"]
 
-    for metric in metrics:
+    for metric in metric_dfns:
         for metric_type in daily_metric_types:
             field_name = f"{metric_type.name}_{metric.name}"
             agg_function = metric_type.agg_function("bugs", metric)
@@ -123,12 +125,13 @@ WHERE bugs.resolution = ""
 def backfill_metric_daily(
     client: BigQuery, bq_dataset_id: str, write: bool, metric_name: str
 ) -> None:
+    metric_dfns, metric_types = metrics.load()
     daily_metric_types = [
         metric_type for metric_type in metric_types if "daily" in metric_type.contexts
     ]
 
     metric = None
-    for metric in metrics:
+    for metric in metric_dfns:
         if metric.name == metric_name:
             break
     else:
