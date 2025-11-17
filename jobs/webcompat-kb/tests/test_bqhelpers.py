@@ -1,12 +1,6 @@
-import inspect
-from dataclasses import dataclass
-from unittest.mock import Mock
-from typing import Any
-
 import pytest
 
 from webcompat_kb.bqhelpers import (
-    BigQuery,
     Dataset,
     DatasetId,
     SchemaId,
@@ -14,115 +8,9 @@ from webcompat_kb.bqhelpers import (
     ViewSchema,
 )
 from google.cloud import bigquery
+from google.cloud.bigquery import SchemaField
 
-
-@dataclass
-class Call:
-    function: str
-    arguments: dict[str, Any]
-
-    def __eq__(self, other):
-        if type(other) is not type(self):
-            return False
-
-        if self.function != other.function:
-            return False
-
-        if set(self.arguments.keys()) != set(other.arguments.keys()):
-            return False
-
-        for arg_name, self_value in self.arguments.items():
-            other_value = other.arguments[arg_name]
-            if self_value != other_value:
-                # In case the values aren't equal consider if they're the same
-                # type with the same data
-                if type(self_value) is not type(other_value):
-                    return False
-
-                if not hasattr(self_value, "__dict__") or not hasattr(
-                    other_value, "__dict__"
-                ):
-                    return False
-
-                if self_value.__dict__ != other_value.__dict__:
-                    return False
-        return True
-
-
-class MockClient:
-    def __init__(self, project):
-        self.project = project
-        self.called = []
-
-    def _record(self):
-        current_frame = inspect.currentframe()
-        assert hasattr(current_frame, "f_back")
-        caller = current_frame.f_back
-        assert caller is not None
-        arguments = {}
-        args = inspect.getargvalues(caller)
-        for arg in args.args:
-            arguments[arg] = args.locals[arg]
-        if args.varargs:
-            arguments[args.varargs] = args.locals[args.varargs]
-        if args.keywords:
-            arguments.update(args.locals.get(args.keywords, {}))
-        if "self" in arguments:
-            del arguments["self"]
-        call = Call(function=caller.f_code.co_name, arguments=arguments)
-        self.called.append(call)
-
-    def create_table(self, table, exists_ok=False):
-        self._record()
-        assert isinstance(table, bigquery.Table)
-
-    def get_table(self, table):
-        self._record()
-        assert isinstance(table, (str, bigquery.Table))
-        return bigquery.Table(table)
-
-    def load_table_from_json(self, rows, table, job_config):
-        self._record()
-        assert isinstance(table, (str, bigquery.Table))
-        assert isinstance(job_config, bigquery.LoadJobConfig)
-        return Mock()
-
-    def insert_rows(self, table, rows):
-        self._record()
-        assert isinstance(table, (str, bigquery.Table))
-
-    def get_routine(self, routine):
-        self._record()
-        assert isinstance(routine, (str, bigquery.Routine))
-
-    def list_routines(self, dataset):
-        self._record()
-        assert isinstance(dataset, str)
-
-    def list_tables(self, dataset):
-        self._record()
-        assert isinstance(dataset, str)
-
-    def query(self, query, job_config):
-        self._record()
-        assert isinstance(query, str)
-        assert isinstance(job_config, bigquery.QueryJobConfig)
-        return Mock()
-
-    def delete_table(self, table, not_found_ok):
-        self._record()
-        assert isinstance(table, (str, bigquery.Table))
-        assert isinstance(not_found_ok, bool)
-
-    def delete_routine(self, routine, not_found_ok):
-        self._record()
-        assert isinstance(routine, (str, bigquery.Routine))
-        assert isinstance(not_found_ok, bool)
-
-
-@pytest.fixture
-def bq_client():
-    return BigQuery(MockClient("project"), "default_dataset", True)
+from .conftest import Call
 
 
 @pytest.mark.parametrize(
@@ -309,6 +197,9 @@ def test_write_table(bq_client, table):
 )
 def test_insert_rows(bq_client, table):
     rows = [{"id": 1}]
+    bq_client.client.return_values["get_table"].append(
+        bigquery.Table("project.dataset.table")
+    )
     bq_client.insert_rows(table, rows)
     assert bq_client.client.called[0] == Call(
         function="get_table",
@@ -447,3 +338,100 @@ def test_delete_table(bq_client, table):
             },
         ),
     ]
+
+
+@pytest.mark.parametrize(
+    "current_schema,new_schema",
+    [
+        ([SchemaField("foo", "INTEGER")], [SchemaField("bar", "INTEGER")]),
+        ([SchemaField("foo", "INTEGER")], [SchemaField("foo", "STRING")]),
+        (
+            [SchemaField("foo", "INTEGER", mode="REQUIRED")],
+            [SchemaField("foo", "STRING", mode="NULLABLE")],
+        ),
+        (
+            [SchemaField("foo", "INTEGER"), SchemaField("bar", "INTEGER")],
+            [SchemaField("foo", "INTEGER")],
+        ),
+        (
+            [SchemaField("foo", "INTEGER")],
+            [
+                SchemaField("foo", "INTEGER"),
+                SchemaField("bar", "INTEGER", mode="REQUIRED"),
+            ],
+        ),
+    ],
+)
+def test_get_new_fields_invalid(bq_client, current_schema, new_schema):
+    with pytest.raises(ValueError):
+        bq_client._get_new_fields("test.table", current_schema, new_schema)
+
+
+@pytest.mark.parametrize(
+    "current_schema,new_schema,expected",
+    [
+        ([SchemaField("foo", "INTEGER")], [SchemaField("foo", "INTEGER")], []),
+        (
+            [SchemaField("foo", "INTEGER")],
+            [
+                SchemaField("foo", "INTEGER"),
+                SchemaField("bar", "INTEGER", mode="NULLABLE"),
+            ],
+            [SchemaField("bar", "INTEGER", mode="NULLABLE")],
+        ),
+        (
+            [SchemaField("foo", "INTEGER")],
+            [
+                SchemaField("bar", "INTEGER", mode="NULLABLE"),
+                SchemaField("foo", "INTEGER"),
+            ],
+            [SchemaField("bar", "INTEGER", mode="NULLABLE")],
+        ),
+    ],
+)
+def test_get_new_fields_value(bq_client, current_schema, new_schema, expected):
+    assert (
+        bq_client._get_new_fields("test.table", current_schema, new_schema) == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        bigquery.Table("project.dataset.table"),
+        "project.dataset.table",
+        TableSchema(
+            SchemaId("project", "dataset", "table"),
+            SchemaId("other_project", "other_dataset", "other_table"),
+            [],
+            set(),
+        ),
+        SchemaId("project", "dataset", "table"),
+    ],
+)
+def test_add_table_fields(bq_client, table):
+    old_schema = [bigquery.SchemaField("id", "INTEGER", "REQUIRED")]
+    new_schema = [
+        bigquery.SchemaField("new1", "STRING"),
+        bigquery.SchemaField("id", "INTEGER", "REQUIRED"),
+        bigquery.SchemaField("new2", "DATETIME", "REPEATED"),
+    ]
+    final_schema = [
+        bigquery.SchemaField("id", "INTEGER", "REQUIRED"),
+        bigquery.SchemaField("new1", "STRING"),
+        bigquery.SchemaField("new2", "DATETIME", "REPEATED"),
+    ]
+    if isinstance(table, bigquery.Table):
+        table.schema = old_schema
+        target_table = table
+    else:
+        target_table = bigquery.Table("project.dataset.table", schema=old_schema)
+
+    bq_client.client.return_values["get_table"].append(target_table)
+    bq_client.client.return_values["update_table"].append(target_table)
+
+    updated_table = bq_client.add_table_fields(table, new_schema)
+    assert updated_table.schema == final_schema
+    assert bq_client.client.called[-1] == Call(
+        "update_table", arguments={"table": target_table, "fields": ["schema"]}
+    )
