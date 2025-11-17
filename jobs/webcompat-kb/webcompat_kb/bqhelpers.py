@@ -384,10 +384,10 @@ class BigQuery:
         schema: Iterable[bigquery.SchemaField],
         dataset_id: Optional[str] = None,
         partition: Optional[RangePartition] = None,
+        update_fields: Optional[bool] = False,
     ) -> bigquery.Table:
-        table = bigquery.Table(
-            str(self.get_table_id(dataset_id, table_id)), schema=schema
-        )
+        table_id = str(self.get_table_id(dataset_id, table_id))
+        table = bigquery.Table(table_id, schema=schema)
         if partition:
             table.range_partitioning = bigquery.table.RangePartitioning(
                 bigquery.table.PartitionRange(
@@ -399,7 +399,93 @@ class BigQuery:
         if self.write:
             table = self.client.create_table(table, exists_ok=True)
         else:
+            table = self.get_table(table_id)
+        if update_fields:
+            table = self.add_table_fields(table_id, schema)
+        return table
+
+    def _get_new_fields(
+        self,
+        table_id: SchemaId,
+        current_schema: Iterable[bigquery.SchemaField],
+        new_schema: Iterable[bigquery.SchemaField],
+    ) -> Sequence[bigquery.SchemaField]:
+        new_fields = []
+        new_by_name = {item.name: item for item in new_schema}
+        current_by_name = {item.name: item for item in current_schema}
+
+        if len(current_by_name) > len(new_by_name):
+            raise ValueError(
+                f"Requested schema for {table_id} is shorter than new schema, deleting columns isn't supported"
+            )
+
+        if any(item not in new_by_name for item in current_by_name):
+            raise ValueError(
+                f"Requested schema for {table_id} isn't an extension of existing schema: can't delete fields"
+            )
+
+        for new_field in new_by_name.values():
+            if new_field.name not in current_by_name:
+                new_fields.append(new_field)
+            else:
+                current_field = current_by_name[new_field.name]
+                if (
+                    new_field.name != current_field.name
+                    or new_field.field_type != current_field.field_type
+                    or new_field.max_length != current_field.max_length
+                ):
+                    raise ValueError(
+                        f"Requested schema for {table_id} isn't an extension of existing schema"
+                    )
+
+        if not new_fields:
+            logging.debug(f"Updating {table_id}: nothing to do")
+            return []
+
+        for new_field in new_fields:
+            if new_field.mode == "REQUIRED":
+                raise ValueError("Adding required fields isn't supported")
+
+        for new_field in new_fields:
+            logging.info(
+                f"Updating {table_id}: Adding field {new_field.name} with type {new_field.field_type}"
+            )
+        return new_fields
+
+    def add_table_fields(
+        self,
+        table: str | bigquery.Table | SchemaId | TableSchema,
+        schema: Iterable[bigquery.SchemaField],
+        dataset_id: Optional[str] = None,
+    ) -> bigquery.Table:
+        try:
             table = self.get_table(table)
+        except Exception:
+            if self.write:
+                raise
+            # If we're not writing the table might not exist
+            # but we can pretend that it does
+            if not isinstance(table, bigquery.Table):
+                table = bigquery.Table(str(table))
+
+        table_id = self.get_table_id(dataset_id, table)
+        current_schema = table.schema
+
+        new_fields = self._get_new_fields(table_id, current_schema, schema)
+        if not new_fields:
+            return table
+
+        new_schema = table.schema + new_fields
+        table.schema = new_schema
+        if self.write:
+            table = self.client.update_table(table, ["schema"])
+        else:
+            logging.info(
+                f"Skipping writes, would have added {len(new_fields)} new fields"
+            )
+
+        if len(table.schema) != len(new_schema):
+            raise Exception("Table update failed")
         return table
 
     def get_table(
