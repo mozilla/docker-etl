@@ -278,10 +278,13 @@ def bugs_historic_states(
                                     if prev_keyword.lower() == keyword.lower():
                                         prev.keywords.remove(prev_keyword)
                                         logging.warning(
-                                            f"Didn't find keyword {keyword} using {prev_keyword}"
+                                            f"Didn't find keyword {keyword}, using {prev_keyword}"
                                         )
                                         break
                                 else:
+                                    logging.error(
+                                        f"Keyword {keyword} not found, had {', '.join(prev.keywords)}"
+                                    )
                                     raise
                     for keyword in field_change.removed.split(", "):
                         if keyword:
