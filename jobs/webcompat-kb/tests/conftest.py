@@ -8,7 +8,7 @@ from unittest.mock import Mock
 import pytest
 from google.cloud import bigquery
 
-from webcompat_kb.bqhelpers import BigQuery
+from webcompat_kb.bqhelpers import BigQuery, DatasetId
 
 
 @dataclass
@@ -133,4 +133,6 @@ class MockClient:
 
 @pytest.fixture
 def bq_client():
-    return BigQuery(MockClient("project"), "default_dataset", True)
+    return BigQuery(
+        MockClient("project"), DatasetId("project", "default_dataset"), True
+    )
