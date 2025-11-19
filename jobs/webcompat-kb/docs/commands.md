@@ -41,3 +41,15 @@ webcompat-render --bq-project-id <project_id> [schema_id+]
 e.g. `webcompat_knowledge_base.scored_site_reports`. This works for
 tables (in which case the table schema will be output in TOML format),
 views and routines (which both output SQL).
+
+## webcompat-validate
+
+Validate that provided view or routine template renders to valid SQL.
+
+```
+webcompat-validate --bq-project-id <project_id> [schema_id*]
+```
+
+`schema_id` is a schema id, usually of the form `dataset.name`
+e.g. `webcompat_knowledge_base.scored_site_reports`. Unlike
+`webcompat-render` this communicates with BigQuery.
