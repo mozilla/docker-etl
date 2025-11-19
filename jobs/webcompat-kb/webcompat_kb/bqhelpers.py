@@ -695,10 +695,22 @@ class BigQuery:
         Note that this can't prevent writes in the case that the SQL does writes"""
 
         job_config = bigquery.QueryJobConfig(
-            default_dataset=str(self.get_dataset_id(dataset_id))
+            default_dataset=str(self.get_dataset_id(dataset_id)),
         )
         if parameters is not None:
             job_config.query_parameters = parameters
+
+        logging.debug(query)
+        return self.client.query(query, job_config=job_config).result()
+
+    def validate_query(
+        self, query: str, dataset_id: Optional[str | DatasetId | Dataset] = None
+    ) -> bigquery.table.RowIterator:
+        """Dry-run a query to check that it is valid"""
+
+        job_config = bigquery.QueryJobConfig(
+            default_dataset=str(self.get_dataset_id(dataset_id)), dry_run=True
+        )
 
         logging.debug(query)
         return self.client.query(query, job_config=job_config).result()
