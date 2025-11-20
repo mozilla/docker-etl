@@ -1,0 +1,11 @@
+[run_at]
+type = "TIMESTAMP"
+mode = "REQUIRED"
+
+[mozilla_id]
+type = "STRING"
+mode = "REQUIRED"
+
+[webkit_id]
+type = "STRING"
+mode = "NULLABLE"
