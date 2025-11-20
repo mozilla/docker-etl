@@ -1,0 +1,51 @@
+[issue]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[id]
+type = "STRING"
+mode = "REQUIRED"
+
+[position]
+type = "STRING"
+mode = "NULLABLE"
+
+[venues]
+type = "STRING"
+mode = "REPEATED"
+
+[topics]
+type = "STRING"
+mode = "REPEATED"
+
+[concerns]
+type = "STRING"
+mode = "REPEATED"
+
+[title]
+type = "STRING"
+mode = "NULLABLE"
+
+[url]
+type = "STRING"
+mode = "NULLABLE"
+
+[explainer]
+type = "STRING"
+mode = "NULLABLE"
+
+[tag]
+type = "STRING"
+mode = "NULLABLE"
+
+[mozilla]
+type = "STRING"
+mode = "NULLABLE"
+
+[bugzilla]
+type = "STRING"
+mode = "NULLABLE"
+
+[radar]
+type = "STRING"
+mode = "NULLABLE"
