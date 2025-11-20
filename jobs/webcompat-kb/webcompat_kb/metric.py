@@ -2,40 +2,28 @@ import argparse
 import logging
 from datetime import date
 
-from google.cloud import bigquery
-
 from .base import Context, EtlJob
 from .bqhelpers import BigQuery
 from .projectdata import Project
 
 
 def update_metric_history(project: Project, client: BigQuery) -> None:
-    bq_dataset_id = project["webcompat_knowledge_base"].id.dataset
     metric_dfns, metric_types = project.data.metric_dfns, project.data.metric_types
     history_metric_types = [
         metric_type for metric_type in metric_types if "history" in metric_type.contexts
     ]
 
     for metric in metric_dfns:
-        metrics_table_name = f"webcompat_topline_metric_{metric.name}"
-        history_table_name = f"webcompat_topline_metric_{metric.name}_history"
-
-        history_schema = [
-            bigquery.SchemaField("recorded_date", "DATE", mode="REQUIRED"),
-            bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
-        ]
-        for metric_type in history_metric_types:
-            history_schema.append(
-                bigquery.SchemaField(
-                    metric_type.name, metric_type.field_type, mode="REQUIRED"
-                )
-            )
-
-        history_table = client.ensure_table(history_table_name, history_schema)
+        metrics_table = project["webcompat_knowledge_base"][
+            f"webcompat_topline_metric_{metric.name}"
+        ].view()
+        history_table = project["webcompat_knowledge_base"][
+            f"webcompat_topline_metric_{metric.name}_history"
+        ].table()
 
         query = f"""
                 SELECT recorded_date
-                FROM `{bq_dataset_id}.{history_table_name}`
+                FROM `{history_table}`
                 ORDER BY recorded_date DESC
                 LIMIT 1
             """
@@ -51,10 +39,7 @@ def update_metric_history(project: Project, client: BigQuery) -> None:
             )
             continue
 
-        query = f"""
-                SELECT *
-                FROM `{bq_dataset_id}.{metrics_table_name}`
-            """
+        query = f"SELECT * FROM `{metrics_table}`"
         rows = []
         for row in client.query(query):
             row_data = {
@@ -73,13 +58,14 @@ def update_metric_history(project: Project, client: BigQuery) -> None:
 
 
 def update_metric_daily(project: Project, client: BigQuery) -> None:
-    bq_dataset_id = project["webcompat_knowledge_base"].id.dataset
     metric_dfns, metric_types = project.data.metric_dfns, project.data.metric_types
     daily_metric_types = [
         metric_type for metric_type in metric_types if "daily" in metric_type.contexts
     ]
 
-    history_table = f"{bq_dataset_id}.webcompat_topline_metric_daily"
+    history_table = project["webcompat_knowledge_base"][
+        "webcompat_topline_metric_daily"
+    ].table()
     query = f"""
             SELECT date
             FROM `{history_table}`
@@ -129,7 +115,6 @@ def backfill_metric_daily(
     write: bool,
     metric_name: str,
 ) -> None:
-    bq_dataset_id = project["webcompat_knowledge_base"].id.dataset
     metric_dfns, metric_types = project.data.metric_dfns, project.data.metric_types
     daily_metric_types = [
         metric_type for metric_type in metric_types if "daily" in metric_type.contexts
@@ -157,8 +142,8 @@ SELECT
   date,
   {",\n  ".join(select_fields)}
 FROM
-  `{bq_dataset_id}.scored_site_reports` AS bugs
-  JOIN `{bq_dataset_id}.webcompat_topline_metric_daily` as metric_daily
+  `{project["webcompat_knowledge_base"]["scored_site_reports"]}` AS bugs
+  JOIN `{project["webcompat_knowledge_base"]["webcompat_topline_metric_daily"]}` as metric_daily
 ON
   DATE(bugs.creation_time) <= metric_daily.date
   AND IF (bugs.resolved_time IS NOT NULL, DATE(bugs.resolved_time) >= date, TRUE)
@@ -169,7 +154,7 @@ GROUP BY
 ORDER BY date"""
 
     update_query = f"""
-UPDATE `{bq_dataset_id}.webcompat_topline_metric_daily` AS metric_daily
+UPDATE `{project["webcompat_knowledge_base"]["webcompat_topline_metric_daily"]}` AS metric_daily
 SET
   {",\n  ".join(f"metric_daily.{field_name}=new_data.{field_name}" for field_name in field_names)}
 FROM ({select_query}) AS new_data
