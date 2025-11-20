@@ -5,11 +5,11 @@ from typing import Mapping, Optional, Sequence
 from dataclasses import asdict, dataclass
 
 import pydantic
-from google.cloud import bigquery
 
 from .base import Context, EtlJob, dataset_arg
-from .bqhelpers import BigQuery
+from .bqhelpers import BigQuery, TableSchema
 from .httphelpers import get_json
+from .projectdata import Project
 
 
 class WebFeaturePopularity(pydantic.BaseModel):
@@ -28,30 +28,17 @@ class UseCounter:
     day_percentage: float
 
 
-def get_use_counter_table(client: BigQuery) -> bigquery.Table:
-    schema = [
-        bigquery.SchemaField("feature", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("use_counter_name", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("bucket_id", "INTEGER", mode="REQUIRED"),
-        bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
-        bigquery.SchemaField("day_percentage", "FLOAT", mode="REQUIRED"),
-    ]
-    return client.ensure_table("use_counters", schema)
-
-
 def get_last_import(
+    project: Project,
     client: BigQuery,
-) -> tuple[bigquery.Table, Optional[datetime]]:
-    runs_table = client.ensure_table(
-        "import_runs",
-        [bigquery.SchemaField("run_at", "TIMESTAMP", mode="REQUIRED")],
-    )
-    query = "SELECT run_at FROM import_runs ORDER BY run_at DESC LIMIT 1"
+) -> tuple[TableSchema, Optional[datetime]]:
+    table = project["chrome_use_counters"]["import_runs"].table()
+    query = f"SELECT run_at FROM {table} ORDER BY run_at DESC LIMIT 1"
     result = list(client.query(query))
     if len(result):
         row = result[0]
-        return runs_table, row.run_at
-    return runs_table, None
+        return table, row.run_at
+    return table, None
 
 
 def get_use_counters_list() -> Sequence[WebFeaturePopularity]:
@@ -71,13 +58,13 @@ def get_use_counter_historic(bucket_id: int) -> Sequence[WebFeaturePopularity]:
 
 
 def get_current_use_counter_data(
-    client: BigQuery, web_features_dataset: str
+    project: Project, client: BigQuery
 ) -> Mapping[str, tuple[str, Optional[date]]]:
     rv = {}
     query = f"""
 WITH feature_name_map AS (
   SELECT feature, REPLACE(INITCAP(feature), "-", "") as use_counter_name
-  FROM {client.project_id}.{web_features_dataset}.features_latest
+  FROM {project["web_features"]["features_latest"]}
 )
 SELECT feature, feature_name_map.use_counter_name, MAX(date) as last_record_date
 FROM feature_name_map
@@ -90,19 +77,20 @@ GROUP BY feature, feature_name_map.use_counter_name
 
 
 def update_chrome_use_counters(
-    client: BigQuery, web_features_dataset: str, recreate: bool
+    project: Project, client: BigQuery, recreate: bool
 ) -> None:
+    use_counters_table = project["chrome_use_counters"]["use_counters"].table()
+
     if recreate and client.write:
-        client.delete_table("use_counters")
-    use_counter_table = get_use_counter_table(client)
-    last_import_table, last_updated_at = get_last_import(client)
+        client.delete_table(use_counters_table)
+    last_import_table, last_updated_at = get_last_import(project, client)
     if last_updated_at is not None and last_updated_at.date() == datetime.now().date():
         logging.info("Already updated use counter data today")
         return
 
     updates = []
     use_counters = get_use_counters_list()
-    use_counter_data = get_current_use_counter_data(client, web_features_dataset)
+    use_counter_data = get_current_use_counter_data(project, client)
     for use_counter in use_counters:
         if use_counter.property_name not in use_counter_data:
             logging.warning(
@@ -140,7 +128,7 @@ def update_chrome_use_counters(
     # write_table appears to be much faster than insert_rows for large updates,
     # but means manually converting to JSON
     client.write_table(
-        use_counter_table, use_counter_table.schema, updates_json, overwrite=recreate
+        use_counters_table, use_counters_table.schema, updates_json, overwrite=recreate
     )
     logging.info("Updating last import time")
     client.insert_rows(last_import_table, [{"run_at": datetime.now()}])
@@ -154,10 +142,9 @@ class ChromeUseCountersJob(EtlJob):
         group = parser.add_argument_group(
             title="Chrome Use Counters", description="Chrome use counters arguments"
         )
+        # Legacy: BigQuery Chrome use counters dataset id
         group.add_argument(
-            "--bq-chrome-use-counters-dataset",
-            type=dataset_arg,
-            help="BigQuery Chrome use counters dataset id",
+            "--bq-chrome-use-counters-dataset", type=dataset_arg, help=argparse.SUPPRESS
         )
         group.add_argument(
             "--chrome-use-counters-recreate",
@@ -166,14 +153,11 @@ class ChromeUseCountersJob(EtlJob):
         )
 
     def default_dataset(self, context: Context) -> str:
-        return context.args.bq_chrome_use_counters_dataset
-
-    def required_args(self) -> set[str | tuple[str, str]]:
-        return {"bq_chrome_use_counters_dataset", "bq_web_features_dataset"}
+        return "chrome_use_counters"
 
     def main(self, context: Context) -> None:
         update_chrome_use_counters(
+            context.project,
             context.bq_client,
-            context.args.bq_web_features_dataset,
             context.args.chrome_use_counters_recreate,
         )

@@ -1,0 +1,2 @@
+name = "use_counters"
+etl = ["chrome-use-counters"]
