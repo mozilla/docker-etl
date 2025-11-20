@@ -1,0 +1,7 @@
+[yyyymm]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[run_at]
+type = "TIMESTAMP"
+mode = "REQUIRED"

@@ -1,0 +1,7 @@
+[yyyymm]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[host]
+type = "STRING"
+mode = "NULLABLE"

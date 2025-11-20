@@ -1,0 +1,9 @@
+name = "sightline_top_1000"
+etl = ["site-ranks"]
+
+[partition]
+type = "range"
+field = "yyyymm"
+start = 201701
+end = 205001
+interval = 1
