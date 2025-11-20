@@ -1,0 +1,16 @@
+[yyyymm]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[origin]
+type = "STRING"
+mode = "REQUIRED"
+
+[country_code]
+type = "STRING"
+mode = "REQUIRED"
+max_length = 8
+
+[rank]
+type = "INTEGER"
+mode = "REQUIRED"
