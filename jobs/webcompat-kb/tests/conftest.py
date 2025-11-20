@@ -1,4 +1,5 @@
 import inspect
+import os
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any, Mapping
@@ -8,7 +9,9 @@ from unittest.mock import Mock
 import pytest
 from google.cloud import bigquery
 
+from webcompat_kb import projectdata
 from webcompat_kb.bqhelpers import BigQuery, DatasetId
+from webcompat_kb.config import Config
 
 
 @dataclass
@@ -129,6 +132,17 @@ class MockClient:
         rv = self._record()
         assert isinstance(table, bigquery.Table)
         return rv
+
+
+@pytest.fixture
+def project(bq_client):
+    return projectdata.load(
+        bq_client,
+        "test",
+        os.path.join(os.path.dirname(__file__), os.pardir, "data"),
+        set(),
+        Config(stage=False, write=False),
+    )
 
 
 @pytest.fixture

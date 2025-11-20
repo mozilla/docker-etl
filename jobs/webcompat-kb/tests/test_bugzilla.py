@@ -1193,8 +1193,8 @@ KEYWORDS_AND_STATUS = to_history(
 
 
 @pytest.fixture()
-def history_updater(bq_client):
-    return BugHistoryUpdater(bq_client, None)
+def history_updater(project, bq_client):
+    return BugHistoryUpdater(project, bq_client, None)
 
 
 def test_extract_int_from_field():
@@ -1699,7 +1699,7 @@ def test_from_bugzilla(input_data, test_fields):
         assert getattr(bug, attr) == expected
 
 
-def test_read_write_data():
+def test_read_write_data(project):
     site_reports, etp_reports, kb_bugs, platform_bugs = group_bugs(SAMPLE_ALL_BUGS)
     with tempfile.NamedTemporaryFile("w") as f:
         write_bugs(
@@ -1713,7 +1713,7 @@ def test_read_write_data():
             [],
         )
 
-        assert load_bugs(None, None, f.name, None) == SAMPLE_ALL_BUGS
+        assert load_bugs(project, None, None, f.name, None) == SAMPLE_ALL_BUGS
 
 
 @pytest.mark.parametrize(
