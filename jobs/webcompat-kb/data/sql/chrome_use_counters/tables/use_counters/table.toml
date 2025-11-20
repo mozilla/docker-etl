@@ -1,0 +1,19 @@
+[feature]
+type = "STRING"
+mode = "REQUIRED"
+
+[use_counter_name]
+type = "STRING"
+mode = "REQUIRED"
+
+[bucket_id]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[date]
+type = "DATE"
+mode = "REQUIRED"
+
+[day_percentrage]
+type = "FLOAT"
+mode = "REQUIRED"

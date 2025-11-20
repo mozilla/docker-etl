@@ -1,0 +1,9 @@
+name = "origin_ranks"
+etl = ["site-ranks"]
+
+[partition]
+type = "range"
+field = "yyyymm"
+start = 201701
+end = 205001
+interval = 1
