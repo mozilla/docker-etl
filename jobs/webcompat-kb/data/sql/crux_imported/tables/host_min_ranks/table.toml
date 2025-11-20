@@ -1,0 +1,12 @@
+[yyyymm]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[host]
+type = "STRING"
+mode = "REQUIRED"
+{% for rank_dfn in ranks %}
+[{{ rank_dfn.name }}]
+type = "INTEGER"
+mode = "NULLABLE"
+{% endfor %}
