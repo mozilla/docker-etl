@@ -1,0 +1,28 @@
+[recorded_date]
+type = "DATE"
+mode = "REQUIRED"
+
+[date]
+type = "DATE"
+mode = "REQUIRED"
+
+[bug_count]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[needs_diagnosis_score]
+type = "NUMERIC"
+mode = "REQUIRED"
+
+[platform_score]
+type = "NUMERIC"
+mode = "REQUIRED"
+
+[not_supported_score]
+type = "NUMERIC"
+mode = "REQUIRED"
+
+[total_score]
+type = "NUMERIC"
+mode = "REQUIRED"
+

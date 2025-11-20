@@ -58,34 +58,22 @@ def build_condition(
     return f"{field_name} {operator} UNNEST([{items_str}])"
 
 
-_ranks: dict[str, Sequence[RankColumn]] = {}
+def load(root_path: os.PathLike) -> Sequence[RankColumn]:
+    metrics_root = os.path.join(root_path, "metrics")
+    path = os.path.abspath(os.path.join(metrics_root, "ranks.toml"))
 
+    ranks = []
+    with open(path, "rb") as f:
+        data = tomllib.load(f)
 
-def load(path: Optional[str] = None) -> Sequence[RankColumn]:
-    if path is None:
-        path = os.path.join(
-            os.path.dirname(__file__),
-            os.pardir,
-            os.pardir,
-            "data",
-            "metrics",
-            "ranks.toml",
-        )
-    path = os.path.abspath(path)
-    if path not in _ranks:
-        ranks = []
-        with open(path, "rb") as f:
-            data = tomllib.load(f)
-
-        for name, rank_data in RankData.model_validate(data).root.items():
-            ranks.append(
-                RankColumn(
-                    name=name,
-                    rank=rank_data.rank,
-                    crux_include=rank_data.crux_include or [],
-                    crux_exclude=rank_data.crux_exclude or [],
-                )
+    for name, rank_data in RankData.model_validate(data).root.items():
+        ranks.append(
+            RankColumn(
+                name=name,
+                rank=rank_data.rank,
+                crux_include=rank_data.crux_include or [],
+                crux_exclude=rank_data.crux_exclude or [],
             )
-        _ranks[path] = ranks
+        )
 
-    return _ranks[path]
+    return ranks

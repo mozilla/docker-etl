@@ -1,0 +1,16 @@
+[run_at]
+type = "TIMESTAMP"
+mode = "REQUIRED"
+
+[bugs_imported]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[bugs_history_updated]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[is_history_fetch_completed]
+type = "BOOLEAN"
+mode = "REQUIRED"
+

@@ -139,8 +139,6 @@ class SumMetricType(MetricType):
         return f"SUM(IF({self.condition(table, metric, include_metric_condition)}, {table}.score, 0))"
 
 
-_metrics: dict[str, Sequence[Metric]] = {}
-
 _metric_types = [
     CountMetricType("bug_count", None),
     SumMetricType("needs_diagnosis_score", "metric_type_needs_diagnosis"),
@@ -150,24 +148,14 @@ _metric_types = [
 ]
 
 
-def load(path: Optional[str] = None) -> tuple[Sequence[Metric], Sequence[MetricType]]:
-    if path is None:
-        path = os.path.join(
-            os.path.dirname(__file__),
-            os.pardir,
-            os.pardir,
-            "data",
-            "metrics",
-            "metrics.toml",
-        )
-    path = os.path.abspath(path)
-    if path not in _metrics:
-        metrics = []
-        with open(path, "rb") as f:
-            data = tomllib.load(f)
+def load(root_path: os.PathLike) -> tuple[Sequence[Metric], Sequence[MetricType]]:
+    metrics_root = os.path.join(root_path, "metrics")
+    path = os.path.abspath(os.path.join(metrics_root, "metrics.toml"))
+    metrics = []
+    with open(path, "rb") as f:
+        data = tomllib.load(f)
 
-        for name, metric_data in MetricData.model_validate(data).root.items():
-            metrics.append(metric_data.to_metric(name))
-        _metrics[path] = metrics
+    for name, metric_data in MetricData.model_validate(data).root.items():
+        metrics.append(metric_data.to_metric(name))
 
-    return _metrics[path], _metric_types
+    return metrics, _metric_types

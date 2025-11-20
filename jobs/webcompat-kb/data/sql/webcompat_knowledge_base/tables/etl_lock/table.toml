@@ -1,0 +1,4 @@
+[lock_time]
+type = "DATETIME"
+mode = "NULLABLE"
+

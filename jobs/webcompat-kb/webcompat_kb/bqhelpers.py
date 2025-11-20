@@ -193,6 +193,16 @@ class Schema(ABC):
     def __str__(self) -> str:
         return str(self.id)
 
+    def __eq__(self, other: Any) -> bool:
+        if type(self) is not type(other):
+            return False
+
+        return (
+            self.id == other.id
+            and self.canonical_id == other.canonical_id
+            and self.description == other.description
+        )
+
     @abstractmethod
     def bq(self) -> bigquery.Table | bigquery.Routine:
         """Convert to BigQuery representation"""
@@ -223,6 +233,14 @@ class Schema(ABC):
         return self
 
 
+@dataclass
+class RangePartition:
+    field: str
+    start: int
+    end: int
+    interval: int = 1
+
+
 class TableSchema(Schema):
     type = SchemaType.table
 
@@ -233,10 +251,25 @@ class TableSchema(Schema):
         fields: list[SchemaField | SchemaRecordField],
         etl: set[str],
         description: Optional[str] = None,
+        partition: Optional[RangePartition] = None,
     ):
         super().__init__(id, canonical_id, description=description)
         self.fields = fields
         self.etl_jobs = etl
+        self.partition = partition
+        if partition is not None and not any(
+            field.name == partition.field for field in fields
+        ):
+            raise ValueError(f"Partition field {partition.field} not found in table")
+
+    def __eq__(self, other: Any) -> bool:
+        if not super().__eq__(other):
+            return False
+        return (
+            self.fields == other.fields
+            and self.etl_jobs == other.etl_jobs
+            and self.partition == other.partition
+        )
 
     @property
     def schema(self) -> Sequence[bigquery.SchemaField]:
@@ -244,7 +277,16 @@ class TableSchema(Schema):
 
     def bq(self) -> bigquery.Table:
         if self._bq_object is None:
-            self._bq_object = bigquery.Table(str(self.id))
+            self._bq_object = bigquery.Table(str(self.id), schema=self.schema)
+            if isinstance(self.partition, RangePartition):
+                self._bq_object.range_partitioning = bigquery.table.RangePartitioning(
+                    bigquery.table.PartitionRange(
+                        self.partition.start,
+                        self.partition.end,
+                        self.partition.interval,
+                    ),
+                    field=self.partition.field,
+                )
         assert isinstance(self._bq_object, bigquery.Table)
         return self._bq_object
 
@@ -312,14 +354,6 @@ class Dataset:
                 yield item
 
 
-@dataclass
-class RangePartition:
-    field: str
-    start: int
-    end: int
-    interval: int = 1
-
-
 class BigQuery:
     def __init__(
         self, client: bigquery.Client, default_dataset_id: DatasetId, write: bool
@@ -375,7 +409,9 @@ class BigQuery:
             routine, default_dataset.project, default_dataset.dataset
         )
 
-    def ensure_dataset(self, dataset_id: str, description: Optional[str]) -> None:
+    def ensure_dataset(
+        self, dataset_id: str | DatasetId, description: Optional[str]
+    ) -> None:
         dataset = bigquery.Dataset(str(dataset_id))
         dataset.description = description
         if self.write:
