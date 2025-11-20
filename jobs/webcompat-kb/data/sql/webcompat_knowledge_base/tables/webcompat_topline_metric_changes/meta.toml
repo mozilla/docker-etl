@@ -1,2 +1,2 @@
 name = "webcompat_topline_metric_changes"
-etl = ["metric_changes"]
+etl = ["metric-changes"]
