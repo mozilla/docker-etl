@@ -121,7 +121,7 @@ SELECT DISTINCT
   IFNULL(platform_features.name, IFNULL(web_features.name, IFNULL(bugs.title, web_features.feature))) as title,
   component_owners.team,
   size_estimate,
-  PARSE_DATE("%F", JSON_VALUE(user_story, "$.platform-scheduled")) as scheduled_date,
+  SAFE.PARSE_DATE("%F", JSON_VALUE(user_story, "$.platform-scheduled")) as scheduled_date,
   has_polyfill,
   cosmetic_only,
   partner_request,
