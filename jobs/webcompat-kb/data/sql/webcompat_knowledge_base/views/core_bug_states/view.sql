@@ -6,7 +6,7 @@ WITH platform_bugs as (
   resolution,
   team,
   size_estimate,
-  PARSE_DATE("%F", JSON_VALUE(user_story, "$.platform-scheduled")) as scheduled_date,
+  SAFE.PARSE_DATE("%F", JSON_VALUE(user_story, "$.platform-scheduled")) as scheduled_date,
   FROM `{{ ref('bugzilla_bugs') }}` as platform_bugs
   JOIN `{{ ref('core_bugs_all') }}` as core_bugs_all ON platform_bugs.number = core_bugs_all.core_bug
   LEFT JOIN `{{ ref ('bugzilla_components_ownership') }}` AS components ON (components.bugzilla_product = product AND components.bugzilla_component = component)
