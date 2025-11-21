@@ -20,7 +20,13 @@ from .bqhelpers import (
     SchemaType,
     TableSchema,
 )
-from .projectdata import Project, ReferenceType, SchemaTemplate, lint_templates
+from .projectdata import (
+    Project,
+    ReferenceType,
+    SchemaTemplate,
+    TableSchemaCreator,
+    lint_templates,
+)
 from .treehash import hash_tree
 
 
@@ -408,6 +414,57 @@ class RoutineUpdater:
             client.query(schema.sql, dataset_id=schema.id.dataset)
         else:
             logging.info(f"Skipping write, would create routine {schema.id}")
+
+
+def render_schemas(
+    project: Project, schema_ids: Sequence[SchemaId]
+) -> Mapping[SchemaId, tuple[SchemaType, str]]:
+    """Render the schemas given in schema_ids
+
+    :param Project: The project the schemas are in
+    :param schema_ids: The schema ids to render
+    :returns: Tuple of (SchemaType, rendered)
+    """
+    schemas_by_type: dict[SchemaType, list[SchemaId]] = {
+        SchemaType.view: [],
+        SchemaType.routine: [],
+        SchemaType.table: [],
+    }
+    for schema_id in schema_ids:
+        try:
+            schema = project[schema_id.dataset][schema_id.name]
+        except ValueError:
+            logging.error(f"Invalid schema id {schema_id}")
+            raise
+        schemas_by_type[schema.type].append(schema_id)
+
+    outputs: dict[SchemaId, tuple[SchemaType, str]] = {}
+    table_schema_creator = TableSchemaCreator(project.data, project.map_schema_id)
+
+    for schema_id in schemas_by_type[SchemaType.table]:
+        dataset_templates = project.data.templates_by_dataset[schema_id.dataset_id]
+        for template in dataset_templates.tables:
+            if template.metadata.name == schema_id.name:
+                outputs[schema_id] = (
+                    SchemaType.table,
+                    table_schema_creator.render(schema_id, template),
+                )
+                break
+        else:
+            # This shouldn't ever happen
+            raise ValueError(f"Failed to find template for {schema}")
+
+    creator = SchemaCreator(project)
+    for schema_type in [SchemaType.view, SchemaType.routine]:
+        type_schema_ids = schemas_by_type[schema_type]
+        try:
+            for schema_id, dfn in creator.create(set(type_schema_ids)).items():
+                outputs[schema_id] = (schema_type, dfn.sql)
+        except Exception:
+            logging.error("Creating schemas failed")
+            raise
+
+    return outputs
 
 
 def update_schemas(

@@ -11,7 +11,6 @@ from webcompat_kb.projectdata import (
     TableSchemaCreator,
     TableTemplate,
     TableMetadata,
-    load_data,
     stage_dataset,
 )
 
@@ -90,17 +89,6 @@ def test_schema_id_mapper():
         ReferenceType.table,
         SchemaId("input_project", "input_dataset", "table_no_rewrite"),
     ) == SchemaId("input_project", "input_dataset", "table_no_rewrite")
-
-
-@pytest.fixture(scope="module")
-def data_dir():
-    here = os.path.dirname(__file__)
-    return os.path.abspath(os.path.join(here, os.pardir, "data"))
-
-
-@pytest.fixture
-def project_data(data_dir):
-    return load_data("test", data_dir)
 
 
 def test_table_schema_creator(project_data):

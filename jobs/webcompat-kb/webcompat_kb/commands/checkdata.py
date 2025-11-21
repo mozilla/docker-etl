@@ -1,16 +1,15 @@
 import argparse
 import logging
 import os
+import pathlib
 import sys
 
 from .. import projectdata
-from ..base import ALL_JOBS
+from ..base import ALL_JOBS, DEFAULT_DATA_DIR
 from ..bqhelpers import get_client
 from ..config import Config
-from ..update_schema import (
-    SchemaCreator,
-    lint_templates,
-)
+from ..projectdata import lint_templates
+from ..update_schema import SchemaCreator
 
 
 here = os.path.dirname(__file__)
@@ -23,7 +22,8 @@ def main() -> None:
     parser.add_argument(
         "--path",
         action="store",
-        default=os.path.join(here, os.pardir, os.pardir, "data"),
+        type=pathlib.Path,
+        default=DEFAULT_DATA_DIR,
         help="Path to directory containing data",
     )
     try:

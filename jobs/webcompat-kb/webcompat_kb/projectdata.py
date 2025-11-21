@@ -223,13 +223,22 @@ class RoutineTemplate(SchemaTemplate):
 
 
 class DatasetTemplates:
-    def __init__(self, id: DatasetId, description: Optional[str]):
+    def __init__(
+        self,
+        id: DatasetId,
+        description: Optional[str],
+        tables: Optional[Iterable[TableTemplate]] = None,
+        views: Optional[Iterable[ViewTemplate]] = None,
+        routines: Optional[Iterable[RoutineTemplate]] = None,
+    ):
         """Metadata and templates for a specific dataset"""
         self.id = id
         self.description = description
-        self.tables: list[TableTemplate] = []
-        self.views: list[ViewTemplate] = []
-        self.routines: list[RoutineTemplate] = []
+        self.tables: list[TableTemplate] = list(tables) if tables is not None else []
+        self.views: list[ViewTemplate] = list(views) if views is not None else []
+        self.routines: list[RoutineTemplate] = (
+            list(routines) if routines is not None else []
+        )
 
 
 @dataclass

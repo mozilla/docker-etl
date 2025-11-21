@@ -1,5 +1,4 @@
 import inspect
-import os
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any, Mapping
@@ -10,6 +9,7 @@ import pytest
 from google.cloud import bigquery
 
 from webcompat_kb import projectdata
+from webcompat_kb.base import DEFAULT_DATA_DIR
 from webcompat_kb.bqhelpers import BigQuery, DatasetId
 from webcompat_kb.config import Config
 
@@ -139,7 +139,7 @@ def project(bq_client):
     return projectdata.load(
         bq_client,
         "test",
-        os.path.join(os.path.dirname(__file__), os.pardir, "data"),
+        DEFAULT_DATA_DIR,
         set(),
         Config(stage=False, write=False),
     )
@@ -150,3 +150,8 @@ def bq_client():
     return BigQuery(
         MockClient("project"), DatasetId("project", "default_dataset"), True
     )
+
+
+@pytest.fixture
+def project_data():
+    return projectdata.load_data("test", DEFAULT_DATA_DIR)

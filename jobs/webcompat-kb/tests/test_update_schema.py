@@ -1,5 +1,19 @@
 from webcompat_kb import update_schema
-from webcompat_kb.projectdata import DatasetId, SchemaId, SchemaIdMapper, SchemaType
+from webcompat_kb.metrics.ranks import RankColumn
+from webcompat_kb.projectdata import (
+    DatasetId,
+    DatasetTemplates,
+    Project,
+    RoutineTemplate,
+    SchemaId,
+    SchemaIdMapper,
+    SchemaMetadata,
+    SchemaType,
+    TableMetadata,
+    TableTemplate,
+    ViewTemplate,
+    create_datasets,
+)
 
 
 def test_add_routine_options():
@@ -91,3 +105,89 @@ def test_reference_resolver():
             SchemaId("input_project", "input_dataset", "other_table"),
         },
     )
+
+
+def test_render_schema(project_data):
+    dataset_id = DatasetId("test", "dataset")
+    project_data.rank_dfns = [RankColumn("rank1"), RankColumn("rank2")]
+
+    table_template = TableTemplate(
+        path="/tmp/dataset/tables/test_table",
+        metadata=TableMetadata(name="test_table"),
+        template="""[field]
+type="STRING"
+mode="REQUIRED"
+{% for rank in ranks -%}
+[{{rank.name}}]
+type="INTEGER"
+mode="NULLABLE"
+{% endfor %}
+""",
+    )
+    view_template = ViewTemplate(
+        "/tmp/dataset/views/test_view",
+        metadata=SchemaMetadata(name="test_view"),
+        template="""SELECT * FROM {{ ref('test_table') }}""",
+    )
+    routine_template = RoutineTemplate(
+        "/tmp/dataset/routines/test_routine",
+        metadata=SchemaMetadata(name="test_routine"),
+        template="""CREATE OR REPLACE FUNCTION `{{ ref(name) }}`() RETURNS INT64 AS ( 1 )""",
+    )
+
+    project_data.templates_by_dataset = {
+        dataset_id: DatasetTemplates(
+            id=dataset_id,
+            description="",
+            tables=[table_template],
+            views=[view_template],
+            routines=[routine_template],
+        )
+    }
+
+    def schema_id_mapper(reference_type, schema_id):
+        return schema_id
+
+    def dataset_id_mapper(dataset_id):
+        return dataset_id
+
+    datasets = create_datasets(
+        "test", project_data, dataset_id_mapper, schema_id_mapper
+    )
+    project = Project(
+        "test", project_data, datasets, dataset_id_mapper, schema_id_mapper
+    )
+    assert update_schema.render_schemas(
+        project, [SchemaId("test", "dataset", "test_table")]
+    ) == {
+        SchemaId("test", "dataset", "test_table"): (
+            SchemaType.table,
+            """[field]
+type="STRING"
+mode="REQUIRED"
+[rank1]
+type="INTEGER"
+mode="NULLABLE"
+[rank2]
+type="INTEGER"
+mode="NULLABLE"
+""",
+        )
+    }
+
+    assert update_schema.render_schemas(
+        project,
+        [
+            SchemaId("test", "dataset", "test_view"),
+            SchemaId("test", "dataset", "test_routine"),
+        ],
+    ) == {
+        SchemaId("test", "dataset", "test_view"): (
+            SchemaType.view,
+            "SELECT * FROM test.dataset.test_table",
+        ),
+        SchemaId("test", "dataset", "test_routine"): (
+            SchemaType.routine,
+            "CREATE OR REPLACE FUNCTION `test.dataset.test_routine`() RETURNS INT64 AS ( 1 )",
+        ),
+    }
