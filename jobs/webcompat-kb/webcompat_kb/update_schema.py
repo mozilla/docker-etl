@@ -628,6 +628,14 @@ class UpdateStagingData(EtlJob):
     def default_dataset(self, context: Context) -> str:
         return context.args.bq_kb_dataset
 
+    def write_targets(self, project: Project) -> set[SchemaId]:
+        # This job can update any schema
+        rv = set()
+        for dataset in project:
+            for schema in dataset:
+                rv.add(schema.id)
+        return rv
+
     def main(self, context: Context) -> None:
         client = context.bq_client
         datasets = [DatasetId(client.project_id, context.args.bq_kb_dataset)]
@@ -700,6 +708,14 @@ class UpdateSchemaJob(EtlJob):
 
     def default_dataset(self, context: Context) -> str:
         return context.args.bq_kb_dataset
+
+    def write_targets(self, project: Project) -> set[SchemaId]:
+        # This job can update any schema
+        rv = set()
+        for dataset in project:
+            for schema in dataset:
+                rv.add(schema.id)
+        return rv
 
     def main(self, context: Context) -> None:
         update_schema_if_needed(

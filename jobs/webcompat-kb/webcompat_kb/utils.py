@@ -6,7 +6,7 @@ from typing import Mapping
 
 from google.cloud import bigquery
 
-from .bqhelpers import BigQuery, Json, get_client
+from .bqhelpers import BigQuery, Json, SchemaId, get_client
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,11 @@ def backfill_history() -> None:
     src_dataset = args.bq_kb_src_dataset
     dest_dataset = args.bq_kb_dest_dataset
 
-    client = BigQuery(get_client(args.bq_project_id), dest_dataset, args.write)
+    target = SchemaId(args.bq_project_id, args.dest_dataset, "bugs_history")
+
+    client = BigQuery(
+        get_client(args.bq_project_id), dest_dataset, args.write, {target}
+    )
 
     existing_records_dest: dict[HistoryKey, list[dict[str, str]]] = {}
     existing_records_src: dict[HistoryKey, list[dict[str, str]]] = {}

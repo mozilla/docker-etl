@@ -435,3 +435,37 @@ def test_add_table_fields(bq_client, table):
     assert bq_client.client.called[-1] == Call(
         "update_table", arguments={"table": target_table, "fields": ["schema"]}
     )
+
+
+def test_check_write_targets(bq_client):
+    allowed = SchemaId("test", "dataset", "allowed")
+    forbidden = SchemaId("test", "dataset", "forbidden")
+    bq_client.write_targets = {allowed}
+
+    for schema_id in [allowed, forbidden]:
+        for fn, args in [
+            (bq_client.check_write_target, (schema_id,)),
+            (bq_client.ensure_table, (schema_id, [])),
+            (bq_client.write_table, (schema_id, [], [], False)),
+            (bq_client.insert_query, (schema_id, [], "SELECT 1")),
+            (bq_client.delete_query, (schema_id, "FALSE")),
+            (bq_client.create_view, (schema_id, "SELECT 1")),
+            (bq_client.delete_table, (schema_id,)),
+            (bq_client.delete_routine, (schema_id,)),
+        ]:
+            if schema_id == forbidden:
+                with pytest.raises(ValueError):
+                    fn(*args)
+            else:
+                fn(*args)
+
+    # Methods that require some setup
+    bq_client.client.return_values["get_table"].append(bigquery.Table(str(allowed)))
+    bq_client.insert_rows(allowed, [])
+    with pytest.raises(ValueError):
+        bq_client.insert_rows(forbidden, [])
+
+    bq_client.client.return_values["get_table"].append(bigquery.Table(str(allowed)))
+    bq_client.add_table_fields(allowed, [])
+    with pytest.raises(ValueError):
+        bq_client.add_table_fields(forbidden, [])
