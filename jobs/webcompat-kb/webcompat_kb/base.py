@@ -6,9 +6,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, MutableMapping
 
-from .bqhelpers import BigQuery
+from .bqhelpers import BigQuery, SchemaId
 from .config import Config
-from .projectdata import Project
+from .projectdata import Project, TableSchema
 
 
 here = pathlib.Path(os.path.dirname(__file__))
@@ -60,6 +60,14 @@ class EtlJob(ABC):
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None: ...
+
+    def write_targets(self, project: Project) -> set[SchemaId]:
+        rv = set()
+        for dataset in project:
+            for schema in dataset:
+                if isinstance(schema, TableSchema) and self.name in schema.etl_jobs:
+                    rv.add(schema.id)
+        return rv
 
     def required_args(self) -> set[str | tuple[str, str]]:
         return set()
