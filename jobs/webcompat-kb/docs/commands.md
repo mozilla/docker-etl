@@ -1,0 +1,43 @@
+# WebCompat ETL Commands
+
+All commands are expected to be run using `uv` e.g. `uv run webcompat-etl`.
+
+## webcompat-etl
+
+Run the main ETL to import data into BigQuery. The command has the form:
+
+```
+webcompat-etl --bq-project-id <project_id> [job*]
+```
+
+`jobs` is the list of update jobs that will be run. When omitted all
+jobs are run, otherwise jobs are run in the order specified on the
+command line.
+
+### Important Arguments
+
+* `--no-write` - Don't write updates, but output the data that would be written.
+* `--stage` - Write output to a staging deployment (currently: the
+  same project datasets but with a `_test` suffix on the datasets).
+
+## webcompat-check-templates
+
+Perform linting-type checks on all the templates defined in the `data`
+directory.
+
+```
+webcompat-check-templates --bq-project-id <project_id>
+```
+
+## webcompat-render
+
+Render provided schema templates to stdout.
+
+```
+webcompat-render --bq-project-id <project_id> [schema_id+]
+```
+
+`schema_id` is a schema id, usually of the form `dataset.name`
+e.g. `webcompat_knowledge_base.scored_site_reports`. This works for
+tables (in which case the table schema will be output in TOML format),
+views and routines (which both output SQL).
