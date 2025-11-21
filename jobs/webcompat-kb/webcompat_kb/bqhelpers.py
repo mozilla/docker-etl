@@ -356,13 +356,18 @@ class Dataset:
 
 class BigQuery:
     def __init__(
-        self, client: bigquery.Client, default_dataset_id: DatasetId, write: bool
+        self,
+        client: bigquery.Client,
+        default_dataset_id: DatasetId,
+        write: bool,
+        write_targets: Optional[set[SchemaId]] = None,
     ):
         self.client = client
         assert default_dataset_id.project == client.project
         self.project_id = client.project
         self.default_dataset_id = default_dataset_id
         self.write = write
+        self.write_targets = write_targets
 
     def get_dataset_id(
         self, dataset_id: Optional[str | Dataset | DatasetId]
@@ -374,6 +379,10 @@ class BigQuery:
         if isinstance(dataset_id, Dataset):
             return dataset_id.id
         return DatasetId.from_str(dataset_id, self.project_id)
+
+    def check_write_target(self, schema_id: SchemaId) -> None:
+        if self.write_targets is not None and schema_id not in self.write_targets:
+            raise ValueError(f"Trying to write to {schema_id} not permitted")
 
     def get_table_id(
         self,
@@ -425,8 +434,11 @@ class BigQuery:
         partition: Optional[RangePartition] = None,
         update_fields: Optional[bool] = False,
     ) -> bigquery.Table:
-        table_id = str(self.get_table_id(dataset_id, table_id))
-        table = bigquery.Table(table_id, schema=schema)
+        table_id = self.get_table_id(dataset_id, table_id)
+
+        self.check_write_target(table_id)
+
+        table = bigquery.Table(str(table_id), schema=schema)
         if partition:
             table.range_partitioning = bigquery.table.RangePartitioning(
                 bigquery.table.PartitionRange(
@@ -497,6 +509,10 @@ class BigQuery:
         schema: Iterable[bigquery.SchemaField],
         dataset_id: Optional[str] = None,
     ) -> bigquery.Table:
+        table_id = self.get_table_id(dataset_id, table)
+
+        self.check_write_target(table_id)
+
         try:
             table = self.get_table(table)
         except Exception:
@@ -507,7 +523,6 @@ class BigQuery:
             if not isinstance(table, bigquery.Table):
                 table = bigquery.Table(str(table))
 
-        table_id = self.get_table_id(dataset_id, table)
         current_schema = table.schema
 
         new_fields = self._get_new_fields(table_id, current_schema, schema)
@@ -543,7 +558,9 @@ class BigQuery:
         overwrite: bool,
         dataset_id: Optional[str] = None,
     ) -> None:
-        table = self.get_table_id(dataset_id, table)
+        table_id = self.get_table_id(dataset_id, table)
+
+        self.check_write_target(table_id)
 
         job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
@@ -554,7 +571,7 @@ class BigQuery:
         if self.write:
             job = self.client.load_table_from_json(
                 cast(Iterable[dict[str, Any]], rows),
-                str(table),
+                str(table_id),
                 job_config=job_config,
             )
             job.result()
@@ -570,7 +587,14 @@ class BigQuery:
         rows: Sequence[Mapping[str, Any]],
         dataset_id: Optional[str] = None,
     ) -> None:
-        table = self.get_table(self.get_table_id(dataset_id, table), dataset_id)
+        table_id = self.get_table_id(dataset_id, table)
+
+        self.check_write_target(table_id)
+
+        table = self.get_table(table_id, dataset_id)
+
+        if isinstance(table, TableSchema):
+            table = table.bq()
 
         if self.write:
             errors = self.client.insert_rows(table, rows)
@@ -589,8 +613,10 @@ class BigQuery:
         dataset_id: Optional[str] = None,
         parameters: Optional[Sequence[bigquery.query._AbstractQueryParameter]] = None,
     ) -> None:
-        table_ref = self.get_table_id(dataset_id, table)
-        insert_str = f"INSERT `{table_ref}` ({', '.join(columns)})"
+        table_id = self.get_table_id(dataset_id, table)
+        insert_str = f"INSERT `{table_id}` ({', '.join(columns)})"
+
+        self.check_write_target(table_id)
 
         insert_query = f"""{insert_str}
 ({query})"""
@@ -610,21 +636,23 @@ class BigQuery:
         dataset_id: Optional[str] = None,
         parameters: Optional[Sequence[bigquery.query._AbstractQueryParameter]] = None,
     ) -> None:
-        table_ref = self.get_table_id(dataset_id, table)
+        table_id = self.get_table_id(dataset_id, table)
+
+        self.check_write_target(table_id)
 
         if self.write:
-            query = f"DELETE FROM `{table_ref}` WHERE {condition}"
+            query = f"DELETE FROM `{table_id}` WHERE {condition}"
             result = self.query(query, parameters=parameters)
             if result.num_dml_affected_rows:
                 logging.info(
-                    f"Deleted {result.num_dml_affected_rows} rows from {table_ref}"
+                    f"Deleted {result.num_dml_affected_rows} rows from {table_id}"
                 )
         else:
-            query = f"SELECT COUNT(*) as row_count FROM `{table_ref}` WHERE {condition}"
+            query = f"SELECT COUNT(*) as row_count FROM `{table_id}` WHERE {condition}"
             result = self.query(query, parameters=parameters)
             count = next(result).row_count
             if count:
-                logging.info(f"Would delete {count} rows from {table_ref}")
+                logging.info(f"Would delete {count} rows from {table_id}")
 
     def get_routine(
         self, routine_id: str | SchemaId | RoutineSchema
@@ -664,7 +692,11 @@ class BigQuery:
         dataset_id: Optional[str] = None,
         description: Optional[str] = None,
     ) -> bigquery.Table:
-        view = bigquery.Table(str(self.get_table_id(dataset_id, view_id)))
+        table_id = self.get_table_id(dataset_id, view_id)
+
+        self.check_write_target(table_id)
+
+        view = bigquery.Table(str(table_id))
         view.description = description
         view.view_query = view_query
         if self.write:
@@ -708,12 +740,15 @@ class BigQuery:
         table: bigquery.Table | str | SchemaId | TableSchema,
         not_found_ok: bool = False,
     ) -> None:
-        table = self.get_table_id(self.get_dataset_id(None), table)
+        table_id = self.get_table_id(self.get_dataset_id(None), table)
+
+        self.check_write_target(table_id)
+
         if self.write:
-            logging.info(f"Deleting table {table} (if it exists)")
-            self.client.delete_table(str(table), not_found_ok=not_found_ok)
+            logging.info(f"Deleting table {table_id} (if it exists)")
+            self.client.delete_table(str(table_id), not_found_ok=not_found_ok)
         else:
-            logging.info(f"Skipping writes, would delete table {table}")
+            logging.info(f"Skipping writes, would delete table {table_id}")
 
     def delete_routine(
         self,
@@ -721,6 +756,9 @@ class BigQuery:
         not_found_ok: bool = False,
     ) -> None:
         routine = self.get_routine_id(routine)
+
+        self.check_write_target(routine)
+
         if self.write:
             logging.info(f"Deleting routine {routine} (if it exists)")
             self.client.delete_routine(str(routine), not_found_ok=not_found_ok)
