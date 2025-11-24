@@ -1,43 +1,35 @@
 import argparse
 import os
-import pathlib
-import sys
+from typing import Optional
 
 from google.auth.exceptions import RefreshError
 
+
 from .. import projectdata
-from ..base import DEFAULT_DATA_DIR
+from ..base import Command
 from ..config import Config
 from ..bqhelpers import BigQuery, DatasetId, SchemaId, SchemaType, get_client
 from ..update_schema import render_schemas
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--bq-project-id", action="store", help="BigQuery project ID")
-    parser.add_argument(
-        "--default-dataset",
-        action="store",
-        default="webcompat_knowledge_base",
-        help="Default dataset name",
-    )
-    parser.add_argument("--pdb", action="store_true", help="Run debugger on failure")
-    parser.add_argument(
-        "--data-path",
-        action="store",
-        type=pathlib.Path,
-        default=DEFAULT_DATA_DIR,
-        help="Path to directory containing data",
-    )
-    parser.add_argument(
-        "schema_ids",
-        action="store",
-        nargs="*",
-        help="Schemas to render e.g. dataset.view_name",
-    )
-    try:
-        args = parser.parse_args()
+class Validate(Command):
+    def argument_parser(self) -> argparse.ArgumentParser:
+        parser = super().argument_parser()
+        parser.add_argument(
+            "--default-dataset",
+            action="store",
+            default="webcompat_knowledge_base",
+            help="Default dataset name",
+        )
+        parser.add_argument(
+            "schema_ids",
+            action="store",
+            nargs="*",
+            help="Schemas to render e.g. dataset.view_name",
+        )
+        return parser
 
+    def main(self, args: argparse.Namespace) -> Optional[int]:
         client = get_client(args.bq_project_id)
         project = projectdata.load(
             client,
@@ -91,10 +83,9 @@ def main() -> None:
                 else:
                     print("  Validation succeeded")
         if not success:
-            sys.exit(1)
-    except Exception:
-        if args.pdb:
-            import pdb
+            return 1
 
-            pdb.post_mortem()
-        raise
+        return None
+
+
+main = Validate()

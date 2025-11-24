@@ -1,11 +1,10 @@
 import argparse
 import logging
 import os
-import pathlib
-import sys
+from typing import Optional
 
 from .. import projectdata
-from ..base import ALL_JOBS, DEFAULT_DATA_DIR
+from ..base import ALL_JOBS, Command
 from ..bqhelpers import get_client
 from ..config import Config
 from ..projectdata import lint_templates
@@ -15,26 +14,15 @@ from ..update_schema import SchemaCreator
 here = os.path.dirname(__file__)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--bq-project-id", action="store", help="BigQuery project ID")
-    parser.add_argument("--pdb", action="store_true", help="Run debugger on failure")
-    parser.add_argument(
-        "--path",
-        action="store",
-        type=pathlib.Path,
-        default=DEFAULT_DATA_DIR,
-        help="Path to directory containing data",
-    )
-    try:
+class CheckData(Command):
+    def main(self, args: argparse.Namespace) -> Optional[int]:
         # This should be unused
         client = get_client("test")
-        args = parser.parse_args()
 
         project = projectdata.load(
             client,
             args.bq_project_id,
-            os.path.normpath(args.path),
+            os.path.normpath(args.data_path),
             set(),
             Config(write=False, stage=False),
         )
@@ -43,17 +31,15 @@ def main() -> None:
             project.data.templates_by_dataset.values(),
         ):
             logging.error("Lint failed")
-            sys.exit(1)
+            return 1
 
         try:
             creator = SchemaCreator(project)
             creator.create()
-        except Exception:
-            logging.error("Creating schemas failed")
-            raise
-    except Exception:
-        if args.pdb:
-            import pdb
+        except Exception as e:
+            logging.error(f"Creating schemas failed: {e}")
+            return 1
+        return None
 
-            pdb.post_mortem()
-        raise
+
+main = CheckData()
