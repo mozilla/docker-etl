@@ -148,6 +148,71 @@ _metric_types = [
 ]
 
 
+class MetricTable(ABC):
+    type: Literal["table"] | Literal["view"]
+
+    @abstractmethod
+    def name(self, metric: Metric) -> str: ...
+
+    @abstractmethod
+    def template(self) -> str: ...
+
+
+class CurrentMetricTable(MetricTable):
+    type = "view"
+
+    def name(self, metric: Metric) -> str:
+        return f"webcompat_topline_metric_{metric.name}"
+
+    def template(self) -> str:
+        return """{% set metric_name = "all" %}
+SELECT
+  date,
+  {% for metric_type in metric_types -%}
+    {{ metric_type.agg_function('bugs', metrics[metric_name], False) }} as {{ metric_type.name }}{{ ',' if not loop.last }}
+  {% endfor %}
+FROM
+  UNNEST(GENERATE_DATE_ARRAY(DATE_TRUNC(DATE("2024-01-01"), week), DATE_TRUNC(CURRENT_DATE(), week), INTERVAL 1 week)) AS date
+LEFT JOIN
+  `{{ ref('scored_site_reports') }}` AS bugs
+ON
+  DATE(bugs.creation_time) <= date
+  AND
+IF
+  (bugs.resolved_time IS NOT NULL, DATE(bugs.resolved_time) >= date, TRUE)
+WHERE {{ metrics[metric_name].condition('bugs') }}
+GROUP BY
+  date
+order by date
+"""
+
+
+class HistoryMetricTable(MetricTable):
+    type = "table"
+
+    def name(self, metric: Metric) -> str:
+        return f"webcompat_topline_metric_{metric.name}_history"
+
+    def template(self) -> str:
+        return """[recorded_date]
+type = "DATE"
+mode = "REQUIRED"
+
+[date]
+type = "DATE"
+mode = "REQUIRED"
+
+{% for metric_type in metric_types %}
+[{{ metric_type.name }}]
+type = "{{ metric_type.field_type }}"
+mode = "REQUIRED"
+{% endfor %}
+"""
+
+
+metric_tables = [CurrentMetricTable(), HistoryMetricTable()]
+
+
 def load(root_path: os.PathLike) -> tuple[Sequence[Metric], Sequence[MetricType]]:
     metrics_root = os.path.join(root_path, "metrics")
     path = os.path.abspath(os.path.join(metrics_root, "metrics.toml"))

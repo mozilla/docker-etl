@@ -82,13 +82,23 @@ At least one field must be provided.
 Adding a new metric type (e.g. all sites that are top 1000 in the EU)
 requires the following steps:
 
-* If a new `host_min_rank` column is required, update
-  `metrics/ranks.toml` with the column, then ensure that the
-  `site-ranks` ETL job has run with the
-  `--site-ranks-force-tranco-update` flag to create the column (note:
-  this doesn't actually backfill the data, that currently requires a manual `INSERT`).
+* If a new site rank type is required, add the definition to
+  `data/metrics/ranks.toml`.
 
-* Add the metric definition in `metrics/metrics.toml`.
+* Add the metric definition in `data/metrics/metrics.toml`.
+
+* Run `webcompat-add-metric` to create schemas for the tables
+  associated with the new metric.
+
+* To test the changes run `webcompat-etl --bq-project-id <id> --stage
+  update-schema`. This should update existing tables, and create new
+  tables, with a `_test` suffix.
+
+* Commit the changes, and create a PR. Once this lands, wait for the
+  the ETL to run with the updated table definitions.
+
+* Run `webcompat-backfill-metric <name>` to add extrapolate the metric
+  backwards in time, based on the current state of the bugs.
 
 * Create tables `webcompat_kb_dataset.webcompat_topline_metric_{metric_name}`
   and `webcompat_kb_dataset.webcompat_topline_metric_{metric_name}_history`
