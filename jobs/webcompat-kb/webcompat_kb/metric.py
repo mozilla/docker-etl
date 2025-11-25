@@ -1,4 +1,3 @@
-import argparse
 import logging
 from datetime import date
 
@@ -109,66 +108,6 @@ WHERE bugs.resolution = ""
     )
 
 
-def backfill_metric_daily(
-    project: Project,
-    client: BigQuery,
-    write: bool,
-    metric_name: str,
-) -> None:
-    metric_dfns, metric_types = project.data.metric_dfns, project.data.metric_types
-    daily_metric_types = [
-        metric_type for metric_type in metric_types if "daily" in metric_type.contexts
-    ]
-
-    metric = None
-    for metric in metric_dfns:
-        if metric.name == metric_name:
-            break
-    else:
-        raise ValueError(f"Metric named {metric_name} not found")
-
-    select_fields = []
-    field_names = []
-    conditions = []
-    for metric_type in daily_metric_types:
-        field_name = f"{metric_type.name}_{metric.name}"
-        field_names.append(field_name)
-        select_fields.append(
-            f"{metric_type.agg_function('bugs', metric)} AS {field_name}"
-        )
-        conditions.append(f"metric_daily.{field_name} IS NULL")
-    select_query = f"""
-SELECT
-  date,
-  {",\n  ".join(select_fields)}
-FROM
-  `{project["webcompat_knowledge_base"]["scored_site_reports"]}` AS bugs
-  JOIN `{project["webcompat_knowledge_base"]["webcompat_topline_metric_daily"]}` as metric_daily
-ON
-  DATE(bugs.creation_time) <= metric_daily.date
-  AND IF (bugs.resolved_time IS NOT NULL, DATE(bugs.resolved_time) >= date, TRUE)
-WHERE
-  {metric.condition("bugs")} AND {" AND ".join(conditions)}
-GROUP BY
-  date
-ORDER BY date"""
-
-    update_query = f"""
-UPDATE `{project["webcompat_knowledge_base"]["webcompat_topline_metric_daily"]}` AS metric_daily
-SET
-  {",\n  ".join(f"metric_daily.{field_name}=new_data.{field_name}" for field_name in field_names)}
-FROM ({select_query}) AS new_data
-WHERE new_data.date = metric_daily.date
-"""
-
-    if write:
-        result = client.query(update_query)
-    else:
-        logging.info(f"Would run query:\n{update_query}")
-        result = client.query(select_query)
-        logging.info(f"Would set {list(result)}")
-
-
 class MetricJob(EtlJob):
     name = "metric"
 
@@ -183,32 +122,4 @@ class MetricJob(EtlJob):
         update_metric_daily(
             context.project,
             context.bq_client,
-        )
-
-
-class MetricBackfillJob(EtlJob):
-    name = "metric-backfill"
-    default = False
-
-    @classmethod
-    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        group = parser.add_argument_group(
-            title="Metric Backfill", description="metric-backfill arguments"
-        )
-        group.add_argument(
-            "--metric-backfill-metric", help="Name of the metric to backfill"
-        )
-
-    def required_args(self) -> set[str | tuple[str, str]]:
-        return {"metric_backfill_metric"}
-
-    def default_dataset(self, context: Context) -> str:
-        return "webcompat_knowledge_base"
-
-    def main(self, context: Context) -> None:
-        backfill_metric_daily(
-            context.project,
-            context.bq_client,
-            context.config.write,
-            context.args.metric_backfill_metric,
         )

@@ -1,10 +1,12 @@
 import argparse
+import logging
 import re
 import pathlib
 import os
+import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, MutableMapping
+from typing import Any, MutableMapping, Optional
 
 from .bqhelpers import BigQuery, SchemaId
 from .config import Config
@@ -37,6 +39,80 @@ def dataset_arg(value: str) -> str:
     if not VALID_DATASET_ID.match(value):
         raise ValueError(f"{value} is not a valid dataset id")
     return value
+
+
+class Command(ABC):
+    def argument_parser(self) -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser()
+        parser.add_argument(
+            "--log-level",
+            choices=["debug", "info", "warn", "error"],
+            default="info",
+            help="Log level",
+        )
+
+        parser.add_argument(
+            "--bq-project",
+            dest="bq_project_id",
+            type=project_arg,
+            help="BigQuery project id",
+        )
+
+        parser.add_argument(
+            "--data-path",
+            action="store",
+            type=pathlib.Path,
+            default=DEFAULT_DATA_DIR,
+            help="Path to directory containing sql to deploy",
+        )
+
+        parser.add_argument(
+            "--stage",
+            action="store_true",
+            help="Write to staging location (currently same project with _test suffix on dataset names)",
+        )
+
+        parser.add_argument(
+            "--no-write",
+            dest="write",
+            action="store_false",
+            default=True,
+            help="Don't write updates to BigQuery",
+        )
+
+        parser.add_argument(
+            "--github-token",
+            default=os.environ.get("GH_TOKEN"),
+            help="GitHub token",
+        )
+
+        parser.add_argument(
+            "--pdb", action="store_true", help="Drop into debugger on execption"
+        )
+        return parser
+
+    @abstractmethod
+    def main(self, args: argparse.Namespace) -> Optional[int]: ...
+
+    def __call__(self) -> None:
+        parser = self.argument_parser()
+        args = parser.parse_args()
+
+        logging.basicConfig()
+        log_level = args.log_level.upper() if "log_level" in args else "INFO"
+        logging.getLogger().setLevel(logging.getLevelNamesMapping()[log_level])
+
+        try:
+            rv = self.main(args)
+        except Exception:
+            if "pdb" in args and args.pdb:
+                import pdb
+
+                pdb.post_mortem()
+            else:
+                raise
+        if rv:
+            sys.exit(rv)
 
 
 @dataclass
