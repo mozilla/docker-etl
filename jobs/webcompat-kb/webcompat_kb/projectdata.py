@@ -21,6 +21,7 @@ from typing import (
 )
 
 import jinja2
+import tomli_w
 from google.cloud import bigquery
 from pydantic import BaseModel, ConfigDict, RootModel, ValidationError
 
@@ -240,6 +241,16 @@ class DatasetTemplates:
             list(routines) if routines is not None else []
         )
 
+    def append(self, template: SchemaTemplate) -> None:
+        if isinstance(template, TableTemplate):
+            self.tables.append(template)
+        elif isinstance(template, ViewTemplate):
+            self.views.append(template)
+        elif isinstance(template, RoutineTemplate):
+            self.routines.append(template)
+        else:
+            raise ValueError(f"Don't know how to append {template}")
+
 
 class TemplatesByDataset(dict[DatasetId, DatasetTemplates]):
     def get_schema_template(
@@ -272,6 +283,78 @@ class ProjectData:
     metric_dfns: Sequence[metrics.Metric]
     metric_types: Sequence[metrics.MetricType]
     rank_dfns: Sequence[ranks.RankColumn]
+
+    def get_schema_path(
+        self, schema_type: SchemaType, schema_id: SchemaId
+    ) -> pathlib.Path:
+        return (
+            pathlib.Path(self.path)
+            / "sql"
+            / schema_id.dataset
+            / f"{schema_type}s"
+            / schema_id.name
+        )
+
+    def add_table(
+        self,
+        schema_id: SchemaId,
+        metadata: TableMetadata,
+        template_data: str,
+        write: bool,
+    ) -> None:
+        path = self.get_schema_path(SchemaType.table, schema_id)
+        template = TableTemplate(path, metadata, template_data)
+        self.add_template(schema_id.dataset_id, template, write)
+
+    def add_view(
+        self,
+        schema_id: SchemaId,
+        metadata: SchemaMetadata,
+        template_data: str,
+        write: bool,
+    ) -> None:
+        path = self.get_schema_path(SchemaType.view, schema_id)
+        template = ViewTemplate(path, metadata, template_data)
+        self.add_template(schema_id.dataset_id, template, write)
+
+    def add_routine(
+        self,
+        schema_id: SchemaId,
+        metadata: SchemaMetadata,
+        template_data: str,
+        write: bool,
+    ) -> None:
+        path = self.get_schema_path(SchemaType.routine, schema_id)
+        template = RoutineTemplate(path, metadata, template_data)
+        self.add_template(schema_id.dataset_id, template, write)
+
+    def add_template(
+        self,
+        dataset_id: DatasetId,
+        template: SchemaTemplate,
+        write: bool,
+    ) -> None:
+        path = pathlib.Path(template.path)
+        try:
+            path.mkdir(parents=True)
+        except FileExistsError:
+            pass
+        meta_file = path / "meta.toml"
+        template_file = path / template.filename
+
+        self.templates_by_dataset[dataset_id].append(template)
+        metadata = template.metadata.dict(exclude_unset=True)
+        if write:
+            with open(meta_file, "wb") as f:
+                tomli_w.dump(metadata, f, indent=2)
+
+            with open(template_file, "w") as f:
+                f.write(template.template)
+        else:
+            logging.info(
+                f"Would write metadata file {meta_file}:\n{tomli_w.dumps(metadata, indent=2)}"
+            )
+            logging.info(f"Would write template {template_file}:\n{template.template}")
 
 
 class SchemaIdMapper:
