@@ -24,6 +24,7 @@ dependencies = [
   "httpx[http2]>=0.28.1",
   "jinja2>=3.1.6",
   "pydantic==2.11.5",
+  "tomli-w>=1.2.0",
   "web-features==3.0.0",
 ]
 
