@@ -334,10 +334,11 @@ class WebFeaturesJob(EtlJob):
         group = parser.add_argument_group(
             title="Web Features", description="Web Features arguments"
         )
+        # Legacy: BigQuery Web Features dataset id
         group.add_argument(
             "--bq-web-features-dataset",
             type=dataset_arg,
-            help="BigQuery Web Features dataset id",
+            help=argparse.SUPPRESS,
         )
         group.add_argument(
             "--recreate-web-features",
@@ -345,11 +346,8 @@ class WebFeaturesJob(EtlJob):
             help="Delete and recreate web features tables from scratch",
         )
 
-    def required_args(self) -> set[str | tuple[str, str]]:
-        return {"bq_web_features_dataset"}
-
     def default_dataset(self, context: Context) -> str:
-        return context.args.bq_web_features_dataset
+        return "web_features"
 
     def main(self, context: Context) -> None:
         update_web_features(context.bq_client, context.args.recreate_web_features)
