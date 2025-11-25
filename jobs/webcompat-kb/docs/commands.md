@@ -65,3 +65,12 @@ webcompat-update-staging-data --bq-project-id <project_id> [--update-views]
 Copies tables from `dataset` to `dataset_test`. With `--update-views`
 also updates views in `--dataset-test` to match the ones defined in
 the source tree.
+
+## webcompat-add-metric
+
+Create the views and tables for metrics based on the metric definition
+files.
+
+```
+webcompat-add-metric --bq-project-id <project_id>
+```
