@@ -1,0 +1,5 @@
+[test]
+reason = "Example reason"
+routine_updates = [
+  "WEBCOMPAT_METRIC_SCORE",
+]
