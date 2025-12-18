@@ -159,3 +159,19 @@ steps:
 * Validate that the score changes have the anticipated effect (e.g. by
   checking the bugs that change between `scored_site_reports` and
   `scored_site_reports_new`.
+
+## updating CrUX data used in metrics
+
+Updating the CrUX data used in metrics is a specific case of updating
+the overall scoring described above, with specific support for
+creating the new routines and `scored_site_reports`.
+
+The steps are as for any other metric update except:
+
+* To generate the initial rescore schemas, run `uv run
+  webcompat-site-rank-update --bq-project <project> create-schemas
+  <yyyymm>`.
+
+* To create the updated schemas for prod run  `uv run
+  webcompat-site-rank-update --bq-project <project> prepare-deploy
+  <yyyymm>`.
