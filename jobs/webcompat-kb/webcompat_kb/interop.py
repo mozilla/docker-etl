@@ -1,7 +1,6 @@
 import argparse
 import logging
 import re
-import os
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable, Mapping, MutableMapping, Optional, Sequence
@@ -306,17 +305,12 @@ class InteropJob(EtlJob):
             action="store_true",
             help="Recreate Interop data",
         )
-        group.add_argument(
-            "--interop-github-token",
-            default=os.environ.get("GH_TOKEN"),
-            help="GitHub token",
-        )
 
     def default_dataset(self, context: Context) -> str:
         return "interop"
 
     def main(self, context: Context) -> None:
-        gh_client = GitHub(context.args.interop_github_token)
+        gh_client = GitHub(context.args.github_token)
         update_interop_data(
             context.project,
             context.bq_client,
