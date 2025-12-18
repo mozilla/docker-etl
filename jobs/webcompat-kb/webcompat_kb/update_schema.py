@@ -11,6 +11,7 @@ from typing import Callable, Iterable, Mapping, Optional, Sequence
 import jinja2
 from google.cloud import bigquery
 
+from . import metric_rescore
 from .base import ALL_JOBS, Context, EtlJob
 from .bqhelpers import (
     BigQuery,
@@ -572,6 +573,13 @@ def record_update(project: Project, client: BigQuery, schema_hash: str) -> None:
     )
 
 
+def before_schema_update(client: BigQuery, project: Project) -> None:
+    """Lifecycle point to record data that depends on the existing
+    schemas, before deploying the update"""
+
+    metric_rescore.record_rescores(project, client)
+
+
 def update_schema_if_needed(
     project: Project,
     client: BigQuery,
@@ -598,6 +606,8 @@ def update_schema_if_needed(
     etl_jobs = {item for item in ALL_JOBS}
     if not lint_templates(etl_jobs, project.data.templates_by_dataset.values()):
         raise ValueError("Template lint failed")
+
+    before_schema_update(client, project)
 
     update_schemas(
         client,
