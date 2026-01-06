@@ -1,15 +1,45 @@
-build-job-search-term-data-validation-v2:
-  docker:
-    - image: << pipeline.parameters.git-image >>
-  steps:
-    - checkout
-    - compare-branch:
-        pattern: ^jobs/search-term-data-validation-v2/
-    - setup_remote_docker:
-        version: << pipeline.parameters.docker-version >>
-    - run:
-        name: Build Docker image
-        command: docker build -t app:build jobs/search-term-data-validation-v2/
-    - run:
-        name: Test Code
-        command: docker run app:build pytest
+  build-job-search-term-data-validation-v2:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Check if job files changed
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            job:
+              - 'jobs/search-term-data-validation-v2/**'
+      - name: Build the Docker image
+        # yamllint disable
+        run: |
+          docker build jobs/search-term-data-validation-v2 -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/search-term-data-validation-v2:latest
+        # yamllint enable
+      - name: Test Code
+        run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/search-term-data-validation-v2:latest pytest
+
+  deploy-to-gar-search-term-data-validation-v2:
+    name: Deploy search-term-data-validation-v2 to GAR
+    runs-on: ubuntu-latest
+    needs: [build-job-search-term-data-validation-v2]
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Build the Docker image
+        # yamllint disable
+        run: |
+          docker build jobs/search-term-data-validation-v2 -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/search-term-data-validation-v2:latest
+        # yamllint enable
+      - name: Push Docker image latest to GAR
+        uses: mozilla-it/deploy-actions/docker-push@v4.3.2
+        with:
+          project_id: moz-fx-data-artifacts-prod
+          image_tags: us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/search-term-data-validation-v2:latest
+          workload_identity_pool_project_number: ${{ vars.GCPV2_WORKLOAD_IDENTITY_POOL_PROJECT_NUMBER }}
+          service_account_name: docker-etl

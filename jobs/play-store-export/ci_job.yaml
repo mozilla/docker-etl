@@ -1,18 +1,47 @@
-build-play-store-export:
-  docker:
-    - image: << pipeline.parameters.git-image >>
-  steps:
-    - checkout
-    - compare-branch:
-        pattern: ^jobs/play-store-export/
-    - setup_remote_docker:
-        version: << pipeline.parameters.docker-version >>
-    - run:
-        name: Build Docker image
-        command: docker build -t app:build jobs/play-store-export
-    - run:
-        name: Test Code
-        command: docker run app:build make test
-    - run:
-        name: Lint Code
-        command: docker run app:build make lint
+  build-play-store-export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Check if job files changed
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            job:
+              - 'jobs/play-store-export/**'
+      - name: Build the Docker image
+        # yamllint disable
+        run: |
+          docker build jobs/play-store-export -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/play-store-export:latest
+        # yamllint enable
+      - name: Test Code
+        run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/play-store-export:latest make test
+      - name: Lint Code
+        run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/play-store-export:latest make lint
+
+  deploy-to-gar-play-store-export:
+    name: Deploy play-store-export to GAR
+    runs-on: ubuntu-latest
+    needs: [build-play-store-export]
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Build the Docker image
+        # yamllint disable
+        run: |
+          docker build jobs/play-store-export -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/play-store-export:latest
+        # yamllint enable
+      - name: Push Docker image latest to GAR
+        uses: mozilla-it/deploy-actions/docker-push@v4.3.2
+        with:
+          project_id: moz-fx-data-artifacts-prod
+          image_tags: us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/play-store-export:latest
+          workload_identity_pool_project_number: ${{ vars.GCPV2_WORKLOAD_IDENTITY_POOL_PROJECT_NUMBER }}
+          service_account_name: docker-etl

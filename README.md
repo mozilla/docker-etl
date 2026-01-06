@@ -105,27 +105,25 @@ If no template is given, a directory with only the required files is created.
 
 ### Modifying the CI config
 
-This repo uses CircleCI which only allows a single global config file.
-In order to simplify adding and removing jobs to CI, the config file is
-generated using templates.
-This means the `config.yml` in `.circleci/` should not be modified directly.
-
-Generate `.circleci/config.yml`:
+Generate `.github/workflows/jobs.yml`:
 
 ```sh
 ./script/update_ci_config
 ```
 
-To make changes to the config that are not ETL job specific
-(e.g. add a command), changes should be made to `templates/config.template.yml`
-and the output config should be re-generated.
+To make changes to the workflow template, modify `.github/workflows.template.yml`
+and re-generate the output.
 
-Each job has a `ci_job.yaml` and a `ci_workflow.yaml` which define the steps
-that will go into the jobs and workflow sections of the CircleCI config.
-Any changes to these files should be followed by updating the global config
-via `script/update_ci_config`.
+**Job Configuration:**
+
+Each job has configuration files in its directory:
+- `ci_job.yaml` - GitHub Actions configuration
+
+Any changes to these files should be followed by updating the global configs
+via `script/update_ci_config` and/or `script/update_ci_config`.
+
 When a job is created, the CI files are created based on the
-`ci_*.template.yaml` files in the template directory.
+template files in the template directory.
 
 ### Adding a template
 

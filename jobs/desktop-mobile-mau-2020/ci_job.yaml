@@ -1,15 +1,19 @@
-build-job-desktop-mobile-mau-2020:
-  docker:
-    - image: << pipeline.parameters.git-image >>
-  steps:
-    - checkout
-    - compare-branch:
-        pattern: ^jobs/desktop-mobile-mau-2020/
-    - setup_remote_docker:
-        version: << pipeline.parameters.docker-version >>
-    - run:
-        name: Build Docker image
-        command: docker build -t app:build jobs/desktop-mobile-mau-2020/
-    - run:
-        name: Test Code
-        command: docker run app:build pytest --flake8 --black
+  build-job-desktop-mobile-mau-2020:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Check if job files changed
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            job:
+              - 'jobs/desktop-mobile-mau-2020/**'
+      - name: Build the Docker image
+        # yamllint disable
+        run: |
+          docker build jobs/desktop-mobile-mau-2020 -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/desktop-mobile-mau-2020:latest
+        # yamllint enable
+      - name: Test Code
+        run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/desktop-mobile-mau-2020:latest pytest --flake8 --black
