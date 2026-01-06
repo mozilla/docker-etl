@@ -11,11 +11,13 @@
             job:
               - 'jobs/ads-incrementality-dap-collector/**'
       - name: Build the Docker image
+        if: steps.changes.outputs.job == 'true'
         # yamllint disable
         run: |
           docker build jobs/ads-incrementality-dap-collector -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/ads-incrementality-dap-collector:latest
         # yamllint enable
       - name: Test Code
+        if: steps.changes.outputs.job == 'true'
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/ads-incrementality-dap-collector:latest python3 -m pytest
 
   deploy-to-gar-ads-incrementality-dap-collector:

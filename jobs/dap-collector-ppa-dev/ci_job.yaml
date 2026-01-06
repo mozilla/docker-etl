@@ -11,11 +11,13 @@
             job:
               - 'jobs/dap-collector-ppa-dev/**'
       - name: Build the Docker image
+        if: steps.changes.outputs.job == 'true'
         # yamllint disable
         run: |
           docker build jobs/dap-collector-ppa-dev -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/dap-collector-ppa-dev:latest
         # yamllint enable
       - name: Test Code
+        if: steps.changes.outputs.job == 'true'
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/dap-collector-ppa-dev:latest python3 -m pytest
 
   deploy-to-gar-dap-collector-ppa-dev:

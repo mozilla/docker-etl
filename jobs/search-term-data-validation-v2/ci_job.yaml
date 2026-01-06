@@ -11,11 +11,13 @@
             job:
               - 'jobs/search-term-data-validation-v2/**'
       - name: Build the Docker image
+        if: steps.changes.outputs.job == 'true'
         # yamllint disable
         run: |
           docker build jobs/search-term-data-validation-v2 -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/search-term-data-validation-v2:latest
         # yamllint enable
       - name: Test Code
+        if: steps.changes.outputs.job == 'true'
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/search-term-data-validation-v2:latest pytest
 
   deploy-to-gar-search-term-data-validation-v2:

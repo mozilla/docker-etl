@@ -11,11 +11,13 @@
             job:
               - 'jobs/kpi-forecasting/**'
       - name: Build the Docker image
+        if: steps.changes.outputs.job == 'true'
         # yamllint disable
         run: |
           docker build jobs/kpi-forecasting -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/kpi-forecasting:latest
         # yamllint enable
       - name: Test Code
+        if: steps.changes.outputs.job == 'true'
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/kpi-forecasting:latest pytest --ruff --ruff-format
 
   deploy-to-gar-kpi-forecasting:

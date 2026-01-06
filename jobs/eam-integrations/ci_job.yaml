@@ -11,6 +11,7 @@
             job:
               - 'jobs/eam-integrations/**'
       - name: Build the Docker image
+        if: steps.changes.outputs.job == 'true'
         # yamllint disable
         run: |
           docker build jobs/eam-integrations -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/eam-integrations:latest

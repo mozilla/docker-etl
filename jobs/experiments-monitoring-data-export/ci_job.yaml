@@ -11,6 +11,7 @@
             job:
               - 'jobs/experiments-monitoring-data-export/**'
       - name: Build the Docker image
+        if: steps.changes.outputs.job == 'true'
         # yamllint disable
         run: |
           docker build jobs/experiments-monitoring-data-export -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/experiments-monitoring-data-export:latest

@@ -11,6 +11,7 @@
             job:
               - 'jobs/example_job/**'
       - name: Build the Docker image
+        if: steps.changes.outputs.job == 'true'
         # yamllint disable
         run: |
           docker build jobs/example_job -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/example_job:latest

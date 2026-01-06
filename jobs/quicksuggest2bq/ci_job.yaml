@@ -11,13 +11,16 @@
             job:
               - 'jobs/quicksuggest2bq/**'
       - name: Build the Docker image
+        if: steps.changes.outputs.job == 'true'
         # yamllint disable
         run: |
           docker build jobs/quicksuggest2bq -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/quicksuggest2bq:latest
         # yamllint enable
       - name: Test Code
+        if: steps.changes.outputs.job == 'true'
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/quicksuggest2bq:latest pytest --flake8 --black
       - name: Lint Code
+        if: steps.changes.outputs.job == 'true'
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/quicksuggest2bq:latest flake8
 
   deploy-to-gar-quicksuggest2bq:

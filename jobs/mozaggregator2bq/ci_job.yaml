@@ -11,6 +11,7 @@
             job:
               - 'jobs/mozaggregator2bq/**'
       - name: Build the Docker image
+        if: steps.changes.outputs.job == 'true'
         # yamllint disable
         run: |
           docker build jobs/mozaggregator2bq -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/mozaggregator2bq:latest

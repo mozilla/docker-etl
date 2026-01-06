@@ -11,6 +11,7 @@
             job:
               - 'jobs/search-alert/**'
       - name: Build the Docker image
+        if: steps.changes.outputs.job == 'true'
         # yamllint disable
         run: |
           docker build jobs/search-alert -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/search-alert:latest

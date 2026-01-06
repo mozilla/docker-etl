@@ -12,19 +12,9 @@
             job:
               - 'jobs/{{ job_name }}/**'
 
-      - name: Set up Docker Buildx
-        if: steps.changes.outputs.job == 'true' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[run-tests]')
-        uses: docker/setup-buildx-action@v3
-
       - name: Build Docker image
         if: steps.changes.outputs.job == 'true' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[run-tests]')
-        uses: docker/build-push-action@v6
-        with:
-          context: jobs/{{ job_name }}/
-          tags: app:build
-          load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        run: docker build jobs/{{ job_name }}/ -t app:build
 
       - name: Test Code
         if: steps.changes.outputs.job == 'true' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[run-tests]')
@@ -49,14 +39,8 @@
       - name: Configure Docker for GCR
         run: gcloud auth configure-docker
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Build Docker image
+        run: docker build jobs/{{ job_name }}/ -t gcr.io/${{ '${{ secrets.GCP_PROJECT }}' }}/{{ job_name }}_docker_etl:latest
 
-      - name: Build and push to GCR
-        uses: docker/build-push-action@v6
-        with:
-          context: jobs/{{ job_name }}/
-          push: true
-          tags: gcr.io/${{ '${{ secrets.GCP_PROJECT }}' }}/{{ job_name }}_docker_etl:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Push to GCR
+        run: docker push gcr.io/${{ '${{ secrets.GCP_PROJECT }}' }}/{{ job_name }}_docker_etl:latest

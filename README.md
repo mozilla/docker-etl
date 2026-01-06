@@ -105,7 +105,7 @@ If no template is given, a directory with only the required files is created.
 
 ### Modifying the CI config
 
-Generate `.github/workflows/jobs.yml`:
+Generate `.github/workflows/etl-jobs.yml`:
 
 ```sh
 ./script/update_ci_config
