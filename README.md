@@ -24,8 +24,8 @@ in the `- jobs:` and `- workflows:` sections of the CircleCI `config.yml` respec
 
 Templates for job creation and the CI config file are located in `templates/`.
 
-The CI config template is in `.circleci/config.template.yml`.
-This is the file that should be modified instead of the `circleci/config.yml`.
+The CI config template is in `.github/config.template.yml`.
+This is the file that should be modified instead of the `github/config.yml`.
 
 Each job template is located in a directory in `templates/` that is the name of the template,
 e.g. a `python` template is in `templates/python/`.
@@ -105,7 +105,7 @@ If no template is given, a directory with only the required files is created.
 
 ### Modifying the CI config
 
-Generate `.github/workflows/etl-jobs.yml`:
+Generate files in `.github/workflows/`:
 
 ```sh
 ./script/update_ci_config

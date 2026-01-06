@@ -28,5 +28,10 @@ jobs:
       - name: Verify jobs have required files
         run: docker run docker-etl:build script/verify_files
 
-      - name: Verify CI config is up-to-date
-        run: docker run docker-etl:build python3 -m docker_etl.ci_config --dry-run | diff -B .github/workflows/etl-jobs.yml -
+      - name: Verify CI workflow files are up-to-date
+        run: |
+          docker run --user $(id -u):$(id -g) -v $PWD:/app -w /app docker-etl:build python3 -m docker_etl.ci_config
+          git diff --exit-code .github/workflows/job-*.yml || (
+            echo "ERROR: Workflow files are out of date. Please run 'python3 -m docker_etl.ci_config' and commit the changes."
+            exit 1
+          )
