@@ -469,3 +469,32 @@ def test_check_write_targets(bq_client):
     bq_client.add_table_fields(allowed, [])
     with pytest.raises(ValueError):
         bq_client.add_table_fields(forbidden, [])
+
+
+@pytest.mark.parametrize(
+    "schema_id,dataset_id,expected",
+    [
+        (
+            SchemaId("project", "dataset", "table"),
+            DatasetId("project", "dataset"),
+            "table",
+        ),
+        (
+            SchemaId("project", "dataset", "table"),
+            DatasetId("project", "other_dataset"),
+            "dataset.table",
+        ),
+        (
+            SchemaId("project", "dataset", "table"),
+            DatasetId("other_project", "dataset"),
+            "project.dataset.table",
+        ),
+        (
+            SchemaId("project", "dataset", "table"),
+            DatasetId("other_project", "other_dataset"),
+            "project.dataset.table",
+        ),
+    ],
+)
+def test_schema_id_relative_string(schema_id, dataset_id, expected):
+    assert schema_id.relative_string(dataset_id) == expected

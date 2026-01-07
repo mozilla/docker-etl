@@ -83,6 +83,16 @@ class SchemaId:
     def dataset_id(self) -> DatasetId:
         return DatasetId(self.project, self.dataset)
 
+    def relative_string(self, dataset_id: DatasetId) -> str:
+        result = []
+        if dataset_id.project != self.project:
+            result.append(self.project)
+            result.append(self.dataset)
+        elif dataset_id.dataset != self.dataset:
+            result.append(self.dataset)
+        result.append(self.name)
+        return ".".join(result)
+
     @classmethod
     def from_str(
         cls,
