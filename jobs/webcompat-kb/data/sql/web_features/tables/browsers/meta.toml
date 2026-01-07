@@ -1,1 +1,2 @@
 name = "browsers"
+etl = ["web_features"]

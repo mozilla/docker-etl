@@ -1,1 +1,2 @@
 name = "features_split"
+etl = ["web_features"]
