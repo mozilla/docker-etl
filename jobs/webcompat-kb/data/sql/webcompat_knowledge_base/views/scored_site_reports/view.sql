@@ -13,7 +13,7 @@ WITH
     webcompat_host),
   /* Individual score components for each bug.
 
-  These should always match the logic in `{{ project }}.{{ dataset }}.WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK`
+  These should always match the logic in `{{ dataset }}.WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK`
   such that multiplying all the columns except severity score is equivalent to running that function.*/ scores AS (
   SELECT
     number,
@@ -50,9 +50,9 @@ WITH
       (weights.lookup_type = "branch"
         AND weights.lookup_value = IFNULL(JSON_VALUE(site_reports.user_story, "$.branch"), "release"), weights.score, 0)) AS branch_score,
   FROM
-    `{{ project }}.{{ dataset }}.site_reports` AS site_reports
+    `{{ ref('site_reports') }}` AS site_reports
   CROSS JOIN
-    `{{ project }}.{{ dataset }}.dim_bug_score` AS weights
+    `{{ ref('dim_bug_score') }}` AS weights
   GROUP BY
     number),
 
@@ -67,7 +67,7 @@ computed_scores AS (
     `{{ ref('WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFIER') }}`(url,
       `{{ ref('WEBCOMPAT_METRIC_YYYYMM') }}`()) AS site_rank_score
   FROM
-    `{{ project }}.{{ dataset }}.site_reports` AS site_reports
+    `{{ ref('site_reports') }}` AS site_reports
 ),
 
 site_report_scores AS (

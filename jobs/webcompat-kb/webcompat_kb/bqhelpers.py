@@ -432,7 +432,8 @@ class BigQuery:
         self, dataset_id: str | DatasetId, description: Optional[str]
     ) -> None:
         dataset = bigquery.Dataset(str(dataset_id))
-        dataset.description = description
+        if description is not None:
+            dataset.description = description
         if self.write:
             self.client.create_dataset(dataset, exists_ok=True)
 
