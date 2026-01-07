@@ -241,12 +241,34 @@ class DatasetTemplates:
         )
 
 
+class TemplatesByDataset(dict[DatasetId, DatasetTemplates]):
+    def get_schema_template(
+        self, schema_type: SchemaType, schema_id: SchemaId
+    ) -> TableTemplate | ViewTemplate | RoutineTemplate:
+        dataset_id = schema_id.dataset_id
+        templates = self[dataset_id]
+        target: list[TableTemplate] | list[ViewTemplate] | list[RoutineTemplate]
+        if schema_type == SchemaType.table:
+            target = templates.tables
+        elif schema_type == SchemaType.view:
+            target = templates.views
+        elif schema_type == SchemaType.routine:
+            target = templates.routines
+
+        current_templates = [
+            item for item in target if item.metadata.name == schema_id.name
+        ]
+        if len(current_templates) != 1:
+            raise KeyError(f"Failed to find template for {schema_id}")
+        return current_templates[0]
+
+
 @dataclass
 class ProjectData:
     """Container for on-disk data used for a project including schema templates"""
 
     path: os.PathLike
-    templates_by_dataset: Mapping[DatasetId, DatasetTemplates]
+    templates_by_dataset: TemplatesByDataset
     metric_dfns: Sequence[metrics.Metric]
     metric_types: Sequence[metrics.MetricType]
     rank_dfns: Sequence[ranks.RankColumn]
@@ -359,10 +381,8 @@ class TableSchemaCreator:
         return template.render()
 
 
-def load_templates(
-    project: str, root_path: os.PathLike
-) -> Mapping[DatasetId, DatasetTemplates]:
-    by_dataset = {}
+def load_templates(project: str, root_path: os.PathLike) -> TemplatesByDataset:
+    by_dataset = TemplatesByDataset()
     path = pathlib.Path(root_path).resolve()
     sql_path = path / "sql"
     logging.info(f"Loading templates from {sql_path}")
