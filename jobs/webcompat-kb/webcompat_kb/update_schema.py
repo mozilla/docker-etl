@@ -11,7 +11,6 @@ from typing import Callable, Iterable, Mapping, Optional, Sequence
 import jinja2
 from google.cloud import bigquery
 
-from . import projectdata
 from .base import ALL_JOBS, Context, EtlJob
 from .bqhelpers import (
     BigQuery,
@@ -607,83 +606,6 @@ def update_schema_if_needed(
         delete_extra,
     )
     record_update(project, client, src_hash)
-
-
-class UpdateStagingData(EtlJob):
-    name = "update-staging-data"
-    default = False
-
-    @classmethod
-    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        group = parser.add_argument_group(
-            title="Update Staging Data", description="update-staging-data arguments"
-        )
-        group.add_argument(
-            "--update-staging-data-views",
-            action="store_true",
-            default=False,
-            help="Redeploy views to staging",
-        )
-
-    def default_dataset(self, context: Context) -> str:
-        return context.args.bq_kb_dataset
-
-    def write_targets(self, project: Project) -> set[SchemaId]:
-        # This job can update any schema
-        rv = set()
-        for dataset in project:
-            for schema in dataset:
-                rv.add(schema.id)
-        return rv
-
-    def main(self, context: Context) -> None:
-        client = context.bq_client
-        datasets = [DatasetId(client.project_id, context.args.bq_kb_dataset)]
-        dataset_mapping = {
-            dataset: projectdata.stage_dataset(dataset) for dataset in datasets
-        }
-
-        for dataset in datasets:
-            if client.write:
-                client.client.create_dataset(dataset.dataset, exists_ok=True)
-            tables = list(
-                SchemaId(dataset.project, dataset.dataset, item.table_id)
-                for item in client.client.list_tables(dataset.dataset)
-                if item.table_type != "VIEW"
-            )
-            schema_id_mapper = projectdata.SchemaIdMapper(dataset_mapping, set(tables))
-            for src_table in tables:
-                dest_table = schema_id_mapper(ReferenceType.table, src_table)
-                assert dest_table != src_table
-                logging.info(f"Creating {dest_table} from {src_table}")
-                if context.config.write:
-                    client.delete_table(str(dest_table), not_found_ok=True)
-                else:
-                    logging.info(f"Would delete table {dest_table}")
-
-                query = f"""
-CREATE TABLE `{dest_table}`
-CLONE `{src_table}`
-"""
-                if context.config.write:
-                    logging.info(f"Creating table {dest_table} from {src_table}")
-                    try:
-                        client.query(query)
-                    except Exception:
-                        logging.error(f"Creating table {dest_table} failed")
-                else:
-                    logging.info(f"Would run query:{query}")
-
-        if context.args.update_staging_data_views:
-            logging.info("Updating stage views")
-            update_schema_if_needed(
-                context.project,
-                client,
-                etl_jobs_enabled=set(),
-                stage=True,
-                recreate=True,
-                delete_extra=False,
-            )
 
 
 class UpdateSchemaJob(EtlJob):

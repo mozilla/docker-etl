@@ -51,6 +51,7 @@ webcompat-backfill-history = "webcompat_kb.utils:backfill_history"
 webcompat-backfill-metric = "webcompat_kb.commands.backfill_metric:main"
 webcompat-check-templates = "webcompat_kb.commands.checkdata:main"
 webcompat-render = "webcompat_kb.commands.render:main"
+webcompat-update-staging-data = "webcompat_kb.commands.update_staging_data:main"
 webcompat-validate = "webcompat_kb.commands.validate:main"
 
 
