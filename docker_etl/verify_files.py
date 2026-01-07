@@ -1,9 +1,9 @@
 import sys
 from typing import List, Set, Tuple
 
-from docker_etl.file_utils import CI_JOB_NAME, CI_WORKFLOW_NAME, get_job_dirs
+from docker_etl.file_utils import CI_JOB_NAME, get_job_dirs
 
-REQUIRED_FILES = {CI_JOB_NAME, CI_WORKFLOW_NAME, "README.md", "Dockerfile"}
+REQUIRED_FILES = {CI_JOB_NAME, "README.md", "Dockerfile"}
 
 
 def check_missing_files() -> List[Tuple[str, Set[str]]]:

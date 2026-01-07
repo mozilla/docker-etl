@@ -2,9 +2,7 @@ from pathlib import Path
 from typing import Dict, List
 
 CI_JOB_NAME = "ci_job.yaml"
-CI_WORKFLOW_NAME = "ci_workflow.yaml"
 CI_JOB_TEMPLATE_NAME = "ci_job.template.yaml"
-CI_WORKFLOW_TEMPLATE_NAME = "ci_workflow.template.yaml"
 
 ROOT_DIR = (Path(__file__).parent / "..").resolve()
 TEMPLATES_DIR = ROOT_DIR / "templates"
