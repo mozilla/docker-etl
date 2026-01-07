@@ -15,3 +15,7 @@ mode = "REQUIRED"
 {% endfor %}
 {% endfor %}
 {% endfor %}
+
+[name]
+type = "STRING"
+mode = "NULLABLE"
