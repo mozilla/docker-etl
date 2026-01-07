@@ -1,1 +1,2 @@
 name = "features_support"
+etl = ["web_features"]

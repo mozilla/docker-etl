@@ -83,6 +83,16 @@ class SchemaId:
     def dataset_id(self) -> DatasetId:
         return DatasetId(self.project, self.dataset)
 
+    def relative_string(self, dataset_id: DatasetId) -> str:
+        result = []
+        if dataset_id.project != self.project:
+            result.append(self.project)
+            result.append(self.dataset)
+        elif dataset_id.dataset != self.dataset:
+            result.append(self.dataset)
+        result.append(self.name)
+        return ".".join(result)
+
     @classmethod
     def from_str(
         cls,
@@ -422,7 +432,8 @@ class BigQuery:
         self, dataset_id: str | DatasetId, description: Optional[str]
     ) -> None:
         dataset = bigquery.Dataset(str(dataset_id))
-        dataset.description = description
+        if description is not None:
+            dataset.description = description
         if self.write:
             self.client.create_dataset(dataset, exists_ok=True)
 

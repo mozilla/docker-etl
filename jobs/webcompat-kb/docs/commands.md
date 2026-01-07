@@ -53,3 +53,24 @@ webcompat-validate --bq-project-id <project_id> [schema_id*]
 `schema_id` is a schema id, usually of the form `dataset.name`
 e.g. `webcompat_knowledge_base.scored_site_reports`. Unlike
 `webcompat-render` this communicates with BigQuery.
+
+## webcompat-update-staging-data
+
+Update the data in staging datasets based on current data in production.
+
+```
+webcompat-update-staging-data --bq-project-id <project_id> [--update-views]
+```
+
+Copies tables from `dataset` to `dataset_test`. With `--update-views`
+also updates views in `--dataset-test` to match the ones defined in
+the source tree.
+
+## webcompat-add-metric
+
+Create the views and tables for metrics based on the metric definition
+files.
+
+```
+webcompat-add-metric --bq-project-id <project_id>
+```

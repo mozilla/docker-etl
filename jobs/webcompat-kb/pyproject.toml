@@ -24,6 +24,7 @@ dependencies = [
   "httpx[http2]>=0.28.1",
   "jinja2>=3.1.6",
   "pydantic==2.11.5",
+  "tomli-w>=1.2.0",
   "web-features==3.0.0",
 ]
 
@@ -47,10 +48,12 @@ test = [
 
 [project.scripts]
 webcompat-etl = "webcompat_kb.main:main"
+webcompat-add-metric = "webcompat_kb.commands.add_metric:main"
 webcompat-backfill-history = "webcompat_kb.utils:backfill_history"
 webcompat-backfill-metric = "webcompat_kb.commands.backfill_metric:main"
 webcompat-check-templates = "webcompat_kb.commands.checkdata:main"
 webcompat-render = "webcompat_kb.commands.render:main"
+webcompat-update-staging-data = "webcompat_kb.commands.update_staging_data:main"
 webcompat-validate = "webcompat_kb.commands.validate:main"
 
 

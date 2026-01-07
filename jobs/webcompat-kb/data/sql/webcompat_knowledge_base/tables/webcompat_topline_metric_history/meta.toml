@@ -1,1 +1,2 @@
 name = "webcompat_topline_metric_history"
+etl = ["metric"]

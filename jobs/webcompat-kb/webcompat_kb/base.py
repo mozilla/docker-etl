@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, MutableMapping, Optional
 
+import google
+
 from .bqhelpers import BigQuery, SchemaId
 from .config import Config
 from .projectdata import Project, TableSchema
@@ -104,6 +106,11 @@ class Command(ABC):
 
         try:
             rv = self.main(args)
+        except google.auth.exceptions.RefreshError:
+            logging.error("""Reauthentication with Google Cloud required. Please run:
+gcloud auth login --enable-gdrive-access --update-adc
+""")
+            sys.exit(1)
         except Exception:
             if "pdb" in args and args.pdb:
                 import pdb
