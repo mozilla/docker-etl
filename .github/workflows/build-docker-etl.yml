@@ -1,0 +1,37 @@
+name: Build docker-etl
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build-docker-etl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Build Docker image
+        run: docker build . -t docker-etl:build
+
+      - name: Test Code
+        run: |
+          docker run docker-etl:build /bin/bash -c \
+          "python -m pytest docker_etl/ tests/; \
+          flake8 docker_etl/ tests/;\
+          black docker_etl/ tests/"
+
+      - name: Verify jobs have required files
+        run: docker run docker-etl:build script/verify_files
+
+      - name: Verify CI workflow files are up-to-date
+        run: |
+          docker run --user $(id -u):$(id -g) -v $PWD:/app -w /app docker-etl:build python3 -m docker_etl.ci_config
+          git diff --exit-code .github/workflows/job-*.yml || (
+            echo "ERROR: Workflow files are out of date. Please run 'python3 -m docker_etl.ci_config' and commit the changes."
+            exit 1
+          )
