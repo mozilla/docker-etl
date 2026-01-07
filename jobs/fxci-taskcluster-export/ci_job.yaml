@@ -19,17 +19,6 @@
       - name: Test Code
         if: steps.changes.outputs.job == 'true'
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/fxci-taskcluster-export:latest pytest -vv
-      - name: Save Docker image
-        if: steps.changes.outputs.job == 'true'
-        run: |
-          docker save us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/fxci-taskcluster-export:latest | gzip > /tmp/fxci-taskcluster-export-image.tar.gz
-      - name: Upload Docker image artifact
-        if: steps.changes.outputs.job == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: fxci-taskcluster-export-docker-image
-          path: /tmp/fxci-taskcluster-export-image.tar.gz
-          retention-days: 1
 
   deploy-to-gar-fxci-taskcluster-export:
     name: Deploy fxci-taskcluster-export to GAR
@@ -44,14 +33,11 @@
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Download Docker image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: fxci-taskcluster-export-docker-image
-          path: /tmp
-      - name: Load Docker image
+      - name: Build the Docker image
+        # yamllint disable
         run: |
-          docker load < /tmp/fxci-taskcluster-export-image.tar.gz
+          docker build jobs/fxci-taskcluster-export -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/fxci-taskcluster-export:latest
+        # yamllint enable
       - name: Push Docker image latest to GAR
         uses: mozilla-it/deploy-actions/docker-push@v4.3.2
         with:

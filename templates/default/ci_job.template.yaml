@@ -8,15 +8,6 @@
         run: |
           docker build jobs/{{ job_name }} -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/{{ job_name }}:latest
         # yamllint enable
-      - name: Save Docker image
-        run: |
-          docker save us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/{{ job_name }}:latest | gzip > /tmp/{{ job_name }}-image.tar.gz
-      - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: {{ job_name }}-docker-image
-          path: /tmp/{{ job_name }}-image.tar.gz
-          retention-days: 1
 
   deploy-to-gar-{{ job_name }}:
     name: Deploy {{ job_name }} to GAR
@@ -31,14 +22,11 @@
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Download Docker image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: {{ job_name }}-docker-image
-          path: /tmp
-      - name: Load Docker image
+      - name: Build the Docker image
+        # yamllint disable
         run: |
-          docker load < /tmp/{{ job_name }}-image.tar.gz
+          docker build jobs/{{ job_name }} -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/{{ job_name }}:latest
+        # yamllint enable
       - name: Push Docker image latest to GAR
         uses: mozilla-it/deploy-actions/docker-push@v4.3.2
         with:

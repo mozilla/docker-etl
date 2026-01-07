@@ -28,15 +28,6 @@ jobs:
         run: |
           docker build jobs/search-alert -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/search-alert:latest
         # yamllint enable
-      - name: Save Docker image
-        run: |
-          docker save us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/search-alert:latest | gzip > /tmp/search-alert-image.tar.gz
-      - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: search-alert-docker-image
-          path: /tmp/search-alert-image.tar.gz
-          retention-days: 1
 
   deploy-to-gar-search-alert:
     name: Deploy search-alert to GAR
@@ -51,14 +42,11 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Download Docker image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: search-alert-docker-image
-          path: /tmp
-      - name: Load Docker image
+      - name: Build the Docker image
+        # yamllint disable
         run: |
-          docker load < /tmp/search-alert-image.tar.gz
+          docker build jobs/search-alert -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/search-alert:latest
+        # yamllint enable
       - name: Push Docker image latest to GAR
         uses: mozilla-it/deploy-actions/docker-push@v4.3.2
         with:

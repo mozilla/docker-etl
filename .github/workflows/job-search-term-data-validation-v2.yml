@@ -30,15 +30,6 @@ jobs:
         # yamllint enable
       - name: Test Code
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/search-term-data-validation-v2:latest pytest
-      - name: Save Docker image
-        run: |
-          docker save us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/search-term-data-validation-v2:latest | gzip > /tmp/search-term-data-validation-v2-image.tar.gz
-      - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: search-term-data-validation-v2-docker-image
-          path: /tmp/search-term-data-validation-v2-image.tar.gz
-          retention-days: 1
 
   deploy-to-gar-search-term-data-validation-v2:
     name: Deploy search-term-data-validation-v2 to GAR
@@ -53,14 +44,11 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Download Docker image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: search-term-data-validation-v2-docker-image
-          path: /tmp
-      - name: Load Docker image
+      - name: Build the Docker image
+        # yamllint disable
         run: |
-          docker load < /tmp/search-term-data-validation-v2-image.tar.gz
+          docker build jobs/search-term-data-validation-v2 -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/search-term-data-validation-v2:latest
+        # yamllint enable
       - name: Push Docker image latest to GAR
         uses: mozilla-it/deploy-actions/docker-push@v4.3.2
         with:

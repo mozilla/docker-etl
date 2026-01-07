@@ -19,17 +19,6 @@
       - name: Test Code
         if: steps.changes.outputs.job == 'true'
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/dap-collector-ppa-prod:latest python3 -m pytest
-      - name: Save Docker image
-        if: steps.changes.outputs.job == 'true'
-        run: |
-          docker save us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/dap-collector-ppa-prod:latest | gzip > /tmp/dap-collector-ppa-prod-image.tar.gz
-      - name: Upload Docker image artifact
-        if: steps.changes.outputs.job == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: dap-collector-ppa-prod-docker-image
-          path: /tmp/dap-collector-ppa-prod-image.tar.gz
-          retention-days: 1
 
   deploy-to-gar-dap-collector-ppa-prod:
     name: Deploy dap-collector-ppa-prod to GAR
@@ -44,14 +33,11 @@
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Download Docker image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: dap-collector-ppa-prod-docker-image
-          path: /tmp
-      - name: Load Docker image
+      - name: Build the Docker image
+        # yamllint disable
         run: |
-          docker load < /tmp/dap-collector-ppa-prod-image.tar.gz
+          docker build jobs/dap-collector-ppa-prod -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/dap-collector-ppa-prod:latest
+        # yamllint enable
       - name: Push Docker image latest to GAR
         uses: mozilla-it/deploy-actions/docker-push@v4.3.2
         with:

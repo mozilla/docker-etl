@@ -30,15 +30,6 @@ jobs:
         # yamllint enable
       - name: Test Code
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/extensions:latest pytest --flake8 --black
-      - name: Save Docker image
-        run: |
-          docker save us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/extensions:latest | gzip > /tmp/extensions-image.tar.gz
-      - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: extensions-docker-image
-          path: /tmp/extensions-image.tar.gz
-          retention-days: 1
 
   deploy-to-gar-extensions:
     name: Deploy extensions to GAR
@@ -53,14 +44,11 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Download Docker image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: extensions-docker-image
-          path: /tmp
-      - name: Load Docker image
+      - name: Build the Docker image
+        # yamllint disable
         run: |
-          docker load < /tmp/extensions-image.tar.gz
+          docker build jobs/extensions -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/extensions:latest
+        # yamllint enable
       - name: Push Docker image latest to GAR
         uses: mozilla-it/deploy-actions/docker-push@v4.3.2
         with:

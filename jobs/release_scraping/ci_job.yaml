@@ -38,6 +38,11 @@
         run: |
           docker build jobs/release_scraping -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/release_scraping:latest
         # yamllint enable
+      - name: Build the Docker image
+        # yamllint disable
+        run: |
+          docker build jobs/release_scraping -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/release_scraping:latest
+        # yamllint enable
       - name: Push Docker image latest to GAR
         uses: mozilla-it/deploy-actions/docker-push@v4.3.2
         with:
