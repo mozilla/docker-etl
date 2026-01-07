@@ -6,11 +6,14 @@ from webcompat_kb.metrics.ranks import RankColumn
 from webcompat_kb.projectdata import (
     DatasetId,
     ReferenceType,
+    RoutineTemplate,
     SchemaId,
     SchemaIdMapper,
+    SchemaType,
     TableSchemaCreator,
     TableTemplate,
     TableMetadata,
+    ViewTemplate,
     stage_dataset,
 )
 
@@ -127,3 +130,80 @@ mode="NULLABLE"
     )
     actual = creator.create_table_schema(DatasetId("project", "dataset"), template)
     assert actual == expected
+
+
+def test_get_schema_template_view(project_data):
+    template = project_data.templates_by_dataset.get_schema_template(
+        SchemaType.view,
+        SchemaId("test", "webcompat_knowledge_base", "scored_site_reports"),
+    )
+    assert isinstance(template, ViewTemplate)
+    assert (
+        template.path.resolve()
+        == (
+            project_data.path
+            / "sql"
+            / "webcompat_knowledge_base"
+            / "views"
+            / "scored_site_reports"
+        ).resolve()
+    )
+    assert template.metadata.name == "scored_site_reports"
+
+
+def test_get_schema_template_table(project_data):
+    template = project_data.templates_by_dataset.get_schema_template(
+        SchemaType.table,
+        SchemaId("test", "webcompat_knowledge_base", "bugzilla_bugs"),
+    )
+    assert isinstance(template, TableTemplate)
+    assert (
+        template.path.resolve()
+        == (
+            project_data.path
+            / "sql"
+            / "webcompat_knowledge_base"
+            / "tables"
+            / "bugzilla_bugs"
+        ).resolve()
+    )
+    assert template.metadata.name == "bugzilla_bugs"
+
+
+def test_get_schema_template_routine(project_data):
+    template = project_data.templates_by_dataset.get_schema_template(
+        SchemaType.routine,
+        SchemaId("test", "webcompat_knowledge_base", "WEBCOMPAT_HOST"),
+    )
+    assert isinstance(template, RoutineTemplate)
+    assert (
+        template.path.resolve()
+        == (
+            project_data.path
+            / "sql"
+            / "webcompat_knowledge_base"
+            / "routines"
+            / "WEBCOMPAT_HOST"
+        ).resolve()
+    )
+    assert template.metadata.name == "WEBCOMPAT_HOST"
+
+
+@pytest.mark.parametrize(
+    "schema_type,schema_id",
+    [
+        (
+            SchemaType.routine,
+            SchemaId("test", "webcompat_knowledge_base", "scored_site_reports"),
+        ),
+        (
+            SchemaType.view,
+            SchemaId(
+                "test", "webcompat_knowledge_base", "notexisting_scored_site_reports"
+            ),
+        ),
+    ],
+)
+def test_get_schema_template_invalid(project_data, schema_type, schema_id):
+    with pytest.raises(KeyError):
+        project_data.templates_by_dataset.get_schema_template(schema_type, schema_id)
