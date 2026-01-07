@@ -8,7 +8,7 @@ name: experiments-monitoring-data-export
 on:
   push:
     branches:
-      - '**'
+      - main
     paths:
       - 'jobs/experiments-monitoring-data-export/**'
       - '.github/workflows/job-experiments-monitoring-data-export.yml'
@@ -28,6 +28,15 @@ jobs:
         run: |
           docker build jobs/experiments-monitoring-data-export -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/experiments-monitoring-data-export:latest
         # yamllint enable
+      - name: Save Docker image
+        run: |
+          docker save us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/experiments-monitoring-data-export:latest | gzip > /tmp/experiments-monitoring-data-export-image.tar.gz
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: experiments-monitoring-data-export-docker-image
+          path: /tmp/experiments-monitoring-data-export-image.tar.gz
+          retention-days: 1
 
   deploy-to-gar-experiments-monitoring-data-export:
     name: Deploy experiments-monitoring-data-export to GAR
@@ -42,11 +51,14 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Build the Docker image
-        # yamllint disable
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: experiments-monitoring-data-export-docker-image
+          path: /tmp
+      - name: Load Docker image
         run: |
-          docker build jobs/experiments-monitoring-data-export -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/experiments-monitoring-data-export:latest
-        # yamllint enable
+          docker load < /tmp/experiments-monitoring-data-export-image.tar.gz
       - name: Push Docker image latest to GAR
         uses: mozilla-it/deploy-actions/docker-push@v4.3.2
         with:

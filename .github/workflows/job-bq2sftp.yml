@@ -8,7 +8,7 @@ name: bq2sftp
 on:
   push:
     branches:
-      - '**'
+      - main
     paths:
       - 'jobs/bq2sftp/**'
       - '.github/workflows/job-bq2sftp.yml'
@@ -28,6 +28,15 @@ jobs:
         run: |
           docker build jobs/bq2sftp -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/bq2sftp:latest
         # yamllint enable
+      - name: Save Docker image
+        run: |
+          docker save us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/bq2sftp:latest | gzip > /tmp/bq2sftp-image.tar.gz
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bq2sftp-docker-image
+          path: /tmp/bq2sftp-image.tar.gz
+          retention-days: 1
 
   deploy-to-gar-bq2sftp:
     name: Deploy bq2sftp to GAR
@@ -42,11 +51,14 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Build the Docker image
-        # yamllint disable
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bq2sftp-docker-image
+          path: /tmp
+      - name: Load Docker image
         run: |
-          docker build jobs/bq2sftp -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/bq2sftp:latest
-        # yamllint enable
+          docker load < /tmp/bq2sftp-image.tar.gz
       - name: Push Docker image latest to GAR
         uses: mozilla-it/deploy-actions/docker-push@v4.3.2
         with:

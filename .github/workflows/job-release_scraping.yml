@@ -8,7 +8,7 @@ name: release_scraping
 on:
   push:
     branches:
-      - '**'
+      - main
     paths:
       - 'jobs/release_scraping/**'
       - '.github/workflows/job-release_scraping.yml'

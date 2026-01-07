@@ -8,7 +8,7 @@ name: mozaggregator2bq
 on:
   push:
     branches:
-      - '**'
+      - main
     paths:
       - 'jobs/mozaggregator2bq/**'
       - '.github/workflows/job-mozaggregator2bq.yml'
@@ -28,6 +28,15 @@ jobs:
         run: |
           docker build jobs/mozaggregator2bq -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/mozaggregator2bq:latest
         # yamllint enable
+      - name: Save Docker image
+        run: |
+          docker save us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/mozaggregator2bq:latest | gzip > /tmp/mozaggregator2bq-image.tar.gz
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mozaggregator2bq-docker-image
+          path: /tmp/mozaggregator2bq-image.tar.gz
+          retention-days: 1
 
   deploy-to-gar-mozaggregator2bq:
     name: Deploy mozaggregator2bq to GAR
@@ -42,11 +51,14 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Build the Docker image
-        # yamllint disable
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mozaggregator2bq-docker-image
+          path: /tmp
+      - name: Load Docker image
         run: |
-          docker build jobs/mozaggregator2bq -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/mozaggregator2bq:latest
-        # yamllint enable
+          docker load < /tmp/mozaggregator2bq-image.tar.gz
       - name: Push Docker image latest to GAR
         uses: mozilla-it/deploy-actions/docker-push@v4.3.2
         with:

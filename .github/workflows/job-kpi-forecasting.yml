@@ -8,7 +8,7 @@ name: kpi-forecasting
 on:
   push:
     branches:
-      - '**'
+      - main
     paths:
       - 'jobs/kpi-forecasting/**'
       - '.github/workflows/job-kpi-forecasting.yml'
@@ -30,6 +30,15 @@ jobs:
         # yamllint enable
       - name: Test Code
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/kpi-forecasting:latest pytest --ruff --ruff-format
+      - name: Save Docker image
+        run: |
+          docker save us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/kpi-forecasting:latest | gzip > /tmp/kpi-forecasting-image.tar.gz
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kpi-forecasting-docker-image
+          path: /tmp/kpi-forecasting-image.tar.gz
+          retention-days: 1
 
   deploy-to-gar-kpi-forecasting:
     name: Deploy kpi-forecasting to GAR
@@ -44,11 +53,14 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Build the Docker image
-        # yamllint disable
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: kpi-forecasting-docker-image
+          path: /tmp
+      - name: Load Docker image
         run: |
-          docker build jobs/kpi-forecasting -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/kpi-forecasting:latest
-        # yamllint enable
+          docker load < /tmp/kpi-forecasting-image.tar.gz
       - name: Push Docker image latest to GAR
         uses: mozilla-it/deploy-actions/docker-push@v4.3.2
         with:

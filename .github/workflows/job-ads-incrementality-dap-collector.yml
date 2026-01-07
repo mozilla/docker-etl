@@ -8,7 +8,7 @@ name: ads-incrementality-dap-collector
 on:
   push:
     branches:
-      - '**'
+      - main
     paths:
       - 'jobs/ads-incrementality-dap-collector/**'
       - '.github/workflows/job-ads-incrementality-dap-collector.yml'
@@ -30,6 +30,15 @@ jobs:
         # yamllint enable
       - name: Test Code
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/ads-incrementality-dap-collector:latest python3 -m pytest
+      - name: Save Docker image
+        run: |
+          docker save us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/ads-incrementality-dap-collector:latest | gzip > /tmp/ads-incrementality-dap-collector-image.tar.gz
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ads-incrementality-dap-collector-docker-image
+          path: /tmp/ads-incrementality-dap-collector-image.tar.gz
+          retention-days: 1
 
   deploy-to-gar-ads-incrementality-dap-collector:
     name: Deploy ads-incrementality-dap-collector to GAR
@@ -44,11 +53,14 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Build the Docker image
-        # yamllint disable
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ads-incrementality-dap-collector-docker-image
+          path: /tmp
+      - name: Load Docker image
         run: |
-          docker build jobs/ads-incrementality-dap-collector -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/ads-incrementality-dap-collector:latest
-        # yamllint enable
+          docker load < /tmp/ads-incrementality-dap-collector-image.tar.gz
       - name: Push Docker image latest to GAR
         uses: mozilla-it/deploy-actions/docker-push@v4.3.2
         with:

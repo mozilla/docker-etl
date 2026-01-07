@@ -8,7 +8,7 @@ name: dap-collector
 on:
   push:
     branches:
-      - '**'
+      - main
     paths:
       - 'jobs/dap-collector/**'
       - '.github/workflows/job-dap-collector.yml'
@@ -28,6 +28,15 @@ jobs:
         run: |
           docker build jobs/dap-collector -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/dap-collector:latest
         # yamllint enable
+      - name: Save Docker image
+        run: |
+          docker save us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/dap-collector:latest | gzip > /tmp/dap-collector-image.tar.gz
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dap-collector-docker-image
+          path: /tmp/dap-collector-image.tar.gz
+          retention-days: 1
 
   deploy-to-gar-dap-collector:
     name: Deploy dap-collector to GAR
@@ -42,11 +51,14 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Build the Docker image
-        # yamllint disable
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dap-collector-docker-image
+          path: /tmp
+      - name: Load Docker image
         run: |
-          docker build jobs/dap-collector -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/dap-collector:latest
-        # yamllint enable
+          docker load < /tmp/dap-collector-image.tar.gz
       - name: Push Docker image latest to GAR
         uses: mozilla-it/deploy-actions/docker-push@v4.3.2
         with:

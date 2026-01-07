@@ -8,7 +8,7 @@ name: {{ job_name }}
 on:
   push:
     branches:
-      - '**'
+      - main
     paths:
       - 'jobs/{{ job_name }}/**'
       - '.github/workflows/job-{{ job_name }}.yml'

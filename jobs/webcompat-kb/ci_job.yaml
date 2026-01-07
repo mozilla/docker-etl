@@ -22,6 +22,17 @@
       - name: Test Code
         if: steps.changes.outputs.job == 'true'
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/webcompat-kb:latest pytest --ruff --ruff-format
+      - name: Save Docker image
+        if: steps.changes.outputs.job == 'true'
+        run: |
+          docker save us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/webcompat-kb:latest | gzip > /tmp/webcompat-kb-image.tar.gz
+      - name: Upload Docker image artifact
+        if: steps.changes.outputs.job == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: webcompat-kb-docker-image
+          path: /tmp/webcompat-kb-image.tar.gz
+          retention-days: 1
 
   deploy-to-gar-webcompat-kb:
     name: Deploy webcompat-kb to GAR
@@ -36,11 +47,14 @@
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Build the Docker image
-        # yamllint disable
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: webcompat-kb-docker-image
+          path: /tmp
+      - name: Load Docker image
         run: |
-          docker build jobs/webcompat-kb -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/webcompat-kb:latest
-        # yamllint enable
+          docker load < /tmp/webcompat-kb-image.tar.gz
       - name: Push Docker image latest to GAR
         uses: mozilla-it/deploy-actions/docker-push@v4.3.2
         with:
