@@ -1,2 +1,5 @@
 # require @mozilla/dataplatform-wg review for everything
 * @mozilla/dataplatform-wg
+
+jobs/broken-site-report-ml @mozilla/webcompat
+jobs/webcompat-kb @mozilla/webcompat
