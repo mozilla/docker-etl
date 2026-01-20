@@ -1,9 +1,3 @@
-[test]
-reason = "Example reason"
-routine_updates = [
-  "WEBCOMPAT_METRIC_SCORE",
-]
-
 [crux_202512]
 reason = "Update CrUX data to 202512"
 routine_updates = [
