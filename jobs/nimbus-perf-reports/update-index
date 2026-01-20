@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+import os
+import json
+import glob
+import django
+import sys
+import argparse
+from django.conf import settings
+from django.template.loader import get_template
+from bs4 import BeautifulSoup as bs
+from datetime import datetime
+
+# Parse arguments
+def parseArguments():
+  parser = argparse.ArgumentParser(description='Update performance report index file.')
+  parser.add_argument('--append', type=str, required=False, help="File to append into index.")
+  parser.add_argument('--index', type=str, required=False, help="Location of index file.")
+  parser.add_argument('--reportDir', type=str, required=False, help="Create new index file based on reports in this directory.")
+  args = parser.parse_args()
+  return args
+
+
+def setupDjango():
+  TEMPLATES = [
+      {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        'DIRS': [os.path.join(os.path.dirname(__file__),'lib','templates','html')]
+        }
+      ]
+  settings.configure(TEMPLATES=TEMPLATES)
+  django.setup()
+
+def updateFromDirectory(directory):
+  REPORT_DIR = args.reportDir
+  if not os.path.isdir(REPORT_DIR):
+      print(f"The directory '{REPORT_DIR}' does not exist.")
+      sys.exit(1)
+  
+  experiment_reports = []
+  other_reports = []
+  for filename in glob.glob(f"{REPORT_DIR}/*.html"):
+    if os.path.basename(filename) == "index.html":
+      continue
+  
+    print("Reading " + filename)
+  
+    with open(filename) as fp:
+      soup = bs(fp, 'html.parser')
+      element_by_id=soup.find("div",{"id":"config"})
+      config = json.loads(element_by_id.section.div.code.pre.text)
+      if config["is_experiment"]==True:
+        experiment_reports.append(config)
+      else:
+        # We dump some branch data for non-experiment reports
+        # so, add some additional info for styling.
+        config["branchlen"] = len(config["branches"])
+        for i in range(len(config["branches"])):
+          config["branches"][-1]["last"] = False
+        config["branches"][-1]["last"] = True
+        if len(other_reports)%2==0:
+          config["style"] = "background:#ececec"
+        else:
+          config["style"] = "background:white"
+  
+        # Use the end date of the last branch for non-experiments.
+        config["endDate"] = config["branches"][-1]["endDate"]
+        other_reports.append(config)
+
+  experiment_reports.sort(key=lambda report: datetime.strptime(report['endDate'], '%Y-%m-%d'), reverse=True)
+  other_reports.sort(key=lambda report: datetime.strptime(report['endDate'], '%Y-%m-%d'), reverse=True)
+  
+  context = {
+      "title": "Telemetry Performance Report Index",
+      "experiment_reports": experiment_reports,
+      "other_reports": other_reports
+  }
+  
+  # Render and Prettify
+  html = t.render(context)
+  soup = bs(html, 'html.parser')
+  
+  with open(f"{REPORT_DIR}/index.html", "w") as f:
+    f.write(soup.prettify())
+
+def updateWithSingleReport_Experiment(soup, reportConfig):
+  experiment_table = soup.find('table', class_='experiment-table')
+  
+  new_row_html = f'''
+  <tr>
+    <td><a href="{reportConfig['slug']}.html">{reportConfig['slug']}</a></td>
+    <td>{reportConfig['startDate']}</td>
+    <td>{reportConfig['endDate']}</td>
+    <td>{reportConfig['channel']}</td>
+  </tr>
+  '''
+  
+  new_row = bs(new_row_html, 'html.parser')
+  experiment_table.find('tbody').insert(0, new_row.tr)
+
+
+def updateWithSingleReport_Other(soup, reportConfig):
+  other_table = soup.find('table', class_='other-table')
+  
+  backgroundColor = 'white'
+
+  # Get last used color and reverse it.
+  cell = other_table.find('tbody').find('td')
+  if cell:
+    style = cell.get('style', '')
+    for part in style.split(';'):
+      if 'background' in part:
+        color = part.split(':')[1].strip()
+        if color == 'white':
+          backgroundColor='#ececec'
+        break
+  
+  first=True
+  rows=[]
+  for branch in reportConfig['branches']:
+    new_row_html = f'''
+    <tr>
+    '''
+    if first:
+      new_row_html += f'''
+       <td rowspan="2" style="background:{backgroundColor}; border-bottom-style: solid;">
+        <a href="{reportConfig['slug']}.html">
+         {reportConfig['slug']}
+        </a>
+       </td>
+      '''
+      first = False
+  
+    new_row_html += f'''
+     <td style="background:{backgroundColor}">
+      {branch['name']}
+     </td>
+     <td style="background:{backgroundColor}">
+      {branch['startDate']}
+     </td>
+     <td style="background:{backgroundColor}">
+      {branch['endDate']}
+     </td>
+     <td style="background:{backgroundColor}">
+      {branch['channel']}
+     </td>
+    </tr>
+    '''
+    new_row = bs(new_row_html, 'html.parser')
+    rows.append(new_row)
+
+  # The rows are generated in the proper order, but they need
+  # to be appended to the table in reverse.
+  for row in reversed(rows):
+    other_table.find('tbody').insert(0, row.tr)
+
+def extract_existing_reports(soup):
+  # Find the table containing experiment reports
+  experiment_table = soup.find('table', class_='experiment-table')
+  experiments = {}
+  
+  if experiment_table:
+    rows = experiment_table.find_all('tr')[1:]  # Skip the header row
+    for row in rows:
+      cells = row.find_all('td')
+      if cells and len(cells) > 0:
+        experiment_name = cells[0].get_text(strip=True)
+        experiments[experiment_name] = {
+          'start_date': cells[1].get_text(strip=True),
+          'end_date': cells[2].get_text(strip=True),
+          'channel': cells[3].get_text(strip=True)
+        }
+  return experiments
+
+def updateWithSingleReport(indexFile, reportFile):
+  # Open the report file and get the slug, channel and start/end dates.
+  with open(reportFile) as f:
+    soup = bs(f, 'html.parser')
+    element_by_id=soup.find("div",{"id":"config"})
+    reportConfig = json.loads(element_by_id.section.div.code.pre.text)
+    
+  with open(indexFile, 'r') as file:
+    soup = bs(file, 'html.parser')
+
+    # Get list of reports already created by slug
+    reports = extract_existing_reports(soup)
+    if reportConfig['slug'] in reports:
+      print("Current report already exists.  Nothing to do.")
+      sys.exit(0)
+
+  # Append the new report to existing index file
+  if reportConfig['is_experiment']:
+    updateWithSingleReport_Experiment(soup, reportConfig)
+  else:
+    updateWithSingleReport_Other(soup, reportConfig)
+
+  with open(f"index.html", "w") as f:
+    f.write(soup.prettify())
+
+  return
+
+########### Start Program Here ###########
+if __name__ == "__main__":
+  setupDjango()
+  t = get_template("index.html")
+
+  args = parseArguments()
+
+  if args.reportDir:
+    updateFromDirectory(args.reportDir) 
+
+  if args.append and args.index:
+    updateWithSingleReport(args.index, args.append)
+
+  else:
+    print("ERROR: Either --append together with --index, or --reportDir must be provided.")
+    sys.exit(1);
+
