@@ -42,7 +42,7 @@ packaging==23.1
 pandas==2.0.2
 pathspec==0.11.1
 patsy==0.5.3
-Pillow==9.5.0
+Pillow==10.3.0
 platformdirs==3.5.3
 plotly==5.15.0
 pluggy==1.0.0
