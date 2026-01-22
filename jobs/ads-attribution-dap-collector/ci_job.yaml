@@ -11,14 +11,15 @@
           filters: |
             job:
               - 'jobs/ads-attribution-dap-collector/**'
-
-      - name: Build Docker image
-        if: steps.changes.outputs.job == 'true' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[run-tests]')
-        run: docker build jobs/ads-attribution-dap-collector/ -t app:build
-
+      - name: Build the Docker image
+        if: steps.changes.outputs.job == 'true'
+        # yamllint disable
+        run: |
+          docker build jobs/ads-attribution-dap-collector -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/ads-attribution-dap-collector:latest
+        # yamllint enable
       - name: Test Code
-        if: steps.changes.outputs.job == 'true' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[run-tests]')
-        run: docker run app:build pytest --flake8 --black
+        if: steps.changes.outputs.job == 'true'
+        run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/ads-attribution-dap-collector:latest python3 -m pytest
 
   push-job-ads-attribution-dap-collector:
     runs-on: ubuntu-latest
