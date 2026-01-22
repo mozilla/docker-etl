@@ -13,7 +13,6 @@ from . import (
     metric_changes,  # noqa: F401
     web_features,  # noqa: F401
     standards_positions,  # noqa: F401
-    metric_rescore,  # noqa: F401
     chrome_use_counters,  # noqa: F401
     interop,  # noqa: F401
 )
