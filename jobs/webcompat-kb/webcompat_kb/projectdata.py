@@ -1,3 +1,4 @@
+import shutil
 import enum
 import logging
 import os
@@ -251,6 +252,16 @@ class DatasetTemplates:
         else:
             raise ValueError(f"Don't know how to append {template}")
 
+    def remove(self, template: SchemaTemplate) -> None:
+        if isinstance(template, TableTemplate):
+            self.tables.remove(template)
+        elif isinstance(template, ViewTemplate):
+            self.views.remove(template)
+        elif isinstance(template, RoutineTemplate):
+            self.routines.remove(template)
+        else:
+            raise ValueError(f"Don't know how to remove {template}")
+
 
 class TemplatesByDataset(dict[DatasetId, DatasetTemplates]):
     def get_schema_template(
@@ -355,6 +366,26 @@ class ProjectData:
                 f"Would write metadata file {meta_file}:\n{tomli_w.dumps(metadata, indent=2)}"
             )
             logging.info(f"Would write template {template_file}:\n{template.template}")
+
+    def remove_table(self, schema_id: SchemaId, write: bool) -> None:
+        self.remove_template(SchemaType.table, schema_id, write)
+
+    def remove_view(self, schema_id: SchemaId, write: bool) -> None:
+        self.remove_template(SchemaType.view, schema_id, write)
+
+    def remove_routine(self, schema_id: SchemaId, write: bool) -> None:
+        self.remove_template(SchemaType.routine, schema_id, write)
+
+    def remove_template(
+        self, schema_type: SchemaType, schema_id: SchemaId, write: bool
+    ) -> None:
+        template = self.templates_by_dataset.get_schema_template(schema_type, schema_id)
+        self.templates_by_dataset[schema_id.dataset_id].remove(template)
+        path = self.get_schema_path(schema_type, schema_id)
+        if write:
+            shutil.rmtree(path)
+        else:
+            logging.info(f"Would remove schema from path {path}")
 
 
 class SchemaIdMapper:

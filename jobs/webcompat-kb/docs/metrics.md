@@ -108,3 +108,70 @@ requires the following steps:
   ``webcompat_kb_dataset.webcompat_topline_metric_all` and
   `webcompat_kb_dataset.webcompat_topline_metric_all_history`,
   respectively.
+
+## Metric Changes and Rescoring
+
+When planning a change that will affect the metric, run the following
+steps:
+
+* `uv run webcompat-metric-rescore --project=<project_id>
+  create-schema <rescore_name> --reason <reason for rescore>`. This
+  will create a copy of `scored_site_reports` in the
+  `data/sql/webcompat_knowledge_base/views/` directory with a name
+  like `scored_site_reports-rescore_<rescore_name>`. If the rescore
+  affects any routines the name of these routines can be specified as
+  `--routine` arguments to the above command; this will similarly
+  generate copies of the existing routine templates with a name line
+  `ROUTINE_NAME-RESCORE_<RESCORE_NAME>`. In addition a view template
+  called `rescore_<rescore_name>_delta` will be created, with a query
+  containing the per-bug delta between the current
+  `scored_site_reports` and the post-rescore `scored_site_reports`.
+
+* Edit the created templates for
+  `scored_site_reports-rescore_<rescore_name>` and any updated
+  routines to reflect the post-rescore scoring.
+
+* Commit the templates, open a PR and get review for the changes. Once
+  landed this will cause the prod schema to be updated next time the
+  ETL runs.
+
+* Observe the impact on the scores, make any additional changes
+  required for the scoring logic, and get consensus that the rescore
+  should be deployed.
+
+* `uv run webcompat-metric-rescore --project=<project_id>
+  prepare-deploy <rescore_name>`. This will copy the current canonical
+  schema to the `webcompat_knowledge_base_archive` dataset (adjusting
+  references as required), and copy the updated schema to the
+  canonical locations, deleting the templates for the provisional
+  views/routines.
+
+* File a PR and deploy. This will cause the prod schema to be updated
+  next time the ETL runs.
+
+* If changes are also required to routines used to compute the metric
+  score similarly create copies of modified routines implementing the
+  new logic, for example, if updating the logic in
+  `WEBCOMPAT_METRIC_SCORE_NO_HOST` create a copy of the routine with a
+  name like `WEBCOMPAT_METRIC_SCORE_NO_HOST_NEW` implementing the new
+  logic, and use that inside `scored_site_reports_new`.
+
+* Validate that the score changes have the anticipated effect (e.g. by
+  checking the bugs that change between `scored_site_reports` and
+  `scored_site_reports_new`.
+
+## updating CrUX data used in metrics
+
+Updating the CrUX data used in metrics is a specific case of updating
+the overall scoring described above, with specific support for
+creating the new routines and `scored_site_reports`.
+
+The steps are as for any other metric update except:
+
+* To generate the initial rescore schemas, run `uv run
+  webcompat-site-rank-update --bq-project <project> create-schemas
+  <yyyymm>`.
+
+* To create the updated schemas for prod run  `uv run
+  webcompat-site-rank-update --bq-project <project> prepare-deploy
+  <yyyymm>`.

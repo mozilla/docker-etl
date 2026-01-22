@@ -1,14 +1,20 @@
-import argparse
 import logging
 from datetime import datetime
-from typing import Iterable, Mapping, Sequence
+from typing import Mapping, Sequence
 
 from google.cloud import bigquery
 
-from .base import Context, EtlJob
-from .bqhelpers import BigQuery
-from .metrics import metrics
-from .metric_changes import ScoreChange, insert_score_changes
+from . import metric_changes
+from .bqhelpers import (
+    BigQuery,
+    DatasetId,
+    SchemaId,
+    SchemaType,
+    TableSchema,
+)
+from .metrics import metrics, rescores
+from .metrics.rescores import Rescore
+from .metric_changes import ScoreChange
 from .projectdata import Project
 
 
@@ -49,47 +55,15 @@ def conditional_metrics(project: Project) -> Sequence[ConditionalMetric]:
 def score_bug_changes(
     project: Project,
     client: BigQuery,
-    new_scored_site_reports: str,
+    rescore: Rescore,
     change_time: datetime,
 ) -> Mapping[int, Sequence[ScoreChange]]:
+    kb_dataset = DatasetId(project.id, "webcompat_knowledge_base")
+
     score_changes = {}
-
     score_deltas = {"all": 0}
-    scores_query_fields = ["number"]
-    query_fields = ["number"]
 
-    score_types = ["old", "new"]
-
-    for score_type in score_types:
-        src_table = f"{score_type}_scored_site_reports"
-        field_name = f"{score_type}_score"
-        scores_query_fields.append(f"{src_table}.score AS {field_name}")
-        query_fields.append(field_name)
-
-    for metric in conditional_metrics(project):
-        score_deltas[metric.name] = 0
-        for score_type, field_name in [
-            ("old", metric.is_old_field),
-            ("new", metric.is_new_field),
-        ]:
-            src_table = f"{score_type}_scored_site_reports"
-            scores_query_fields.append(f"{metric.condition(src_table)} AS {field_name}")
-            query_fields.append(field_name)
-
-    query_fields.append("new_score - old_score AS delta")
-
-    score_query = f"""
-with scores as (
-  SELECT
-    {",\n    ".join(scores_query_fields)}
-  FROM `{new_scored_site_reports}` as new_scored_site_reports
-  FULL OUTER JOIN `scored_site_reports` AS old_scored_site_reports USING(number)
-  WHERE new_scored_site_reports.resolution = ""
-)
-SELECT
-  {",\n  ".join(query_fields)}
-FROM scores
-"""
+    score_query = f"SELECT * FROM {rescore.delta_schema_id(kb_dataset)}"
     for bug in client.query(score_query):
         if bug.new_score is None or bug.old_score is None:
             raise ValueError(
@@ -140,25 +114,21 @@ FROM scores
 def insert_metric_changes(
     project: Project,
     client: BigQuery,
-    new_scored_site_reports: str,
-    reason: str,
+    rescores_table: TableSchema,
+    old_scored_site_reports: SchemaId,
+    new_scored_site_reports: SchemaId,
+    rescore: Rescore,
     change_time: datetime,
 ) -> None:
     """Add a row to the webcompat_topline_metric_rescores table with the datetime,
     before and after scores, and a reason for the rescore."""
     metric_dfns, metric_types = project.data.metric_dfns, project.data.metric_types
-    bq_dataset_id = client.default_dataset_id
 
     change_states = ["before", "after"]
 
-    score_change_schema = [
-        bigquery.SchemaField("change_time", "DATETIME", mode="REQUIRED"),
-        bigquery.SchemaField("reason", "STRING", mode="REQUIRED"),
-    ]
-
     query_parts = [
-        "@change_time as change_time",
-        "@reason as reason",
+        ("@change_time", "change_time"),
+        ("@reason", "reason"),
     ]
 
     for change_state in change_states:
@@ -166,45 +136,34 @@ def insert_metric_changes(
             if "daily" not in metric_type.contexts:
                 continue
             for metric in metric_dfns:
-                score_change_schema.append(
-                    bigquery.SchemaField(
-                        f"{change_state}_{metric_type.name}_{metric.name}",
-                        "NUMERIC",
-                    )
-                )
                 agg_function = metric_type.agg_function(change_state, metric)
                 query_parts.append(
-                    f"{agg_function} AS {change_state}_{metric_type.name}_{metric.name}"
+                    (agg_function, f"{change_state}_{metric_type.name}_{metric.name}")
                 )
+    query_parts.append(("@name", "name"))
 
+    columns = [name for _, name in query_parts]
+    select_str = [f"{expr} AS {name}" for expr, name in query_parts]
     query = f"""
 SELECT
-  {",\n  ".join(query_parts)}
+  {",\n  ".join(select_str)}
 FROM
-`{bq_dataset_id}.scored_site_reports` AS before
-JOIN `{bq_dataset_id}.{new_scored_site_reports}` AS after USING(number)
+`{old_scored_site_reports}` AS before
+JOIN `{new_scored_site_reports}` AS after USING(number)
 WHERE before.resolution = ""
 """
 
-    table = client.ensure_table(
-        "webcompat_topline_metric_rescores", schema=score_change_schema
-    )
-
+    assert set(columns) == set(item.name for item in rescores_table.fields)
     parameters = [
         bigquery.ScalarQueryParameter("change_time", "DATETIME", change_time),
-        bigquery.ScalarQueryParameter("reason", "STRING", reason),
+        bigquery.ScalarQueryParameter("reason", "STRING", rescore.reason),
+        bigquery.ScalarQueryParameter("name", "STRING", rescore.name),
     ]
 
-    if client.write:
-        insert_fields = ", ".join(f"`{item.name}`" for item in score_change_schema)
-        insert_query = f"""
-INSERT {bq_dataset_id}.{table.table_id}
-({insert_fields})
-({query})"""
-        client.query(insert_query, parameters=parameters)
-    else:
+    client.insert_query(rescores_table, columns, query, parameters=parameters)
+    if not client.write:
+        # Extra logging
         result = list(client.query(query, parameters=parameters))[0]
-        assert all(hasattr(result, item.name) for item in score_change_schema)
         changes = []
         for metric in metric_dfns:
             score_change = (
@@ -216,236 +175,77 @@ INSERT {bq_dataset_id}.{table.table_id}
         logging.info(msg)
 
 
-def get_view_definitions(
-    client: BigQuery,
-    new_scored_site_reports: str,
-    routine_map: Mapping[bigquery.Routine, bigquery.Routine],
-    archive_suffix: str,
-) -> tuple[str, str]:
-    """SQL for current scored_site_reports and new scored_site_reports
-
-    These are edited (by string subsitution) so that the routine names are those
-    after the transition i.e. so that new scored_site_reports is using canonical
-    routine names and scored_site_reports is using archive routine names."""
-    sql_definitions = []
-    for table_name in ["scored_site_reports", new_scored_site_reports]:
-        table = client.get_table(table_name)
-        if table.view_query is None:
-            raise ValueError(f"{table_name} is not a view")
-        sql_definitions.append(table.view_query)
-    for canonical, replacement in routine_map.items():
-        canonical_ids = [
-            str(canonical.reference),
-            f"{canonical.dataset_id}.{canonical.routine_id}",
-        ]
-        replacement_ids = [
-            str(replacement.reference),
-            f"{replacement.dataset_id}.{replacement.routine_id}",
-        ]
-        if not any(
-            f"`{canonical_id}`" in sql_definitions[0] for canonical_id in canonical_ids
-        ):
-            logging.debug(
-                f"Looked for {', '.join(canonical_ids)} in:\n{sql_definitions[0]}"
-            )
-            # This isn't an error yet because we didn't initially use routines for scoring
-            logging.warning(
-                f"{' and '.join(canonical_ids)} don't appear in scored_site_reports"
-            )
-        if not any(
-            f"`{replacement_id}`" in sql_definitions[1]
-            for replacement_id in replacement_ids
-        ):
-            logging.debug(
-                f"Looked for {' '.join(replacement_ids)} in:\n{sql_definitions[1]}"
-            )
-            raise ValueError(
-                f"{' and '.join(replacement_ids)} don't appear in {new_scored_site_reports}"
-            )
-        for canonical_id in canonical_ids:
-            logging.debug(
-                f"Replacing `{canonical_id}` with `{canonical_id}{archive_suffix}` in scored_site_reports"
-            )
-            sql_definitions[0] = sql_definitions[0].replace(
-                f"`{canonical_id}`", f"`{canonical_id}{archive_suffix}`"
-            )
-        for replacement_id in replacement_ids:
-            logging.debug(
-                f"Replacing `{replacement_id}` with `{canonical_ids[0]}` in new scored_site_reports"
-            )
-            sql_definitions[1] = sql_definitions[1].replace(
-                f"`{replacement_id}`", f"`{canonical_ids[0]}`"
-            )
-
-    return sql_definitions[0], sql_definitions[1]
-
-
-def serialize_datatype(datatype: bigquery.StandardSqlDataType) -> str:
-    if datatype.type_kind is None:
-        raise ValueError(f"Can't serialize {datatype}")
-    rv = datatype.type_kind.value
-    if datatype.array_element_type is not None:
-        rv = f"{rv}<{serialize_datatype(datatype.array_element_type)}>"
-    if datatype.struct_type is not None:
-        raise ValueError("Serializing structs not implemented")
-    if datatype.range_element_type is not None:
-        raise ValueError("Serializing ranges not implemented")
-    return rv
-
-
-def serialize_arguments(args: Iterable[bigquery.RoutineArgument]) -> str:
-    return ", ".join(f"{arg.name} {serialize_datatype(arg.data_type)}" for arg in args)
-
-
-def update_views(
-    client: BigQuery,
-    new_scored_site_reports: str,
-    routines_map: Mapping[bigquery.Routine, bigquery.Routine],
-    view_definitions: tuple[str, str],
-    archive_suffix: str,
+def record_rescore(
+    project: Project, client: BigQuery, rescores_table: TableSchema, rescore: Rescore
 ) -> None:
-    """Move the views and routines to apply the update.
-
-    Move scored_site_reports to scored_site_reports_before_{timestamp} and the
-    new_scored_site_reports to scored_site_reports.
-
-    Also, for each routine being updated, move the current version to
-    {name}_before_{timestamp} and the new version to {name}."""
-    dataset_id = client.default_dataset_id
-    to_delete = [f"{dataset_id}.{new_scored_site_reports}"]
-
-    query = ""
-
-    # This doesn't handle cases where one routine depends on another modified routine
-    # We do the routines first since the views depend on them
-    for old_routine, new_routine in routines_map.items():
-        query += f"""
-CREATE FUNCTION `{old_routine.reference}{archive_suffix}`({serialize_arguments(old_routine.arguments)})
-RETURNS {serialize_datatype(old_routine.return_type)}
-AS (
-{old_routine.body}
-);
-"""
-
-        query += f"""
-CREATE OR REPLACE FUNCTION `{old_routine.reference}`({serialize_arguments(new_routine.arguments)})
-RETURNS {serialize_datatype(new_routine.return_type)} AS
-(
-{new_routine.body}
-);
-"""
-        to_delete.append(new_routine.reference)
-
-    query += f"""
-CREATE VIEW `{dataset_id}.scored_site_reports{archive_suffix}` AS (
-{view_definitions[0]}
-);
-CREATE OR REPLACE VIEW `{dataset_id}.scored_site_reports` AS (
-{view_definitions[1]}
-);
-"""
-
-    if client.write:
-        client.query(query)
-        # Don't do this automatically for now
-        logging.info(
-            f"Now delete {dataset_id}.{new_scored_site_reports} in the BigQuery UI"
-        )
-    else:
-        logging.info(f"Would have run update query:\n{query}")
-
-
-def get_routines(
-    client: BigQuery, routines: Sequence[str]
-) -> Mapping[bigquery.Routine, bigquery.Routine]:
-    rv = {}
-    for item in routines:
-        if item.count(":") != 1:
-            raise ValueError(
-                f"Routine mapping must be in the form canonical_name:updated_definition_name, got {item}"
-            )
-        canonical, replacement = item.split(":")
-        routine_ids = []
-        for routine_name in (canonical, replacement):
-            segment_count = routine_name.count(".")
-            if segment_count > 1:
-                raise ValueError(
-                    f"Expected routine name in the form [dataset_id].ROUTINE_ID, got {routine_name}"
-                )
-            elif segment_count == 0:
-                routine_name = f"{client.default_dataset_id}.{routine_name}"
-            routine_ids.append(f"{client.client.project}.{routine_name}")
-        rv[client.get_routine(routine_ids[0])] = client.get_routine(routine_ids[1])
-    return rv
-
-
-def rescore(
-    project: Project,
-    client: BigQuery,
-    new_scored_site_reports: str,
-    reason: str,
-    update_routines: Sequence[str],
-) -> None:
-    change_time = client.current_datetime()
-    archive_suffix = f"_before_{change_time.strftime('%Y%m%d%H%M')}"
-    routines_map = get_routines(client, update_routines)
-    view_definitions = get_view_definitions(
-        client, new_scored_site_reports, routines_map, archive_suffix
+    old_scored_site_reports = SchemaId(
+        project.id, "webcompat_knowledge_base", "scored_site_reports"
     )
-    score_changes = score_bug_changes(
-        project, client, new_scored_site_reports, change_time
+    new_scored_site_reports = rescore.staging_schema_id(
+        SchemaType.view, old_scored_site_reports
     )
-    insert_metric_changes(project, client, new_scored_site_reports, reason, change_time)
+
     changes_table = project["webcompat_knowledge_base"][
         "webcompat_topline_metric_changes"
     ].table()
-    insert_score_changes(client, score_changes, changes_table)
-    update_views(
-        client, new_scored_site_reports, routines_map, view_definitions, archive_suffix
+    change_time = client.current_datetime()
+    score_changes = score_bug_changes(project, client, rescore, change_time)
+    metric_changes.insert_score_changes(client, score_changes, changes_table)
+    insert_metric_changes(
+        project,
+        client,
+        rescores_table,
+        old_scored_site_reports,
+        new_scored_site_reports,
+        rescore,
+        change_time,
     )
 
 
-class MetricRescoreJob(EtlJob):
-    name = "metric-rescore"
-    default = False
+def get_undeployed_rescores(
+    project: Project, client: BigQuery, rescores_table: TableSchema
+) -> Mapping[str, Rescore]:
+    rescore_dfns = rescores.load(
+        project.data.path, project["webcompat_knowledge_base"].canonical_id
+    )
+    deployed_rescores = {
+        row.name for row in client.query(f"SELECT DISTINCT name FROM {rescores_table}")
+    }
+    missing_rescore_names = {name for name in rescore_dfns} - deployed_rescores
+    missing_rescores = {name: rescore_dfns[name] for name in missing_rescore_names}
+    return {
+        name: rescore for name, rescore in missing_rescores.items() if not rescore.stage
+    }
 
-    def default_dataset(self, context: Context) -> str:
-        return context.args.bq_kb_dataset
 
-    @classmethod
-    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        group = parser.add_argument_group(
-            title="Metric Rescore", description="Metric rescore arguments"
-        )
-        group.add_argument(
-            "--metric-rescore-new-scored-site-reports",
-            dest="new_scored_site_reports",
-            action="store",
-            help="Table containing updated scored_site_reports",
-        )
-        group.add_argument(
-            "--metric-rescore-reason",
-            action="store",
-            help="Description of reason for updating the score",
-        )
-        group.add_argument(
-            "--metric-rescore-update-routine",
-            action="append",
-            help="Routines to update in the form canonical_name:updated_definition_name e.g. test_dataset.WEBCOMPAT_METRIC_SCORE:test_dataset.WEBCOMPAT_METRIC_SCORE_NEW",
+def record_rescores(project: Project, client: BigQuery) -> None:
+    rescores_table = project["webcompat_knowledge_base"][
+        "webcompat_topline_metric_rescores"
+    ].table()
+    undeployed_rescores = get_undeployed_rescores(project, client, rescores_table)
+    if not undeployed_rescores:
+        logging.debug("No undeployed rescores found")
+        return
+
+    if len(undeployed_rescores) > 1:
+        raise ValueError(
+            f"Can only deploy one rescore at a time, found {', '.join(undeployed_rescores.keys())}"
         )
 
-    def required_args(self) -> set[str | tuple[str, str]]:
-        return {
-            "bq_kb_dataset",
-            ("new_scored_site_reports", "--metric-rescore-new-scored-site-reports"),
-            "metric_rescore_reason",
-        }
+    rescore = next(iter(undeployed_rescores.values()))
+    record_rescore(project, client, rescores_table, rescore)
 
-    def main(self, context: Context) -> None:
-        rescore(
-            context.project,
-            context.bq_client,
-            context.args.new_scored_site_reports,
-            context.args.metric_rescore_reason,
-            context.args.metric_rescore_update_routine or [],
+    # Now clean up all the staging data
+    client.delete_table(
+        rescore.staging_schema_id(
+            SchemaType.view,
+            SchemaId(project.id, "webcompat_knowledge_base", "scored_site_reports"),
         )
+    )
+    client.delete_table(
+        rescore.delta_schema_id(
+            DatasetId(project.id, "webcompat_knowledge_base"),
+        )
+    )
+    for routine_id in rescore.staging_routine_ids().values():
+        client.delete_routine(routine_id)
