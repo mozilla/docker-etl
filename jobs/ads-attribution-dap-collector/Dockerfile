@@ -1,4 +1,4 @@
-FROM python:3.12
+FROM python:3.10
 LABEL maintainer="Glenda Leonard <gleonard@mozilla.com>"
 ARG HOME="/janus_build"
 WORKDIR ${HOME}
@@ -14,7 +14,7 @@ RUN cd janus && cargo build -r -p janus_tools --bin collect
 
 ######### next stage
 
-FROM python:3.12
+FROM python:3.10
 LABEL maintainer="Glenda Leonard <gleonard@mozilla.com>"
 # https://github.com/mozilla-services/Dockerflow/blob/master/docs/building-container.md
 ARG USER_ID="10001"
