@@ -4,12 +4,12 @@ from typing import Literal
 from uuid import UUID
 
 
-class CollectionConfigModel(BaseModel):
+class CollectionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     hpke_config: str = Field(min_length=1)
 
 
-class AdvertiserModel(BaseModel):
+class Advertiser(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1)
@@ -20,7 +20,7 @@ class AdvertiserModel(BaseModel):
     lookback_window: int = Field(gt=0)
 
 
-class PartnerModel(BaseModel):
+class Partner(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task_id: str = Field(min_length=32)
@@ -31,14 +31,14 @@ class PartnerModel(BaseModel):
     default_measurement: int
 
 
-class AdModel(BaseModel):
+class Ad(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     partner_id: UUID
     index: int
 
 
-class ConfigModel(BaseModel):
+class JobConfig(BaseModel):
     """
     Full config with validation.
     Note: ads keys are dynamic (source:id), so they remain a dict[str, AdModel].
@@ -46,7 +46,7 @@ class ConfigModel(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    collection_config: CollectionConfigModel
-    advertisers: list[AdvertiserModel]
-    partners: dict[UUID, PartnerModel]
-    ads: dict[str, AdModel]
+    collection_config: CollectionConfig
+    advertisers: list[Advertiser]
+    partners: dict[UUID, Partner]
+    ads: dict[str, Ad]

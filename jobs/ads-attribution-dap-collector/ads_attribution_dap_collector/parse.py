@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from google.cloud import storage
 import json
 from typing import Any
-from .schema import ConfigModel
+from .schema import JobConfig
 from pydantic import ValidationError
 from uuid import UUID
 
@@ -87,7 +87,7 @@ def extract_advertisers_with_partners_and_ads(
     """
 
     try:
-        cfg = ConfigModel.model_validate(raw_config)
+        cfg = JobConfig.model_validate(raw_config)
     except ValidationError as e:
         raise ValueError(f"Invalid config: {e}") from None
 
