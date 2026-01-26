@@ -27,6 +27,42 @@ To just build the docker image, use:
 docker build -t ads-attribution-dap-collector .
 ```
 
+Sample attribution-conf.json file
+```shell
+{
+  "collection_config": {
+    "hpke_config": "hpke-config"
+  },
+  "advertisers": [
+    {
+      "name": "mozilla",
+      "partner_id": "295beef7-1e3b-4128-b8f8-858e12aa1234",
+      "start_date": "2026-01-08",
+      "collector_duration": 604800,
+      "conversion_type": "view",
+      "lookback_window": 7
+    }     
+  ],
+  "partners": {
+    "295beef7-1e3b-4128-b8f8-858e12aa1234": {
+      "task_id": "<task_id>",
+      "vdaf": "histogram",
+      "bits": 0,
+      "length": 40,
+      "time_precision": 60,
+      "default_measurement": 0
+    }
+  },
+  "ads": {
+    "provider:1234": {
+      "partner_id": "295beef7-1e3b-4128-b8f8-858e12aa1234",
+      "index": 1
+    }
+  }
+}
+
+```
+
 ## Testing
 
 First create the job venv using
