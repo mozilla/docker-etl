@@ -5,12 +5,12 @@ from uuid import UUID
 
 
 class CollectionConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     hpke_config: str = Field(min_length=1)
 
 
 class Advertiser(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     name: str = Field(min_length=1)
     partner_id: UUID
@@ -21,7 +21,7 @@ class Advertiser(BaseModel):
 
 
 class Partner(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     task_id: str = Field(min_length=32)
     vdaf: Literal["histogram", "sumvec", "sum"]
@@ -32,7 +32,7 @@ class Partner(BaseModel):
 
 
 class Ad(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     partner_id: UUID
     index: int
@@ -44,7 +44,7 @@ class JobConfig(BaseModel):
     Note: ads keys are dynamic (source:id), so they remain a dict[str, AdModel].
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     collection_config: CollectionConfig
     advertisers: list[Advertiser]
