@@ -118,7 +118,7 @@ class TestHelpers(TestCase):
         )
         self.assertEqual(batch_start, date(2026, 1, 15))
 
-    def test_current_batch_end_(self):
+    def test_current_batch_end(self):
         batch_end = current_batch_end(
             batch_start=date(2026, 1, 1), duration=DURATION_3_DAYS
         )
