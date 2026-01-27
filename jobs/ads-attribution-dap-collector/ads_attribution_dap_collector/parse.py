@@ -8,7 +8,6 @@ from .schema import JobConfig
 from pydantic import ValidationError
 from uuid import UUID
 
-
 CONFIG_FILE_NAME = "attribution-conf.json"
 
 
@@ -26,7 +25,7 @@ class PartnerConfig:
 @dataclass(frozen=True)
 class AdConfig:
     source: str
-    ad_id: int
+    ad_id: str
     index: int
     partner_id: UUID
 
@@ -60,26 +59,19 @@ def get_config(gcp_project: str, config_bucket: str) -> dict[str, Any]:
         ) from e
 
 
-def _require_ad_id_and_source(ad_key: str) -> tuple[str, int]:
+def _require_ad_id_and_source(ad_key: str) -> tuple[str, str]:
     if ":" not in ad_key:
         raise ValueError(
             f"Skipping invalid ad key '{ad_key}': "
             f"missing ':' (expected 'source:id')"  # noqa: E231
         )
 
-    source, ad_id_str = ad_key.split(":", 1)
-    try:
-        ad_id = int(ad_id_str)
-    except ValueError:
-        raise ValueError(
-            f"Skipping invalid ad key '{ad_key}': ad_id '{ad_id_str}' is not an integer"
-        )
-
+    source, ad_id = ad_key.split(":", 1)
     return source, ad_id
 
 
 def extract_advertisers_with_partners_and_ads(
-    raw_config: dict[str, Any]
+    raw_config: dict[str, Any],
 ) -> tuple[str, list[AdvertiserConfig]]:
     """
     Returns: (hpke_config, advertisers)

@@ -3,7 +3,6 @@ from typing import Any
 
 from google.cloud import bigquery
 
-
 NAMESPACE = "ads_dap_derived"
 TABLE_NAME = "newtab_attribution_v1"
 
@@ -28,7 +27,7 @@ COLLECTOR_RESULTS_SCHEMA = [
     ),
     bigquery.SchemaField(
         "ad_id",
-        "INT64",
+        "STRING",
         mode="REQUIRED",
         description="Id of ad, unique by provider.",
     ),
@@ -76,7 +75,7 @@ def create_bq_row(
     collection_start: date,
     collection_end: date,
     provider: str,
-    ad_id: int,
+    ad_id: str,
     lookback_window: int,
     conversion_type: str,
     conversion_count: int,

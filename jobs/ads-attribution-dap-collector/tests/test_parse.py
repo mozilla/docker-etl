@@ -20,12 +20,9 @@ class TestHelpers(TestCase):
         with self.assertRaises(ValueError):
             _require_ad_id_and_source("test_provider1234")
 
-        with self.assertRaises(ValueError):
-            _require_ad_id_and_source("test_provider:1234a")
-
-        source, ad_id = _require_ad_id_and_source("test_provider:1234")
+        source, ad_id = _require_ad_id_and_source("test_provider:1234abc")
         self.assertEqual("test_provider", source)
-        self.assertEqual(1234, ad_id)
+        self.assertEqual("1234abc", ad_id)
 
     def test_extract_advertisers_with_partners_and_ads(self):
         json_config = mock_get_valid_config()
