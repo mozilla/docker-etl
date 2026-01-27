@@ -1,0 +1,47 @@
+  build-job-ads-attribution-dap-collector:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Check if job files changed
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            job:
+              - 'jobs/ads-attribution-dap-collector/**'
+      - name: Build the Docker image
+        if: steps.changes.outputs.job == 'true'
+        # yamllint disable
+        run: |
+          docker build jobs/ads-attribution-dap-collector -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/ads-attribution-dap-collector:latest
+        # yamllint enable
+      - name: Test Code
+        if: steps.changes.outputs.job == 'true'
+        run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/ads-attribution-dap-collector:latest python3 -m pytest
+
+  push-job-ads-attribution-dap-collector:
+    runs-on: ubuntu-latest
+    needs: build-job-ads-attribution-dap-collector
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker
+
+      - name: Build Docker image
+        run: docker build jobs/ads-attribution-dap-collector/ -t gcr.io/$${{ secrets.GCP_PROJECT }}/ads-attribution-dap-collector_docker_etl:latest
+
+      - name: Push to GCR
+        run: docker push gcr.io/$${{ secrets.GCP_PROJECT }}/ads-attribution-dap-collector_docker_etl:latest
