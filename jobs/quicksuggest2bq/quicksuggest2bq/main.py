@@ -16,6 +16,7 @@ from typing import Any, Dict, Iterator, List, Optional
 
 DEFAULT_REMOTE_SETTINGS_URL = "https://firefox.settings.services.mozilla.com/v1"
 
+
 @dataclass
 class FullKeyword:
     """Class that defines the record for a full keyword tuple"""
