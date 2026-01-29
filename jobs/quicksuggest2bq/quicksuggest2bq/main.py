@@ -14,6 +14,9 @@ from google.cloud import bigquery
 from typing import Any, Dict, Iterator, List, Optional
 
 
+DEFAULT_REMOTE_SETTINGS_URL = "https://firefox.settings.services.mozilla.com/v1"
+
+
 @dataclass
 class FullKeyword:
     """Class that defines the record for a full keyword tuple"""
@@ -193,7 +196,7 @@ def store_suggestions(
 )
 @click.option(
     "--kinto-server",
-    default="https://firefox.settings.services.mozilla.com",
+    default=DEFAULT_REMOTE_SETTINGS_URL,
     type=str,
     help="the Kinto server to fetch the data from",
 )
