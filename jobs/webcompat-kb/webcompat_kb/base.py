@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, MutableMapping, Optional
 
-import google
+from google.auth import exceptions as auth_exceptions
 
 from .bqhelpers import BigQuery, SchemaId
 from .config import Config
@@ -106,7 +106,7 @@ class Command(ABC):
 
         try:
             rv = self.main(args)
-        except google.auth.exceptions.RefreshError:
+        except auth_exceptions.RefreshError:
             logging.error("""Reauthentication with Google Cloud required. Please run:
 gcloud auth login --enable-gdrive-access --update-adc
 """)

@@ -1,7 +1,7 @@
 import argparse
 import logging
 from datetime import datetime
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence, cast
 from urllib.parse import urlparse
 
 import pydantic
@@ -66,6 +66,7 @@ def get_file_metadata(repo: str, path: str, ref: str = "main") -> tuple[str, str
         {"Accept": "application/vnd.github+json"},
     )
     assert isinstance(metadata, dict)
+    metadata = cast(dict[str, Any], metadata)
     sha = metadata["sha"]
     download_url = metadata["download_url"]
     assert isinstance(sha, str)
@@ -76,11 +77,12 @@ def get_file_metadata(repo: str, path: str, ref: str = "main") -> tuple[str, str
 def get_gecko_sp_data(download_url: str) -> Sequence[StandardsPosition]:
     data = get_json(download_url)
     assert isinstance(data, dict)
+    data = cast(dict[str, Any], data)
     rv = []
     for issue_number, issue_data in data.items():
         sp = StandardsPosition.model_validate(issue_data)
         if sp.issue is None:
-            sp.issue = int(issue_number)
+            sp = sp.model_copy(update={"issue": int(issue_number)})
         rv.append(sp)
     return rv
 
