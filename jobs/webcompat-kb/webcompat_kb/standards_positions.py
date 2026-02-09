@@ -146,7 +146,7 @@ def update_gecko_standards_positions(
 
     if current_sha == last_import_sha:
         logging.info("No updates to Gecko merged-data.json")
-        return last_import_sha
+        return current_sha
 
     updated_gecko_data = get_gecko_sp_data(download_url)
     update_gecko_sp_data(client, table, updated_gecko_data)
@@ -163,7 +163,7 @@ def update_webkit_standards_positions(
 
     if current_sha == last_import_sha:
         logging.info("No updates to WebKit summary.json")
-        return last_import_sha
+        return current_sha
 
     updated_webkit_data = get_webkit_sp_data(download_url)
     update_webkit_sp_data(client, table, updated_webkit_data)
