@@ -483,6 +483,7 @@ def update_schemas(
     ]
 
     # Tables needed for a for a job that we'll run
+    logging.info(f"Only updating tables used by jobs {', '.join(etl_jobs)}")
     etl_table_schemas = [
         schema
         for dataset in project
