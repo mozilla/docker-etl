@@ -1,0 +1,23 @@
+[day]
+type = "DATE"
+mode = "REQUIRED"
+
+[host]
+type = "STRING"
+mode = "NULLABLE"
+
+[app_name]
+type = "STRING"
+mode = "NULLABLE"
+
+[app_version]
+type = "STRING"
+mode = "NULLABLE"
+
+[breakage_category]
+type = "STRING"
+mode = "NULLABLE"
+
+[count]
+type = "INTEGER"
+mode = "REQUIRED"
