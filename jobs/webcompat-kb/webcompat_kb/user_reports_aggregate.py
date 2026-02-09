@@ -8,9 +8,9 @@ from .projectdata import Project
 
 
 def update_user_report_aggregate(project: Project, client: BigQuery) -> None:
-    user_reports_table = project["webcompat_user_reports"][
+    user_reports_view = project["webcompat_user_reports"][
         "user_reports_dedupe"
-    ].table()
+    ].view()
     aggregate_table = project["webcompat_user_reports"][
         "user_reports_aggregate"
     ].table()
@@ -38,7 +38,7 @@ FROM `{aggregate_table}`
 SELECT day, host, app_name, app_version, breakage_category, count(*) as count
 FROM (
   SELECT DATE(DATE_TRUNC(reported_at, DAY)) as day, net.host(url) as host, app_name, app_version, breakage_category
-  FROM `{user_reports_table}`
+  FROM `{user_reports_view}`
 )
 WHERE (day > @latest_stored OR @latest_stored IS NULL) AND day <= @store_to
 GROUP BY day, host, app_name, app_version, breakage_category
