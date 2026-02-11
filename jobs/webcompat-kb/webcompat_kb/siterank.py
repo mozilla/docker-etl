@@ -1,13 +1,13 @@
-import argparse
 import csv
 import logging
+from collections.abc import Collection, Iterator
 from datetime import datetime, UTC
-from typing import Iterator
+from typing import Optional
 
 import httpx
 from google.cloud import bigquery
 
-from .base import Context, EtlJob, dataset_arg
+from .base import Context, EtlJob
 from .bqhelpers import BigQuery, Json, TableSchema
 from .httphelpers import get_json
 from .projectdata import Project
@@ -111,64 +111,75 @@ WHERE
     client.insert_query(sightline_top_1000_table, ["yyyymm", "host"], query)
 
 
-def update_min_rank_data(project: Project, client: BigQuery, yyyymm: int) -> None:
+def host_min_ranks_query(
+    project: Project,
+    filter_yyyymm: bool = True,
+    ranks: Optional[Collection[str]] = None,
+) -> str:
     rank_columns = project.data.rank_dfns
-    column_names = ["yyyymm", "host"] + [f"{item.name}" for item in rank_columns]
+    if ranks:
+        rank_columns = [item for item in rank_columns if item.name in ranks]
 
+    host_min_rank_columns = ",\n  ".join(
+        f"{column.rank} as {column.name}" if column.rank else column.name
+        for column in rank_columns
+    )
     crux_columns = ",\n    ".join(
         f"MIN(IF({column.crux_condition}, crux_ranks.rank, NULL)) as {column.name}"
         for column in rank_columns
         if column.crux_condition
     )
-    host_min_rank_columns = ",\n  ".join(
-        f"{column.rank} as {column.name}" if column.rank else column.name
-        for column in rank_columns
-    )
-    query = f"""
-WITH
-  crux_ranks AS (
-  SELECT
-    NET.HOST(origin) AS host,
+
+    filter_str = "WHERE yyyymm = @yyyymm" if filter_yyyymm else ""
+
+    crux_query = f"""SELECT
+  yyyymm,
+  NET.HOST(origin) AS host,
     {crux_columns}
   FROM
-    `moz-fx-dev-dschubert-wckb.crux_imported.origin_ranks` AS crux_ranks
-  WHERE
-    yyyymm = @yyyymm
-  GROUP BY
-    host),
-  tranco_ranks AS (
-  SELECT
-    host,
-    rank,
-    CASE
-      WHEN rank <= 1000 THEN 1000
-      WHEN rank <= 5000 THEN 5000
-      WHEN rank <= 10000 THEN 10000
-      WHEN rank <= 50000 THEN 50000
-      WHEN rank <= 100000 THEN 100000
-      WHEN rank <= 500000 THEN 500000
-      ELSE 1000000
-  END
-    AS rank_bucket
-  FROM
-    `{project["tranco_imported"]["top_1M_subdomains"]}`
-  WHERE
-    yyyymm = @yyyymm)
+    `{project["crux_imported"]["origin_ranks"]}` AS crux_ranks
+  {filter_str}
+  GROUP BY yyyymm, host"""
 
+    tranco_query = f"""SELECT
+  yyyymm,
+  host,
+  rank,
+  CASE
+    WHEN rank <= 1000 THEN 1000
+    WHEN rank <= 5000 THEN 5000
+    WHEN rank <= 10000 THEN 10000
+    WHEN rank <= 50000 THEN 50000
+    WHEN rank <= 100000 THEN 100000
+    WHEN rank <= 500000 THEN 500000
+    ELSE 1000000
+END
+  AS rank_bucket
+FROM
+  `{project["tranco_imported"]["top_1M_subdomains"]}`
+{filter_str}
+"""
+
+    query = f"""
 SELECT
-  @yyyymm as yyyymm,
+  yyyymm,
   host,
   {host_min_rank_columns}
-FROM
-  crux_ranks
-FULL OUTER JOIN
-  tranco_ranks
-USING
-  (host)
+FROM ({crux_query}) as crux_ranks
+FULL OUTER JOIN ({tranco_query}) AS tranco_ranks USING(yyyymm, host)
 """
+    return query
+
+
+def update_min_rank_data(project: Project, client: BigQuery, yyyymm: int) -> None:
+    query = host_min_ranks_query(project)
     host_min_ranks_table = project["crux_imported"]["host_min_ranks"].table()
     parameters = [bigquery.ScalarQueryParameter("yyyymm", "INTEGER", yyyymm)]
     logging.info("Updating host_min_ranks data")
+
+    column_names = ["yyyymm", "host"] + [
+        f"{item.name}" for item in project.data.rank_dfns
+    ]
     client.delete_query(
         host_min_ranks_table,
         condition="yyyymm = @yyyymm",
@@ -232,36 +243,8 @@ def update_tranco(
 class SiteRanksJob(EtlJob):
     name = "site-ranks"
 
-    @classmethod
-    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        group = parser.add_argument_group(
-            title="Site-Ranks", description="site-ranks update arguments"
-        )
-        group.add_argument(
-            "--bq-crux-dataset",
-            default="crux_imported",
-            type=dataset_arg,
-            help="BigQuery CrUX import dataset",
-        )
-        group.add_argument(
-            "--bq-tranco-dataset",
-            default="tranco_imported",
-            type=dataset_arg,
-            help="BigQuery Tranco import dataset",
-        )
-        group.add_argument(
-            "--site-ranks-force-tranco-update",
-            action="store_true",
-            help="Update tranco data even if there isn't any new CrUX data",
-        )
-        group.add_argument(
-            "--site-ranks-force-host-min-ranks-update",
-            action="store_true",
-            help="Update hosts-min-rank data even if there isn't any new CrUX data",
-        )
-
     def default_dataset(self, context: Context) -> str:
-        return context.args.bq_crux_dataset
+        return "crux_imported"
 
     def main(self, context: Context) -> None:
         project = context.project
@@ -276,25 +259,23 @@ class SiteRanksJob(EtlJob):
         last_import_yyyymm = get_latest_yyyymm(client, import_runs_table)
         logging.debug(f"Last site-ranks import was {last_import_yyyymm}")
 
-        if (
-            not context.args.site_ranks_force_tranco_update
-            and last_import_yyyymm >= last_month_yyyymm
-        ):
+        if last_import_yyyymm >= last_month_yyyymm:
             logging.info("Site-ranks data is up to date")
             return
 
+        if last_import_yyyymm is None:
+            import_runs_table = project["crux_imported"]["import_runs"].table()
+            last_import_yyyymm = get_latest_yyyymm(client, import_runs_table)
+
         latest_yyyymm, have_new_crux = update_crux(project, client, last_import_yyyymm)
-        if have_new_crux or context.args.site_ranks_force_tranco_update:
+
+        if have_new_crux:
             update_tranco(
                 project,
                 client,
                 latest_yyyymm,
                 context.args.site_ranks_force_tranco_update,
             )
-
-        if have_new_crux:
             update_sightline_data(project, client, latest_yyyymm)
-        if have_new_crux or context.args.site_ranks_force_host_min_ranks_update:
             update_min_rank_data(project, client, latest_yyyymm)
-        if have_new_crux:
             record_update(client, import_runs_table, latest_yyyymm)
