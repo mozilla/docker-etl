@@ -392,21 +392,28 @@ class SchemaIdMapper:
     def __init__(
         self,
         dataset_mapping: Mapping[DatasetId, DatasetId],
-        rewrite_tables: set[SchemaId],
+        map_tables: set[SchemaId],
     ):
         self.dataset_mapping = dataset_mapping
-        self.rewrite_tables = rewrite_tables
+        assert all(item.dataset_id in self.dataset_mapping for item in map_tables)
+        self.map_tables = map_tables
+
+    def map_schema(self, input_id: SchemaId) -> SchemaId:
+        """Map a schema without checking whether it should be mapped in the
+        current configuration"""
+        mapped_dataset = self.dataset_mapping[input_id.dataset_id]
+        return SchemaId(mapped_dataset.project, mapped_dataset.dataset, input_id.name)
 
     def __call__(self, ref_type: ReferenceType, input_id: SchemaId) -> SchemaId:
         if ref_type == ReferenceType.external:
-            return input_id
-
-        if input_id.dataset_id in self.dataset_mapping and (
-            ref_type != ReferenceType.table or input_id in self.rewrite_tables
+            output_id = input_id
+        elif input_id.dataset_id in self.dataset_mapping and (
+            ref_type != ReferenceType.table or input_id in self.map_tables
         ):
-            new_dataset = self.dataset_mapping[input_id.dataset_id]
-            return SchemaId(new_dataset.project, new_dataset.dataset, input_id.name)
-        return input_id
+            output_id = self.map_schema(input_id)
+        else:
+            output_id = input_id
+        return output_id
 
 
 class Project:
@@ -562,6 +569,7 @@ def stage_dataset(dataset: DatasetId) -> DatasetId:
 
 class DatasetMapper:
     def __init__(self, project_data: ProjectData, stage: bool):
+        # Mapping from canonical dataset id to output dataset id
         self.dataset_mapping = {
             dataset_id: dataset_id
             for dataset_id in project_data.templates_by_dataset.keys()
@@ -583,7 +591,9 @@ def get_schema_mapper(
     known_tables: set[SchemaId],
     config: Config,
 ) -> Callable[[ReferenceType, SchemaId], SchemaId]:
-    rewrite_tables = set()
+    rewrite_tables: set[SchemaId] = set()
+    mapper = SchemaIdMapper(dataset_id_mapper.dataset_mapping, rewrite_tables)
+
     if config.stage:
         # If a table is one that we're going to create (i.e. one
         # that's populated by an ETL job that's currently running) or
@@ -591,20 +601,22 @@ def get_schema_mapper(
         # reuse the table in the source dataset. This is because we
         # don't always have copies of the tables in the _test datasets
         # for various reasons.
-        rewrite_tables |= known_tables
-        if config.write:
-            # If we're writing assume we want to use the staging version of any tables
-            # we might write to
-            for dataset, target_dataset in dataset_id_mapper.dataset_mapping.items():
-                rewrite_tables |= {
-                    SchemaId(project_id, dataset.id.dataset, template.metadata.name)
-                    for dataset in project_data.templates_by_dataset.values()
-                    for template in dataset.tables
-                    if set(template.metadata.etl or []).intersection(etl_jobs)
-                }
-        logging.debug("\n".join(str(item) for item in rewrite_tables))
+        for dataset in project_data.templates_by_dataset.values():
+            for template in dataset.tables:
+                schema_id = SchemaId(
+                    project_id, dataset.id.dataset, template.metadata.name
+                )
+                is_write_target = config.write and set(
+                    template.metadata.etl or []
+                ).intersection(etl_jobs)
+                is_known_table = mapper.map_schema(schema_id) in known_tables
+                if is_write_target or is_known_table:
+                    rewrite_tables.add(schema_id)
 
-    return SchemaIdMapper(dataset_id_mapper.dataset_mapping, rewrite_tables)
+        logging.debug(
+            f"Using staging tables:\n{'\n'.join(str(item) for item in rewrite_tables)}"
+        )
+    return mapper
 
 
 def lint_templates(
