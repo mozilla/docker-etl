@@ -70,7 +70,7 @@ def add_metrics(
                     schema_id, metadata, table.template(metric), write
                 )
             elif table.type == "table":
-                metadata = TableMetadata(name=table.name(metric))
+                metadata = TableMetadata(name=table.name(metric), etl=["metric"])
                 project.data.add_table(
                     schema_id, metadata, table.template(metric), write
                 )
