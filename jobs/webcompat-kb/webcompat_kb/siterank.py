@@ -2,7 +2,7 @@ import argparse
 import csv
 import logging
 from datetime import datetime, UTC
-from typing import Iterator
+from typing import Any, Iterator, cast
 
 import httpx
 from google.cloud import bigquery
@@ -70,6 +70,7 @@ SELECT yyyymm, origin, "global" as country_code, experimental.popularity.rank as
 def get_tranco_data() -> Iterator[tuple[int, str]]:
     id_resp = get_json("https://tranco-list.eu/api/lists/date/latest?subdomains=true")
     assert isinstance(id_resp, dict)
+    id_resp = cast(dict[str, Any], id_resp)
     list_id = id_resp["list_id"]
 
     data_resp = httpx.get(

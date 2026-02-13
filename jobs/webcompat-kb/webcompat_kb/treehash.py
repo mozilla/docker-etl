@@ -51,7 +51,7 @@ class TreeEntry:
         st = os.stat(path)
 
         if isinstance(path, os.PathLike):
-            path = path.__fspath__()
+            path = os.fspath(path)
         if isinstance(path, bytes):
             path_bytes = path
         else:

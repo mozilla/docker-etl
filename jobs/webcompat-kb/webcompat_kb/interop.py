@@ -72,7 +72,7 @@ class InteropRow(BaseModel):
     state: str
 
     def to_json(self) -> Mapping[str, Json]:
-        rv = self.dict()
+        rv = self.model_dump()
         if rv["updated_at"] is not None:
             rv["updated_at"] = rv["updated_at"].replace(tzinfo=None).isoformat()
         return rv

@@ -176,7 +176,7 @@ class SchemaRecordField:
             self.name,
             self.type,
             mode=self.mode,
-            fields=[item.bq() for item in self.fields],
+            fields=[item.bq() for item in self.fields],  # type: ignore[possibly-missing-attribute]
         )
 
 
