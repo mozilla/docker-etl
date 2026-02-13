@@ -47,7 +47,7 @@ def test_schema_id_mapper():
                 "output_project", "output_dataset"
             )
         },
-        rewrite_tables={SchemaId("input_project", "input_dataset", "table_rewrite")},
+        map_tables={SchemaId("input_project", "input_dataset", "table_rewrite")},
     )
 
     # Things we do rewrite
