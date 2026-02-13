@@ -1,9 +1,10 @@
 import argparse
 import logging
+from typing import Optional
 
 from .. import projectdata
 from ..base import Command
-from ..bqhelpers import BigQuery, DatasetId, get_client
+from ..bqhelpers import BigQuery, get_client
 from ..config import Config
 from ..projectdata import SchemaId, ReferenceType
 from ..update_schema import update_schema_if_needed
@@ -18,28 +19,53 @@ class UpdateStagingData(Command):
             default=False,
             help="Redeploy views to staging",
         )
+        parser.add_argument(
+            dest="datasets", nargs="*", help="Datasets to update from prod"
+        )
         return parser
 
-    def main(self, args: argparse.Namespace) -> None:
+    def main(self, args: argparse.Namespace) -> Optional[int]:
         client = get_client(args.bq_project_id)
         config = Config(write=args.write, stage=args.stage)
         project = projectdata.load(
             client, args.bq_project_id, args.data_path, set(), config
         )
 
-        bq_client = BigQuery(
-            client,
-            DatasetId(args.bq_project_id, "webcompat_knowledge_base"),
-            config.write,
-            None,
-        )
+        if args.datasets:
+            dataset_names = args.datasets
+        else:
+            logging.info(
+                "No dataset names specified, defaulting to webcompat_knowledge_base"
+            )
+            dataset_names = ["webcompat_knowledge_base"]
 
-        datasets = [DatasetId(args.bq_project_id, "webcompat_knowledge_base")]
+        invalid = []
+        datasets = []
+        for dataset_name in dataset_names:
+            if dataset_name not in project.datasets:
+                invalid.append(dataset_name)
+            else:
+                datasets.append(project[dataset_name].id)
+
+        if invalid:
+            logging.error(f"Unknown datasets {' '.join(invalid)}")
+            import pdb
+
+            pdb.set_trace()
+            return 1
+
         dataset_mapping = {
             dataset: projectdata.stage_dataset(dataset) for dataset in datasets
         }
 
         for dataset in datasets:
+            bq_client = BigQuery(
+                client,
+                dataset,
+                config.write,
+                None,
+            )
+
             bq_client.ensure_dataset(dataset, None)
             tables = list(
                 SchemaId(dataset.project, dataset.dataset, item.table_id)
@@ -76,6 +102,8 @@ CLONE `{src_table}`
                 recreate=True,
                 delete_extra=False,
             )
+
+        return None
 
 
 main = UpdateStagingData()
