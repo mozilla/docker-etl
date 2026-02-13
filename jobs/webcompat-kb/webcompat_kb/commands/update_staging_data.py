@@ -40,7 +40,7 @@ class UpdateStagingData(Command):
         }
 
         for dataset in datasets:
-            bq_client.ensure_dataset(dataset.dataset, None)
+            bq_client.ensure_dataset(dataset, None)
             tables = list(
                 SchemaId(dataset.project, dataset.dataset, item.table_id)
                 for item in bq_client.client.list_tables(dataset.dataset)
