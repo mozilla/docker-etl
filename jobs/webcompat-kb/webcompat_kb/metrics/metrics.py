@@ -155,7 +155,7 @@ class MetricTable(ABC):
     def name(self, metric: Metric) -> str: ...
 
     @abstractmethod
-    def template(self) -> str: ...
+    def template(self, metric: Metric) -> str: ...
 
 
 class CurrentMetricTable(MetricTable):
@@ -164,23 +164,23 @@ class CurrentMetricTable(MetricTable):
     def name(self, metric: Metric) -> str:
         return f"webcompat_topline_metric_{metric.name}"
 
-    def template(self) -> str:
-        return """{% set metric_name = "all" %}
+    def template(self, metric: Metric) -> str:
+        return f"""{{% set metric_name = "{metric.name}" %}}
 SELECT
   date,
-  {% for metric_type in metric_types -%}
-    {{ metric_type.agg_function('bugs', metrics[metric_name], False) }} as {{ metric_type.name }}{{ ',' if not loop.last }}
-  {% endfor %}
+  {{% for metric_type in metric_types -%}}
+    {{{{ metric_type.agg_function('bugs', metrics[metric_name], False) }}}} as {{{{ metric_type.name }}}}{{{{ ',' if not loop.last }}}}
+  {{% endfor %}}
 FROM
   UNNEST(GENERATE_DATE_ARRAY(DATE_TRUNC(DATE("2024-01-01"), week), DATE_TRUNC(CURRENT_DATE(), week), INTERVAL 1 week)) AS date
 LEFT JOIN
-  `{{ ref('scored_site_reports') }}` AS bugs
+  `{{{{ ref('scored_site_reports') }}}}` AS bugs
 ON
   DATE(bugs.creation_time) <= date
   AND
 IF
   (bugs.resolved_time IS NOT NULL, DATE(bugs.resolved_time) >= date, TRUE)
-WHERE {{ metrics[metric_name].condition('bugs') }}
+WHERE {{{{ metrics[metric_name].condition('bugs') }}}}
 GROUP BY
   date
 order by date
@@ -193,7 +193,7 @@ class HistoryMetricTable(MetricTable):
     def name(self, metric: Metric) -> str:
         return f"webcompat_topline_metric_{metric.name}_history"
 
-    def template(self) -> str:
+    def template(self, metric: Metric) -> str:
         return """[recorded_date]
 type = "DATE"
 mode = "REQUIRED"

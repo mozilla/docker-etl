@@ -5,6 +5,7 @@ mode = "REQUIRED"
 [date]
 type = "DATE"
 mode = "REQUIRED"
+
 {% for metric_type in metric_types %}
 [{{ metric_type.name }}]
 type = "{{ metric_type.field_type }}"
