@@ -5,3 +5,11 @@ mode = "REQUIRED"
 [run_at]
 type = "TIMESTAMP"
 mode = "REQUIRED"
+
+[crux_rows]
+type = "INTEGER"
+mode = "NULLABLE"
+
+[is_complete]
+type = "BOOLEAN"
+mode = "NULLABLE"
