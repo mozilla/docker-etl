@@ -640,6 +640,50 @@ class BigQuery:
             )
             self.query(query, parameters=parameters)
 
+    def update_query(
+        self,
+        table: str | bigquery.Table | SchemaId | TableSchema,
+        set_columns: Iterable[str],
+        from_query: str | SchemaId,
+        condition: str,
+        dataset_id: Optional[str] = None,
+        parameters: Optional[Sequence[bigquery.query._AbstractQueryParameter]] = None,
+    ) -> None:
+        """Run a UPDATE ... SET ... FROM ... WHERE ... query
+
+        This does not currently support all forms of UPDATE query, only those with a source table,
+        where the update maps columns from the source table to the corresponding columns in the
+        target table.
+
+        :param table: The table to update. In other clauses this is referred to as "target".
+        :param set_columns: A list of column names to set in the target table from the source table.
+        :param from_query: A query string representing the source data
+        :param condition: A WHERE condition that matches rows in the source table to rows in the
+                          target table e.g. "target.col = source.col"
+        :param dataset_id: The dataset id to target
+        :param parameters: Parameters to pass to the query"""
+        table_id = self.get_table_id(dataset_id, table)
+        self.check_write_target(table_id)
+
+        set_clause = ",\n  ".join(
+            f"target.{column}=source.{column}" for column in set_columns
+        )
+        update_query = f"""UPDATE `{table_id}` AS target
+SET {set_clause}
+FROM ({from_query}) AS source
+WHERE {condition}
+"""
+        if self.write:
+            result = self.query(update_query)
+            if result.num_dml_affected_rows:
+                logging.info(
+                    f"Updated {result.num_dml_affected_rows} rows in {table_id}"
+                )
+        else:
+            logging.info(f"Would run query:\n{update_query}")
+            result = self.query(str(from_query))
+            logging.info(f"Would set {set_clause} with:\n{list(result)}")
+
     def delete_query(
         self,
         table: str | bigquery.Table | SchemaId | TableSchema,
