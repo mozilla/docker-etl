@@ -1,3 +1,4 @@
+import argparse
 import csv
 import logging
 from collections.abc import Collection, Iterator
@@ -50,8 +51,16 @@ LIMIT 1
     return result[0]["crux_date"]
 
 
+def delete_existing_data(client: BigQuery, table: TableSchema, yyyymm: int) -> None:
+    parameters = [bigquery.ScalarQueryParameter("yyyymm", "INTEGER", yyyymm)]
+
+    client.delete_query(table, condition="yyyymm = @yyyymm", parameters=parameters)
+
+
 def update_crux_data(project: Project, client: BigQuery, yyyymm: int) -> None:
+    logging.info(f"Importing CrUX data for {yyyymm}")
     table = project["crux_imported"]["origin_ranks"].table()
+    delete_existing_data(client, table, yyyymm)
     query = """
 SELECT yyyymm, origin, country_code, experimental.popularity.rank as rank from `chrome-ux-report.experimental.country` WHERE yyyymm = @yyyymm
 UNION ALL
@@ -85,17 +94,17 @@ def update_tranco_data(client: BigQuery, table: TableSchema, yyyymm: int) -> Non
         {"yyyymm": yyyymm, "rank": rank, "host": host}
         for rank, host in get_tranco_data()
     ]
-    client.delete_query(
-        table,
-        condition="yyyymm = @yyyymm",
-        parameters=[bigquery.ScalarQueryParameter("yyyymm", "INTEGER", yyyymm)],
-    )
+    delete_existing_data(client, table, yyyymm)
     client.write_table(table, table.schema, rows, overwrite=False)
 
 
 def update_sightline_data(project: Project, client: BigQuery, yyyymm: int) -> None:
     origin_ranks_table = project["crux_imported"]["origin_ranks"].table()
     sightline_top_1000_table = project["crux_imported"]["sightline_top_1000"].table()
+    parameters = [bigquery.ScalarQueryParameter("yyyymm", "INTEGER", yyyymm)]
+
+    delete_existing_data(client, sightline_top_1000_table, yyyymm)
+
     query = f"""
 SELECT
   DISTINCT yyyymm,
@@ -105,10 +114,12 @@ FROM
 JOIN UNNEST(["global", "us", "fr", "de", "es", "it", "mx"]) as country_code USING(country_code)
 WHERE
   crux_ranks.rank = 1000
-  AND crux_ranks.yyyymm = {yyyymm}"""
+  AND crux_ranks.yyyymm = @yyyymm"""
 
     logging.info("Updating sightline data")
-    client.insert_query(sightline_top_1000_table, ["yyyymm", "host"], query)
+    client.insert_query(
+        sightline_top_1000_table, ["yyyymm", "host"], query, parameters=parameters
+    )
 
 
 def host_min_ranks_query(
@@ -177,14 +188,10 @@ def update_min_rank_data(project: Project, client: BigQuery, yyyymm: int) -> Non
     parameters = [bigquery.ScalarQueryParameter("yyyymm", "INTEGER", yyyymm)]
     logging.info("Updating host_min_ranks data")
 
+    delete_existing_data(client, host_min_ranks_table, yyyymm)
     column_names = ["yyyymm", "host"] + [
         f"{item.name}" for item in project.data.rank_dfns
     ]
-    client.delete_query(
-        host_min_ranks_table,
-        condition="yyyymm = @yyyymm",
-        parameters=parameters,
-    )
     client.insert_query(
         host_min_ranks_table,
         column_names,
@@ -241,6 +248,18 @@ def update_tranco(project: Project, client: BigQuery, latest_crux_yyyymm: int) -
 class SiteRanksJob(EtlJob):
     name = "site-ranks"
 
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        group = parser.add_argument_group(
+            title="site-ranks", description="site-ranks arguments"
+        )
+        group.add_argument(
+            "--site-ranks-recreate",
+            action="store",
+            type=int,
+            help="Recreate all imported data for specified yyyymm",
+        )
+
     def default_dataset(self, context: Context) -> str:
         return "crux_imported"
 
@@ -249,30 +268,40 @@ class SiteRanksJob(EtlJob):
         client = context.bq_client
         run_at = datetime.now(UTC)
 
-        last_month_yyyymm = get_previous_month_yyyymm(run_at)
-        logging.debug(f"Last month was {last_month_yyyymm}")
+        recreate_yyyymm = context.args.site_ranks_recreate
 
-        import_runs_table = project["crux_imported"]["import_runs"].table()
+        if recreate_yyyymm is None:
+            last_month_yyyymm = get_previous_month_yyyymm(run_at)
+            logging.debug(f"Last month was {last_month_yyyymm}")
 
-        last_import_yyyymm = get_latest_yyyymm(client, import_runs_table)
-        logging.debug(f"Last site-ranks import was {last_import_yyyymm}")
+            import_runs_table = project["crux_imported"]["import_runs"].table()
 
-        if last_import_yyyymm >= last_month_yyyymm:
-            logging.info("Site-ranks data is up to date")
+            last_import_yyyymm = get_latest_yyyymm(client, import_runs_table)
+            logging.debug(f"Last site-ranks import was {last_import_yyyymm}")
+
+            if last_import_yyyymm >= last_month_yyyymm:
+                logging.info("Site-ranks data is up to date")
+                return
+
+            if last_import_yyyymm is None:
+                import_runs_table = project["crux_imported"]["import_runs"].table()
+                last_import_yyyymm = get_latest_yyyymm(client, import_runs_table)
+
+            target_yyyymm, run_update = update_crux(project, client, last_import_yyyymm)
+        else:
+            target_yyyymm = recreate_yyyymm
+            update_crux_data(project, client, target_yyyymm)
+            run_update = True
+
+        if not run_update:
             return
 
-        if last_import_yyyymm is None:
-            import_runs_table = project["crux_imported"]["import_runs"].table()
-            last_import_yyyymm = get_latest_yyyymm(client, import_runs_table)
+        if recreate_yyyymm is None:
+            update_tranco(project, client, target_yyyymm)
+        else:
+            logging.warning("Updating tranco data to previous months is not supported")
+        update_sightline_data(project, client, target_yyyymm)
+        update_min_rank_data(project, client, target_yyyymm)
 
-        latest_yyyymm, have_new_crux = update_crux(project, client, last_import_yyyymm)
-
-        if have_new_crux:
-            update_tranco(
-                project,
-                client,
-                latest_yyyymm,
-            )
-            update_sightline_data(project, client, latest_yyyymm)
-            update_min_rank_data(project, client, latest_yyyymm)
-            record_update(client, import_runs_table, latest_yyyymm)
+        if recreate_yyyymm is None:
+            record_update(client, import_runs_table, target_yyyymm)
