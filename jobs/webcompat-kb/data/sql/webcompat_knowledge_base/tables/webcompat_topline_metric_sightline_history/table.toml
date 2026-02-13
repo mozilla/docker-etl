@@ -6,23 +6,8 @@ mode = "REQUIRED"
 type = "DATE"
 mode = "REQUIRED"
 
-[bug_count]
-type = "INTEGER"
+{% for metric_type in metric_types %}
+[{{ metric_type.name }}]
+type = "{{ metric_type.field_type }}"
 mode = "REQUIRED"
-
-[needs_diagnosis_score]
-type = "NUMERIC"
-mode = "REQUIRED"
-
-[platform_score]
-type = "NUMERIC"
-mode = "REQUIRED"
-
-[not_supported_score]
-type = "NUMERIC"
-mode = "REQUIRED"
-
-[total_score]
-type = "NUMERIC"
-mode = "REQUIRED"
-
+{% endfor %}
