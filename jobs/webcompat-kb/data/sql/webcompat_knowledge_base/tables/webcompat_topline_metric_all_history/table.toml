@@ -11,4 +11,3 @@ mode = "REQUIRED"
 type = "{{ metric_type.field_type }}"
 mode = "REQUIRED"
 {% endfor %}
-
