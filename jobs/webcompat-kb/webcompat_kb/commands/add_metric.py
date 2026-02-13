@@ -66,10 +66,14 @@ def add_metrics(
             logging.info(f"Adding schema {schema_id}")
             if table.type == "view":
                 metadata = SchemaMetadata(name=table.name(metric))
-                project.data.add_view(schema_id, metadata, table.template(), write)
+                project.data.add_view(
+                    schema_id, metadata, table.template(metric), write
+                )
             elif table.type == "table":
-                metadata = TableMetadata(name=table.name(metric))
-                project.data.add_table(schema_id, metadata, table.template(), write)
+                metadata = TableMetadata(name=table.name(metric), etl=["metric"])
+                project.data.add_table(
+                    schema_id, metadata, table.template(metric), write
+                )
 
 
 class AddMetricCommand(Command):

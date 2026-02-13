@@ -96,7 +96,8 @@ class SchemaRecordFieldDefinition(BaseModel):
             type=self.type,
             mode=self.mode or "NULLABLE",
             fields=[
-                dfn.to_schema(field_name) for field_name, dfn in self.fields.items()
+                dfn.to_schema(field_name)  # type: ignore[possibly-missing-attribute]
+                for field_name, dfn in self.fields.items()
             ],
         )
 
@@ -143,11 +144,11 @@ class SchemaTemplate(ABC, Generic[TemplateCls]):
     def _load_from_dir(
         cls, path: os.PathLike
     ) -> Optional[tuple[Mapping[str, Any], str]]:
-        path = os.path.abspath(path)
-        if not os.path.isdir(path):
-            raise ValueError(f"Expected a directory, got {path}")
+        path_obj = pathlib.Path(path).absolute()
+        if not path_obj.is_dir():
+            raise ValueError(f"Expected a directory, got {path_obj}")
 
-        meta_path = os.path.join(path, "meta.toml")
+        meta_path = path_obj / "meta.toml"
         try:
             with open(meta_path, "rb") as f:
                 metadata = tomllib.load(f)
@@ -155,7 +156,7 @@ class SchemaTemplate(ABC, Generic[TemplateCls]):
             logging.warning(f"Failed to find {meta_path}")
             return None
 
-        template_path = os.path.join(path, cls.filename)
+        template_path = path_obj / cls.filename
         try:
             with open(template_path) as f:
                 template = f.read()
@@ -178,7 +179,9 @@ class TableTemplate(SchemaTemplate):
         try:
             table_metadata = TableMetadata.model_validate(metadata)
         except ValidationError:
-            logging.error(f"Failed to parse metadata {os.path.join(path, 'meta.toml')}")
+            logging.error(
+                f"Failed to parse metadata {pathlib.Path(path) / 'meta.toml'}"
+            )
             raise
         return cls(
             path=path,
@@ -199,7 +202,9 @@ class ViewTemplate(SchemaTemplate):
         try:
             schema_metadata = SchemaMetadata.model_validate(metadata)
         except ValidationError:
-            logging.error(f"Failed to parse metadata {os.path.join(path, 'meta.toml')}")
+            logging.error(
+                f"Failed to parse metadata {pathlib.Path(path) / 'meta.toml'}"
+            )
             raise
         return cls(
             path=path,
@@ -354,7 +359,7 @@ class ProjectData:
         template_file = path / template.filename
 
         self.templates_by_dataset[dataset_id].append(template)
-        metadata = template.metadata.dict(exclude_unset=True)
+        metadata = template.metadata.model_dump(exclude_unset=True)
         if write:
             with open(meta_file, "wb") as f:
                 tomli_w.dump(metadata, f, indent=2)
@@ -524,13 +529,12 @@ def load_templates(project: str, root_path: os.PathLike) -> TemplatesByDataset:
             DatasetId(project, dataset_meta.name), dataset_meta.description
         )
 
-        for subdir, dest, cls in [
-            ("tables", dataset.tables, TableTemplate),
-            ("views", dataset.views, ViewTemplate),
-            ("routines", dataset.routines, RoutineTemplate),
+        for subdir, cls in [
+            ("tables", TableTemplate),
+            ("views", ViewTemplate),
+            ("routines", RoutineTemplate),
         ]:
             assert issubclass(cls, SchemaTemplate)
-            assert isinstance(dest, list)
             dir_path = dataset_dir / subdir
             if os.path.exists(dir_path):
                 for schema_dir in dir_path.iterdir():
@@ -539,7 +543,12 @@ def load_templates(project: str, root_path: os.PathLike) -> TemplatesByDataset:
 
                     template = cls.load_from_dir(schema_dir)
                     if template is not None:
-                        dest.append(template)
+                        if isinstance(template, TableTemplate):
+                            dataset.tables.append(template)
+                        elif isinstance(template, ViewTemplate):
+                            dataset.views.append(template)
+                        elif isinstance(template, RoutineTemplate):
+                            dataset.routines.append(template)
 
         if not (dataset.tables or dataset.views or dataset.routines):
             logging.warning(f"Failed to find any schema for {dataset.id}")

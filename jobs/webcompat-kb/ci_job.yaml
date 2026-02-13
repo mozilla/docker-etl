@@ -16,6 +16,9 @@
         run: |
           docker build jobs/webcompat-kb -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/webcompat-kb:latest
         # yamllint enable
+      - name: ty
+        if: steps.changes.outputs.job == 'true'
+        run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/webcompat-kb:latest ty check --python=/usr/local/bin/python webcompat_kb
       - name: Mypy
         if: steps.changes.outputs.job == 'true'
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/webcompat-kb:latest mypy webcompat_kb
