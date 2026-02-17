@@ -17,3 +17,6 @@ crux_include = ["global"]
 
 [global_rank_tranco]
 rank = "tranco_ranks.rank"
+
+[core_rank]
+crux_include = ["global", "us", "de", "fr", "gb", "ca", "pl"]

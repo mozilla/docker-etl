@@ -96,7 +96,8 @@ class SchemaRecordFieldDefinition(BaseModel):
             type=self.type,
             mode=self.mode or "NULLABLE",
             fields=[
-                dfn.to_schema(field_name) for field_name, dfn in self.fields.items()
+                dfn.to_schema(field_name)  # type: ignore[possibly-missing-attribute]
+                for field_name, dfn in self.fields.items()
             ],
         )
 
@@ -143,11 +144,11 @@ class SchemaTemplate(ABC, Generic[TemplateCls]):
     def _load_from_dir(
         cls, path: os.PathLike
     ) -> Optional[tuple[Mapping[str, Any], str]]:
-        path = os.path.abspath(path)
-        if not os.path.isdir(path):
-            raise ValueError(f"Expected a directory, got {path}")
+        path_obj = pathlib.Path(path).absolute()
+        if not path_obj.is_dir():
+            raise ValueError(f"Expected a directory, got {path_obj}")
 
-        meta_path = os.path.join(path, "meta.toml")
+        meta_path = path_obj / "meta.toml"
         try:
             with open(meta_path, "rb") as f:
                 metadata = tomllib.load(f)
@@ -155,7 +156,7 @@ class SchemaTemplate(ABC, Generic[TemplateCls]):
             logging.warning(f"Failed to find {meta_path}")
             return None
 
-        template_path = os.path.join(path, cls.filename)
+        template_path = path_obj / cls.filename
         try:
             with open(template_path) as f:
                 template = f.read()
@@ -178,7 +179,9 @@ class TableTemplate(SchemaTemplate):
         try:
             table_metadata = TableMetadata.model_validate(metadata)
         except ValidationError:
-            logging.error(f"Failed to parse metadata {os.path.join(path, 'meta.toml')}")
+            logging.error(
+                f"Failed to parse metadata {pathlib.Path(path) / 'meta.toml'}"
+            )
             raise
         return cls(
             path=path,
@@ -199,7 +202,9 @@ class ViewTemplate(SchemaTemplate):
         try:
             schema_metadata = SchemaMetadata.model_validate(metadata)
         except ValidationError:
-            logging.error(f"Failed to parse metadata {os.path.join(path, 'meta.toml')}")
+            logging.error(
+                f"Failed to parse metadata {pathlib.Path(path) / 'meta.toml'}"
+            )
             raise
         return cls(
             path=path,
@@ -354,7 +359,7 @@ class ProjectData:
         template_file = path / template.filename
 
         self.templates_by_dataset[dataset_id].append(template)
-        metadata = template.metadata.dict(exclude_unset=True)
+        metadata = template.metadata.model_dump(exclude_unset=True)
         if write:
             with open(meta_file, "wb") as f:
                 tomli_w.dump(metadata, f, indent=2)
@@ -392,21 +397,28 @@ class SchemaIdMapper:
     def __init__(
         self,
         dataset_mapping: Mapping[DatasetId, DatasetId],
-        rewrite_tables: set[SchemaId],
+        map_tables: set[SchemaId],
     ):
         self.dataset_mapping = dataset_mapping
-        self.rewrite_tables = rewrite_tables
+        assert all(item.dataset_id in self.dataset_mapping for item in map_tables)
+        self.map_tables = map_tables
+
+    def map_schema(self, input_id: SchemaId) -> SchemaId:
+        """Map a schema without checking whether it should be mapped in the
+        current configuration"""
+        mapped_dataset = self.dataset_mapping[input_id.dataset_id]
+        return SchemaId(mapped_dataset.project, mapped_dataset.dataset, input_id.name)
 
     def __call__(self, ref_type: ReferenceType, input_id: SchemaId) -> SchemaId:
         if ref_type == ReferenceType.external:
-            return input_id
-
-        if input_id.dataset_id in self.dataset_mapping and (
-            ref_type != ReferenceType.table or input_id in self.rewrite_tables
+            output_id = input_id
+        elif input_id.dataset_id in self.dataset_mapping and (
+            ref_type != ReferenceType.table or input_id in self.map_tables
         ):
-            new_dataset = self.dataset_mapping[input_id.dataset_id]
-            return SchemaId(new_dataset.project, new_dataset.dataset, input_id.name)
-        return input_id
+            output_id = self.map_schema(input_id)
+        else:
+            output_id = input_id
+        return output_id
 
 
 class Project:
@@ -517,13 +529,12 @@ def load_templates(project: str, root_path: os.PathLike) -> TemplatesByDataset:
             DatasetId(project, dataset_meta.name), dataset_meta.description
         )
 
-        for subdir, dest, cls in [
-            ("tables", dataset.tables, TableTemplate),
-            ("views", dataset.views, ViewTemplate),
-            ("routines", dataset.routines, RoutineTemplate),
+        for subdir, cls in [
+            ("tables", TableTemplate),
+            ("views", ViewTemplate),
+            ("routines", RoutineTemplate),
         ]:
             assert issubclass(cls, SchemaTemplate)
-            assert isinstance(dest, list)
             dir_path = dataset_dir / subdir
             if os.path.exists(dir_path):
                 for schema_dir in dir_path.iterdir():
@@ -532,7 +543,12 @@ def load_templates(project: str, root_path: os.PathLike) -> TemplatesByDataset:
 
                     template = cls.load_from_dir(schema_dir)
                     if template is not None:
-                        dest.append(template)
+                        if isinstance(template, TableTemplate):
+                            dataset.tables.append(template)
+                        elif isinstance(template, ViewTemplate):
+                            dataset.views.append(template)
+                        elif isinstance(template, RoutineTemplate):
+                            dataset.routines.append(template)
 
         if not (dataset.tables or dataset.views or dataset.routines):
             logging.warning(f"Failed to find any schema for {dataset.id}")
@@ -562,6 +578,7 @@ def stage_dataset(dataset: DatasetId) -> DatasetId:
 
 class DatasetMapper:
     def __init__(self, project_data: ProjectData, stage: bool):
+        # Mapping from canonical dataset id to output dataset id
         self.dataset_mapping = {
             dataset_id: dataset_id
             for dataset_id in project_data.templates_by_dataset.keys()
@@ -583,7 +600,9 @@ def get_schema_mapper(
     known_tables: set[SchemaId],
     config: Config,
 ) -> Callable[[ReferenceType, SchemaId], SchemaId]:
-    rewrite_tables = set()
+    rewrite_tables: set[SchemaId] = set()
+    mapper = SchemaIdMapper(dataset_id_mapper.dataset_mapping, rewrite_tables)
+
     if config.stage:
         # If a table is one that we're going to create (i.e. one
         # that's populated by an ETL job that's currently running) or
@@ -591,20 +610,22 @@ def get_schema_mapper(
         # reuse the table in the source dataset. This is because we
         # don't always have copies of the tables in the _test datasets
         # for various reasons.
-        rewrite_tables |= known_tables
-        if config.write:
-            # If we're writing assume we want to use the staging version of any tables
-            # we might write to
-            for dataset, target_dataset in dataset_id_mapper.dataset_mapping.items():
-                rewrite_tables |= {
-                    SchemaId(project_id, dataset.id.dataset, template.metadata.name)
-                    for dataset in project_data.templates_by_dataset.values()
-                    for template in dataset.tables
-                    if set(template.metadata.etl or []).intersection(etl_jobs)
-                }
-        logging.debug("\n".join(str(item) for item in rewrite_tables))
+        for dataset in project_data.templates_by_dataset.values():
+            for template in dataset.tables:
+                schema_id = SchemaId(
+                    project_id, dataset.id.dataset, template.metadata.name
+                )
+                is_write_target = config.write and set(
+                    template.metadata.etl or []
+                ).intersection(etl_jobs)
+                is_known_table = mapper.map_schema(schema_id) in known_tables
+                if is_write_target or is_known_table:
+                    rewrite_tables.add(schema_id)
 
-    return SchemaIdMapper(dataset_id_mapper.dataset_mapping, rewrite_tables)
+        logging.debug(
+            f"Using staging tables:\n{'\n'.join(str(item) for item in rewrite_tables)}"
+        )
+    return mapper
 
 
 def lint_templates(
