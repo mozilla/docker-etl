@@ -11,7 +11,7 @@ mode = "NULLABLE"
 {% for metric in metrics.values() %}
 [{{ direction }}_{{ metric_type.name }}_{{ metric.name }}]
 type = "NUMERIC"
-mode = "REQUIRED"
+mode = "NULLABLE"
 {% endfor %}
 {% endfor %}
 {% endfor %}
