@@ -91,8 +91,11 @@ requires the following steps:
   associated with the new metric.
 
 * To test the changes run `webcompat-etl --bq-project-id <id> --stage
-  update-schema`. This should update existing tables, and create new
-  tables, with a `_test` suffix.
+  update-schema site-ranks metric`. This should update existing tables, and create new
+  tables, with a `_test` suffix, and add the initial data.
+
+  Note: If the `metric` and `site-ranks` jobs are not run
+  `update-schema` will not create the new tables.
 
 * Commit the changes, and create a PR. Once this lands, wait for the
   the ETL to run with the updated table definitions.
