@@ -3,4 +3,3 @@ reason = "Update CrUX data to 202512"
 routine_updates = [
   "moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_YYYYMM",
 ]
-stage = true
