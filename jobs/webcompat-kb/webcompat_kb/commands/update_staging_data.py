@@ -101,6 +101,8 @@ CLONE `{src_table}`
                 stage=True,
                 recreate=True,
                 delete_extra=False,
+                update_all_tables=False,
+                skip_before_update=True,
             )
 
         return None

@@ -1,2 +1,4 @@
 name = "webcompat_topline_metric_rescores"
-etl = []
+# This isn't actually written to by the metric ETL, but we want it
+# to be updated when the metric changes
+etl = ["update-schema", "metric"]
