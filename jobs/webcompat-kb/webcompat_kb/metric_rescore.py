@@ -62,6 +62,8 @@ def score_bug_changes(
 
     score_changes = {}
     score_deltas = {"all": 0}
+    for metric in conditional_metrics(project):
+        score_deltas[metric.name] = 0
 
     score_query = f"SELECT * FROM {rescore.delta_schema_id(kb_dataset)}"
     for bug in client.query(score_query):
@@ -133,8 +135,6 @@ def insert_metric_changes(
 
     for change_state in change_states:
         for metric_type in metric_types:
-            if "daily" not in metric_type.contexts:
-                continue
             for metric in metric_dfns:
                 agg_function = metric_type.agg_function(change_state, metric)
                 query_parts.append(
