@@ -607,6 +607,10 @@ class BigQuery:
         if isinstance(table, TableSchema):
             table = table.bq()
 
+        if not rows:
+            logging.warning(f"No data to insert into {table}")
+            return
+
         if self.write:
             errors = self.client.insert_rows(table, rows)
             if errors:
