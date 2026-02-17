@@ -32,7 +32,7 @@ def test_reference_resolver():
                 "output_project", "output_dataset"
             )
         },
-        rewrite_tables={SchemaId("input_project", "input_dataset", "table")},
+        map_tables={SchemaId("input_project", "input_dataset", "table")},
     )
 
     references = update_schema.References()
