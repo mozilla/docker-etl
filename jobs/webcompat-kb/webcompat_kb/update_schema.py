@@ -359,11 +359,14 @@ class TableUpdater:
     def update(self, client: BigQuery, schema: TableSchema) -> None:
         assert schema.id.project == client.project_id
         logging.info(f"Updating table definition {schema}")
-        client.ensure_table(
-            schema,
-            schema.schema,
-            update_fields=True,
-        )
+        try:
+            client.ensure_table(
+                schema,
+                schema.schema,
+                update_fields=True,
+            )
+        except ValueError as e:
+            logging.error(f"Updating {schema} failed: {e}")
 
 
 class ViewUpdater:
