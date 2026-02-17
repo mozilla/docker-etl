@@ -8,9 +8,7 @@ from .projectdata import Project
 
 
 def update_user_report_aggregate(project: Project, client: BigQuery) -> None:
-    user_reports_view = project["webcompat_user_reports"][
-        "user_reports_dedupe"
-    ].view()
+    user_reports_view = project["webcompat_user_reports"]["user_reports_dedupe"].view()
     aggregate_table = project["webcompat_user_reports"][
         "user_reports_aggregate"
     ].table()

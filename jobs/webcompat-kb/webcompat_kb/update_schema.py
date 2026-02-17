@@ -359,11 +359,14 @@ class TableUpdater:
     def update(self, client: BigQuery, schema: TableSchema) -> None:
         assert schema.id.project == client.project_id
         logging.info(f"Updating table definition {schema}")
-        client.ensure_table(
-            schema,
-            schema.schema,
-            update_fields=True,
-        )
+        try:
+            client.ensure_table(
+                schema,
+                schema.schema,
+                update_fields=True,
+            )
+        except ValueError as e:
+            logging.error(f"Updating {schema} failed: {e}")
 
 
 class ViewUpdater:
@@ -472,6 +475,7 @@ def update_schemas(
     project: Project,
     etl_jobs: set[str],
     delete_missing: bool,
+    update_all_tables: bool,
 ) -> None:
     creator = SchemaCreator(project)
     sql_schemas = creator.create()
@@ -482,18 +486,19 @@ def update_schemas(
         for item in project.data.templates_by_dataset.values()
     ]
 
-    # Tables needed for a for a job that we'll run
-    logging.info(f"Only updating tables used by jobs {', '.join(etl_jobs)}")
-    etl_table_schemas = [
-        schema
-        for dataset in project
-        for schema in dataset.tables()
-        if schema.etl_jobs.intersection(etl_jobs)
+    update_table_schemas = [
+        schema for dataset in project for schema in dataset.tables()
     ]
+    if not update_all_tables:
+        update_table_schemas = [
+            schema
+            for schema in update_table_schemas
+            if schema.etl_jobs.intersection(etl_jobs)
+        ]
 
     # Ensure we have any datasets which either have a view or routine
     # or are needed for a job we'll run
-    need_datasets = {schema.id.dataset_id for schema in etl_table_schemas} | {
+    need_datasets = {schema.id.dataset_id for schema in update_table_schemas} | {
         dataset.id
         for dataset in project.data.templates_by_dataset.values()
         if dataset.views or dataset.routines
@@ -510,7 +515,7 @@ def update_schemas(
     table_updater = TableUpdater(current_schemas.tables)
     # Only create tables when they're needed for a job that we'll run
 
-    for table_schema in etl_table_schemas:
+    for table_schema in update_table_schemas:
         if table_updater.needs_update(table_schema):
             table_updater.update(client, table_schema)
 
@@ -577,7 +582,6 @@ def record_update(project: Project, client: BigQuery, schema_hash: str) -> None:
 def before_schema_update(client: BigQuery, project: Project) -> None:
     """Lifecycle point to record data that depends on the existing
     schemas, before deploying the update"""
-
     metric_rescore.record_rescores(project, client)
 
 
@@ -588,6 +592,8 @@ def update_schema_if_needed(
     stage: bool,
     recreate: bool,
     delete_extra: bool,
+    update_all_tables: bool,
+    skip_before_update: bool,
 ) -> None:
     src_hash = hash_tree(project.data.path).hex()
     last_update_time, last_update_hash = get_last_update(project, client)
@@ -608,14 +614,10 @@ def update_schema_if_needed(
     if not lint_templates(etl_jobs, project.data.templates_by_dataset.values()):
         raise ValueError("Template lint failed")
 
-    before_schema_update(client, project)
+    if not skip_before_update:
+        before_schema_update(client, project)
 
-    update_schemas(
-        client,
-        project,
-        etl_jobs_enabled,
-        delete_extra,
-    )
+    update_schemas(client, project, etl_jobs_enabled, delete_extra, update_all_tables)
     record_update(project, client, src_hash)
 
 
@@ -638,6 +640,16 @@ class UpdateSchemaJob(EtlJob):
             action="store_true",
             help="Force update from source files",
         )
+        group.add_argument(
+            "--update-schema-all-tables",
+            action="store_true",
+            help="Update all table definitions, not just those for active ETLs",
+        )
+        group.add_argument(
+            "--update-schema-skip-before-update",
+            action="store_true",
+            help="Don't run before_schema_update tasks",
+        )
 
     def default_dataset(self, context: Context) -> str:
         return context.args.bq_kb_dataset
@@ -658,4 +670,6 @@ class UpdateSchemaJob(EtlJob):
             stage=context.config.stage,
             recreate=context.args.update_schema_recreate,
             delete_extra=context.args.update_schema_delete_extra,
+            update_all_tables=context.args.update_schema_all_tables,
+            skip_before_update=context.args.update_schema_skip_before_update,
         )
