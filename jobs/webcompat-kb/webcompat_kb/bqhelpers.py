@@ -633,7 +633,11 @@ class BigQuery:
 ({query})"""
 
         if self.write:
-            self.query(insert_query, parameters=parameters)
+            result = self.query(insert_query, parameters=parameters)
+            if result.num_dml_affected_rows:
+                logging.info(
+                    f"Inserted {result.num_dml_affected_rows} rows in {table_id}"
+                )
         else:
             logging.info(
                 f"Skipping writes, would have run insert with query:\n{insert_query}"
