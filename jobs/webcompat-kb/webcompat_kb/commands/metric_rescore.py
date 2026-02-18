@@ -236,16 +236,19 @@ def update_prod_schemas(
     )
 
 
-def remove_archive_schemas(project: Project, rescore: Rescore, write: bool) -> None:
+def remove_staging_schemas(
+    project: Project, kb_dataset: DatasetId, rescore: Rescore, write: bool
+) -> None:
     for routine_id in rescore.staging_routine_ids().values():
         project.data.remove_routine(routine_id, write)
     scored_site_reports = SchemaId(
-        project.id, "webcompat_knowledge_base", "scored_site_reports"
+        kb_dataset.project, kb_dataset.dataset, "scored_site_reports"
     )
     staging_scored_site_reports = rescore.staging_schema_id(
         SchemaType.view, scored_site_reports
     )
     project.data.remove_view(staging_scored_site_reports, write)
+    project.data.remove_view(rescore.delta_schema_id(kb_dataset), write)
 
 
 def create_schemas(
@@ -309,7 +312,7 @@ def prepare_deploy(
 
     create_archive_schemas(project, kb_dataset, rescore, write)
     update_prod_schemas(project, kb_dataset, rescore, write)
-    remove_archive_schemas(project, rescore, write)
+    remove_staging_schemas(project, kb_dataset, rescore, write)
     rescore.stage = False
     rescores.update(data_path, rescore, write)
     return rescore
