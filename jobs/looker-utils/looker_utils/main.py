@@ -329,6 +329,9 @@ def disable_exited_employees(ctx, subscription_id, max_messages):
                     "ack_deadline_seconds": 0,
                 }
             )
+            raise RuntimeError(
+                f"{len(nack_ids)} message(s) failed to process and were nacked"
+            )
 
         print(
             f"Done: {len(ack_ids)} message(s) succeeded, {len(nack_ids)} message(s) failed"
