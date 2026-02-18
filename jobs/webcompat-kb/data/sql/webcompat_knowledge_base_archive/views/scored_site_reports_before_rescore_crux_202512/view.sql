@@ -1,14 +1,14 @@
 WITH
   host_categories AS (
   SELECT
-    `{{ ref('WEBCOMPAT_HOST') }}`(host) as webcompat_host,
+    `{{ ref('webcompat_knowledge_base.WEBCOMPAT_HOST') }}`(host) as webcompat_host,
     {% for metric in metrics.values() if metric.host_min_ranks_condition() -%}
       {{ metric.host_min_ranks_condition() }} AS is_{{ metric.name }}{{ ',' if not loop.last }}
     {% endfor %}
   FROM
     `{{ ref('crux_imported.host_min_ranks') }}`
   WHERE
-    yyyymm = `{{ ref('RESCORE_CRUX_202512_WEBCOMPAT_METRIC_YYYYMM') }}`()
+    yyyymm = `{{ ref('WEBCOMPAT_METRIC_YYYYMM_BEFORE_RESCORE_CRUX_202512') }}`()
   GROUP BY
     webcompat_host),
   /* Individual score components for each bug.
@@ -50,9 +50,9 @@ WITH
       (weights.lookup_type = "branch"
         AND weights.lookup_value = IFNULL(JSON_VALUE(site_reports.user_story, "$.branch"), "release"), weights.score, 0)) AS branch_score,
   FROM
-    `{{ ref('site_reports') }}` AS site_reports
+    `{{ ref('webcompat_knowledge_base.site_reports') }}` AS site_reports
   CROSS JOIN
-    `{{ ref('dim_bug_score') }}` AS weights
+    `{{ ref('webcompat_knowledge_base.dim_bug_score') }}` AS weights
   GROUP BY
     number),
 
@@ -62,12 +62,12 @@ These could be inlined, but it's slightly easier to read if they're computed in 
 computed_scores AS (
   SELECT
     number,
-    `{{ ref('WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK') }}`(keywords,
+    `{{ ref('webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK') }}`(keywords,
       user_story) AS triage_score_no_rank,
-    `{{ ref('WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFIER') }}`(url,
-      `{{ ref('RESCORE_CRUX_202512_WEBCOMPAT_METRIC_YYYYMM') }}`()) AS site_rank_score
+    `{{ ref('webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFIER') }}`(url,
+      `{{ ref('WEBCOMPAT_METRIC_YYYYMM_BEFORE_RESCORE_CRUX_202512') }}`()) AS site_rank_score
   FROM
-    `{{ ref('site_reports') }}` AS site_reports
+    `{{ ref('webcompat_knowledge_base.site_reports') }}` AS site_reports
 ),
 
 site_report_scores AS (
@@ -86,7 +86,7 @@ site_report_scores AS (
       {{ metric.site_reports_condition('host_categories') }} AS is_{{ metric.name }}{{ ',' if not loop.last }}
     {% endfor %}
   FROM
-    `{{ ref('site_reports') }}` AS site_reports
+    `{{ ref('webcompat_knowledge_base.site_reports') }}` AS site_reports
   JOIN
     scores
   USING
@@ -98,7 +98,7 @@ site_report_scores AS (
   LEFT JOIN
     host_categories
   ON
-    host_categories.webcompat_host = `{{ ref('WEBCOMPAT_HOST') }}`(site_reports.url))
+    host_categories.webcompat_host = `{{ ref('webcompat_knowledge_base.WEBCOMPAT_HOST') }}`(site_reports.url))
 
 SELECT
   site_report_scores.*,
