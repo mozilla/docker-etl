@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import tempfile
@@ -8,7 +9,7 @@ import click
 import looker_sdk
 import pandas as pd
 from google.api_core.exceptions import NotFound
-from google.cloud import bigquery
+from google.cloud import bigquery, pubsub_v1
 from looker_sdk import methods40 as methods
 from looker_sdk.sdk.api40 import models
 
@@ -218,6 +219,123 @@ def _henry_config_file():
         tmp_file.write(config)
         print("Temporary config file created")
     return tmp_file.name
+
+
+def _disable_user_in_looker(sdk: methods.Looker40SDK, user_email: str) -> None:
+    """Find and disable a user in Looker by email address."""
+    users = sdk.search_users(email=user_email)
+
+    if not users:
+        print(f"No Looker user found with email: {user_email}")
+        return
+
+    user = users[0]
+
+    if user.is_disabled:
+        return
+
+    sdk.update_user(user.id, models.WriteUser(is_disabled=True))
+    print(f"Disabled user {user_email} (ID: {user.id}) in Looker")
+
+
+@cli.command()
+@click.option(
+    "--subscription-id",
+    "--subscription_id",
+    envvar="LOOKER_PUBSUB_SUBSCRIPTION_ID",
+    required=True,
+    help="Full PubSub subscription path (projects/{project}/subscriptions/{name})",
+)
+@click.option(
+    "--max-messages",
+    "--max_messages",
+    default=1000,
+    help="Maximum number of messages to pull per run",
+)
+@click.pass_context
+def disable_exited_employees(ctx, subscription_id, max_messages):
+    """Disable Looker accounts for offboarded employees via PubSub events.
+
+    Expected message format:
+    {
+        "event_type": "employee_exit",
+        "event_time": "2026-01-26T00:00:00Z",
+        "employee_email": "user@mozilla.com",
+        "employee_name": "Jane Doe",
+        "publish_time": "2026-01-28T19:02:25.123456Z",
+        "event_data": {
+            "manager_name": "Jane Manager",
+            "manager_email": "jmanager@mozilla.com"
+        }
+    }
+
+    Only messages with event_type "employee_exit" trigger a disable.
+    Messages are acknowledged on success and nacked on error so they can be retried.
+    """
+    sdk = ctx.obj["SDK"]
+    subscriber = pubsub_v1.SubscriberClient()
+
+    with subscriber:
+        response = subscriber.pull(
+            request={
+                "subscription": subscription_id,
+                "max_messages": max_messages,
+            }
+        )
+
+        if not response.received_messages:
+            print("No messages to process")
+            return
+
+        ack_ids = []
+        nack_ids = []
+
+        for received_message in response.received_messages:
+            message = received_message.message
+            try:
+                data = json.loads(message.data.decode("utf-8"))
+                event_type = data.get("event_type")
+                employee_email = data.get("employee_email")
+
+                if event_type != "employee_exit":
+                    ack_ids.append(received_message.ack_id)
+                    continue
+
+                print(f"Processing employee exit for: {employee_email}")
+
+                if not employee_email:
+                    print("Message missing employee_email field, skipping")
+                    ack_ids.append(received_message.ack_id)
+                    continue
+
+                _disable_user_in_looker(sdk, employee_email)
+                ack_ids.append(received_message.ack_id)
+
+            except Exception as e:
+                print(f"Error processing message: {e}")
+                nack_ids.append(received_message.ack_id)
+
+        if ack_ids:
+            subscriber.acknowledge(
+                request={"subscription": subscription_id, "ack_ids": ack_ids}
+            )
+
+        if nack_ids:
+            # Reset deadline to 0 so messages are redelivered immediately
+            subscriber.modify_ack_deadline(
+                request={
+                    "subscription": subscription_id,
+                    "ack_ids": nack_ids,
+                    "ack_deadline_seconds": 0,
+                }
+            )
+            raise RuntimeError(
+                f"{len(nack_ids)} message(s) failed to process and were nacked"
+            )
+
+        print(
+            f"Done: {len(ack_ids)} message(s) succeeded, {len(nack_ids)} message(s) failed"
+        )
 
 
 if __name__ == "__main__":
