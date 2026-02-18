@@ -1,4 +1,3 @@
-
 with scores as (
   SELECT
     number,
@@ -11,7 +10,9 @@ with scores as (
     old_scored_site_reports.is_japan_1000 AS is_japan_1000_old,
     new_scored_site_reports.is_japan_1000 AS is_japan_1000_new,
     old_scored_site_reports.is_japan_1000_mobile AS is_japan_1000_mobile_old,
-    new_scored_site_reports.is_japan_1000_mobile AS is_japan_1000_mobile_new
+    new_scored_site_reports.is_japan_1000_mobile AS is_japan_1000_mobile_new,
+    old_scored_site_reports.is_core AS is_core_old,
+    new_scored_site_reports.is_core AS is_core_new
   FROM `{{ ref('rescore_crux_202512_scored_site_reports') }}` as new_scored_site_reports
   FULL OUTER JOIN `{{ ref('scored_site_reports') }}` AS old_scored_site_reports USING(number)
   WHERE new_scored_site_reports.resolution = ""
@@ -28,5 +29,7 @@ SELECT
   is_japan_1000_new,
   is_japan_1000_mobile_old,
   is_japan_1000_mobile_new,
+  is_core_old,
+  is_core_new,
   new_score - old_score AS delta
 FROM scores
