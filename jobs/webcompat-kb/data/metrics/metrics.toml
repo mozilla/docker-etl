@@ -31,3 +31,68 @@ pretty_name = "Core Countries"
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(global_rank) <= 5000"
 pretty_name = "Global 5000"
+
+[us_1000]
+type = "site_reports_field"
+host_min_ranks_condition = "MIN(us_rank) <= 1000"
+pretty_name = "USA"
+
+[germany_1000]
+type = "site_reports_field"
+host_min_ranks_condition = "MIN(germany_rank) <= 1000"
+pretty_name = "Germany"
+
+[france_1000]
+type = "site_reports_field"
+host_min_ranks_condition = "MIN(france_rank) <= 1000"
+pretty_name = "France"
+
+[uk_1000]
+type = "site_reports_field"
+host_min_ranks_condition = "MIN(uk_rank) <= 1000"
+pretty_name = "UK"
+
+[canada_1000]
+type = "site_reports_field"
+host_min_ranks_condition = "MIN(canada_rank) <= 1000"
+pretty_name = "Canada"
+
+[poland_1000]
+type = "site_reports_field"
+host_min_ranks_condition = "MIN(poland_rank) <= 1000"
+pretty_name = "Poland"
+
+[india_1000]
+type = "site_reports_field"
+host_min_ranks_condition = "MIN(india_rank) <= 1000"
+pretty_name = "India"
+
+[brazil_1000]
+type = "site_reports_field"
+host_min_ranks_condition = "MIN(brazil_rank) <= 1000"
+pretty_name = "Brazil"
+
+[indonesia_1000]
+type = "site_reports_field"
+host_min_ranks_condition = "MIN(indonesia_rank) <= 1000"
+pretty_name = "Indonesia"
+
+[mexico_1000]
+type = "site_reports_field"
+host_min_ranks_condition = "MIN(mexico_rank) <= 1000"
+pretty_name = "Mexico"
+
+[italy_1000]
+type = "site_reports_field"
+host_min_ranks_condition = "MIN(italy_rank) <= 1000"
+pretty_name = "Italy"
+
+[spain_1000]
+type = "site_reports_field"
+host_min_ranks_condition = "MIN(spain_rank) <= 1000"
+pretty_name = "Spain"
+
+[netherlands_1000]
+type = "site_reports_field"
+host_min_ranks_condition = "MIN(netherlands_rank) <= 1000"
+pretty_name = "Netherlands"
