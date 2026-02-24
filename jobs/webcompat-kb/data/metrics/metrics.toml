@@ -20,3 +20,7 @@ conditions = ["IFNULL(is_japan_1000, FALSE)", "is_mobile"]
 [core]
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(core_rank) <= 1000 OR MIN(global_rank) <= 1000"
+
+[global_5000]
+type = "site_reports_field"
+host_min_ranks_condition = "MIN(global_rank) <= 5000"
