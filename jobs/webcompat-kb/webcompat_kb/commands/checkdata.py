@@ -3,11 +3,12 @@ import logging
 import os
 from typing import Optional
 
-from .. import projectdata
+from .. import projectdata, redashdata
 from ..base import ALL_JOBS, Command
 from ..bqhelpers import get_client
 from ..config import Config
 from ..projectdata import lint_templates
+from ..commands.update_redash import render_dashboards
 from ..update_schema import SchemaCreator
 
 
@@ -30,7 +31,7 @@ class CheckData(Command):
             {item.name for item in ALL_JOBS.values()},
             project.data.templates_by_dataset.values(),
         ):
-            logging.error("Lint failed")
+            logging.error("BigQuery templates lint failed")
             return 1
 
         try:
@@ -39,6 +40,16 @@ class CheckData(Command):
         except Exception as e:
             logging.error(f"Creating schemas failed: {e}")
             return 1
+
+        redash_data = redashdata.load(os.path.normpath(args.data_path))
+        failures: list[
+            tuple[redashdata.RedashDashboard, redashdata.RedashQueryTemplate, Exception]
+        ] = []
+        render_dashboards(project, redash_data, set(), failures)
+        if len(failures):
+            logging.error("Redash templates lint failed")
+            return 1
+
         return None
 
 

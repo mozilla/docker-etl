@@ -2,7 +2,7 @@ import difflib
 import argparse
 import logging
 import os
-from typing import Mapping, Optional
+from typing import Iterator, Mapping, Optional
 
 
 from .. import projectdata
@@ -127,6 +127,47 @@ def update_query(
     return True
 
 
+def render_dashboards(
+    project: projectdata.Project,
+    redash_data: redashdata.RedashData,
+    dashboards_filter: Optional[set[str]],
+    failures: list[
+        tuple[redashdata.RedashDashboard, redashdata.RedashQueryTemplate, Exception]
+    ],
+) -> Iterator[
+    tuple[
+        redashdata.RedashDashboard,
+        redashdata.RedashQueryTemplate,
+        Optional[Mapping[str, redashdata.RedashParameter]],
+        str,
+    ]
+]:
+    renderer = redashdata.RedashTemplateRenderer(
+        project.data.metric_dfns,
+        project.data.metric_types,
+        ReferenceResolver(project.id),
+    )
+    for dashboard in redash_data.iter_named(dashboards_filter):
+        for query in dashboard.queries:
+            try:
+                parameters = renderer.render_parameters(dashboard, query)
+                rendered_sql = renderer.render_query(
+                    dashboard,
+                    query,
+                    ParameterResolver(
+                        set(parameters.keys() if parameters is not None else [])
+                    ),
+                )
+            except Exception as e:
+                logging.error(
+                    f"Failed to render query {query.metadata.name}: {e}",
+                    exc_info=True,
+                )
+                failures.append((dashboard, query, e))
+            else:
+                yield dashboard, query, parameters, rendered_sql
+
+
 def update_dashboards(
     project: projectdata.Project,
     redash_client: RedashClient,
@@ -138,54 +179,43 @@ def update_dashboards(
     updated = 0
     errors = 0
 
-    renderer = redashdata.RedashTemplateRenderer(
-        project.data.metric_dfns,
-        project.data.metric_types,
-        ReferenceResolver(project.id),
-    )
-
-    for dashboard in redash_data.iter_named(dashboards_filter):
+    failures: list[
+        tuple[redashdata.RedashDashboard, redashdata.RedashQueryTemplate, Exception]
+    ] = []
+    for dashboard, query, parameters, rendered_sql in render_dashboards(
+        project, redash_data, dashboards_filter, failures
+    ):
         logging.info(f"Processing dashboard: {dashboard.name}")
-
-        for query in dashboard.queries:
-            try:
-                parameters = renderer.render_parameters(dashboard, query)
-                rendered_sql = renderer.render_query(
-                    dashboard,
+        try:
+            if query.metadata.id:
+                update_required = update_query(
+                    redash_client,
                     query,
-                    ParameterResolver(
-                        set(parameters.keys() if parameters is not None else [])
-                    ),
+                    parameters,
+                    rendered_sql,
+                    write,
                 )
-                if query.metadata.id:
-                    update_required = update_query(
-                        redash_client,
-                        query,
-                        parameters,
-                        rendered_sql,
-                        write,
-                    )
-                    if update_required:
-                        updated += 1
-                else:
-                    id = create_query(
-                        redash_client,
-                        query,
-                        parameters,
-                        rendered_sql,
-                        write,
-                    )
-                    query.metadata.id = id
-                    query.update(write)
-                    created += 1
-            except Exception as e:
-                logging.error(
-                    f"Failed to deploy query {query.metadata.name}: {e}",
-                    exc_info=True,
+                if update_required:
+                    updated += 1
+            else:
+                id = create_query(
+                    redash_client,
+                    query,
+                    parameters,
+                    rendered_sql,
+                    write,
                 )
-                raise
-                errors += 1
+                query.metadata.id = id
+                query.update(write)
+                created += 1
+        except Exception as e:
+            logging.error(
+                f"Failed to deploy query {query.metadata.name}: {e}",
+                exc_info=True,
+            )
+            errors += 1
 
+    errors += len(failures)
     logging.info(f"Created: {created}\nUpdated: {updated}\nErrors: {errors}")
     if created > 0 and write:
         logging.info("Please commit updates to newly created templates")
