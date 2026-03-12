@@ -9,8 +9,15 @@ from pydantic import BaseModel, RootModel
 class Metric(ABC):
     conditional = True
 
-    def __init__(self, name: str):
+    def __init__(
+        self,
+        name: str,
+        pretty_name: Optional[str] = None,
+        dashboards: Optional[list[str]] = None,
+    ):
         self.name = name
+        self.pretty_name = pretty_name or name
+        self.dashboards = dashboards or []
 
     @abstractmethod
     def condition(self, table: str) -> str: ...
@@ -25,6 +32,14 @@ class Metric(ABC):
 class UnconditionalMetric(Metric):
     conditional = False
 
+    def __init__(
+        self,
+        name: str,
+        pretty_name: Optional[str] = None,
+        dashboards: Optional[list[str]] = None,
+    ):
+        super().__init__(name, pretty_name, dashboards)
+
     def condition(self, table: str) -> str:
         return "TRUE"
 
@@ -35,8 +50,10 @@ class SiteReportsFieldMetric(Metric):
         name: str,
         host_min_ranks_condition: Optional[str],
         site_reports_conditions: Optional[list[str]],
+        pretty_name: Optional[str] = None,
+        dashboards: Optional[list[str]] = None,
     ):
-        super().__init__(name)
+        super().__init__(name, pretty_name, dashboards)
         self._host_min_ranks_condition = host_min_ranks_condition
         self._site_reports_conditions = site_reports_conditions
 
@@ -56,19 +73,27 @@ class SiteReportsFieldMetric(Metric):
 
 class UnconditionalMetricData(BaseModel):
     type: Literal["unconditional"]
+    pretty_name: Optional[str] = None
+    dashboards: Optional[list[str]] = None
 
     def to_metric(self, name: str) -> UnconditionalMetric:
-        return UnconditionalMetric(name)
+        return UnconditionalMetric(name, self.pretty_name, self.dashboards)
 
 
 class SiteReportsFieldMetricData(BaseModel):
     type: Literal["site_reports_field"]
     host_min_ranks_condition: Optional[str] = None
     conditions: Optional[list[str]] = None
+    pretty_name: Optional[str] = None
+    dashboards: Optional[list[str]] = None
 
     def to_metric(self, name: str) -> SiteReportsFieldMetric:
         return SiteReportsFieldMetric(
-            name, self.host_min_ranks_condition, self.conditions
+            name,
+            self.host_min_ranks_condition,
+            self.conditions,
+            self.pretty_name,
+            self.dashboards,
         )
 
 
