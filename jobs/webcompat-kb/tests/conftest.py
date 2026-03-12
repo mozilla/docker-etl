@@ -8,7 +8,7 @@ from unittest.mock import Mock
 import pytest
 from google.cloud import bigquery
 
-from webcompat_kb import projectdata
+from webcompat_kb import projectdata, redashdata
 from webcompat_kb.base import DEFAULT_DATA_DIR
 from webcompat_kb.bqhelpers import BigQuery, DatasetId
 from webcompat_kb.config import Config
@@ -155,3 +155,12 @@ def bq_client():
 @pytest.fixture
 def project_data():
     return projectdata.load_data("test", DEFAULT_DATA_DIR)
+
+
+@pytest.fixture
+def dashboard():
+    return redashdata.RedashDashboard(
+        metadata=redashdata.DashboardMetadata(name="test"),
+        parameters_template=None,
+        queries=[],
+    )

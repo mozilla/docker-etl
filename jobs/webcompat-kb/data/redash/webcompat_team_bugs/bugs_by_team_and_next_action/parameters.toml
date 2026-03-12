@@ -1,0 +1,24 @@
+[metric]
+title = "Metric"
+type = "enum"
+enum_options = [ {% for metric in metrics.values() %} "{{ metric.pretty_name }}", {% endfor %}]
+
+[next_action_team]
+title = "Team"
+type = "query"
+query_id = 109495
+
+[next_action_team.multi_values_options]
+prefix = '"'
+suffix = '"'
+separator = ","
+
+[next_action]
+title = "Next action"
+type = "query"
+query_id = 109496
+
+[next_action.multi_values_options]
+prefix = '"'
+suffix = '"'
+separator = ","
