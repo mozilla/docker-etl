@@ -1,0 +1,4 @@
+name = "webcompat_topline_metric_brazil_1000_history"
+etl = [
+  "metric",
+]
