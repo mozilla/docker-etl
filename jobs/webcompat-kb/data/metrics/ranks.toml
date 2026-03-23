@@ -20,3 +20,46 @@ rank = "tranco_ranks.rank"
 
 [core_rank]
 crux_include = ["global", "us", "de", "fr", "gb", "ca", "pl"]
+
+# Each core country
+
+[us_rank]
+crux_include = ["us"]
+
+[germany_rank]
+crux_include = ["de"]
+
+[france_rank]
+crux_include = ["fr"]
+
+[uk_rank]
+crux_include = ["gb"]
+
+[canada_rank]
+crux_include = ["ca"]
+
+[poland_rank]
+crux_include = ["pl"]
+
+# Other countries
+
+[india_rank]
+crux_include = ["in"]
+
+[brazil_rank]
+crux_include = ["br"]
+
+[indonesia_rank]
+crux_include = ["id"]
+
+[mexico_rank]
+crux_include = ["mx"]
+
+[italy_rank]
+crux_include = ["it"]
+
+[spain_rank]
+crux_include = ["es"]
+
+[netherlands_rank]
+crux_include = ["nl"]
