@@ -1,0 +1,6 @@
+[country]
+title = "Country"
+type = "enum"
+value = "{% for key, metric in metrics.items() if metric.country_code %}{% if loop.first %}{{ metric.pretty_name }}{% endif %}{% endfor %}"
+enum_options = [{% for key, metric in metrics.items() if metric.country_code %}"{{ metric.pretty_name }}",
+{% endfor %}]

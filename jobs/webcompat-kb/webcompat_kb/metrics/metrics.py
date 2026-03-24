@@ -52,10 +52,14 @@ class SiteReportsFieldMetric(Metric):
         site_reports_conditions: Optional[list[str]],
         pretty_name: Optional[str] = None,
         dashboards: Optional[list[str]] = None,
+        country_code: Optional[str] = None,
+        tlds: Optional[list[str]] = None,
     ):
         super().__init__(name, pretty_name, dashboards)
         self._host_min_ranks_condition = host_min_ranks_condition
         self._site_reports_conditions = site_reports_conditions
+        self.country_code = country_code
+        self.tlds = tlds or []
 
     def condition(self, table: str) -> str:
         return f"{table}.is_{self.name}"
@@ -86,6 +90,8 @@ class SiteReportsFieldMetricData(BaseModel):
     conditions: Optional[list[str]] = None
     pretty_name: Optional[str] = None
     dashboards: Optional[list[str]] = None
+    country_code: Optional[str] = None
+    tlds: Optional[list[str]] = None
 
     def to_metric(self, name: str) -> SiteReportsFieldMetric:
         return SiteReportsFieldMetric(
@@ -94,6 +100,8 @@ class SiteReportsFieldMetricData(BaseModel):
             self.conditions,
             self.pretty_name,
             self.dashboards,
+            self.country_code,
+            self.tlds,
         )
 
 
