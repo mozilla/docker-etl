@@ -37,62 +37,127 @@ type = "site_reports_field"
 host_min_ranks_condition = "MIN(us_rank) <= 1000"
 pretty_name = "USA"
 
+[us_1000_mobile]
+type = "site_reports_field"
+conditions = ["IFNULL(is_us_1000, FALSE)", "is_mobile"]
+pretty_name = "USA Mobile"
+
 [germany_1000]
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(germany_rank) <= 1000"
 pretty_name = "Germany"
+
+[germany_1000_mobile]
+type = "site_reports_field"
+conditions = ["IFNULL(is_germany_1000, FALSE)", "is_mobile"]
+pretty_name = "Germany Mobile"
 
 [france_1000]
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(france_rank) <= 1000"
 pretty_name = "France"
 
+[france_1000_mobile]
+type = "site_reports_field"
+conditions = ["IFNULL(is_france_1000, FALSE)", "is_mobile"]
+pretty_name = "France Mobile"
+
 [uk_1000]
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(uk_rank) <= 1000"
 pretty_name = "UK"
+
+[uk_1000_mobile]
+type = "site_reports_field"
+conditions = ["IFNULL(is_uk_1000, FALSE)", "is_mobile"]
+pretty_name = "UK Mobile"
 
 [canada_1000]
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(canada_rank) <= 1000"
 pretty_name = "Canada"
 
+[canada_1000_mobile]
+type = "site_reports_field"
+conditions = ["IFNULL(is_canada_1000, FALSE)", "is_mobile"]
+pretty_name = "Canada Mobile"
+
 [poland_1000]
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(poland_rank) <= 1000"
 pretty_name = "Poland"
+
+[poland_1000_mobile]
+type = "site_reports_field"
+conditions = ["IFNULL(is_poland_1000, FALSE)", "is_mobile"]
+pretty_name = "Poland Mobile"
 
 [india_1000]
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(india_rank) <= 1000"
 pretty_name = "India"
 
+[india_1000_mobile]
+type = "site_reports_field"
+conditions = ["IFNULL(is_india_1000, FALSE)", "is_mobile"]
+pretty_name = "India Mobile"
+
 [brazil_1000]
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(brazil_rank) <= 1000"
 pretty_name = "Brazil"
+
+[brazil_1000_mobile]
+type = "site_reports_field"
+conditions = ["IFNULL(is_brazil_1000, FALSE)", "is_mobile"]
+pretty_name = "Brazil Mobile"
 
 [indonesia_1000]
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(indonesia_rank) <= 1000"
 pretty_name = "Indonesia"
 
+[indonesia_1000_mobile]
+type = "site_reports_field"
+conditions = ["IFNULL(is_indonesia_1000, FALSE)", "is_mobile"]
+pretty_name = "Indonesia Mobile"
+
 [mexico_1000]
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(mexico_rank) <= 1000"
 pretty_name = "Mexico"
+
+[mexico_1000_mobile]
+type = "site_reports_field"
+conditions = ["IFNULL(is_mexico_1000, FALSE)", "is_mobile"]
+pretty_name = "Mexico Mobile"
 
 [italy_1000]
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(italy_rank) <= 1000"
 pretty_name = "Italy"
 
+[italy_1000_mobile]
+type = "site_reports_field"
+conditions = ["IFNULL(is_italy_1000, FALSE)", "is_mobile"]
+pretty_name = "Italy Mobile"
+
 [spain_1000]
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(spain_rank) <= 1000"
 pretty_name = "Spain"
 
+[spain_1000_mobile]
+type = "site_reports_field"
+conditions = ["IFNULL(is_spain_1000, FALSE)", "is_mobile"]
+pretty_name = "Spain Mobile"
+
 [netherlands_1000]
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(netherlands_rank) <= 1000"
 pretty_name = "Netherlands"
+
+[netherlands_1000_mobile]
+type = "site_reports_field"
+conditions = ["IFNULL(is_netherlands_1000, FALSE)", "is_mobile"]
+pretty_name = "Netherlands Mobile"
