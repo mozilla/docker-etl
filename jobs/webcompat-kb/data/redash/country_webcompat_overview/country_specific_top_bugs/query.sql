@@ -8,9 +8,9 @@ FROM `{{ ref("webcompat_knowledge_base.scored_site_reports") }}` AS bugs
 JOIN `{{ ref("webcompat_knowledge_base.site_reports_next_action") }}` USING(number)
 WHERE bugs.resolution = "" AND (
   CASE "{{ param("country") }}"
-  {% for key, metric in metrics.items() if metric.country_code %}
+  {% for metric in dashboard_metrics %}
     WHEN "{{ metric.pretty_name }}" THEN (
-      (bugs.is_{{ key }} AND NOT bugs.is_global_1000)
+      ({{ metric.condition("bugs") }} AND NOT bugs.is_global_1000)
       {% for tld in metric.tlds %}
         OR net.host(url) LIKE "%{{ tld }}"
       {% endfor %}
