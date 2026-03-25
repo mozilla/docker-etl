@@ -44,8 +44,6 @@ defined:
 The following optional fields are used by the country WebCompat dashboard
 (`country_webcompat_overview`):
 
-* `country_code` - ISO country code string (e.g. `"jp"`, `"us"`). Used
-  as a data value in dashboard queries.
 * `tlds` - Optional list of country top-level domain strings
   (e.g. `[".jp"]`, `[".uk", ".co.uk"]`). When set, the
   `country_specific_top_bugs` query adds `OR net.host(url) LIKE "%{tld}"`
