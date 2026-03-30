@@ -77,6 +77,8 @@ class RedashEnumParameter(RedashParameterBase):
                 value = self.enum_options[0]
                 if self.multi_values_options:
                     value = [value]
+        else:
+            value = self.value
 
         return client.RedashEnumParameter(
             name=name,
