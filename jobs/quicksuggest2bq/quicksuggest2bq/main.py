@@ -208,7 +208,7 @@ def store_suggestions(
 )
 @click.option(
     "--kinto-collection",
-    default="quicksuggest",
+    default="quicksuggest-amp",
     type=str,
     help="the Kinto server to fetch the data from",
 )
