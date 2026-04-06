@@ -68,7 +68,7 @@ def download_suggestions(client: kinto_http.Client) -> Iterator[KintoSuggestion]
     data_records = [
         record
         for record in client.get_records()
-        if record["type"] in ["data", "offline-expansion-data"]
+        if record["type"] in ["amp"]
     ]
 
     # Make use of connection pooling because all requests go to the same host
