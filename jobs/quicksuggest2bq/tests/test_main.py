@@ -51,12 +51,7 @@ def mocked_kinto_client(mocker: MockerFixture):
     mock_server_info = {"capabilities": {"attachments": {"base_url": "discarded"}}}
 
     mock_records = [
-        {"type": "data", "id": 2802, "attachment": {"location": "discarded/again"}},
-        {
-            "type": "offline-expansion-data",
-            "id": 0,
-            "attachment": {"location": "discarded/again"},
-        },
+        {"type": "amp", "id": 2802, "attachment": {"location": "discarded/again"}},
     ]
 
     class MockResponse:
