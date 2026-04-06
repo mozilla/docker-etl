@@ -52,6 +52,7 @@ def mocked_kinto_client(mocker: MockerFixture):
 
     mock_records = [
         {"type": "amp", "id": 2802, "attachment": {"location": "discarded/again"}},
+        {"type": "amp", "id": 0, "attachment": {"location": "discarded/again"}},
     ]
 
     class MockResponse:
