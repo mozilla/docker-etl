@@ -1,0 +1,5 @@
+[country]
+title = "Country"
+type = "enum"
+enum_options = [{% for metric in dashboard_metrics %}"{{ metric.pretty_name }}",
+{% endfor %}]
