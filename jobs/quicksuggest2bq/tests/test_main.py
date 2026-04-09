@@ -136,7 +136,7 @@ class TestMain:
     def test_suggestion_serp_categories(self, mocked_kinto_client):
         suggestions = list(download_suggestions(mocked_kinto_client))
         assert suggestions[0].serp_categories[0]["category"] == 1
-        assert suggestions[0].serp_categories[0]["category"] == 2
+        assert suggestions[0].serp_categories[1]["category"] == 2
 
     def test_suggestion_score(self, mocked_kinto_client):
         suggestions = list(download_suggestions(mocked_kinto_client))
