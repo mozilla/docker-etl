@@ -103,7 +103,7 @@ def download_suggestions(client: kinto_http.Client) -> Iterator[KintoSuggestion]
                 ],
                 "serp_categories": [
                     {"category": category_id}
-                    for category in suggestion_data.get("serp_categories", [])
+                    for category_id in suggestion_data.get("serp_categories", [])
                 ],
             }
             yield KintoSuggestion(**suggestion)
