@@ -1,0 +1,5 @@
+[platforms]
+title = "Platforms"
+type = "enum"
+value = "All"
+enum_options = ["All", "Mobile", "Desktop"]

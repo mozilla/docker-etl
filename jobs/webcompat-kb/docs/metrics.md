@@ -41,6 +41,16 @@ defined:
   joined with `AND`. When this is not supplied the default condition
   is `host_categories.is_{metric_name}`.
 
+The following optional fields are used by the country WebCompat dashboard
+(`country_webcompat_overview`):
+
+* `tlds` - Optional list of country top-level domain strings
+  (e.g. `[".jp"]`, `[".uk", ".co.uk"]`). When set, the
+  `country_specific_top_bugs` query adds `OR net.host(url) LIKE "%{tld}"`
+  clauses so that bugs are surfaced by domain suffix regardless of ranking.
+  Omit for countries where the TLD is not country-specific (e.g. USA, where
+  `.com` is global).
+
 ## Site Rank Definitions
 
 Metrics often depend on the popularity of a site. This data is stored

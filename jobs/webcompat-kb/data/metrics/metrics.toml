@@ -16,6 +16,8 @@ pretty_name = "Sightline"
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(japan_rank) <= 1000"
 pretty_name = "Japan"
+tlds = [".jp"]
+dashboards = ["country_webcompat_overview"]
 
 [japan_1000_mobile]
 type = "site_reports_field"
@@ -36,6 +38,7 @@ pretty_name = "Global 5000"
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(us_rank) <= 1000"
 pretty_name = "USA"
+dashboards = ["country_webcompat_overview"]
 
 [us_1000_mobile]
 type = "site_reports_field"
@@ -46,6 +49,8 @@ pretty_name = "USA Mobile"
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(germany_rank) <= 1000"
 pretty_name = "Germany"
+tlds = [".de"]
+dashboards = ["country_webcompat_overview"]
 
 [germany_1000_mobile]
 type = "site_reports_field"
@@ -56,6 +61,8 @@ pretty_name = "Germany Mobile"
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(france_rank) <= 1000"
 pretty_name = "France"
+tlds = [".fr"]
+dashboards = ["country_webcompat_overview"]
 
 [france_1000_mobile]
 type = "site_reports_field"
@@ -66,6 +73,8 @@ pretty_name = "France Mobile"
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(uk_rank) <= 1000"
 pretty_name = "UK"
+tlds = [".uk", ".co.uk"]
+dashboards = ["country_webcompat_overview"]
 
 [uk_1000_mobile]
 type = "site_reports_field"
@@ -76,6 +85,8 @@ pretty_name = "UK Mobile"
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(canada_rank) <= 1000"
 pretty_name = "Canada"
+tlds = [".ca"]
+dashboards = ["country_webcompat_overview"]
 
 [canada_1000_mobile]
 type = "site_reports_field"
@@ -86,6 +97,8 @@ pretty_name = "Canada Mobile"
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(poland_rank) <= 1000"
 pretty_name = "Poland"
+tlds = [".pl"]
+dashboards = ["country_webcompat_overview"]
 
 [poland_1000_mobile]
 type = "site_reports_field"
@@ -96,6 +109,8 @@ pretty_name = "Poland Mobile"
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(india_rank) <= 1000"
 pretty_name = "India"
+tlds = [".in"]
+dashboards = ["country_webcompat_overview"]
 
 [india_1000_mobile]
 type = "site_reports_field"
@@ -106,6 +121,8 @@ pretty_name = "India Mobile"
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(brazil_rank) <= 1000"
 pretty_name = "Brazil"
+tlds = [".br"]
+dashboards = ["country_webcompat_overview"]
 
 [brazil_1000_mobile]
 type = "site_reports_field"
@@ -116,6 +133,8 @@ pretty_name = "Brazil Mobile"
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(indonesia_rank) <= 1000"
 pretty_name = "Indonesia"
+tlds = [".id"]
+dashboards = ["country_webcompat_overview"]
 
 [indonesia_1000_mobile]
 type = "site_reports_field"
@@ -126,6 +145,8 @@ pretty_name = "Indonesia Mobile"
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(mexico_rank) <= 1000"
 pretty_name = "Mexico"
+tlds = [".mx"]
+dashboards = ["country_webcompat_overview"]
 
 [mexico_1000_mobile]
 type = "site_reports_field"
@@ -136,6 +157,8 @@ pretty_name = "Mexico Mobile"
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(italy_rank) <= 1000"
 pretty_name = "Italy"
+tlds = [".it"]
+dashboards = ["country_webcompat_overview"]
 
 [italy_1000_mobile]
 type = "site_reports_field"
@@ -146,6 +169,8 @@ pretty_name = "Italy Mobile"
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(spain_rank) <= 1000"
 pretty_name = "Spain"
+tlds = [".es"]
+dashboards = ["country_webcompat_overview"]
 
 [spain_1000_mobile]
 type = "site_reports_field"
@@ -156,6 +181,8 @@ pretty_name = "Spain Mobile"
 type = "site_reports_field"
 host_min_ranks_condition = "MIN(netherlands_rank) <= 1000"
 pretty_name = "Netherlands"
+tlds = [".nl"]
+dashboards = ["country_webcompat_overview"]
 
 [netherlands_1000_mobile]
 type = "site_reports_field"
