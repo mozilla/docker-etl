@@ -1,119 +1,111 @@
-# Load libraries
-import requests
-from google.cloud import storage
-from datetime import datetime
-import time
+import json
 import re
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+import time
+
+import feedparser
+import requests
 from argparse import ArgumentParser
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.webdriver import WebDriver as ChromiumDriver
+from bs4 import BeautifulSoup
+from datetime import datetime
+from google.cloud import storage
 from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.webdriver import WebDriver as ChromiumDriver
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
-# Website with chrome release data
-CHROME_RELEASES_URL = "https://developer.chrome.com/release-notes"
-CHROME_RELEASES_BASE_URL = "https://developer.chrome.com"
+BROWSERS_FYI_FEED = "https://www.browsers.fyi/feed/"
+FEED_TITLE_RE = re.compile(r"^(.+) release (.+) is out!$")
 
-# Website with AI in Chrome information
-AI_IN_CHROME_URL = "https://developer.chrome.com/docs/ai"
+GCS_BUCKET_NAME = "moz-fx-data-prod-external-data"
+GCS_STRUCTURED_PREFIX = "MARKET_RESEARCH/STRUCTURED"
 
-# Chrome Dev Tools News
-CHROME_DEV_TOOLS = "https://developer.chrome.com/docs/devtools/news?hl=en#whats-new"
-
-# Define where to write the data in GCS
-GCS_BUCKET = "gs://moz-fx-data-prod-external-data/"
-BUCKET_NO_GS = "moz-fx-data-prod-external-data"
-RESULTS_FPATH_1 = "MARKET_RESEARCH/SCRAPED_INFO/ChromeReleaseNotes/WebScraping_"
-RESULTS_FPATH_2 = "MARKET_RESEARCH/SCRAPED_INFO/ChromeAI/WebScraping_"
-RESULTS_FPATH_3 = "MARKET_RESEARCH/SCRAPED_INFO/ChromeDevTools/WebScraping_"
 TIMEOUT_IN_SECONDS = 20
-DRIVER_TYP = "Chrome"
-BINARY_LOC = "/usr/bin/google-chrome-stable"
-DRIVER_PATH = "/usr/local/bin/chromedriver"
+REQUEST_DELAY_SECONDS = 2
+DRIVER_TYP = "Chromium"
+BINARY_LOC = "/usr/bin/chromium"
+DRIVER_PATH = "/usr/bin/chromedriver"
+
+# Browsers whose release notes pages require JavaScript rendering
+JS_RENDERED_BROWSERS = {
+    "Safari",
+    "Safari on iOS",
+}
 
 
 def initialize_driver(driver_type, binary_location, driver_path):
-    """Inputs: Driver type (Chrome or Chromium), binary location, driver path
-    Outputs: A webdriver
-    """
+    """Initialize a Selenium WebDriver instance."""
+    options = Options()
+    options.binary_location = binary_location
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--window-size=1920,1080")
+
     if driver_type == "Chromium":
-        options = Options()
-        options.binary_location = binary_location
-        options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--window-size=1920,1080")
         driver = ChromiumDriver(service=Service(driver_path), options=options)
-
     elif driver_type == "Chrome":
-        options = Options()
-        options.binary_location = binary_location
-        options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--window-size=1920,1080")
         driver = webdriver.Chrome(service=Service(driver_path), options=options)
-
     else:
         raise ValueError("DRIVER_TYPE needs to be either Chrome or Chromium")
 
     return driver
 
 
-def get_latest_chrome_release_url(driver, chrome_releases_main_page, base_url):
-    """Get the URL for the latest chrome release"""
-    # Load the main Chrome releases web page
-    driver.get(chrome_releases_main_page)
+def parse_feed():
+    """Parse the browsers.fyi Atom feed and return all browser release entries.
 
-    # Give it 3 seconds for JS to load
-    time.sleep(3)
+    Returns a list of dicts with keys: name, version, release_date, release_notes.
+    Entries are ordered newest-first as provided by the feed.
+    """
+    feed = feedparser.parse(BROWSERS_FYI_FEED)
+    releases = []
+    for entry in feed.entries:
+        title = getattr(entry, "title", "") or ""
+        link = getattr(entry, "link", "") or ""
+        updated = getattr(entry, "updated", "") or ""
+        match = FEED_TITLE_RE.match(title)
+        if not match or not link:
+            continue
+        releases.append(
+            {
+                "name": match.group(1),
+                "version": match.group(2),
+                "release_date": updated[:10],  # "2026-03-24T00:00:00Z" -> "2026-03-24"
+                "release_notes": link,
+            }
+        )
+    return releases
 
-    # Get the web page source
-    soup = BeautifulSoup(driver.page_source, "html.parser")
 
-    # Close the driver
-    driver.quit()
+def gcs_path_for(browser_name, version, release_date):
+    """Construct the GCS object path for a browser release.
 
-    # Get all the links found
-    links = [urljoin(base_url, a["href"]) for a in soup.find_all("a", href=True)]
+    Uses release_date (not scraped_date) in the filename so the path is stable
+    and can be used for deduplication across runs.
+    """
+    browser_path = browser_name.replace(" ", "_")
+    version_clean = version.replace(".", "_")
+    date_clean = release_date.replace("-", "")
+    return f"{GCS_STRUCTURED_PREFIX}/{browser_path}/release_{version_clean}_{date_clean}.json"
 
-    # Initialize a list of all unique links found on the page
-    unique_links = []
 
-    # For each link, if link not in the unique list, add the link
-    for link in links:
-        if link not in unique_links:
-            unique_links.append(link)
-
-    # Get only the links that are for "release note" pages
-    release_detail_links = []
-    print("all release detail links found: ")
-    for link in unique_links:
-        if link.startswith(
-            "https://developer.chrome.com/release-notes/"
-        ) and link.endswith("?hl=en"):
-            release_detail_links.append(link)
-            print(link)
-
-    # Find the link for the release note page with the highest number
-    highest_release_number = None
-    highest_release_detail_link = None
-
-    for release_dtl_lnk in release_detail_links:
-        match = re.search(r"(?<!\d)(\d+)(?!\d)", release_dtl_lnk)
-        if match:
-            found_number = match.group(1)
-            if highest_release_number is None:
-                highest_release_number = found_number
-                highest_release_detail_link = release_dtl_lnk
-            else:
-                if highest_release_number < found_number:
-                    highest_release_number = found_number
-                    highest_release_detail_link = release_dtl_lnk
-
-    return highest_release_detail_link
+def scrape_page_text(url, driver=None, use_js=False):
+    """Scrape plain text from a URL, using Selenium for JS-rendered pages."""
+    if use_js and driver is not None:
+        driver.get(url)
+        WebDriverWait(driver, TIMEOUT_IN_SECONDS).until(
+            EC.presence_of_element_located(("tag name", "body"))
+        )
+        # Allow additional time for JS to populate the body content
+        time.sleep(2)
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+    else:
+        response = requests.get(url, timeout=TIMEOUT_IN_SECONDS)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+    return soup.get_text(separator="\n", strip=True)
 
 
 def main():
@@ -121,58 +113,69 @@ def main():
     parser.add_argument("--date", required=True)
     args = parser.parse_args()
 
-    # Get DAG logical date
-    logical_dag_date = datetime.strptime(args.date, "%Y-%m-%d").date()
-    logical_dag_date_string = logical_dag_date.strftime("%Y%m%d")
+    scraped_date = datetime.strptime(args.date, "%Y-%m-%d").strftime("%Y%m%d")
 
-    # Make final output filepaths using DAG date
-    final_output_fpath1 = RESULTS_FPATH_1 + logical_dag_date_string + ".txt"
-    final_output_fpath2 = RESULTS_FPATH_2 + logical_dag_date_string + ".txt"
-    final_output_fpath3 = RESULTS_FPATH_3 + logical_dag_date_string + ".txt"
+    releases = parse_feed()
+    print(f"Found {len(releases)} releases in feed")
 
-    # Initialize the driver
-    driver = initialize_driver(DRIVER_TYP, BINARY_LOC, DRIVER_PATH)
-
-    # Get latest chrome release URL
-    latest_chrome_release_url = get_latest_chrome_release_url(
-        driver, CHROME_RELEASES_URL, CHROME_RELEASES_BASE_URL
-    )
-    print("Latest Chrome Release URL Found: ", latest_chrome_release_url)
-
-    # Get latest Chrome release info
-    chrome_release_url_response = requests.get(
-        latest_chrome_release_url, timeout=TIMEOUT_IN_SECONDS
-    )
-    soup = BeautifulSoup(chrome_release_url_response.text, "html.parser")
-    final_output_1 = soup.get_text(separator="\n", strip=True)
-
-    # Get info about AI on Chrome
-    chrome_ai_url_response = requests.get(AI_IN_CHROME_URL, timeout=TIMEOUT_IN_SECONDS)
-    soup = BeautifulSoup(chrome_ai_url_response.text, "html.parser")
-    final_output_2 = soup.get_text(separator="\n", strip=True)
-
-    # Get info on news for Chrome Dev Tools
-    chrome_dev_tools_response = requests.get(
-        CHROME_DEV_TOOLS, timeout=TIMEOUT_IN_SECONDS
-    )
-    soup = BeautifulSoup(chrome_dev_tools_response.text, "html.parser")
-    final_output_3 = soup.get_text(separator="\n", strip=True)
-
-    # Open up a client to GCS
     client = storage.Client(project="moz-fx-data-shared-prod")
-    bucket = client.bucket(BUCKET_NO_GS)
+    bucket = client.bucket(GCS_BUCKET_NAME)
 
-    blob = bucket.blob(final_output_fpath1)
-    blob.upload_from_string(final_output_1)
-    print(f"Summary uploaded to gs://{BUCKET_NO_GS}/{final_output_fpath1}")
+    # Fetch all existing GCS paths once to avoid N individual exists() calls
+    existing_paths = {
+        blob.name
+        for blob in client.list_blobs(GCS_BUCKET_NAME, prefix=GCS_STRUCTURED_PREFIX)
+    }
+    print(f"Found {len(existing_paths)} existing objects in GCS")
 
-    blob2 = bucket.blob(final_output_fpath2)
-    blob2.upload_from_string(final_output_2)
-    print(f"Summary uploaded to gs://{BUCKET_NO_GS}/{final_output_fpath2}")
+    driver = None
+    try:
+        for release in releases:
+            name = release["name"]
+            version = release["version"]
+            release_date = release["release_date"]
+            release_notes_url = release["release_notes"]
 
-    blob3 = bucket.blob(final_output_fpath3)
-    blob3.upload_from_string(final_output_3)
-    print(f"Summary uploaded to gs://{BUCKET_NO_GS}/{final_output_fpath3}")
+            gcs_path = gcs_path_for(name, version, release_date)
+
+            if gcs_path in existing_paths:
+                print(f"Skipping {name} {version} — already in GCS")
+                continue
+
+            print(f"Scraping {name} {version} ({release_date}): {release_notes_url}")
+            use_js = name in JS_RENDERED_BROWSERS
+
+            if use_js and driver is None:
+                driver = initialize_driver(DRIVER_TYP, BINARY_LOC, DRIVER_PATH)
+
+            try:
+                raw_text = scrape_page_text(
+                    release_notes_url, driver=driver, use_js=use_js
+                )
+            except Exception as e:
+                print(f"Failed to scrape {name} {version}: {e}")
+                continue
+
+            record = {
+                "browser": name,
+                "version": version,
+                "release_date": release_date,
+                "scraped_date": scraped_date,
+                "source_url": release_notes_url,
+                "features": [],
+                "raw_text": raw_text,
+            }
+
+            blob = bucket.blob(gcs_path)
+            blob.upload_from_string(
+                json.dumps(record, indent=2), content_type="application/json"
+            )
+            print(f"Uploaded to gs://{GCS_BUCKET_NAME}/{gcs_path}")
+            time.sleep(REQUEST_DELAY_SECONDS)
+
+    finally:
+        if driver is not None:
+            driver.quit()
 
 
 if __name__ == "__main__":
