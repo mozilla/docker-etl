@@ -45,18 +45,6 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Google Chrome 141.0.7390.107 manually 
-RUN apt-get update && apt-get install -y wget curl unzip gnupg ca-certificates --no-install-recommends && \
-    wget -O /tmp/google-chrome-stable.deb https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_141.0.7390.107-1_amd64.deb && \
-    apt-get install -y /tmp/google-chrome-stable.deb && \
-    rm /tmp/google-chrome-stable.deb
-
-# Install matching ChromeDriver 141.0.7390.107 from Chrome for Testing
-RUN wget -O /tmp/chromedriver.zip https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/141.0.7390.107/linux64/chromedriver-linux64.zip && \
-    unzip /tmp/chromedriver.zip -d /tmp && \
-    mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver && \
-    chmod +x /usr/local/bin/chromedriver && \
-    rm -rf /tmp/chromedriver.zip /tmp/chromedriver-linux64
 
 # Install Python packages
 COPY requirements.txt .

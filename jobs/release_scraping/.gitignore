@@ -2,3 +2,5 @@
 *.pyc
 __pycache__/
 venv/
+*.egg-info/
+tests/integration_output/
