@@ -35,26 +35,59 @@ def test_parse_feed_title_parsing():
     """Feed entries are parsed correctly from title into name + version."""
     fake_feed = MagicMock()
     fake_feed.entries = [
-        MagicMock(title="Chrome release 146 is out!", link="https://example.com/chrome", updated="2026-03-10T00:00:00Z"),
-        MagicMock(title="Safari on iOS release 26.4 is out!", link="https://example.com/safari", updated="2026-03-24T00:00:00Z"),
-        MagicMock(title="Firefox for Android release 149 is out!", link="https://example.com/firefox", updated="2026-03-24T00:00:00Z"),
-        MagicMock(title="Unrecognised entry format", link="https://example.com/other", updated="2026-01-01T00:00:00Z"),
+        MagicMock(
+            title="Chrome release 146 is out!",
+            link="https://example.com/chrome",
+            updated="2026-03-10T00:00:00Z",
+        ),
+        MagicMock(
+            title="Safari on iOS release 26.4 is out!",
+            link="https://example.com/safari",
+            updated="2026-03-24T00:00:00Z",
+        ),
+        MagicMock(
+            title="Firefox for Android release 149 is out!",
+            link="https://example.com/firefox",
+            updated="2026-03-24T00:00:00Z",
+        ),
+        MagicMock(
+            title="Unrecognised entry format",
+            link="https://example.com/other",
+            updated="2026-01-01T00:00:00Z",
+        ),
     ]
 
     with patch("release_scraping.main.feedparser.parse", return_value=fake_feed):
         results = parse_feed()
 
     assert len(results) == 3  # unrecognised entry is skipped
-    assert results[0] == {"name": "Chrome", "version": "146", "release_date": "2026-03-10", "release_notes": "https://example.com/chrome"}
-    assert results[1] == {"name": "Safari on iOS", "version": "26.4", "release_date": "2026-03-24", "release_notes": "https://example.com/safari"}
-    assert results[2] == {"name": "Firefox for Android", "version": "149", "release_date": "2026-03-24", "release_notes": "https://example.com/firefox"}
+    assert results[0] == {
+        "name": "Chrome",
+        "version": "146",
+        "release_date": "2026-03-10",
+        "release_notes": "https://example.com/chrome",
+    }
+    assert results[1] == {
+        "name": "Safari on iOS",
+        "version": "26.4",
+        "release_date": "2026-03-24",
+        "release_notes": "https://example.com/safari",
+    }
+    assert results[2] == {
+        "name": "Firefox for Android",
+        "version": "149",
+        "release_date": "2026-03-24",
+        "release_notes": "https://example.com/firefox",
+    }
 
 
 def test_parse_feed_skips_missing_link():
     """Entries with no link URL are skipped."""
     fake_feed = MagicMock()
     fake_feed.entries = [
-        MagicMock(title="Chrome release 146 is out!", link="", updated="2026-03-10T00:00:00Z"),
+        MagicMock(
+            title="Chrome release 146 is out!", link="", updated="2026-03-10T00:00:00Z"
+        ),
     ]
 
     with patch("release_scraping.main.feedparser.parse", return_value=fake_feed):
@@ -90,9 +123,24 @@ def test_main_skips_existing_and_continues_on_failure():
     from release_scraping.main import main
 
     fake_releases = [
-        {"name": "Chrome", "version": "146", "release_date": "2026-03-10", "release_notes": "https://example.com/chrome"},
-        {"name": "Firefox", "version": "149", "release_date": "2026-03-24", "release_notes": "https://example.com/firefox"},
-        {"name": "Edge", "version": "146", "release_date": "2026-03-13", "release_notes": "https://example.com/edge"},
+        {
+            "name": "Chrome",
+            "version": "146",
+            "release_date": "2026-03-10",
+            "release_notes": "https://example.com/chrome",
+        },
+        {
+            "name": "Firefox",
+            "version": "149",
+            "release_date": "2026-03-24",
+            "release_notes": "https://example.com/firefox",
+        },
+        {
+            "name": "Edge",
+            "version": "146",
+            "release_date": "2026-03-13",
+            "release_notes": "https://example.com/edge",
+        },
     ]
 
     mock_bucket = MagicMock()
@@ -112,16 +160,19 @@ def test_main_skips_existing_and_continues_on_failure():
             raise Exception("connection timeout")
         return "release notes text"
 
-    with patch("release_scraping.main.parse_feed", return_value=fake_releases), \
-         patch("release_scraping.main.storage.Client", return_value=mock_client), \
-         patch("release_scraping.main.scrape_page_text", side_effect=fake_scrape):
+    with patch("release_scraping.main.parse_feed", return_value=fake_releases), patch(
+        "release_scraping.main.storage.Client", return_value=mock_client
+    ), patch("release_scraping.main.scrape_page_text", side_effect=fake_scrape):
         import sys
+
         sys.argv = ["main.py", "--date", "2026-03-13"]
         main()
 
     # Only Edge should have been uploaded (Chrome skipped, Firefox failed)
     uploaded_paths = [call.args[0] for call in mock_bucket.blob.call_args_list]
-    assert uploaded_paths == ["MARKET_RESEARCH/STRUCTURED/Edge/release_146_20260313.json"]
+    assert uploaded_paths == [
+        "MARKET_RESEARCH/STRUCTURED/Edge/release_146_20260313.json"
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +273,11 @@ def test_scrape_all_current_browsers_to_file(local_driver):
             record["error"] = str(e)
 
         char_count = len(record["raw_text"]) if record["raw_text"] else 0
-        status = f"{char_count:,} chars" if record["raw_text"] else f"FAILED ({record['error']})"
+        status = (
+            f"{char_count:,} chars"
+            if record["raw_text"]
+            else f"FAILED ({record['error']})"
+        )
         print(f"  {name} {version}: {status}")
         results.append(record)
 
@@ -253,7 +308,8 @@ def test_scrape_last_year_to_file(local_driver):
     scraped_date = datetime.now(timezone.utc).strftime("%Y%m%d")
 
     releases = [
-        r for r in parse_feed()
+        r
+        for r in parse_feed()
         if datetime.fromisoformat(r["release_date"]) >= since.replace(tzinfo=None)
     ]
     print(f"\nFound {len(releases)} releases since {since.date()}")
@@ -270,7 +326,9 @@ def test_scrape_last_year_to_file(local_driver):
         if url not in url_cache:
             use_js = name in JS_RENDERED_BROWSERS
             try:
-                url_cache[url] = scrape_page_text(url, driver=local_driver, use_js=use_js)
+                url_cache[url] = scrape_page_text(
+                    url, driver=local_driver, use_js=use_js
+                )
             except Exception as e:
                 url_cache[url] = None
                 print(f"  FAILED {name} {version}: {e}")
@@ -280,15 +338,17 @@ def test_scrape_last_year_to_file(local_driver):
         status = f"{char_count:,} chars" if raw_text else "FAILED"
         print(f"  {name} {version} ({release['release_date']}): {status}")
 
-        results.append({
-            "browser": name,
-            "version": version,
-            "release_date": release["release_date"],
-            "scraped_date": scraped_date,
-            "source_url": url,
-            "features": [],
-            "raw_text": raw_text,
-        })
+        results.append(
+            {
+                "browser": name,
+                "version": version,
+                "release_date": release["release_date"],
+                "scraped_date": scraped_date,
+                "source_url": url,
+                "features": [],
+                "raw_text": raw_text,
+            }
+        )
 
     output_dir = os.path.join(os.path.dirname(__file__), "integration_output")
     os.makedirs(output_dir, exist_ok=True)

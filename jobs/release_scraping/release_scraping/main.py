@@ -88,7 +88,10 @@ def gcs_path_for(browser_name, version, release_date):
     browser_path = browser_name.replace(" ", "_")
     version_clean = version.replace(".", "_")
     date_clean = release_date.replace("-", "")
-    return f"{GCS_STRUCTURED_PREFIX}/{browser_path}/release_{version_clean}_{date_clean}.json"
+    return (
+        f"{GCS_STRUCTURED_PREFIX}/{browser_path}"
+        f"/release_{version_clean}_{date_clean}.json"
+    )
 
 
 def scrape_page_text(url, driver=None, use_js=False):
