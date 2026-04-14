@@ -21,6 +21,8 @@ FEED_TITLE_RE = re.compile(r"^(.+) release (.+) is out!$")
 GCS_BUCKET_NAME = "moz-fx-data-prod-external-data"
 GCS_STRUCTURED_PREFIX = "MARKET_RESEARCH/STRUCTURED"
 
+MIN_RELEASE_DATE = "2020-01-01"
+
 TIMEOUT_IN_SECONDS = 20
 REQUEST_DELAY_SECONDS = 2
 DRIVER_TYP = "Chromium"
@@ -108,7 +110,21 @@ def scrape_page_text(url, driver=None, use_js=False):
         response = requests.get(url, timeout=TIMEOUT_IN_SECONDS)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
-    return soup.get_text(separator="\n", strip=True)
+    # Prefer the most specific semantic content element to avoid nav/sidebar bloat.
+    # 1. <article> — MDN, Chrome for Developers
+    # 2. Largest <div class="content"> — Microsoft Learn (Edge)
+    # 3. <main> — MDN fallback, other sites
+    # 4. Full page — last resort
+    content = soup.find("article")
+    if not content:
+        content_divs = soup.find_all("div", class_="content")
+        if content_divs:
+            content = max(content_divs, key=lambda el: len(el.get_text()))
+    if not content:
+        content = soup.find("main")
+    if not content:
+        content = soup
+    return content.get_text(separator="\n", strip=True)
 
 
 def main():
@@ -118,8 +134,8 @@ def main():
 
     scraped_date = datetime.strptime(args.date, "%Y-%m-%d").strftime("%Y%m%d")
 
-    releases = parse_feed()
-    print(f"Found {len(releases)} releases in feed")
+    releases = [r for r in parse_feed() if r["release_date"] >= MIN_RELEASE_DATE]
+    print(f"Found {len(releases)} releases in feed since {MIN_RELEASE_DATE}")
 
     client = storage.Client(project="moz-fx-data-shared-prod")
     bucket = client.bucket(GCS_BUCKET_NAME)
