@@ -8,6 +8,7 @@ from argparse import ArgumentParser
 from bs4 import BeautifulSoup
 from datetime import datetime
 from google.cloud import storage
+from urllib.parse import urlparse
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -23,8 +24,26 @@ GCS_STRUCTURED_PREFIX = "MARKET_RESEARCH/STRUCTURED"
 
 MIN_RELEASE_DATE = "2020-01-01"
 
+# Firefox user-facing release notes
+FIREFOX_PRODUCT_DETAILS_URL = "https://product-details.mozilla.org/1.0/firefox.json"
+FIREFOX_USER_NOTES_URL = "https://www.firefox.com/en-US/firefox/{version}/releasenotes/"
+
+# User-facing blog RSS feeds
+GCS_BLOGS_PREFIX = "MARKET_RESEARCH/BLOGS"
+
+BLOG_FEEDS = {
+    "Chrome": "https://blog.google/products-and-platforms/products/chrome/rss/",
+    "Edge": "https://blogs.windows.com/msedgedev/feed/",
+    "Brave": "https://brave.com/blog/index.xml",
+    "Opera": "https://blogs.opera.com/desktop/feed/",
+    "Vivaldi": "https://vivaldi.com/feed/",
+}
+
 TIMEOUT_IN_SECONDS = 20
 REQUEST_DELAY_SECONDS = 2
+REQUEST_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)"
+}
 DRIVER_TYP = "Chromium"
 BINARY_LOC = "/usr/bin/chromium"
 DRIVER_PATH = "/usr/bin/chromedriver"
@@ -96,6 +115,80 @@ def gcs_path_for(browser_name, version, release_date):
     )
 
 
+def gcs_user_release_path_for(browser_name, version, release_date):
+    """Construct the GCS object path for a user-facing browser release.
+
+    Uses a user_release_ prefix to distinguish from developer release notes
+    stored by gcs_path_for.
+    """
+    browser_path = browser_name.replace(" ", "_")
+    version_clean = version.replace(".", "_")
+    date_clean = release_date.replace("-", "")
+    return (
+        f"{GCS_STRUCTURED_PREFIX}/{browser_path}"
+        f"/user_release_{version_clean}_{date_clean}.json"
+    )
+
+
+def gcs_blog_path_for(browser_name, publish_date, url):
+    """Construct the GCS object path for a browser blog post.
+
+    Uses the last URL path segment as a stable slug for deduplication.
+    """
+    browser_path = browser_name.replace(" ", "_")
+    date_clean = publish_date.replace("-", "")
+    slug = urlparse(url).path.rstrip("/").split("/")[-1]
+    slug = re.sub(r"[^a-zA-Z0-9-]", "-", slug)[:40]
+    return f"{GCS_BLOGS_PREFIX}/{browser_path}/post_{date_clean}_{slug}.json"
+
+
+def fetch_firefox_user_releases():
+    """Fetch all major Firefox releases from the Mozilla product-details API.
+
+    Returns a list of dicts with keys: version, release_date.
+    Only major releases are included. Ordered newest-first.
+    """
+    response = requests.get(FIREFOX_PRODUCT_DETAILS_URL, headers=REQUEST_HEADERS, timeout=TIMEOUT_IN_SECONDS)
+    response.raise_for_status()
+    data = response.json()
+
+    releases = []
+    for release in data["releases"].values():
+        if release["category"] != "major":
+            continue
+        releases.append(
+            {
+                "version": release["version"],
+                "release_date": release["date"],
+            }
+        )
+
+    releases.sort(key=lambda r: r["release_date"], reverse=True)
+    return releases
+
+
+def parse_blog_feed(feed_url):
+    """Parse an RSS/Atom blog feed and return post entries.
+
+    Returns a list of dicts with keys: title, release_date, url.
+    Ordered as provided by the feed (typically newest-first).
+    Entries missing a link or date are skipped.
+    """
+    feed = feedparser.parse(feed_url)
+    posts = []
+    for entry in feed.entries:
+        title = getattr(entry, "title", "") or ""
+        link = getattr(entry, "link", "") or ""
+        date_parsed = getattr(entry, "published_parsed", None) or getattr(
+            entry, "updated_parsed", None
+        )
+        if not link or not date_parsed:
+            continue
+        publish_date = datetime(*date_parsed[:3]).strftime("%Y-%m-%d")
+        posts.append({"title": title, "release_date": publish_date, "url": link})
+    return posts
+
+
 def scrape_page_text(url, driver=None, use_js=False):
     """Scrape plain text from a URL, using Selenium for JS-rendered pages."""
     if use_js and driver is not None:
@@ -107,7 +200,7 @@ def scrape_page_text(url, driver=None, use_js=False):
         time.sleep(2)
         soup = BeautifulSoup(driver.page_source, "html.parser")
     else:
-        response = requests.get(url, timeout=TIMEOUT_IN_SECONDS)
+        response = requests.get(url, headers=REQUEST_HEADERS, timeout=TIMEOUT_IN_SECONDS)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
     # Prefer the most specific semantic content element to avoid nav/sidebar bloat.
@@ -140,10 +233,11 @@ def main():
     client = storage.Client(project="moz-fx-data-shared-prod")
     bucket = client.bucket(GCS_BUCKET_NAME)
 
-    # Fetch all existing GCS paths once to avoid N individual exists() calls
+    # Fetch all existing GCS paths once to avoid N individual exists() calls.
+    # Use the common "MARKET_RESEARCH/" ancestor to cover both STRUCTURED/ and BLOGS/.
     existing_paths = {
         blob.name
-        for blob in client.list_blobs(GCS_BUCKET_NAME, prefix=GCS_STRUCTURED_PREFIX)
+        for blob in client.list_blobs(GCS_BUCKET_NAME, prefix="MARKET_RESEARCH/")
     }
     print(f"Found {len(existing_paths)} existing objects in GCS")
 
@@ -195,6 +289,109 @@ def main():
     finally:
         if driver is not None:
             driver.quit()
+
+    scrape_and_upload_user_releases(scraped_date, bucket, existing_paths)
+    scrape_and_upload_blog_posts(scraped_date, bucket, existing_paths)
+
+
+def scrape_and_upload_user_releases(scraped_date, bucket, existing_paths):
+    """Scrape Firefox user-facing release notes and upload new ones to GCS."""
+    print("--- Scraping Firefox user-facing release notes ---")
+    try:
+        ff_releases = fetch_firefox_user_releases()
+    except Exception as e:
+        print(f"Failed to fetch Firefox product details: {e}")
+        return
+
+    ff_releases = [r for r in ff_releases if r["release_date"] >= MIN_RELEASE_DATE]
+    print(f"Found {len(ff_releases)} Firefox user releases since {MIN_RELEASE_DATE}")
+
+    for release in ff_releases:
+        version = release["version"]
+        release_date = release["release_date"]
+        url = FIREFOX_USER_NOTES_URL.format(version=version)
+        gcs_path = gcs_user_release_path_for("Firefox", version, release_date)
+
+        if gcs_path in existing_paths:
+            print(f"Skipping Firefox {version} user release — already in GCS")
+            continue
+
+        print(f"Scraping Firefox {version} user release ({release_date}): {url}")
+        try:
+            raw_text = scrape_page_text(url)
+        except Exception as e:
+            print(f"Failed to scrape Firefox {version} user release: {e}")
+            continue
+
+        record = {
+            "browser": "Firefox",
+            "version": version,
+            "release_date": release_date,
+            "scraped_date": scraped_date,
+            "source_url": url,
+            "source_type": "user_release_notes",
+            "features": [],
+            "raw_text": raw_text,
+        }
+
+        blob = bucket.blob(gcs_path)
+        blob.upload_from_string(
+            json.dumps(record, indent=2), content_type="application/json"
+        )
+        print(f"Uploaded to gs://{GCS_BUCKET_NAME}/{gcs_path}")
+        time.sleep(REQUEST_DELAY_SECONDS)
+
+
+def scrape_and_upload_blog_posts(scraped_date, bucket, existing_paths):
+    """Scrape browser blog RSS feeds and upload new posts to GCS."""
+    print("--- Scraping browser blog posts ---")
+    for browser_name, feed_url in BLOG_FEEDS.items():
+        print(f"Fetching {browser_name} blog feed")
+        try:
+            posts = parse_blog_feed(feed_url)
+        except Exception as e:
+            print(f"Failed to fetch {browser_name} blog feed: {e}")
+            continue
+
+        for post in posts:
+            publish_date = post["release_date"]
+            url = post["url"]
+            title = post["title"]
+
+            if publish_date < MIN_RELEASE_DATE:
+                continue
+
+            gcs_path = gcs_blog_path_for(browser_name, publish_date, url)
+
+            if gcs_path in existing_paths:
+                print(f"Skipping {browser_name} post ({publish_date}) — already in GCS")
+                continue
+
+            print(f"Scraping {browser_name} blog post: {title}")
+            try:
+                raw_text = scrape_page_text(url)
+            except Exception as e:
+                print(f"Failed to scrape {browser_name} post {url}: {e}")
+                continue
+
+            record = {
+                "browser": browser_name,
+                "version": None,
+                "release_date": publish_date,
+                "scraped_date": scraped_date,
+                "source_url": url,
+                "source_type": "blog_post",
+                "title": title,
+                "features": [],
+                "raw_text": raw_text,
+            }
+
+            blob = bucket.blob(gcs_path)
+            blob.upload_from_string(
+                json.dumps(record, indent=2), content_type="application/json"
+            )
+            print(f"Uploaded to gs://{GCS_BUCKET_NAME}/{gcs_path}")
+            time.sleep(REQUEST_DELAY_SECONDS)
 
 
 if __name__ == "__main__":
