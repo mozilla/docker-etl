@@ -3,3 +3,11 @@ reason = "Update CrUX data to 202512"
 routine_updates = [
   "moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_YYYYMM",
 ]
+
+[site_ranks_update_202603]
+reason = "Decrease score of sites outside core/satellite countries; update CrUX to 202603"
+routine_updates = [
+  "moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFIER",
+  "moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_YYYYMM",
+]
+stage = true
