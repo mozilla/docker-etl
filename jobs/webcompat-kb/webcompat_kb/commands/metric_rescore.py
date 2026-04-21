@@ -343,9 +343,6 @@ class MetricRescore(Command):
         return parser
 
     def main(self, args: argparse.Namespace) -> Optional[int]:
-        if args.new_scored_site_reports is None:
-            raise ValueError("Missing --new-scored-site-reports")
-
         if args.reason is None:
             raise ValueError("Missing --reason")
 
