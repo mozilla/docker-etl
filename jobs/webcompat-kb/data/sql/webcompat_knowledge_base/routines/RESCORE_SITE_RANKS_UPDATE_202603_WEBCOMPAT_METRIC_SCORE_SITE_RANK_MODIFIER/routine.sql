@@ -1,7 +1,7 @@
 CREATE OR REPLACE FUNCTION `{{ ref(name) }}`(url STRING, crux_yyyymm INT64) RETURNS NUMERIC AS (
   (
     SELECT
-      CASE
+      CAST(CASE
         WHEN MIN(host_ranks.global_rank) <= 1000 THEN 15
         WHEN
           MIN(host_ranks.core_rank) <= 1000 OR
@@ -27,7 +27,7 @@ CREATE OR REPLACE FUNCTION `{{ ref(name) }}`(url STRING, crux_yyyymm INT64) RETU
           THEN 5
         WHEN MIN(host_ranks.local_rank) <= 10000 THEN 2.5
         ELSE 1
-      END
+      END AS NUMERIC)
     FROM
       `{{ ref ('crux_imported.host_min_ranks') }}` AS host_ranks
     WHERE
