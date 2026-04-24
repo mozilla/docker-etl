@@ -7,7 +7,12 @@ WITH bugs_with_flags AS (
     is_desktop,
     CASE "{{ param("country") }}"
     {% for metric in dashboard_metrics %}
-      WHEN "{{ metric.pretty_name }}" THEN {{ metric.condition("bugs") }}
+      WHEN "{{ metric.pretty_name }}" THEN (
+        {{ metric.condition("bugs") }}
+        {% for tld in metric.tlds %}
+          OR net.host(url) LIKE "%{{ tld }}"
+        {% endfor %}
+      )
     {% endfor %}
       ELSE FALSE
     END AS is_country_all,
