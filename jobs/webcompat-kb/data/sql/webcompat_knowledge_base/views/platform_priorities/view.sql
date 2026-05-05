@@ -26,7 +26,7 @@ platform_feature_bugs as (
     bugs.number as bug
   FROM
     `{{ ref('bugzilla_bugs') }}` AS bugs
-  WHERE CONTAINS_SUBSTR(bugs.whiteboard, "[platform-feature]")
+  WHERE CONTAINS_SUBSTR(bugs.whiteboard, "[platform-feature]") OR "web-feature" IN UNNEST(bugs.keywords)
 ),
 
 all_bugs AS (
