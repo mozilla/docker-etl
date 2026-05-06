@@ -73,7 +73,7 @@ def add_classification_results(client, bq_dataset_id, results):
         bq_result = {
             "report_uuid": uuid,
             "label": CLASSIFICATION_LABELS[result["class"]],
-            "created_at": datetime.datetime.utcnow().isoformat(),
+            "created_at": datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat(),
             "probability": result["prob"][result["class"]],
         }
         res.append(bq_result)
@@ -157,7 +157,7 @@ def save_translations(client, bq_dataset_id, results):
 def record_classification_run(client, bq_dataset_id, is_ok, count):
     rows_to_insert = [
         {
-            "run_at": datetime.datetime.utcnow().isoformat(),
+            "run_at": datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat(),
             "is_ok": is_ok,
             "report_count": count,
         },
