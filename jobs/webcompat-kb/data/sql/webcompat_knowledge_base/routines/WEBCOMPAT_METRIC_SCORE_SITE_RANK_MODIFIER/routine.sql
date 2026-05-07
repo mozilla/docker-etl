@@ -1,11 +1,36 @@
 CREATE OR REPLACE FUNCTION `{{ ref(name) }}`(url STRING, crux_yyyymm INT64) RETURNS NUMERIC AS (
-(SELECT
-     IFNULL(IF(MIN(host_ranks.global_rank) <= MIN(IFNULL(host_ranks.local_rank, host_ranks.global_rank)), MAX(1.5 * global_scores.score), MAX(local_scores.score)), 1)
-   FROM
-     `{{ ref ('crux_imported.host_min_ranks') }}` AS host_ranks
-   LEFT JOIN `{{ ref('dim_bug_score') }}` AS local_scores ON local_scores.lookup_type = 'site_rank' AND host_ranks.local_rank <= cast(local_scores.lookup_value as int64)
-   LEFT JOIN `{{ ref('dim_bug_score') }}` AS global_scores ON global_scores.lookup_type = 'site_rank' AND host_ranks.global_rank <= cast(global_scores.lookup_value as int64)
-   WHERE
-     host_ranks.yyyymm = crux_yyyymm AND `{{ ref('WEBCOMPAT_HOST') }}`(host_ranks.host) = `{{ ref('WEBCOMPAT_HOST') }}`(url)
+  (
+    SELECT
+      CAST(CASE
+        WHEN MIN(host_ranks.global_rank) <= 1000 THEN 15
+        WHEN
+          MIN(host_ranks.core_rank) <= 1000 OR
+          MIN(host_ranks.india_rank) <= 1000 OR
+          MIN(host_ranks.brazil_rank) <= 1000 OR
+          MIN(host_ranks.indonesia_rank) <= 1000 OR
+          MIN(host_ranks.mexico_rank) <= 1000 OR
+          MIN(host_ranks.italy_rank) <= 1000 OR
+          MIN(host_ranks.spain_rank) <= 1000 OR
+          MIN(host_ranks.netherlands_rank) <= 1000
+          THEN 10
+        WHEN MIN(host_ranks.global_rank) <= 10000 THEN 7.5
+        WHEN MIN(host_ranks.local_rank) <= 1000 THEN 5
+        WHEN
+          MIN(host_ranks.core_rank) <= 10000 OR
+          MIN(host_ranks.india_rank) <= 10000 OR
+          MIN(host_ranks.brazil_rank) <= 10000 OR
+          MIN(host_ranks.indonesia_rank) <= 10000 OR
+          MIN(host_ranks.mexico_rank) <= 10000 OR
+          MIN(host_ranks.italy_rank) <= 10000 OR
+          MIN(host_ranks.spain_rank) <= 10000 OR
+          MIN(host_ranks.netherlands_rank) <= 10000
+          THEN 5
+        WHEN MIN(host_ranks.local_rank) <= 10000 THEN 2.5
+        ELSE 1
+      END AS NUMERIC)
+    FROM
+      `{{ ref ('crux_imported.host_min_ranks') }}` AS host_ranks
+    WHERE
+      host_ranks.yyyymm = crux_yyyymm AND `{{ ref('WEBCOMPAT_HOST') }}`(host_ranks.host) = `{{ ref('WEBCOMPAT_HOST') }}`(url)
   )
 );
