@@ -343,7 +343,7 @@ class MetricRescore(Command):
         return parser
 
     def main(self, args: argparse.Namespace) -> Optional[int]:
-        if args.reason is None:
+        if args.reason is None and args.phase == "create-schemas":
             raise ValueError("Missing --reason")
 
         config = Config(write=args.write, stage=args.stage)
