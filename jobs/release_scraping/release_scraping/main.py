@@ -1,6 +1,8 @@
+import html
 import json
 import re
 import time
+import xml.etree.ElementTree as ET
 
 import feedparser
 import requests
@@ -38,6 +40,19 @@ BLOG_FEEDS = {
     "Opera": "https://blogs.opera.com/desktop/feed/",
     "Vivaldi": "https://vivaldi.com/feed/",
 }
+
+# Job postings
+GCS_JOBS_PREFIX = "MARKET_RESEARCH/JOBS"
+
+GREENHOUSE_BOARDS = {
+    "Mozilla": "mozilla",
+    "Brave": "brave",
+}
+GREENHOUSE_API_URL = (
+    "https://boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true"
+)
+
+OPERA_SITEMAP_URL = "https://jobs.opera.com/sitemap.xml"
 
 TIMEOUT_IN_SECONDS = 20
 REQUEST_DELAY_SECONDS = 2
@@ -292,6 +307,7 @@ def main():
 
     scrape_and_upload_user_releases(scraped_date, bucket, existing_paths)
     scrape_and_upload_blog_posts(scraped_date, bucket, existing_paths)
+    scrape_and_upload_jobs(scraped_date, bucket)
 
 
 def scrape_and_upload_user_releases(scraped_date, bucket, existing_paths):
@@ -392,6 +408,252 @@ def scrape_and_upload_blog_posts(scraped_date, bucket, existing_paths):
             )
             print(f"Uploaded to gs://{GCS_BUCKET_NAME}/{gcs_path}")
             time.sleep(REQUEST_DELAY_SECONDS)
+
+
+def gcs_job_path_for(company, scraped_date, job_id):
+    """Construct GCS path for a job posting snapshot.
+
+    Path includes the scrape date so each run produces a full snapshot
+    and the same job appears in every snapshot where it's still open.
+    """
+    company_path = company.replace(" ", "_")
+    return f"{GCS_JOBS_PREFIX}/{company_path}/{scraped_date}/job_{job_id}.json"
+
+
+def fetch_greenhouse_jobs(board_slug):
+    """Fetch all jobs from a Greenhouse board with full descriptions.
+
+    Uses ?content=true to get everything in a single API call.
+    Returns the raw list of job dicts from the API response.
+    """
+    url = GREENHOUSE_API_URL.format(board=board_slug)
+    response = requests.get(url, headers=REQUEST_HEADERS, timeout=TIMEOUT_IN_SECONDS)
+    response.raise_for_status()
+    return response.json()["jobs"]
+
+
+def greenhouse_job_to_record(company, job, scraped_date):
+    """Transform a Greenhouse API job dict into our unified record schema."""
+    # Greenhouse returns content as HTML-entity-encoded text; unescape first
+    content_raw = job.get("content", "")
+    content_html = html.unescape(content_raw)
+    description_text = BeautifulSoup(content_html, "html.parser").get_text(
+        separator="\n", strip=True
+    )
+
+    departments = [d["name"] for d in job.get("departments", []) if d.get("name")]
+    offices = [o["name"] for o in job.get("offices", []) if o.get("name")]
+
+    return {
+        "company": company,
+        "source": "greenhouse",
+        "scraped_date": scraped_date,
+        "job_id": str(job["id"]),
+        "title": job.get("title", ""),
+        "department": departments[0] if departments else None,
+        "location": job.get("location", {}).get("name", ""),
+        "offices": offices if offices else None,
+        "url": job.get("absolute_url", ""),
+        "first_published": job.get("first_published", ""),
+        "updated_at": job.get("updated_at", ""),
+        "description_html": content_html,
+        "description_text": description_text,
+    }
+
+
+def fetch_opera_job_urls():
+    """Parse Opera's sitemap.xml to extract individual job posting URLs."""
+    response = requests.get(
+        OPERA_SITEMAP_URL, headers=REQUEST_HEADERS, timeout=TIMEOUT_IN_SECONDS
+    )
+    response.raise_for_status()
+
+    root = ET.fromstring(response.content)
+    ns = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+
+    urls = []
+    for loc in root.findall(".//sm:loc", ns):
+        url = loc.text.strip()
+        if re.search(r"/jobs/\d+-", url):
+            urls.append(url)
+    return urls
+
+
+def opera_job_id_from_url(url):
+    """Extract the numeric job ID from an Opera job URL."""
+    match = re.search(r"/jobs/(\d+)", url)
+    return match.group(1) if match else url.rstrip("/").split("/")[-1]
+
+
+def scrape_opera_job(url):
+    """Scrape a single Opera job page and return a record dict.
+
+    Extracts title, description, department, and location from the
+    server-rendered Teamtailor HTML. Handles cookie consent dialogs.
+    """
+    response = requests.get(url, headers=REQUEST_HEADERS, timeout=TIMEOUT_IN_SECONDS)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    # Remove cookie consent dialogs before extracting content
+    for el in soup.find_all(
+        ["div", "dialog", "section"],
+        attrs={"class": re.compile(r"cookie|consent|gdpr", re.I)},
+    ):
+        el.decompose()
+    for el in soup.find_all(
+        ["div", "dialog", "section"],
+        attrs={"id": re.compile(r"cookie|consent|gdpr", re.I)},
+    ):
+        el.decompose()
+
+    title = ""
+    for h1 in soup.find_all("h1"):
+        text = h1.get_text(strip=True)
+        if text and "cookie" not in text.lower() and "consent" not in text.lower():
+            title = text
+            break
+
+    content_el = soup.find("article")
+    if not content_el:
+        content_el = soup.find("main")
+    if not content_el:
+        content_el = soup.find("body")
+
+    description_text = (
+        content_el.get_text(separator="\n", strip=True) if content_el else ""
+    )
+    description_html = str(content_el) if content_el else ""
+
+    # Extract metadata from JSON-LD structured data (schema.org/JobPosting)
+    department = None
+    location = None
+    first_published = None
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            ld = json.loads(script.string)
+            if ld.get("@type") == "JobPosting":
+                if ld.get("datePosted"):
+                    first_published = ld["datePosted"][:10]
+                job_locations = ld.get("jobLocation", [])
+                if isinstance(job_locations, dict):
+                    job_locations = [job_locations]
+                loc_parts = []
+                for loc in job_locations:
+                    addr = loc.get("address", {})
+                    city = addr.get("addressLocality", "")
+                    country = addr.get("addressRegion", "") or addr.get(
+                        "addressCountry", ""
+                    )
+                    if city and country:
+                        loc_parts.append(f"{city}, {country}")
+                    elif city or country:
+                        loc_parts.append(city or country)
+                if loc_parts:
+                    location = "; ".join(loc_parts)
+                break
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    # Fall back to <dl> definition list for department and location
+    for dt in soup.find_all("dt"):
+        label = dt.get_text(strip=True).lower()
+        dd = dt.find_next_sibling("dd")
+        if not dd:
+            continue
+        value = dd.get_text(strip=True)
+        if "department" in label:
+            department = value
+        elif "location" in label and not location:
+            location = value
+
+    return {
+        "title": title,
+        "department": department,
+        "location": location,
+        "first_published": first_published,
+        "description_html": description_html,
+        "description_text": description_text,
+    }
+
+
+def scrape_and_upload_jobs(scraped_date, bucket):
+    """Scrape job postings from all configured sources and upload to GCS.
+
+    Each run writes a complete snapshot under a date directory. A job that
+    stays open across runs appears in every snapshot (no cross-date dedup).
+    Same-day reruns overwrite (idempotent).
+    """
+    print("--- Scraping job postings ---")
+
+    for company, board in GREENHOUSE_BOARDS.items():
+        print(f"{company} (Greenhouse: {board})")
+        try:
+            jobs = fetch_greenhouse_jobs(board)
+        except Exception as e:
+            print(f"Failed to fetch {company} jobs: {e}")
+            continue
+
+        print(f"  Found {len(jobs)} jobs")
+        for job in jobs:
+            try:
+                record = greenhouse_job_to_record(company, job, scraped_date)
+            except Exception as e:
+                print(f"  Failed to parse job {job.get('id', '?')}: {e}")
+                continue
+
+            gcs_path = gcs_job_path_for(company, scraped_date, record["job_id"])
+            try:
+                blob = bucket.blob(gcs_path)
+                blob.upload_from_string(
+                    json.dumps(record, indent=2, ensure_ascii=False),
+                    content_type="application/json",
+                )
+                print(f"  {record['title']} -> gs://{GCS_BUCKET_NAME}/{gcs_path}")
+            except Exception as e:
+                print(f"  Failed to upload {record['title']}: {e}")
+
+        time.sleep(REQUEST_DELAY_SECONDS)
+
+    print("Opera (Teamtailor)")
+    try:
+        job_urls = fetch_opera_job_urls()
+    except Exception as e:
+        print(f"Failed to fetch Opera sitemap: {e}")
+        job_urls = []
+
+    print(f"  Found {len(job_urls)} jobs")
+    for url in job_urls:
+        job_id = opera_job_id_from_url(url)
+        try:
+            job_data = scrape_opera_job(url)
+        except Exception as e:
+            print(f"  Failed to scrape {url}: {e}")
+            continue
+
+        record = {
+            "company": "Opera",
+            "source": "teamtailor",
+            "scraped_date": scraped_date,
+            "job_id": job_id,
+            "url": url,
+            "offices": None,
+            "updated_at": None,
+            **job_data,
+        }
+
+        gcs_path = gcs_job_path_for("Opera", scraped_date, job_id)
+        try:
+            blob = bucket.blob(gcs_path)
+            blob.upload_from_string(
+                json.dumps(record, indent=2, ensure_ascii=False),
+                content_type="application/json",
+            )
+            print(f"  {job_data['title']} -> gs://{GCS_BUCKET_NAME}/{gcs_path}")
+        except Exception as e:
+            print(f"  Failed to upload {job_data.get('title', url)}: {e}")
+
+        time.sleep(REQUEST_DELAY_SECONDS)
 
 
 if __name__ == "__main__":

@@ -171,6 +171,8 @@ def test_main_skips_existing_and_continues_on_failure():
         "release_scraping.main.fetch_firefox_user_releases", return_value=[]
     ), patch(
         "release_scraping.main.parse_blog_feed", return_value=[]
+    ), patch(
+        "release_scraping.main.scrape_and_upload_jobs"
     ):
         import sys
 
@@ -300,6 +302,8 @@ def test_main_firefox_user_release_skips_existing():
         "release_scraping.main.parse_blog_feed", return_value=[]
     ), patch(
         "release_scraping.main.storage.Client", return_value=mock_client
+    ), patch(
+        "release_scraping.main.scrape_and_upload_jobs"
     ):
         import sys
 
@@ -362,6 +366,8 @@ def test_main_blog_posts_skips_existing_and_continues_on_failure():
         "release_scraping.main.scrape_page_text", side_effect=fake_scrape
     ), patch(
         "release_scraping.main.storage.Client", return_value=mock_client
+    ), patch(
+        "release_scraping.main.scrape_and_upload_jobs"
     ):
         import sys
 
@@ -594,10 +600,10 @@ def test_blog_feeds_parseable():
 
 
 @pytest.mark.integration
-def test_scrape_new_sources_to_file():
-    """Scrape the latest entry from each new source and write to a local JSON file.
+def test_scrape_user_content_to_file():
+    """Scrape the latest entry from each user-facing source and write to a local JSON file.
 
-    Output: tests/integration_output/scrape_new_sources_{date}.json
+    Output: tests/integration_output/scrape_user_content_{date}.json
     """
     scraped_date = datetime.now(timezone.utc).strftime("%Y%m%d")
     results = []
@@ -657,7 +663,7 @@ def test_scrape_new_sources_to_file():
 
     output_dir = os.path.join(os.path.dirname(__file__), "integration_output")
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f"scrape_new_sources_{scraped_date}.json")
+    output_path = os.path.join(output_dir, f"scrape_user_content_{scraped_date}.json")
 
     with open(output_path, "w") as f:
         json.dump(results, f, indent=2)
