@@ -57,7 +57,10 @@ OPERA_SITEMAP_URL = "https://jobs.opera.com/sitemap.xml"
 TIMEOUT_IN_SECONDS = 20
 REQUEST_DELAY_SECONDS = 2
 REQUEST_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)"
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko)"
+    )
 }
 DRIVER_TYP = "Chromium"
 BINARY_LOC = "/usr/bin/chromium"
@@ -163,7 +166,11 @@ def fetch_firefox_user_releases():
     Returns a list of dicts with keys: version, release_date.
     Only major releases are included. Ordered newest-first.
     """
-    response = requests.get(FIREFOX_PRODUCT_DETAILS_URL, headers=REQUEST_HEADERS, timeout=TIMEOUT_IN_SECONDS)
+    response = requests.get(
+        FIREFOX_PRODUCT_DETAILS_URL,
+        headers=REQUEST_HEADERS,
+        timeout=TIMEOUT_IN_SECONDS,
+    )
     response.raise_for_status()
     data = response.json()
 
@@ -215,7 +222,9 @@ def scrape_page_text(url, driver=None, use_js=False):
         time.sleep(2)
         soup = BeautifulSoup(driver.page_source, "html.parser")
     else:
-        response = requests.get(url, headers=REQUEST_HEADERS, timeout=TIMEOUT_IN_SECONDS)
+        response = requests.get(
+            url, headers=REQUEST_HEADERS, timeout=TIMEOUT_IN_SECONDS
+        )
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
     # Prefer the most specific semantic content element to avoid nav/sidebar bloat.

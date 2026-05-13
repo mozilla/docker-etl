@@ -202,13 +202,13 @@ def test_gcs_user_release_path_for():
 
 
 def test_gcs_blog_path_for():
-    assert gcs_blog_path_for("Chrome", "2026-03-10", "https://blog.google/chrome/new-tab-redesign/") == (
-        "MARKET_RESEARCH/BLOGS/Chrome/post_20260310_new-tab-redesign.json"
-    )
+    assert gcs_blog_path_for(
+        "Chrome", "2026-03-10", "https://blog.google/chrome/new-tab-redesign/"
+    ) == ("MARKET_RESEARCH/BLOGS/Chrome/post_20260310_new-tab-redesign.json")
     # Spaces in browser name become underscores
-    assert gcs_blog_path_for("Opera Desktop", "2026-04-01", "https://example.com/some-post/") == (
-        "MARKET_RESEARCH/BLOGS/Opera_Desktop/post_20260401_some-post.json"
-    )
+    assert gcs_blog_path_for(
+        "Opera Desktop", "2026-04-01", "https://example.com/some-post/"
+    ) == ("MARKET_RESEARCH/BLOGS/Opera_Desktop/post_20260401_some-post.json")
     # Slug is capped at 40 characters
     long_url = "https://example.com/" + "a" * 60 + "/"
     result = gcs_blog_path_for("Brave", "2026-01-01", long_url)
@@ -290,7 +290,9 @@ def test_main_firefox_user_release_skips_existing():
     mock_client = MagicMock()
     mock_client.bucket.return_value = mock_bucket
 
-    existing_path = "MARKET_RESEARCH/STRUCTURED/Firefox/user_release_149_0_20260324.json"
+    existing_path = (
+        "MARKET_RESEARCH/STRUCTURED/Firefox/user_release_149_0_20260324.json"
+    )
     existing_blob = MagicMock()
     existing_blob.name = existing_path
     mock_client.list_blobs.return_value = [existing_blob]
@@ -298,9 +300,7 @@ def test_main_firefox_user_release_skips_existing():
     with patch("release_scraping.main.parse_feed", return_value=[]), patch(
         "release_scraping.main.fetch_firefox_user_releases",
         return_value=fake_ff_releases,
-    ), patch(
-        "release_scraping.main.parse_blog_feed", return_value=[]
-    ), patch(
+    ), patch("release_scraping.main.parse_blog_feed", return_value=[]), patch(
         "release_scraping.main.storage.Client", return_value=mock_client
     ), patch(
         "release_scraping.main.scrape_and_upload_jobs"
@@ -315,7 +315,7 @@ def test_main_firefox_user_release_skips_existing():
 
 def test_main_blog_posts_skips_existing_and_continues_on_failure():
     """main() skips existing blog posts and continues after a scrape failure."""
-    from release_scraping.main import main, BLOG_FEEDS
+    from release_scraping.main import main
 
     chrome_post = {
         "title": "Existing Chrome post",
@@ -339,7 +339,9 @@ def test_main_blog_posts_skips_existing_and_continues_on_failure():
     mock_client = MagicMock()
     mock_client.bucket.return_value = mock_bucket
 
-    chrome_path = gcs_blog_path_for("Chrome", chrome_post["release_date"], chrome_post["url"])
+    chrome_path = gcs_blog_path_for(
+        "Chrome", chrome_post["release_date"], chrome_post["url"]
+    )
     existing_blob = MagicMock()
     existing_blob.name = chrome_path
     mock_client.list_blobs.return_value = [existing_blob]
@@ -376,9 +378,15 @@ def test_main_blog_posts_skips_existing_and_continues_on_failure():
 
     # Only Brave should have been uploaded (Chrome skipped, Edge failed)
     uploaded_paths = [call.args[0] for call in mock_bucket.blob.call_args_list]
-    assert gcs_blog_path_for("Brave", brave_post["release_date"], brave_post["url"]) in uploaded_paths
+    assert (
+        gcs_blog_path_for("Brave", brave_post["release_date"], brave_post["url"])
+        in uploaded_paths
+    )
     assert chrome_path not in uploaded_paths
-    assert gcs_blog_path_for("Edge", edge_post["release_date"], edge_post["url"]) not in uploaded_paths
+    assert (
+        gcs_blog_path_for("Edge", edge_post["release_date"], edge_post["url"])
+        not in uploaded_paths
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -583,9 +591,9 @@ def test_firefox_product_details_api():
     for r in releases:
         assert r.get("version"), f"Missing version: {r}"
         assert r.get("release_date"), f"Missing release_date: {r}"
-        assert _re.match(r"\d{4}-\d{2}-\d{2}", r["release_date"]), (
-            f"Bad date format: {r['release_date']}"
-        )
+        assert _re.match(
+            r"\d{4}-\d{2}-\d{2}", r["release_date"]
+        ), f"Bad date format: {r['release_date']}"
 
 
 @pytest.mark.integration
@@ -630,7 +638,11 @@ def test_scrape_user_content_to_file():
         except Exception as e:
             record["error"] = str(e)
         char_count = len(record["raw_text"]) if record["raw_text"] else 0
-        status = f"{char_count:,} chars" if record["raw_text"] else f"FAILED ({record['error']})"
+        status = (
+            f"{char_count:,} chars"
+            if record["raw_text"]
+            else f"FAILED ({record['error']})"
+        )
         print(f"  Firefox {latest['version']} (user): {status}")
         results.append(record)
 
@@ -657,7 +669,11 @@ def test_scrape_user_content_to_file():
         except Exception as e:
             record["error"] = str(e)
         char_count = len(record["raw_text"]) if record["raw_text"] else 0
-        status = f"{char_count:,} chars" if record["raw_text"] else f"FAILED ({record['error']})"
+        status = (
+            f"{char_count:,} chars"
+            if record["raw_text"]
+            else f"FAILED ({record['error']})"
+        )
         print(f"  {browser_name} blog ({post['release_date']}): {status}")
         results.append(record)
 
