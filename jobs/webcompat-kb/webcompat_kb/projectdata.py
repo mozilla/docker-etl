@@ -460,11 +460,12 @@ class TableSchemaCreator:
         """Convert table schema metadata and template into a TableSchema"""
         self.schema_id_mapper = schema_id_mapper
         self.jinja_env = jinja2.Environment()
-        self.jinja_env.globals = {
+        template_globals: dict[str, Any] = {
             "metrics": {item.name: item for item in project_data.metric_dfns},
             "metric_types": project_data.metric_types,
             "ranks": project_data.rank_dfns,
         }
+        self.jinja_env.globals = template_globals
 
     def create_table_schema(
         self, dataset_id: DatasetId, template: SchemaTemplate
