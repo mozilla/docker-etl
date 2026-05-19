@@ -21,6 +21,7 @@ class StandardsPosition(pydantic.BaseModel):
     title: str
     url: Optional[str]
     explainer: Optional[str]
+    web_feature: Optional[str]
     mdn: Optional[str]
     caniuse: Optional[str]
     bug: Optional[str]
