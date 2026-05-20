@@ -6,7 +6,7 @@ import re
 import os
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable, Iterable, Mapping, Optional, Sequence
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
 import jinja2
 from google.cloud import bigquery
@@ -70,12 +70,13 @@ class SchemaCreator:
         }
 
         self.jinja_env = jinja2.Environment()
-        self.jinja_env.globals = {
+        template_globals: dict[str, Any] = {
             "project": self.project.id,
             "metrics": {item.name: item for item in project.data.metric_dfns},
             "metric_types": project.data.metric_types,
             "ranks": project.data.rank_dfns,
         }
+        self.jinja_env.globals = template_globals
 
     def create(
         self, only_schema_ids: Optional[set[SchemaId]] = None
