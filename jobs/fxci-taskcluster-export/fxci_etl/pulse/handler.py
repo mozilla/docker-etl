@@ -207,5 +207,13 @@ class BigQueryHandler(PulseHandler):
                 # FIXME insert isn't atomic, so if this fails we can end up with duplicate records
                 taskdef_loader.insert(taskdef_records)
                 self.task_ids.clear()
+            except taskcluster.exceptions.TaskclusterRestFailure as e:
+                if e.status_code is not None and e.status_code >= 500:
+                    logger.warning(
+                        f"Transient Taskcluster API error ({e.status_code}) fetching task definitions; "
+                        f"{len(self.task_ids)} task IDs will be retried next run."
+                    )
+                else:
+                    raise
             finally:
                 self._taskids_backup.upload_from_string(json.dumps(list(self.task_ids)))
