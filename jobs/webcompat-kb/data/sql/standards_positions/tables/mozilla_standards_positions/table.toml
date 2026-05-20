@@ -57,3 +57,7 @@ mode = "NULLABLE"
 [rationale]
 type = "STRING"
 mode = "NULLABLE"
+
+[web_feature]
+type = "STRING"
+mode = "NULLABLE"
