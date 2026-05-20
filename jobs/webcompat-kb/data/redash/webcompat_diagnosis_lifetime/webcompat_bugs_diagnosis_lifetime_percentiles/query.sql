@@ -4,7 +4,7 @@ SELECT
   history.number,
   history.change_time, 
   changes.added
-FROM moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.bugs_history history,
+FROM {{ ref ("webcompat_knowledge_base.bugs_history") }} AS history,
   UNNEST (history.changes) as changes
 WHERE changes.field_name LIKE '%keywords%'
   AND changes.added LIKE'%webcompat:needs_diagnosis%'
@@ -15,7 +15,7 @@ SELECT
   history.number,
   history.change_time,
   changes.removed
-FROM moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.bugs_history history,
+FROM {{ ref ("webcompat_knowledge_base.bugs_history") }} AS history,
   UNNEST (history.changes) as changes
 WHERE changes.field_name LIKE '%keywords%'
   AND changes.removed LIKE'%webcompat:needs_diagnosis%'
@@ -26,10 +26,10 @@ SELECT
   site_reports.webcompat_priority,
   DATE_DIFF(diagnosis_exit.change_time, diagnosis_enter.change_time, DAY) as lifetime_days
 FROM diagnosis_enter diagnosis_enter
-  JOIN diagnosis_exit diagnosis_exit on diagnosis_enter.number = diagnosis_exit.number
-  JOIN moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.scored_site_reports site_reports ON site_reports.number = diagnosis_enter.number
+  JOIN diagnosis_exit diagnosis_exit USING(number)
+  JOIN  {{ ref ("webcompat_knowledge_base.scored_site_reports") }} AS site_reports USING(number)
 WHERE site_reports.webcompat_priority IN ('P1', 'P2', 'P3')
-  AND DATE(site_reports.creation_time) BETWEEN DATE('{{from}}') AND DATE('{{to}}')
+  AND DATE(site_reports.creation_time) BETWEEN DATE('{{ param("from") }}') AND DATE('{{ param("to") }}')
   AND
     CASE "{{ param("metric") }}" {% for metric in metrics.values() %}
       WHEN "{{ metric.pretty_name }}" THEN {{ metric.condition("site_reports") }}

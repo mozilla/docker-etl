@@ -1,23 +1,23 @@
 WITH
 diagnosis_enter AS (
 SELECT 
-    bugs_history.number, 
-    MIN(bugs_history.change_time) as change_time
-FROM moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.bugs_history bugs_history,
-    UNNEST (bugs_history.changes) as changes
+    history.number,
+    MIN(history.change_time) as change_time
+FROM {{ ref ("webcompat_knowledge_base.bugs_history") }} AS history,
+    UNNEST (history.changes) as changes
 WHERE changes.field_name LIKE '%keywords%'
     AND changes.added LIKE'%webcompat:needs_diagnosis%'
-GROUP BY bugs_history.number
+GROUP BY history.number
 ),
 diagnosis_exit AS (
 SELECT 
-    bugs_history.number, 
-    MAX(bugs_history.change_time) as change_time
-FROM moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.bugs_history bugs_history,
-    UNNEST (bugs_history.changes) as changes
+    history.number,
+    MAX(history.change_time) as change_time
+FROM {{ ref ("webcompat_knowledge_base.bugs_history") }} AS history,
+    UNNEST (history.changes) as changes
 WHERE changes.field_name LIKE '%keywords%'
     AND changes.removed LIKE'%webcompat:needs_diagnosis%'
-GROUP BY bugs_history.number
+GROUP BY history.number
 ),
 lifetimes AS (
 SELECT
@@ -28,10 +28,10 @@ SELECT
   MIN(DATETIME_DIFF(diagnosis_exit.change_time, diagnosis_enter.change_time, HOUR)/24) as min_lifetime,
   MAX(DATETIME_DIFF(diagnosis_exit.change_time, diagnosis_enter.change_time, HOUR)/24) as max_lifetime,
 FROM diagnosis_enter
-    JOIN diagnosis_exit ON diagnosis_enter.number = diagnosis_exit.number
-    JOIN moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.scored_site_reports as site_reports ON site_reports.number = diagnosis_enter.number
+    JOIN diagnosis_exit USING(number)
+    JOIN {{ ref ("webcompat_knowledge_base.scored_site_reports") }} AS site_reports USING(number)
 WHERE site_reports.webcompat_priority IN ('P1', 'P2', 'P3')
-    AND DATE(site_reports.creation_time) BETWEEN DATE('{{from}}') AND DATE('{{to}}')
+    AND DATE(site_reports.creation_time) BETWEEN DATE('{{ param("from") }}') AND DATE('{{ param("to") }}')
     AND
       CASE "{{ param("metric") }}" {% for metric in metrics.values() %}
         WHEN "{{ metric.pretty_name }}" THEN {{ metric.condition("site_reports") }}
@@ -39,12 +39,12 @@ WHERE site_reports.webcompat_priority IN ('P1', 'P2', 'P3')
 GROUP BY site_reports.webcompat_priority
 ),
 totals AS (
-    SELECT 
+    SELECT
         site_reports.webcompat_priority as priority,
         COUNT(1) as total
-    FROM `moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.scored_site_reports` site_reports
+    FROM {{ ref ("webcompat_knowledge_base.scored_site_reports") }} AS site_reports
     WHERE site_reports.webcompat_priority IN ('P1', 'P2', 'P3')
-      AND DATE(site_reports.creation_time) BETWEEN DATE('{{from}}') AND DATE('{{to}}')
+      AND DATE(site_reports.creation_time) BETWEEN DATE('{{ param("from") }}') AND DATE('{{ param("to") }}')
       AND
         CASE "{{ param("metric") }}" {% for metric in metrics.values() %}
           WHEN "{{ metric.pretty_name }}" THEN {{ metric.condition("site_reports") }}
@@ -52,7 +52,7 @@ totals AS (
     GROUP BY priority
 )
 
-SELECT 
+SELECT
     lifetimes.priority as Priority,
     totals.total as `Total created`,
     lifetimes.bug_count as `Total diagnosed`,
