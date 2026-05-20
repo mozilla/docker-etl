@@ -194,7 +194,7 @@ class BigQueryHandler(PulseHandler):
             self.run_records = []
 
         if self.task_ids:
-            taskdef_loader = BigQueryLoader(self.config, "taskdefinitions", chunk_size=1000)
+            taskdef_loader = BigQueryLoader(self.config, "taskdefinitions", chunk_size=100)
             taskdefs = []
             def paginationHandler(response):
                 taskdefs.extend(response["tasks"])
