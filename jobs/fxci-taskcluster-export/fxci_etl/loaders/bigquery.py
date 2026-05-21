@@ -24,18 +24,21 @@ def _json_size(obj: object) -> int:
 
 class BigQueryLoader:
     DEFAULT_CHUNK_SIZE = 5000
-    MAX_INSERT_REQUEST_BYTES = 9_000_000
+    MAX_BATCH_BYTES = 9_000_000
+    MAX_ROW_BYTES = 900_000
 
     def __init__(
         self,
         config: Config,
         table_type: str,
         chunk_size: int = DEFAULT_CHUNK_SIZE,
-        max_insert_bytes: int = MAX_INSERT_REQUEST_BYTES,
+        max_batch_bytes: int = MAX_BATCH_BYTES,
+        max_row_bytes: int = MAX_ROW_BYTES,
     ):
         self.config = config
         self.chunk_size = chunk_size
-        self.max_insert_bytes = max_insert_bytes
+        self.max_batch_bytes = max_batch_bytes
+        self.max_row_bytes = max_row_bytes
 
         if config.bigquery.credentials:
             self.client = Client.from_service_account_info(
@@ -63,17 +66,20 @@ class BigQueryLoader:
             record_size = _json_size(record)
             if batch and (
                 len(batch) >= self.chunk_size
-                or batch_size + record_size > self.max_insert_bytes
+                or batch_size + record_size > self.max_batch_bytes
             ):
                 yield batch
                 batch = []
                 batch_size = 0
 
-            if record_size > self.max_insert_bytes:
+            if record_size > self.max_row_bytes:
+                task_id = record.get("taskId", "<unknown>")
                 logger.warning(
-                    f"Single BigQuery row is {record_size} bytes; "
-                    "inserting it by itself."
+                    f"Skipping BigQuery row for task {task_id}: "
+                    f"serialized size {record_size} bytes exceeds per-row limit of "
+                    f"{self.max_row_bytes} bytes."
                 )
+                continue
 
             batch.append(record)
             batch_size += record_size
