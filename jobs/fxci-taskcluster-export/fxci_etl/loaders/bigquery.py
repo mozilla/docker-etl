@@ -1,7 +1,6 @@
 import base64
 import json
 from dataclasses import asdict
-from itertools import batched
 from pprint import pprint
 from textwrap import dedent
 
@@ -19,12 +18,24 @@ from fxci_etl.schemas import Record, get_record_cls, generate_schema
 from fxci_etl.config import Config
 
 
+def _json_size(obj: object) -> int:
+    return len(json.dumps(obj, separators=(",", ":")).encode("utf-8"))
+
+
 class BigQueryLoader:
     DEFAULT_CHUNK_SIZE = 5000
+    MAX_INSERT_REQUEST_BYTES = 9_000_000
 
-    def __init__(self, config: Config, table_type: str, chunk_size: int = DEFAULT_CHUNK_SIZE):
+    def __init__(
+        self,
+        config: Config,
+        table_type: str,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        max_insert_bytes: int = MAX_INSERT_REQUEST_BYTES,
+    ):
         self.config = config
         self.chunk_size = chunk_size
+        self.max_insert_bytes = max_insert_bytes
 
         if config.bigquery.credentials:
             self.client = Client.from_service_account_info(
@@ -43,6 +54,32 @@ class BigQueryLoader:
         self.table = self.ensure_table(table_type)
         self.bucket = self.storage_client.bucket(config.storage.bucket)
         self._record_backup = self.bucket.blob(f"failed-bq-records.{table_type}.json")
+
+    def _chunk_batches(self, records: list[dict]):
+        batch = []
+        batch_size = 0
+
+        for record in records:
+            record_size = _json_size(record)
+            if batch and (
+                len(batch) >= self.chunk_size
+                or batch_size + record_size > self.max_insert_bytes
+            ):
+                yield batch
+                batch = []
+                batch_size = 0
+
+            if record_size > self.max_insert_bytes:
+                logger.warning(
+                    f"Single BigQuery row is {record_size} bytes; "
+                    "inserting it by itself."
+                )
+
+            batch.append(record)
+            batch_size += record_size
+
+        if batch:
+            yield batch
 
     def ensure_table(self, table_type: str) -> Table:
         """Ensures the specified table exists and returns it.
@@ -123,14 +160,15 @@ class BigQueryLoader:
 
         logger.info(f"{len(records)} records to insert into table '{self.table_name}'")
 
-        # There's a 10MB limit on the `insert_rows` request, submit rows in
-        # batches to avoid exceeding it.
+        # There's a 10MB limit on the `insert_rows` request. Submit rows in
+        # batches by both count and serialized size to avoid exceeding it.
         errors = []
-        for batch in batched(records, self.chunk_size):
+        rows = [asdict(row) for row in records]
+        for batch in self._chunk_batches(rows):
             logger.debug(f"Inserting batch of {len(batch)} records")
             errors.extend(
                 self.client.insert_rows(
-                    self.table, [asdict(row) for row in batch], retry=False
+                    self.table, batch, retry=False
                 )
             )
 
