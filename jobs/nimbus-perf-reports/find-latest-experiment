@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+import requests
+import json
+import sys
+import os
+from lib.generate import generate_report
+from datetime import datetime, timedelta
+from bs4 import BeautifulSoup as bs
+
+default_histograms = [
+  "metrics.timing_distribution.performance_pageload_fcp",
+  "metrics.timing_distribution.performance_pageload_load_time",
+  "metrics.timing_distribution.perf_largest_contentful_paint",
+  "metrics.timing_distribution.networking_http_channel_sub_open_to_first_sent_https_rr",
+
+  "metrics.timing_distribution.perf_startup_cold_view_app_to_first_frame",
+  "metrics.timing_distribution.perf_startup_cold_unknwn_app_to_first_frame",
+  "metrics.timing_distribution.perf_startup_cold_main_app_to_first_frame",
+  "metrics.timing_distribution.perf_startup_application_on_create",
+  "metrics.timing_distribution.geckoview_startup_runtime",
+
+  "metrics.timing_distribution.performance_interaction_tab_switch_composite",
+  "metrics.timing_distribution.recent_synced_tabs_recent_synced_tab_time_to_load",
+  "metrics.timing_distribution.perf_awesomebar_search_engine_suggestions" 
+]
+
+default_events = {
+  "fcp_time" : [0, 30000],
+  "lcp_time" : [0, 30000],
+  "load_time": [0, 30000],
+  "response_time": [0, 30000]
+}
+
+class NpEncoder(json.JSONEncoder):
+  def default(self, obj):
+    if isinstance(obj, np.integer):
+      return int(obj)
+    if isinstance(obj, np.floating):
+      return float(obj)
+    if isinstance(obj, np.ndarray):
+      return obj.tolist()
+    return super(NpEncoder, self).default(obj)
+
+# Only generate reports for Desktop or Android experiments.
+def is_supported_experiment(exp):
+  if not (exp['appName'] == 'firefox_desktop' or exp['appName'] == 'fenix'):
+    print("--> unsupported platform.")
+    return False
+
+  # Skip experiments with no branches
+  if len(exp['branches']) == 0:
+    print("--> no branches found.")
+    return False
+
+  # If this is an experiment with only 1 branch, then pretend it's a rollout.
+  if not exp['isRollout'] and len(exp['branches']) == 1:
+    exp['isRollout'] = True
+
+  # Cannot generate a performance report for rollouts that use 100% of population.
+  if exp['isRollout'] and len(exp['branches']) == 1 and exp['branches'][0]['ratio'] >= 0.9:
+    print("--> no control population available.")
+    return False
+
+  return True
+
+# Check if the experiment finished recently.
+def is_recent_experiment(date_string, days=3):
+    given_date = datetime.strptime(date_string, "%Y-%m-%d")
+    now = datetime.now()
+    
+    # Check if the given date is within the last 3 days
+    days_ago = now - timedelta(days)
+    return days_ago <= given_date
+
+def filter_and_sort(experiments):
+    # Remove invalid entries (those with None as endDate)
+    experiments[:] = [exp for exp in experiments if exp["endDate"] is not None]
+
+    # Sort the remaining entries by endDate
+    experiments.sort(key=lambda x: x["endDate"])
+
+def retrieve_nimbus_experiment_list():
+  url=f'https://experimenter.services.mozilla.com/api/v6/experiments/'
+  print(f"Loading nimbus experiment list from {url}")
+
+  response = requests.get(url)
+  if response.ok:
+    values = response.json()
+    return values
+  else:
+    print(f"Failed to retrieve {url}: {response.status_code}")
+    sys.exit(1)
+
+def extract_existing_reports(index_file):
+  with open(index_file, 'r') as file:
+    soup = bs(file, 'html.parser')
+  
+  # Find the table containing experiment reports
+  experiment_table = soup.find('table', class_='experiment-table')
+  experiments = {}
+  
+  if experiment_table:
+    rows = experiment_table.find_all('tr')[1:]  # Skip the header row
+    for row in rows:
+      cells = row.find_all('td')
+      if cells and len(cells) > 0:
+        experiment_name = cells[0].get_text(strip=True)
+        experiments[experiment_name] = {
+          'start_date': cells[1].get_text(strip=True),
+          'end_date': cells[2].get_text(strip=True),
+          'channel': cells[3].get_text(strip=True)
+        }
+  
+  return experiments
+
+def generate_histogram_metrics(exp):
+  return default_histograms
+
+def generate_event_metrics(exp):
+  return default_events
+
+# Create a config for the experiment, and return a dict of
+# args used to generate the experiment report.
+def create_config_for_experiment(exp):
+  args = {}
+  config = {}
+  config['slug'] = exp['slug']
+
+  if exp['appName'] == 'firefox_desktop':
+    config['segments'] = ['Windows', 'Linux', 'Mac']
+  elif exp['appName'] == 'fenix':
+    config['segments'] = ['Android']
+
+  config['histograms'] = generate_histogram_metrics(exp)
+  config['pageload_event_metrics'] = generate_event_metrics(exp)
+
+  configFile = f"{exp['slug']}.json"
+  with open(configFile, 'w') as f:
+    json.dump(config, f, indent=2, cls=NpEncoder)
+
+  class ArgsDict(dict):
+    def __getattr__(self, name):
+      return self[name]
+    def __setattr__(self, name, value):
+      self[name] = value
+  
+  args = ArgsDict()
+  args.config = configFile
+  args.dataDir = 'data'
+  args.reportDir = 'reports'
+  args.skip_cache = False
+  args.html_report = True
+  return args
+
+def main():
+  if len(sys.argv) < 2:
+    print("Error: Please provide path to existing reports index.html file.")
+    sys.exit(1)
+
+  index_file = sys.argv[1]
+  if not os.path.isfile(index_file):
+    print(f"Error: Cannot find '{index_file}'")
+    sys.exit(1)
+
+  # Get list of reports already created by slug
+  reports = extract_existing_reports(index_file)
+
+  # Get experiment list
+  experiments = retrieve_nimbus_experiment_list()
+
+  # Sort list by endDate
+  filter_and_sort(experiments)
+  
+  for exp in experiments:
+    print("Checking ", exp['slug'], "...")
+
+    if not is_recent_experiment(exp['endDate']):
+      print("---> not recent")
+      continue
+
+    if not is_supported_experiment(exp):
+      continue
+
+    if exp['slug'] in reports:
+      print("---> already exists")
+      continue
+
+    print('---------------------------')
+    print(f"Generating Report for {exp['slug']}")
+    print("Config:")
+    print(json.dumps(exp, indent=2))
+    args = create_config_for_experiment(exp)
+    generate_report(args)
+
+if __name__ == "__main__":
+  main()

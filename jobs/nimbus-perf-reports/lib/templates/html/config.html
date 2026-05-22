@@ -1,0 +1,31 @@
+{% autoescape off %}
+<div id="config" class="cell">
+  <div class="title">Configuration & Queries Used:</div>
+
+  <section class="accordion">
+  <input type="checkbox" name="collapse" id="config-json">
+  <h1 class="handle">
+    <label for="config-json">Configuration</label>
+  </h1>
+  <div class="content">
+  <code><pre>
+  {{config}}
+  </pre></code>
+  </div>
+  </section>
+
+{% for query in queries %}
+  <section class="accordion">
+    <input type="checkbox" name="collapse" id="{{query.name}}-query">
+  <h1 class="handle">
+    <label for="{{query.name}}-query">{{query.name}}</label>
+  </h1>
+  <div class="content">
+  <code><pre>
+  {{query.query}}
+  </pre></code>
+  </div>
+  </section>
+{% endfor %}
+</div>
+{% endautoescape %}

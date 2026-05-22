@@ -1,0 +1,168 @@
+{% autoescape off %}
+<div id="summary" class="cell">
+  <div class="title">Summary:</div>
+
+  <table border="1" cellspacing="0" cellpadding="0" class="desc-table">
+    <tbody>
+      <tr> 
+        <td class="desc-header">
+          {% if is_experiment == True %}
+          Experiment
+          {% else %}
+          Name
+          {% endif %}
+        </td>
+        <td colspan={{branchlen}} style="border-bottom-style: solid;">
+          {{slug}}
+        </td>
+      </tr>
+        {% if is_experiment == True %}
+      <tr> 
+        <td class="desc-header">
+          StartDate
+        </td>
+        <td colspan={{branchlen}} style="border-bottom-style: solid;">
+          {{startDate}}
+        </td>
+      </tr>
+      <tr> 
+        <td class="desc-header">
+          EndDate
+        </td>
+        <td colspan={{branchlen}} style="border-bottom-style: solid;">
+          {{endDate}}
+        </td>
+      </tr>
+      <tr> 
+        <td class="desc-header">
+          Channel
+        </td>
+        <td colspan={{branchlen}} style="border-bottom-style: solid;">
+          {{channel}}
+        </td>
+      </tr>
+        {% endif %}
+      <tr>
+        <td class="desc-header">
+          Branches
+        </td>
+        {% for branch in branches %}
+        <td style="border-top-style: solid;">
+          {{branch.name}}
+        </td>
+        {% endfor %}
+      </tr>
+      {% if is_experiment == False %}
+        <td class="desc-header">
+          StartDate
+        </td>
+        {% for branch in branches %}
+        <td>
+          {{branch.startDate}}
+        </td>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td class="desc-header">
+          EndDate
+        </td>
+        {% for branch in branches %}
+        <td>
+          {{branch.endDate}}
+        </td>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td class="desc-header">
+          Channel
+        </td>
+        {% for branch in branches %}
+        <td>
+          {{branch.channel}}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  {% for segment in segments %}
+  <div class="subtitle">{{segment.name}}</div>
+  <table border="1" cellspacing="0" cellpadding="0" class="summary-table">
+    <thead>
+      <tr>
+        <th style="border-right-style: solid;">
+          metric
+        </th>
+        <th>
+          <div class="tooltip">branch
+            <span class="tooltiptext">All results compared against control.</span>
+          </div>
+        </th>
+        <th>
+          uplift
+        </th>
+        <th> 
+          <div class="tooltip">effect size (mwu)
+            <span class="tooltiptext">Effect size calculated by Rank Biserial Correlation.</span>
+          </div>
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for metric in segment.numerical_metrics %}
+      <tr>
+        <td rowspan={{metric.rowspan}} style="{{metric.style}}">
+          <div class="tooltip">
+          <a href="#{{segment.name}}-{{metric.name}}-mean">
+            {{metric.name}}
+          </a>
+          <span class="tooltiptext">
+            {{metric.desc}}
+          </span>
+          </div>
+        </td>
+    {% for data in metric.datasets %}
+      <td style="{{data.style}}"><div style="{{data.color}};">{{data.branch}}</div></td>
+      <td style="{{data.style}}"><div style="{{data.color}};">{{data.uplift}}%</div></td>
+      <td style="{{data.style}}"><div style="{{data.color}};">{{data.effect}}</div></td>
+      </tr>
+      <tr>
+    {% endfor %}
+    {% endfor %}
+
+    {% for metric in segment.categorical_metrics %}
+    <td style="{{metric.style}}" rowspan={{metric.name_rowspan}}>
+          <div class="tooltip">
+            <a href="#{{segment.name}}-{{metric.name}}-categorical">
+              {{metric.name}}
+            </a>
+            <span class="tooltiptext">
+              {{metric.desc}}
+            </span>
+          </div>
+        </a>
+      </td>
+      {% for branch in metric.branches %}
+      <td style="{{branch.style}}" rowspan={{branch.branch_rowspan}}>
+        {{branch.branch}}
+      </td>
+        {% for row in branch.rows %}
+        <td style="{{row.style}}">
+          <div style="{{row.weight}};">{{row.uplift}}</div>
+        </td>
+        <td style="{{row.style}}">
+          <div style="{{row.weight}};">{{row.effect}}</div>
+        </td>
+        </tr>
+        <tr>
+        {% endfor %}
+      {% endfor %}
+    </tr>
+    <tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% endfor %}
+</div> 
+{% endautoescape %}

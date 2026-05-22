@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<head>
+<title>{{title}}</title>
+<style>
+/* Collapsable styling courtesy of https://codepen.io/markcaron/pen/RVvmaz
+   Sidebar styling courtesy of https://codepen.io/maggiben/pen/bGpzPj */
+@import url('https://fonts.googleapis.com/css?family=Open+Sans:300,400,700');
+@import url('//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.min.css');
+@import url('//cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css');
+body {
+  color: #000000;
+  background: #ffffff;
+  font-family: 'Open Sans',sans-serif;
+  padding: 0;
+  margin: 0;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+ /* Tooltip container */
+.tooltip {
+  position: relative;
+  display: inline-block;
+}
+
+/* Tooltip text */
+.tooltip .tooltiptext {
+  visibility: hidden;
+  width: 140px;
+  background-color: #555;
+  color: #fff;
+  text-align: center;
+  padding: 10px 10px;
+  border-radius: 6px;
+
+  /* Position the tooltip text */
+  position: absolute;
+  z-index: 1;
+  bottom: 125%;
+  left: 50%;
+  margin-left: -60px;
+
+  /* Fade in tooltip */
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+/* Tooltip arrow */
+.tooltip .tooltiptext::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -5px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: #555 transparent transparent transparent;
+}
+
+/* Show the tooltip text when you mouse over the tooltip container */
+.tooltip:hover .tooltiptext {
+  visibility: visible;
+  opacity: 1;
+}
+.accordion > input[type="checkbox"] {
+  position: absolute;
+  left: -100vw;
+}
+.accordion .content {
+  overflow-y: hidden;
+  height: 0;
+  transition: height 0.3s ease;
+}
+.accordion > input[type="checkbox"]:checked ~ .content {
+  height: auto;
+  overflow: visible;
+}
+.accordion label {
+  display: block;
+}
+.accordion {
+  margin-left: -20%;
+  width: 140%;
+  margin-bottom: 1em;
+}
+.accordion > input[type="checkbox"]:checked ~ .content {
+  padding: 15px;
+  border: 1px solid #e8e8e8;
+  border-top: 0;
+}
+.accordion .handle {
+  margin: 0;
+  font-size: 1.125em;
+  line-height: 1.2em;
+}
+.accordion label {
+  color: #333;
+  cursor: pointer;
+  font-weight: normal;
+  padding: 15px;
+  background: #e8e8e8;
+}
+.accordion label:hover,
+.accordion label:focus {
+  background: #d8d8d8;
+}
+.accordion .handle label:before {
+  font-family: 'fontawesome';
+  content: "\f054";
+  display: inline-block;
+  margin-right: 10px;
+  font-size: .58em;
+  line-height: 1.556em;
+  vertical-align: middle;
+}
+.accordion > input[type="checkbox"]:checked ~ .handle label:before {
+  content: "\f078";
+}
+.sidebar-toggle {
+  margin-left: -20%;
+}
+div.title{
+  margin-left: -20%;
+  width: 140%;
+  margin-bottom: 10px;
+  font-size: 20px;
+  border-bottom: groove;
+}
+div.subtitle{
+  margin-left: -20%;
+  width: 140%;
+  margin-bottom: 10px;
+  margin-top: 20px;
+  font-size: 18px;
+  font-weight: bold;
+  text-align: center;
+  padding-bottom: 10px;
+  padding-top: 10px;
+}
+div.cell {
+    margin-left: 35%;
+    margin-right: auto;
+    margin-top: 30px;
+    margin-bottom: 30px;
+    width: 40%;
+    position: relative;
+}
+div.chart {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  margin-bottom: 30px;
+  color: #000000;
+}
+.sidebar {
+  width: 20%;
+  height: 100%;
+  background: #ffffff;
+  position: fixed;
+  overflow-y: scroll;
+  -webkit-transition: all .3s ease-in-out;
+  -moz-transition: all .3s ease-in-out;
+  -o-transition: all .3s ease-in-out;
+  -ms-transition: all .3s ease-in-out;
+  transition: all .3s ease-in-out;
+  z-index: 100;
+  #leftside-navigation {
+    ul, ul ul {
+      margin: -2px 0 0;
+      padding: 0;
+    }
+    ul {
+      li {
+        list-style-type: none;
+        border-bottom: 1px solid rgba(255,255,255,.05);
+        &.active {
+          & > a {
+            color: #ececec;
+          }
+          ul {
+            display: block;
+          }
+        }
+        a {
+          color: #000000;
+          text-decoration: none;
+          display: block;
+          padding: 18px 0 18px 25px;
+          font-size: 16px;
+          outline: 0;
+          -webkit-transition: all 200ms ease-in;
+          -moz-transition: all 200ms ease-in;
+          -o-transition: all 200ms ease-in;
+          -ms-transition: all 200ms ease-in;
+          transition: all 200ms ease-in;
+          &:hover {
+            color: #1abc9c;
+          }
+          span {
+            display: inline-block;
+          }
+          i {
+            width: 20px;
+            .fa-angle-left, .fa-angle-right {
+              padding-top: 3px;
+            }
+          }
+        }
+      }
+    }
+    ul ul {
+      display: none;
+      li {
+        background: #ececec;
+        margin-bottom: 0;
+        margin-left: 0;
+        margin-right: 0;
+        border-bottom: none;
+        a {
+          font-size: 14px;
+          padding-top: 13px;
+          padding-bottom: 13px;
+          color: #000000;
+        }
+      }
+    }
+  }
+}
+.stat-table {
+    table-layout: fixed;
+    width:100%;
+    border: double;
+    border-color: black;
+    text-align:center;
+    font-size: 14px;
+    font-weight: normal;
+    margin-bottom: 10px;
+}
+.stat-table td {
+    padding: 0;
+    border-bottom-style: hidden;
+    border-top-style: hidden;
+    text-align:center;
+}
+.stat-table tr {
+    border-bottom: 1px solid #dddddd;
+    border-bottom-style: hidden;
+    border-top-style: hidden;
+}
+.stat-table th {
+    background-color: gray;
+    width:30%;
+    height:14px;
+    color: #ffffff;
+    text-align:center;
+}
+.desc-table {
+    margin-left: -10%;
+    width:120%;
+    border: double;
+    border-color: black;
+    text-align:center;
+    padding:($half-spacing-unit * 1.5) 10;
+    padding-bottom: 10;
+    padding-top: 10;
+    font-size: 14px;
+}
+.desc-table td {
+    padding: 0;
+    border-bottom-style: hidden;
+    border-top-style: hidden;
+    padding: 5px;
+}
+.desc-table tr {
+    border-bottom: 1px solid #dddddd;
+    border-bottom-style: hidden;
+    border-top-style: hidden;
+}
+.desc-header {
+    background-color: gray;
+    width:30%;
+    height:12px;
+    color: #ffffff;
+    text-align:center;
+    padding: 5px;
+    font-weight: bold;
+}
+.summary-table {
+    margin-left: -10%;
+    width:120%;
+    border: double;
+    border-color: black;
+    text-align:center;
+    padding:($half-spacing-unit * 1.5) 10;
+    font-size: 14px;
+        a {
+          font-size: 14px;
+          padding-top: 13px;
+          padding-bottom: 13px;
+          color: #000000;
+        }
+}
+.summary-table thead tr {
+    background-color: gray;
+    width:100%;
+    height:14px;
+    color: #ffffff;
+    text-align:center;
+    padding: 15px;
+}
+.summary-table th,
+.summary-table td {
+    padding: 0;
+    border-left-style: hidden;
+    border-right-style: hidden;
+    border-bottom-style: hidden;
+    border-top-style: hidden;
+    padding: 15px;
+}
+.summary-table tbody tr {
+    border-bottom: 1px solid #dddddd;
+    border-left-style: hidden;
+    border-right-style: hidden;
+    border-bottom-style: hidden;
+    border-top-style: hidden;
+}
+.summary-table tbody tr.active-row {
+    font-weight: bold;
+    color: #009879;
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels/dist/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-crosshair@2.0.0/dist/chartjs-plugin-crosshair.min.js"></script>
+<script src='//cdnjs.cloudflare.com/ajax/libs/jquery/2.1.3/jquery.min.js'></script>
+<script>
+  Chart.register(ChartDataLabels);
+  Chart.defaults.font.size = 14;
+  Chart.defaults.color = '#000000';
+  zoomOptions = {
+      pan: {
+          enabled: true,
+          mode: 'xy',
+          modifierKey: 'ctrl',
+      },
+      zoom: {
+          mode: 'xy',
+          drag: {
+              enabled: true,
+              borderColor: 'rgb(54, 162, 235)',
+              borderWidth: 1,
+              backgroundColor: 'rgba(54, 162, 235, 0.3)'
+            }
+        }
+    };
+</script>
+
+</head>
+<body>

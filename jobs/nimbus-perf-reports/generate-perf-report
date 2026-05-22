@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+import os
+import sys
+import argparse
+from lib.generate import generate_report
+
+def parseArguments():
+  parser = argparse.ArgumentParser(description='Process telemetry performance report.')
+  parser.add_argument('--config', type=str, required=True, help="Input JSON config file.")
+  parser.add_argument('--dataDir', type=str, default="data", help="Directory to save data to.")
+  parser.add_argument('--reportDir', type=str, default="reports", help="Directory to save results to.")
+  parser.add_argument('--skip-cache', action=argparse.BooleanOptionalAction,
+                      default=False, help="Ignore any cached files on disk, and regenerate them.")
+  parser.add_argument('--html-report', action=argparse.BooleanOptionalAction,
+                      default=True, help="Generate html report.")
+  args = parser.parse_args()
+  return args
+
+if __name__ == "__main__":
+  args = parseArguments()
+  generate_report(args)
