@@ -1,3 +1,4 @@
+print("Hello from search_term_data_validation_v2/main.py!")
 print("Look at me! I'm running a Python command! WOW!")
 
 import argparse
