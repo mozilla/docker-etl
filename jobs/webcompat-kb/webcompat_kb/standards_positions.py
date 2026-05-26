@@ -21,7 +21,7 @@ class StandardsPosition(pydantic.BaseModel):
     title: str
     url: Optional[str]
     explainer: Optional[str]
-    web_feature: Optional[str]
+    web_feature: Optional[str] = pydantic.Field(default=None, alias="web-feature")
     mdn: Optional[str]
     caniuse: Optional[str]
     bug: Optional[str]
