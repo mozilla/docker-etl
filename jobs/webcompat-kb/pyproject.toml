@@ -25,7 +25,7 @@ dependencies = [
   "jinja2>=3.1.6",
   "pydantic==2.13.4",
   "tomli-w>=1.2.0",
-  "web-features==3.0.0",
+  "web-features==3.1.0",
 ]
 
 [project.optional-dependencies]
