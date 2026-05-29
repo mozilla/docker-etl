@@ -3,7 +3,7 @@ from typing import Iterable, Mapping, Optional, Sequence
 from urllib.parse import urlencode
 
 from pydantic import BaseModel
-from .httphelpers import Json, get_json, get_paginated_json
+from .httphelpers import get_json, get_paginated_json
 
 
 class GitHubUser(BaseModel):
@@ -66,7 +66,7 @@ class GitHubContentTree(BaseModel):
     url: str
     html_url: str
     git_url: str
-    download_url: str
+    download_url: Optional[str]
     type: str
     _links: GitHubContentTreeLinks
 
