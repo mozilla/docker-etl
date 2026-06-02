@@ -63,3 +63,6 @@ crux_include = ["es"]
 
 [netherlands_rank]
 crux_include = ["nl"]
+
+[china_rank]
+crux_include = ["cn"]
