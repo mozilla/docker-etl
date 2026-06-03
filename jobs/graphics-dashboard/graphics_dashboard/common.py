@@ -60,9 +60,16 @@ def run_query(billing_project, sql, **params):
             query_params.append(bigquery.ScalarQueryParameter(name, "INT64", value))
         else:
             raise TypeError(f"Unsupported query param type for {name!r}: {type(value)}")
-    job_config = bigquery.QueryJobConfig(query_parameters=query_params)
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=query_params,
+        # the queries in these jobs use a lot of slots relative to their data scanned
+        # so run with on-demand billing
+        reservation="none",
+    )
     client = bigquery.Client(project=billing_project)
-    return list(client.query(sql, job_config=job_config).result())
+    job = client.query(sql, job_config=job_config)
+    print(f"Running query: {job.project}.{job.location}.{job.job_id}")
+    return list(job.result())
 
 
 def upload_json(bucket_name, prefix, name, payload):

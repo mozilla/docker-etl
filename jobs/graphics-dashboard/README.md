@@ -19,19 +19,19 @@ There are two jobs, differing in cadence and shape of output.
 Dashboard (snapshot) job: a point-in-time view over a rolling 14-day
 window, rebuilt daily. 11 files:
 
-| File | What it shows |
-| ---- | ------------- |
-| `general-statistics.json` | device & driver counts; per-Firefox-version OS / Windows-version / vendor breakdowns |
-| `device-statistics.json` | vendor/device/driver triples |
-| `system-statistics.json` | CPU logical cores, CPU feature flags, RAM buckets, OS bitness |
-| `monitor-statistics.json` | monitor counts, refresh rates, resolutions (Windows) |
-| `mac-statistics.json` | macOS versions, retina scale, architecture |
-| `linux-statistics.json` | driver vendors, compositors |
-| `windows-features.json` | compositor, D3D11, D2D, GPU-process, texture-sharing, and media-decoder states, overall and per Windows version; D3D11 blocklist/blocklisted breakdowns |
-| `tdr-statistics.json` | GPU device-reset (TDR) reasons, broken down by vendor (Windows) |
-| `sanity-test-statistics.json` | graphics sanity-test outcomes by vendor/OS/device/driver (Windows) |
-| `startup-test-statistics.json` | graphics driver startup-test results (Windows) |
-| `webgl-statistics.json` | WebGL 1 and 2 success/failure by OS/vendor/device/driver/compositor, plus failure-id breakdowns |
+| File                           | What it shows                                                                                                                                           |
+|--------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `general-statistics.json`      | device & driver counts; per-Firefox-version OS / Windows-version / vendor breakdowns                                                                    |
+| `device-statistics.json`       | vendor/device/driver triples                                                                                                                            |
+| `system-statistics.json`       | CPU logical cores, CPU feature flags, RAM buckets, OS bitness                                                                                           |
+| `monitor-statistics.json`      | monitor counts, refresh rates, resolutions (Windows)                                                                                                    |
+| `mac-statistics.json`          | macOS versions, retina scale, architecture                                                                                                              |
+| `linux-statistics.json`        | driver vendors, compositors                                                                                                                             |
+| `windows-features.json`        | compositor, D3D11, D2D, GPU-process, texture-sharing, and media-decoder states, overall and per Windows version; D3D11 blocklist/blocklisted breakdowns |
+| `tdr-statistics.json`          | GPU device-reset (TDR) reasons, broken down by vendor (Windows)                                                                                         |
+| `sanity-test-statistics.json`  | graphics sanity-test outcomes by vendor/OS/device/driver (Windows)                                                                                      |
+| `startup-test-statistics.json` | graphics driver startup-test results (Windows)                                                                                                          |
+| `webgl-statistics.json`        | WebGL 1 and 2 success/failure by OS/vendor/device/driver/compositor, plus failure-id breakdowns                                                         |
 
 Trends job: a weekly time series, one data point per complete week,
 appended to a growing per-file history. 10 files (all `-v2.json`):
@@ -80,16 +80,61 @@ is derived from the same `N`, so the label always matches the actual filter.
 Widen with `--sample-id-count 10` for ~10%, and so on. Aggregation cost scales with
 the sample but stays a `GROUP BY`, not a per-ping shuffle.
 
-### Running locally
+### Trends specifics
+
+- The query only emits whole Sunday-aligned weeks, so a partial trailing
+  week is never published (the next daily run picks it up once complete).
+- The reshape keys cached weeks by their `start` timestamp and replaces any
+  recomputed week, so re-running over an overlapping window is idempotent.
+- One ping per client per week is chosen deterministically
+  (`FARM_FINGERPRINT(client_id, document_id)`).
+- Device-gen trends map device ids to GPU generation via `gfxdevices.json`,
+  fetched from the FirefoxGraphics repo at run time and applied in `trends.py`.
+
+## Directory layout
+
+```
+graphics-dashboard/                 # the whole job: reshape + upload + SQL
+├── Dockerfile                     #   one image, two entry points (dashboard, trends)
+├── README.md
+├── requirements.txt               #   click, google-cloud-bigquery, -storage
+├── setup.py
+├── frontend/                      #   vendored copy of the dashboard site, for local verification
+└── graphics_dashboard/
+    ├── common.py                  #   shared SQL loading, query exec, GCS/local IO, click options
+    ├── dashboard.py               #   snapshot reshape (BUILDERS registry)
+    ├── trends.py                  #   weekly reshape + GCS history merge
+    └── sql/
+        ├── README.md              #     describes the two queries
+        ├── graphics_dashboard.sql #     one scan, 11 *-statistics / windows-features
+        └── graphics_trends.sql    #     one scan, 10 trend-*-v2 (per complete week)
+```
+
+The SQL lives inside the `graphics_dashboard` package, so it ships with the
+code (no separate copy step); `common.load_sql` reads it relative to the
+package. The SQL files are named for what they produce and documented in
+`graphics_dashboard/sql/README.md`. The image exposes both modules via
+`ENTRYPOINT ["python", "-m"]`.
+
+## Row shape
+
+Rows are `(output, dimension, key, subkey, value)`. `subkey` is NULL for flat
+`{key: value}` dimensions and used for two-level breakdowns (e.g. TDR
+`reasonToVendor` = key=reason, subkey=vendor). Histogram `results` arrays are
+emitted as flat rows keyed by integer bucket index; the reshape orders and
+densifies them. (The trends query omits `subkey`; its rows are
+`(week_start, output, key, value)`.)
+
+## Running locally
 
 ```bash
 pip install -r requirements.txt
 # Snapshot files (all, or one with --only):
-python -m graphics_dashboard.dashboard --dry-run --billing-project=mozdata
-python -m graphics_dashboard.dashboard --dry-run --billing-project=mozdata --only mac-statistics.json
+python -m graphics_dashboard.dashboard --dry-run
+python -m graphics_dashboard.dashboard --dry-run --only mac-statistics.json
 # Weekly trend files:
-python -m graphics_dashboard.trends --dry-run --billing-project=mozdata
-python -m graphics_dashboard.trends --dry-run --billing-project=mozdata --only firefox
+python -m graphics_dashboard.trends --dry-run
+python -m graphics_dashboard.trends --dry-run --only firefox
 ```
 
 Authenticate with `gcloud auth application-default login`. `--dry-run` writes
@@ -98,8 +143,24 @@ the JSON files to a local `test_output/` directory (override with
 what would be uploaded, so you can inspect or diff it. `--billing-project`
 selects the GCP project the BigQuery query runs and bills in (the query reads
 `moz-fx-data-shared-prod` tables by fully-qualified name regardless); under
-on-demand billing this is how query cost is attributed. The CLIs use
-[click](https://click.palletsprojects.com/); run with `--help` for all options.
+on-demand billing this is how query cost is attributed. It defaults to
+`mozdata`, which is the project most end users running this locally will want.
+The CLIs use [click](https://click.palletsprojects.com/); run with `--help` for
+all options.
+
+### Verifying visually in the dashboard
+
+`frontend/` is a vendored copy of the dashboard site, wired to read from a local
+`data/` directory, so you can render a dry run's output in the actual UI:
+
+```bash
+python -m graphics_dashboard.dashboard --dry-run --test-output-dir frontend/data
+python -m graphics_dashboard.trends    --dry-run --test-output-dir frontend/data
+python -m http.server -d frontend 8000   # then open http://localhost:8000/
+```
+
+It is a point-in-time snapshot of upstream and may drift; see
+`frontend/README.md` for provenance and details.
 
 ---
 
@@ -133,39 +194,9 @@ frontend, and the GCS location are all unchanged.
   materialized cache. We give up catalog/lineage visibility, which only matters
   under active development.
 - The CLIs use `click` (the repo standard), not `argparse`.
-
-## Directory layout
-
-```
-graphics-dashboard/                 # the whole job: reshape + upload + SQL
-├── Dockerfile                     #   one image, two entry points (dashboard, trends)
-├── README.md
-├── requirements.txt               #   click, google-cloud-bigquery, -storage
-├── setup.py
-└── graphics_dashboard/
-    ├── common.py                  #   shared SQL loading, query exec, GCS/local IO, click options
-    ├── dashboard.py               #   snapshot reshape (BUILDERS registry)
-    ├── trends.py                  #   weekly reshape + GCS history merge
-    └── sql/
-        ├── README.md              #     describes the two queries
-        ├── graphics_dashboard.sql #     one scan, 11 *-statistics / windows-features
-        └── graphics_trends.sql    #     one scan, 10 trend-*-v2 (per complete week)
-```
-
-The SQL lives inside the `graphics_dashboard` package, so it ships with the
-code (no separate copy step); `common.load_sql` reads it relative to the
-package. The SQL files are named for what they produce and documented in
-`graphics_dashboard/sql/README.md`. The image exposes both modules via
-`ENTRYPOINT ["python", "-m"]`.
-
-## Row shape
-
-Rows are `(output, dimension, key, subkey, value)`. `subkey` is NULL for flat
-`{key: value}` dimensions and used for two-level breakdowns (e.g. TDR
-`reasonToVendor` = key=reason, subkey=vendor). Histogram `results` arrays are
-emitted as flat rows keyed by integer bucket index; the reshape orders and
-densifies them. (The trends query omits `subkey`; its rows are
-`(week_start, output, key, value)`.)
+- One ping per client per week in the trends job is chosen deterministically
+  via `FARM_FINGERPRINT(client_id, document_id)`, replacing the legacy
+  `python_moztelemetry` `get_one_ping_per_client`.
 
 ## Field mapping (legacy `main_v5` to Glean `metrics_v1`)
 
@@ -221,18 +252,6 @@ Glean-specific semantic notes (also documented inline in the queries):
   matched by prefix.
 - system `wow` (OS bitness): Glean has no `isWow64`, so the legacy
   `32_on_64` bucket cannot be distinguished, and 32-bit builds map to `32`.
-
-## Trends specifics
-
-- The query only emits whole Sunday-aligned weeks, so a partial trailing
-  week is never published (the next daily run picks it up once complete).
-- The reshape keys cached weeks by their `start` timestamp and replaces any
-  recomputed week, so re-running over an overlapping window is idempotent.
-- One ping per client per week is chosen deterministically
-  (`FARM_FINGERPRINT(client_id, document_id)`), replacing the legacy
-  `get_one_ping_per_client`.
-- Device-gen trends map device ids to GPU generation via `gfxdevices.json`,
-  fetched from the FirefoxGraphics repo at run time and applied in `trends.py`.
 
 ## `layers-failureid-statistics.json` is dropped
 

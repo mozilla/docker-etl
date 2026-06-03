@@ -399,7 +399,7 @@ def main(
     # click.DateTime yields a datetime; we want a date for the day window.
     end_date = end_date.date() if end_date else common.default_end_date()
 
-    start = datetime.datetime.utcnow()
+    start = datetime.datetime.now(datetime.UTC)
     rows = common.run_query(
         billing_project,
         common.load_sql("graphics_dashboard.sql"),
@@ -411,10 +411,10 @@ def main(
         rows,
         common.sample_fraction(sample_id_count),
         time_window,
-        datetime.datetime.utcnow(),
+        datetime.datetime.now(datetime.UTC),
         only=list(only),
     )
-    phase_time = (datetime.datetime.utcnow() - start).total_seconds()
+    phase_time = (datetime.datetime.now(datetime.UTC) - start).total_seconds()
     for payload in payloads.values():
         payload["phaseTime"] = phase_time
 

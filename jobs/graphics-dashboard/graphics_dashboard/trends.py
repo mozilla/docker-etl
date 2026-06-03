@@ -113,7 +113,7 @@ def merge_trend(cache, new_points):
     """
     if cache is None:
         cache = {
-            "created": time.mktime(datetime.datetime.utcnow().timetuple()),
+            "created": time.mktime(datetime.datetime.now(datetime.UTC).timetuple()),
             "trend": [],
         }
     by_start = {pt["start"]: pt for pt in cache.get("trend") or []}

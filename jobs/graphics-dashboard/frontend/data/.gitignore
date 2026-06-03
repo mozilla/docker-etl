@@ -1,0 +1,3 @@
+# Generated chart data (dry-run output) is not committed; only this file and
+# the placeholder keep the directory in git.
+*.json

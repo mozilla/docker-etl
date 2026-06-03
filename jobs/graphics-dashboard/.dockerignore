@@ -5,3 +5,5 @@
 .pytest_cache/
 __pycache__/
 venv/
+# Local verification aid only; not part of the job runtime.
+frontend/
