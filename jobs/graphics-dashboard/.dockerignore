@@ -6,4 +6,4 @@
 __pycache__/
 venv/
 # Local verification aid only; not part of the job runtime.
-frontend/
+serve_frontend.py

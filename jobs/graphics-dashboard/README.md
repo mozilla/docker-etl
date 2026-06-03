@@ -99,7 +99,7 @@ graphics-dashboard/                 # the whole job: reshape + upload + SQL
 ├── README.md
 ├── requirements.txt               #   click, google-cloud-bigquery, -storage
 ├── setup.py
-├── frontend/                      #   vendored copy of the dashboard site, for local verification
+├── serve_frontend.py              #   fetch + patch + serve the dashboard site over local output
 └── graphics_dashboard/
     ├── common.py                  #   shared SQL loading, query exec, GCS/local IO, click options
     ├── dashboard.py               #   snapshot reshape (BUILDERS registry)
@@ -150,17 +150,23 @@ all options.
 
 ### Verifying visually in the dashboard
 
-`frontend/` is a vendored copy of the dashboard site, wired to read from a local
-`data/` directory, so you can render a dry run's output in the actual UI:
+`serve_frontend.py` renders a dry run's output in the actual dashboard UI. It
+fetches a fresh copy of the [dashboard
+site](https://github.com/FirefoxGraphics/telemetry/tree/master/www) at run time,
+patches it to read chart data from your local dry-run output, and serves it over
+HTTP (so nothing stale is checked in):
 
 ```bash
-python -m graphics_dashboard.dashboard --dry-run --test-output-dir frontend/data
-python -m graphics_dashboard.trends    --dry-run --test-output-dir frontend/data
-python -m http.server -d frontend 8000   # then open http://localhost:8000/
+# Generate the JSON (writes to test_output/ by default):
+python -m graphics_dashboard.dashboard --dry-run
+python -m graphics_dashboard.trends --dry-run
+# Then fetch, patch, and serve the frontend over that output:
+python serve_frontend.py   # then open http://localhost:8000/
 ```
 
-It is a point-in-time snapshot of upstream and may drift; see
-`frontend/README.md` for provenance and details.
+By default it renders `test_output/`; point at a different dry-run directory with
+`--data-dir`, or change the port with `--port`. Run with `--help` for all
+options.
 
 ---
 
