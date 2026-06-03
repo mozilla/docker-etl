@@ -39,6 +39,7 @@ class KintoSuggestion:
     iab_category: str
     icon: str
     id: int
+    uuid: str
     keywords: List[str]
     title: str
     url: str
@@ -157,6 +158,7 @@ def store_suggestions(
             bigquery.SchemaField("icon", "STRING"),
             bigquery.SchemaField("impression_url", "STRING"),
             bigquery.SchemaField("id", "INTEGER"),
+            bigquery.SchemaField("uuid", "STRING"),
             bigquery.SchemaField("keywords", "STRING", "REPEATED"),
             bigquery.SchemaField(
                 "full_keywords",

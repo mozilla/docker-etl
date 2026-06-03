@@ -10,6 +10,7 @@ SERP_CATEGORIES = [1, 2]
 
 SAMPLE_SUGGESTION = {
     "id": 2802,
+    "uuid": "8d3a1b2c-4e5f-6a7b-8c9d-0e1f2a3b4c5d",
     "url": "https://www.example.com",
     "click_url": "https://example.com/click",
     "impression_url": "https://example.com/impression",
@@ -29,6 +30,7 @@ SAMPLE_SUGGESTION = {
 
 SAMPLE_WIKIPEDIA_SUGGESTION = {
     "id": 0,
+    "uuid": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
     "url": "https://www.wikipedia.org",
     "iab_category": "5 - Education",
     "icon": "4072021",
@@ -153,6 +155,12 @@ class TestMain:
         assert len(suggestions) == 2
         assert suggestions[0].score == SAMPLE_SUGGESTION["score"]
         assert suggestions[1].score == SAMPLE_WIKIPEDIA_SUGGESTION["score"]
+
+    def test_suggestion_uuid(self, mocked_kinto_client):
+        suggestions = list(download_suggestions(mocked_kinto_client))
+        assert len(suggestions) == 2
+        assert suggestions[0].uuid == SAMPLE_SUGGESTION["uuid"]
+        assert suggestions[1].uuid == SAMPLE_WIKIPEDIA_SUGGESTION["uuid"]
 
     def test_icon_records_not_downloaded(self, mocked_kinto_client_icon_only):
         suggestions = list(download_suggestions(mocked_kinto_client_icon_only))
