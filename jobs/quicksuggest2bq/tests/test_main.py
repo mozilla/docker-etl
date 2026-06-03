@@ -99,8 +99,18 @@ def mocked_kinto_client_icon_only(mocker: MockerFixture):
 
 class TestMain:
     def test_suggestion_breaks_on_unknown_fields(self):
+        # Constructing directly still rejects unknown fields...
         with pytest.raises(Exception):
             KintoSuggestion(**{"does_not_exist": "i am sure!"})
+
+    def test_from_dict_ignores_unknown_fields(self):
+        # ...but `from_dict` tolerates additive schema changes by dropping
+        # fields that aren't declared on the dataclass.
+        suggestion = KintoSuggestion.from_dict(
+            {**SAMPLE_SUGGESTION, "brand_new_field": "ignore me"}
+        )
+        assert suggestion.id == SAMPLE_SUGGESTION["id"]
+        assert not hasattr(suggestion, "brand_new_field")
 
     def test_suggestion_properties_are_properly_parsed(self):
         KintoSuggestion(**SAMPLE_SUGGESTION)

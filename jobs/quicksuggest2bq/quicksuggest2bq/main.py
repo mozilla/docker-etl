@@ -8,7 +8,7 @@ import kinto_http
 import logging
 import requests
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from google.api_core.exceptions import BadRequest
 from google.cloud import bigquery
 from typing import Any, Dict, Iterator, List, Optional
@@ -29,10 +29,12 @@ class FullKeyword:
 class KintoSuggestion:
     """Class that holds information about a Suggestion returned by Kinto."""
 
-    # By being explicit about the fields we expect and not
-    # just storing the raw JSON, the conversion will fail
-    # if there's new unexpected fields, ensuring we take the
-    # appropriate actions to update the table schemas.
+    # By being explicit about the fields we expect and not just storing the
+    # raw JSON, we control exactly what gets written to BigQuery. New fields
+    # added to the Remote Settings payload are ignored by `from_dict` (and
+    # logged) so that additive schema changes don't break the job. To start
+    # ingesting a new field, add it here and to the BigQuery schema in
+    # `store_suggestions`.
     advertiser: str
     iab_category: str
     icon: str
@@ -55,6 +57,24 @@ class KintoSuggestion:
     # suggestion.
     serp_categories: Optional[List[int]] = None
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "KintoSuggestion":
+        """Build a KintoSuggestion from a raw record.
+
+        Fields that aren't declared on the dataclass are dropped (and logged)
+        instead of raising, so that additive changes to the Remote Settings
+        payload don't break the job. Such fields are not ingested until they're
+        added to the dataclass and the BigQuery schema.
+        """
+        known_fields = {field.name for field in fields(cls)}
+        unknown_fields = sorted(set(data) - known_fields)
+        if unknown_fields:
+            logging.warning(
+                "Ignoring unknown field(s) in suggestion: %s",
+                ", ".join(unknown_fields),
+            )
+        return cls(**{key: value for key, value in data.items() if key in known_fields})
+
 
 def download_suggestions(client: kinto_http.Client) -> Iterator[KintoSuggestion]:
     """Get records, download attachments and return the suggestions."""
@@ -66,9 +86,7 @@ def download_suggestions(client: kinto_http.Client) -> Iterator[KintoSuggestion]
     # Load records for both "type: data" and "type: offline-expansion-data".
     # See details in: https://mozilla-hub.atlassian.net/browse/CONSVC-1818
     data_records = [
-        record
-        for record in client.get_records()
-        if record["type"] in ["amp"]
+        record for record in client.get_records() if record["type"] in ["amp"]
     ]
 
     # Make use of connection pooling because all requests go to the same host
@@ -92,8 +110,9 @@ def download_suggestions(client: kinto_http.Client) -> Iterator[KintoSuggestion]
             continue
 
         # Each attachment is a list of suggestion objects and each suggestion
-        # object contains a list of keywords. Load the suggestions into pydantic
-        # model instances to discard all fields which we don't care about here.
+        # object contains a list of keywords. Load the suggestions into
+        # KintoSuggestion dataclass instances to discard all fields which we
+        # don't care about here.
         for suggestion_data in response.json():
             suggestion: Dict[str, Any] = {
                 **suggestion_data,
@@ -106,7 +125,7 @@ def download_suggestions(client: kinto_http.Client) -> Iterator[KintoSuggestion]
                     for category_id in suggestion_data.get("serp_categories", [])
                 ],
             }
-            yield KintoSuggestion(**suggestion)
+            yield KintoSuggestion.from_dict(suggestion)
 
 
 def store_suggestions(
