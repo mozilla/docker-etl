@@ -3,62 +3,16 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterable, Mapping, MutableMapping, Optional, Sequence
-from urllib.parse import urlencode
+from typing import Mapping, MutableMapping, Optional
 
 from google.api_core.exceptions import NotFound
 from pydantic import BaseModel
 
 from .base import Context, EtlJob, dataset_arg
 from .bqhelpers import BigQuery, TableSchema
-from .httphelpers import Json, get_json, get_paginated_json
+from .github import GitHub, GitHubIssue
+from .httphelpers import Json
 from .projectdata import Project
-
-
-class GitHubUser(BaseModel):
-    name: Optional[str] = None
-    email: Optional[str] = None
-    login: str
-    id: int
-
-
-class GitHubLabel(BaseModel):
-    id: Optional[int] = None
-    url: Optional[str] = None
-    name: Optional[str] = None
-    description: Optional[str] = None
-    color: Optional[str] = None
-    default: Optional[bool] = None
-
-
-class GitHubIssue(BaseModel):
-    assignee: Optional[GitHubUser] = None
-    body: str
-    closed_at: Optional[datetime] = None
-    comments: int
-    comments_url: str
-    draft: Optional[bool] = None
-    events_url: str
-    html_url: str
-    id: int
-    labels: list[str | GitHubLabel]
-    labels_url: str
-    number: int
-    repository_url: str
-    state: str
-    title: str
-    url: str
-    user: Optional[GitHubUser] = None
-    created_at: datetime
-    updated_at: datetime
-
-
-class GitHubComment(BaseModel):
-    id: int
-    body: str
-    user: GitHubUser
-    created_at: datetime
-    updated_at: datetime
 
 
 class InteropRow(BaseModel):
@@ -85,46 +39,6 @@ class InteropYear:
 
 
 interop_years = [InteropYear(2026, datetime(2025, 9, 4))]
-
-
-class GitHub:
-    def __init__(self, token: Optional[str]):
-        self.token = token
-
-    def headers(self) -> Mapping[str, str]:
-        headers = {"X-GitHub-Api-Version": "2022-11-28"}
-        if self.token is not None:
-            headers["Authorization"] = f"Bearer {self.token}"
-        return headers
-
-    def issues(
-        self,
-        repo: str,
-        labels: Iterable[str],
-        last_updated: Optional[datetime],
-        state: Optional[str] = "all",
-    ) -> Sequence[GitHubIssue]:
-        query = {"state": state}
-        if labels is not None:
-            query["labels"] = ",".join(labels)
-        if last_updated is not None:
-            query["since"] = last_updated.isoformat()
-
-        url = f"https://api.github.com/repos/{repo}/issues?{urlencode(query)}"
-        return [
-            GitHubIssue.model_validate(item)
-            for item in get_paginated_json(url, self.headers())
-        ]
-
-    def issue_comments(
-        self, issue: GitHubIssue, all_pages: bool = False
-    ) -> Sequence[GitHubComment]:
-        if not all_pages:
-            comments = get_json(issue.comments_url, self.headers())
-            assert isinstance(comments, list)
-        else:
-            comments = get_paginated_json(issue.comments_url, self.headers())
-        return [GitHubComment.model_validate(item) for item in comments]
 
 
 def get_last_import(
