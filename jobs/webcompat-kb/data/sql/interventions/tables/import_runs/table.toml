@@ -1,0 +1,7 @@
+[run_at]
+type = "DATETIME"
+mode = "REQUIRED"
+
+[sha1]
+type = "STRING"
+mode = "REQUIRED"
