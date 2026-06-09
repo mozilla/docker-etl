@@ -9,10 +9,10 @@ from typing import Iterator, Mapping, Optional, Sequence, cast
 
 from google.cloud import bigquery
 
-from .base import Context, EtlJob
-from .bqhelpers import BigQuery, Json, TableSchema
+from ..base import Context, EtlJob
+from ..bqhelpers import BigQuery, Json, TableSchema
 from .bugzilla import parse_user_story
-from .projectdata import Project
+from ..projectdata import Project
 
 FIXED_STATES = {"RESOLVED", "VERIFIED"}
 MIN_CHANGE_DATE = datetime(2024, 1, 1, tzinfo=timezone.utc)

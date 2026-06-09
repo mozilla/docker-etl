@@ -5,7 +5,7 @@ from typing import Iterable, Optional
 
 # These imports are required to populate ALL_JOBS
 # Unhappily the ordering here is significant
-from . import (
+from .etl import (
     update_schema,  # noqa: F401
     bugzilla,  # noqa: F401
     siterank,  # noqa: F401

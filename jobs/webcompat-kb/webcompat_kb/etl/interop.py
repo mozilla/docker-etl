@@ -8,11 +8,11 @@ from typing import Mapping, MutableMapping, Optional
 from google.api_core.exceptions import NotFound
 from pydantic import BaseModel
 
-from .base import Context, EtlJob, dataset_arg
-from .bqhelpers import BigQuery, TableSchema
-from .github import GitHub, GitHubIssue
-from .httphelpers import Json
-from .projectdata import Project
+from ..base import Context, EtlJob, dataset_arg
+from ..bqhelpers import BigQuery, TableSchema
+from ..github import GitHub, GitHubIssue
+from ..httphelpers import Json
+from ..projectdata import Project
 
 
 class InteropRow(BaseModel):
