@@ -74,3 +74,14 @@ files.
 ```
 webcompat-add-metric --bq-project-id <project_id>
 ```
+
+## webcompat-bug-score-changes
+
+View the computed score changes for a given bug. This is based on the
+current scoring algorithm and site rank data i.e. it shows how the bug
+score would have changed if we'd been applying the current criteria
+over the lifetime of the bug.
+
+```
+webcompat-bug-score-changes --bq-project-id <project_id> <bug_id>
+```
