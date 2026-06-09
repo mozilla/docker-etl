@@ -322,6 +322,7 @@ FROM {project["webcompat_knowledge_base"]["scored_site_reports"]}"""
 
 
 def compute_historic_scores(
+    project: Project,
     client: BigQuery,
     historic_states: Mapping[int, list[BugState]],
     current_scores: Mapping[int, Decimal],
@@ -361,6 +362,15 @@ def compute_historic_scores(
                     }
                 )
 
+    score_no_rank = project["webcompat_knowledge_base"][
+        "WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK"
+    ].routine()
+    rank_modifier = project["webcompat_knowledge_base"][
+        "WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFIER"
+    ].routine()
+    rank_yyyymm = project["webcompat_knowledge_base"][
+        "WEBCOMPAT_METRIC_YYYYMM"
+    ].routine()
     with client.temporary_table(schema, rows) as tmp_table:
         score_query = f"""
 SELECT number,
@@ -368,8 +378,7 @@ SELECT number,
        url,
        keywords,
        user_story,
-       CAST(`moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK`(keywords, user_story) *
-            `moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFIER`(url, 202409) AS NUMERIC) as score
+       CAST(`{score_no_rank}`(keywords, user_story) * `{rank_modifier}`(url, `{rank_yyyymm}`()) AS NUMERIC) as score
 FROM `{tmp_table.name}`
 """
         bugs_with_webcompat_states = set()
