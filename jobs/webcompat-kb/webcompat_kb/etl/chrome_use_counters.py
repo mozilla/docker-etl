@@ -6,10 +6,10 @@ from dataclasses import asdict, dataclass
 
 import pydantic
 
-from .base import Context, EtlJob, dataset_arg
-from .bqhelpers import BigQuery, TableSchema
-from .httphelpers import get_json
-from .projectdata import Project
+from ..base import Context, EtlJob, dataset_arg
+from ..bqhelpers import BigQuery, TableSchema
+from ..httphelpers import get_json
+from ..projectdata import Project
 
 
 class WebFeaturePopularity(pydantic.BaseModel):

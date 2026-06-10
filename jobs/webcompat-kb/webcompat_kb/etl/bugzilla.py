@@ -21,9 +21,9 @@ from datetime import datetime, timedelta
 import bugdantic
 from google.cloud import bigquery
 
-from .base import Context, EtlJob
-from .bqhelpers import BigQuery, TableSchema
-from .projectdata import Project
+from ..base import Context, EtlJob
+from ..bqhelpers import BigQuery, TableSchema
+from ..projectdata import Project
 
 
 class BugLoadError(Exception):

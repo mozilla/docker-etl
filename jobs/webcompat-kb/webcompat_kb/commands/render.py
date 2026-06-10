@@ -6,7 +6,7 @@ from .. import projectdata
 from ..base import DEFAULT_DATA_DIR
 from ..bqhelpers import SchemaId, get_client
 from ..config import Config
-from ..update_schema import render_schemas
+from ..etl.update_schema import render_schemas
 
 
 def main() -> None:

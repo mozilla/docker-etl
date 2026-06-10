@@ -1,9 +1,9 @@
 import logging
 from datetime import date
 
-from .base import Context, EtlJob
-from .bqhelpers import BigQuery
-from .projectdata import Project
+from ..base import Context, EtlJob
+from ..bqhelpers import BigQuery
+from ..projectdata import Project
 
 
 def update_metric_history(project: Project, client: BigQuery) -> None:

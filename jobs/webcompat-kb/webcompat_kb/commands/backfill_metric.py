@@ -8,7 +8,7 @@ from ..base import Command
 from ..bqhelpers import BigQuery, DatasetId, get_client
 from ..config import Config
 from ..projectdata import Project
-from ..siterank import host_min_ranks_query
+from ..etl.siterank import host_min_ranks_query
 
 
 def backfill_host_min_ranks(
