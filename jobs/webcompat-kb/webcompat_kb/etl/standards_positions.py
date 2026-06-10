@@ -6,10 +6,10 @@ from urllib.parse import urlparse
 
 import pydantic
 
-from .base import Context, EtlJob, dataset_arg
-from .bqhelpers import BigQuery, TableSchema
-from .httphelpers import get_json
-from .projectdata import Project
+from ..base import Context, EtlJob, dataset_arg
+from ..bqhelpers import BigQuery, TableSchema
+from ..httphelpers import get_json
+from ..projectdata import Project
 
 
 class StandardsPosition(pydantic.BaseModel):
@@ -21,7 +21,7 @@ class StandardsPosition(pydantic.BaseModel):
     title: str
     url: Optional[str]
     explainer: Optional[str]
-    web_feature: Optional[str]
+    web_feature: Optional[str] = pydantic.Field(default=None, alias="web-feature")
     mdn: Optional[str]
     caniuse: Optional[str]
     bug: Optional[str]

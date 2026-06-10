@@ -7,7 +7,7 @@ from typing import Any, Iterable, Mapping
 import pytest
 import bugdantic.bugzilla
 
-from webcompat_kb.bugzilla import (
+from webcompat_kb.etl.bugzilla import (
     Bug,
     BugHistoryChange,
     BugHistoryEntry,
@@ -1402,7 +1402,7 @@ def test_create_initial_history_removed_readded(history_updater):
     assert result == expected
 
 
-@patch("webcompat_kb.bugzilla.BugHistoryUpdater.bugzilla_fetch_history")
+@patch("webcompat_kb.etl.bugzilla.BugHistoryUpdater.bugzilla_fetch_history")
 def test_create_new_bugs_history(mock_bugzilla_fetch_history, history_updater):
     mock_bugzilla_fetch_history.return_value = (
         history_updater.bugzilla_to_history_entry(MISSING_KEYWORDS_HISTORY)
@@ -1457,7 +1457,7 @@ def test_missing_initial_add():
     assert empty_history.missing_initial_add()
 
 
-@patch("webcompat_kb.bugzilla.BugHistoryUpdater.bugzilla_fetch_history")
+@patch("webcompat_kb.etl.bugzilla.BugHistoryUpdater.bugzilla_fetch_history")
 def test_existing_bugs_history(mock_bugzilla_fetch_history, history_updater):
     mock_bugzilla_fetch_history.return_value = (
         history_updater.bugzilla_to_history_entry(MISSING_KEYWORDS_HISTORY)
@@ -1540,7 +1540,7 @@ def test_existing_bugs_history(mock_bugzilla_fetch_history, history_updater):
     assert result == expected
 
 
-@patch("webcompat_kb.bugzilla.BugHistoryUpdater.bugzilla_fetch_history")
+@patch("webcompat_kb.etl.bugzilla.BugHistoryUpdater.bugzilla_fetch_history")
 def test_existing_bugs_history_filter_updated(
     mock_bugzilla_fetch_history, history_updater
 ):

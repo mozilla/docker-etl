@@ -8,10 +8,10 @@ from typing import Any, Optional, cast
 import httpx
 from google.cloud import bigquery
 
-from .base import Context, EtlJob
-from .bqhelpers import BigQuery, Json, TableSchema
-from .httphelpers import get_json
-from .projectdata import Project
+from ..base import Context, EtlJob
+from ..bqhelpers import BigQuery, Json, TableSchema
+from ..httphelpers import get_json
+from ..projectdata import Project
 
 
 @dataclass

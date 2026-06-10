@@ -9,10 +9,10 @@ from typing import Iterator, Mapping, Optional, Sequence, cast
 
 from google.cloud import bigquery
 
-from .base import Context, EtlJob
-from .bqhelpers import BigQuery, Json, TableSchema
+from ..base import Context, EtlJob
+from ..bqhelpers import BigQuery, Json, TableSchema
 from .bugzilla import parse_user_story
-from .projectdata import Project
+from ..projectdata import Project
 
 FIXED_STATES = {"RESOLVED", "VERIFIED"}
 MIN_CHANGE_DATE = datetime(2024, 1, 1, tzinfo=timezone.utc)
@@ -135,7 +135,7 @@ WHERE number IN UNNEST(@bugs)
 def get_bugs(
     project: Project,
     client: BigQuery,
-    last_change_time: datetime,
+    last_change_time: Optional[datetime],
     bugs: Iterator[int],
 ) -> Mapping[int, BugData]:
     rv: dict[int, BugData] = {}
@@ -143,7 +143,7 @@ def get_bugs(
     query = f"""
 SELECT number, status, resolution, product, component, creator, creation_time, resolved_time, keywords, url, user_story_raw
 FROM `{project["webcompat_knowledge_base"]["bugzilla_bugs"]}`
-WHERE number IN UNNEST(@bugs) OR creation_time > @last_change_time
+WHERE number IN UNNEST(@bugs) OR (@last_change_time IS NOT NULL AND creation_time > @last_change_time)
 """
     query_parameters = [
         bigquery.ScalarQueryParameter(
@@ -167,7 +167,10 @@ WHERE number IN UNNEST(@bugs) OR creation_time > @last_change_time
             row.url,
             row.user_story_raw,
         )
-    logging.info(f"Processing a total of {len(rv)} bugs, including newly opened bugs")
+    msg = f"Processing a total of {len(rv)} bugs"
+    if last_change_time is not None:
+        msg += f", including bugs opened since {last_change_time.isoformat()}"
+    logging.info(msg)
     return rv
 
 
@@ -322,6 +325,7 @@ FROM {project["webcompat_knowledge_base"]["scored_site_reports"]}"""
 
 
 def compute_historic_scores(
+    project: Project,
     client: BigQuery,
     historic_states: Mapping[int, list[BugState]],
     current_scores: Mapping[int, Decimal],
@@ -361,6 +365,15 @@ def compute_historic_scores(
                     }
                 )
 
+    score_no_rank = project["webcompat_knowledge_base"][
+        "WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK"
+    ].routine()
+    rank_modifier = project["webcompat_knowledge_base"][
+        "WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFIER"
+    ].routine()
+    rank_yyyymm = project["webcompat_knowledge_base"][
+        "WEBCOMPAT_METRIC_YYYYMM"
+    ].routine()
     with client.temporary_table(schema, rows) as tmp_table:
         score_query = f"""
 SELECT number,
@@ -368,8 +381,7 @@ SELECT number,
        url,
        keywords,
        user_story,
-       CAST(`moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK`(keywords, user_story) *
-            `moz-fx-dev-dschubert-wckb.webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFIER`(url, 202409) AS NUMERIC) as score
+       CAST(`{score_no_rank}`(keywords, user_story) * `{rank_modifier}`(url, `{rank_yyyymm}`()) AS NUMERIC) as score
 FROM `{tmp_table.name}`
 """
         bugs_with_webcompat_states = set()
@@ -432,7 +444,7 @@ def compute_score_changes(
     recorded_changes: Mapping[int, set[ChangeKey]],
     historic_states: Mapping[int, list[BugState]],
     historic_scores: Mapping[int, list[Decimal]],
-    last_change_time: datetime,
+    last_change_time: Optional[datetime],
 ) -> Mapping[int, list[ScoreChange]]:
     rv: dict[int, list[ScoreChange]] = {}
 
@@ -442,7 +454,9 @@ def compute_score_changes(
         scores = historic_scores[bug_id]
         changes = changes_by_bug.get(bug_id)
         bug = bug_data[bug_id]
-        newly_created = bug.creation_time > last_change_time
+        newly_created = (
+            last_change_time is not None and bug.creation_time > last_change_time
+        )
         if newly_created:
             assert bug_id not in recorded_changes
 
@@ -560,7 +574,9 @@ def update_metric_changes(project: Project, client: BigQuery, recreate: bool) ->
     )
     historic_states = bugs_historic_states(current_bug_data, changes_by_bug)
     current_scores = get_current_scores(project, client)
-    historic_scores = compute_historic_scores(client, historic_states, current_scores)
+    historic_scores = compute_historic_scores(
+        project, client, historic_states, current_scores
+    )
     score_changes = compute_score_changes(
         changes_by_bug,
         current_bug_data,
