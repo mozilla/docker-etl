@@ -8,7 +8,7 @@ from .. import projectdata
 from ..base import Command
 from ..bqhelpers import BigQuery, get_client
 from ..config import Config
-from ..metric_changes import (
+from ..etl.metric_changes import (
     BugChange,
     BugFieldChange,
     bugs_historic_states,

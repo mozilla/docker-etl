@@ -1,4 +1,4 @@
-from webcompat_kb import update_schema
+from webcompat_kb.etl import update_schema
 from webcompat_kb.metrics.ranks import RankColumn
 from webcompat_kb.projectdata import (
     DatasetId,

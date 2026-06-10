@@ -9,8 +9,8 @@ from google.cloud import bigquery
 from webfeatures import FeaturesFile
 from webfeatures.features import Feature, FeatureMoved, FeatureSplit
 
-from .base import Context, EtlJob, dataset_arg
-from .bqhelpers import BigQuery, Json
+from ..base import Context, EtlJob, dataset_arg
+from ..bqhelpers import BigQuery, Json
 
 
 def get_imported_releases(client: BigQuery) -> dict[str, datetime]:

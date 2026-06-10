@@ -9,7 +9,7 @@ from ..bqhelpers import get_client
 from ..config import Config
 from ..projectdata import lint_templates
 from ..commands.update_redash import render_dashboards
-from ..update_schema import SchemaCreator
+from ..etl.update_schema import SchemaCreator
 
 
 here = os.path.dirname(__file__)
