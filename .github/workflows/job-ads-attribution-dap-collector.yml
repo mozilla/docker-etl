@@ -50,7 +50,7 @@ jobs:
           docker build jobs/ads-attribution-dap-collector -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/ads-attribution-dap-collector:latest
         # yamllint enable
       - name: Push Docker image latest to GAR
-        uses: mozilla-it/deploy-actions/docker-push@v4.3.2
+        uses: mozilla/deploy-actions/docker-push@v6.6.3
         with:
           project_id: moz-fx-data-artifacts-prod
           image_tags: us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/ads-attribution-dap-collector:latest
