@@ -275,6 +275,10 @@ def disable_exited_employees(ctx, subscription_id, max_messages):
     sdk = ctx.obj["SDK"]
     subscriber = pubsub_v1.SubscriberClient()
 
+    print("process")
+    _disable_user_in_looker(sdk, "tzhang@mozilla.com")
+    return
+
     with subscriber:
         response = subscriber.pull(
             request={

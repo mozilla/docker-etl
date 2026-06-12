@@ -36,7 +36,7 @@
           docker build jobs/mozaggregator2bq -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/mozaggregator2bq:latest
         # yamllint enable
       - name: Push Docker image latest to GAR
-        uses: mozilla-it/deploy-actions/docker-push@v4.3.2
+        uses: mozilla/deploy-actions/docker-push@v6.6.3
         with:
           project_id: moz-fx-data-artifacts-prod
           image_tags: us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/mozaggregator2bq:latest

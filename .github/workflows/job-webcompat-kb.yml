@@ -54,7 +54,7 @@ jobs:
           docker build jobs/webcompat-kb -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/webcompat-kb:latest
         # yamllint enable
       - name: Push Docker image latest to GAR
-        uses: mozilla-it/deploy-actions/docker-push@v4.3.2
+        uses: mozilla/deploy-actions/docker-push@v6.6.3
         with:
           project_id: moz-fx-data-artifacts-prod
           image_tags: us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/webcompat-kb:latest
