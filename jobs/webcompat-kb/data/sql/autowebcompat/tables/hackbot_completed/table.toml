@@ -1,0 +1,59 @@
+[run_id]
+type = "STRING"
+mode = "REQUIRED"
+
+[status]
+type = "STRING"
+mode = "REQUIRED"
+
+[created_at]
+type = "DATETIME"
+mode = "REQUIRED"
+
+[completed_at]
+type = "DATETIME"
+mode = "REQUIRED"
+
+[execution_name]
+type = "STRING"
+mode = "NULLABLE"
+
+[results_prefix]
+type = "STRING"
+mode = "REQUIRED"
+
+[summary]
+type = "RECORD"
+mode = "NULLABLE"
+
+[summary.fields.status]
+type = "STRING"
+mode = "REQUIRED"
+
+[summary.fields.error]
+type = "STRING"
+mode = "NULLABLE"
+
+[summary.fields.findings]
+type = "JSON"
+mode = "REQUIRED"
+
+[artifacts]
+type = "RECORD"
+mode = "REPEATED"
+
+[artifacts.fields.name]
+type = "STRING"
+mode = "REQUIRED"
+
+[artifacts.fields.size]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[artifacts.fields.content_type]
+type = "STRING"
+mode = "NULLABLE"
+
+[error]
+type = "STRING"
+mode = "NULLABLE"

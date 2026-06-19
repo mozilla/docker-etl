@@ -1,0 +1,15 @@
+[run_at]
+type = "DATETIME"
+mode = "REQUIRED"
+
+[run_info]
+type = "RECORD"
+mode = "REPEATED"
+
+[run_info.fields.task_name]
+type = "STRING"
+mode = "REQUIRED"
+
+[run_info.fields.last_time]
+type = "DATETIME"
+mode = "REQUIRED"

@@ -1,0 +1,23 @@
+[run_id]
+type = "STRING"
+mode = "REQUIRED"
+
+[key]
+type = "STRING"
+mode = "REQUIRED"
+
+[requested_at]
+type = "DATETIME"
+mode = "REQUIRED"
+
+[agent]
+type = "STRING"
+mode = "REQUIRED"
+
+[request_data]
+type = "JSON"
+mode = "REQUIRED"
+
+[extra_data]
+type = "JSON"
+mode = "NULLABLE"
