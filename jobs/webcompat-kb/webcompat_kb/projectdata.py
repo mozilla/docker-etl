@@ -480,7 +480,10 @@ class TableSchemaCreator:
             schema_data = tomllib.loads(output)
         except Exception as e:
             raise ValueError(f"Failed to load table schema {template.path}") from e
-        field_definitions = TableSchemaDefinition.model_validate(schema_data)
+        try:
+            field_definitions = TableSchemaDefinition.model_validate(schema_data)
+        except ValidationError as e:
+            raise ValueError(f"Invalid table schema {template.path}") from e
         for field_name, field_dfn in field_definitions.root.items():
             try:
                 fields.append(field_dfn.to_schema(field_name))
