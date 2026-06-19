@@ -75,15 +75,6 @@ class CreateRequest(BaseModel):
     agent: str
 
 
-class AutowebcompatReproRequest(CreateRequest):
-    bug_data: str
-    bug_id: Optional[int] = None
-    model: Optional[str] = None
-    max_turns: Optional[int] = None
-    effort: Optional[str] = None
-    agent: str = "autowebcompat-repro"
-
-
 class HackbotAgentResult(BaseModel):
     num_turns: int
     total_cost_usd: float | None = None

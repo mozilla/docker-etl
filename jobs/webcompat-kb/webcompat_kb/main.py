@@ -17,6 +17,7 @@ from .etl import (
     interop,  # noqa: F401
     user_reports_aggregate,  # noqa: F401
     interventions,  # noqa: F401
+    autowebcompat,  # noqa: F401
 )
 from .base import (
     ALL_JOBS,

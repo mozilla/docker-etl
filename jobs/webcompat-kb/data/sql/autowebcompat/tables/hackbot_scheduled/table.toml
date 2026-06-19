@@ -2,16 +2,28 @@
 type = "STRING"
 mode = "REQUIRED"
 
-[key]
+[agent]
 type = "STRING"
+mode = "REQUIRED"
+
+[task_name]
+type = "STRING"
+mode = "REQUIRED"
+
+[source_key]
+type = "STRING"
+mode = "REQUIRED"
+
+[run_key]
+type = "STRING"
+mode = "REQUIRED"
+
+[source_time]
+type = "DATETIME"
 mode = "REQUIRED"
 
 [requested_at]
 type = "DATETIME"
-mode = "REQUIRED"
-
-[agent]
-type = "STRING"
 mode = "REQUIRED"
 
 [request_data]

@@ -6,10 +6,18 @@ mode = "REQUIRED"
 type = "RECORD"
 mode = "REPEATED"
 
+[run_info.fields.agent]
+type = "STRING"
+mode = "REQUIRED"
+
 [run_info.fields.task_name]
 type = "STRING"
 mode = "REQUIRED"
 
-[run_info.fields.last_time]
-type = "DATETIME"
+[run_info.fields.source_key]
+type = "STRING"
 mode = "REQUIRED"
+
+[run_info.fields.source_time]
+type = "DATETIME"
+mode = "NULLABLE"
