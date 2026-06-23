@@ -99,6 +99,8 @@ transport needed.
 
 ## Running locally
 
+This job was written for Python 3.14. Compatibility with other versions isn't guaranteed.
+
 ```bash
 pip install -r requirements.txt
 pip install -e .
