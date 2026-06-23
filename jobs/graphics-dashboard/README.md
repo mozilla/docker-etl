@@ -127,6 +127,8 @@ densifies them. (The trends query omits `subkey`; its rows are
 
 ## Running locally
 
+This job was written for Python 3.14. Compatibility with other versions isn't guaranteed.
+
 ```bash
 pip install -r requirements.txt
 # Snapshot files (all, or one with --only):
