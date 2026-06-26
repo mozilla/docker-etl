@@ -123,7 +123,9 @@ class EtlCommand(Command):
             )
             context.bq_client = bq_client
             try:
-                job.main(context)
+                success = job.main(context)
+                if success is not None and not success:
+                    failed.append(job_name)
             except Exception as e:
                 if args.pdb or args.fail_on_error:
                     raise
