@@ -270,8 +270,13 @@ class BigQueryService:
             row.number: NewBugInfo.model_validate(dict(row.items())) for row in bug_rows
         }
         bug_ids = list(new_bugs.keys())
-        fields = ["id", "comments", "attachments"]
+        fields = ["id", "groups", "comments", "attachments"]
         for result in self.bz_client.bugs(bug_ids, include_fields=fields):
+            # Do not include moco-confidential bugs
+            if result.groups and "mozilla-employee-confidential" in result.groups:
+                del new_bugs[result.id]
+                continue
+
             bug = new_bugs[result.id]
             if result.comments:
                 bug.comments = [
