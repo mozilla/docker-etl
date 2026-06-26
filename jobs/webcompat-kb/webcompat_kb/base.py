@@ -160,5 +160,5 @@ class EtlJob(ABC):
     def default_dataset(self, context: Context) -> str: ...
 
     @abstractmethod
-    def main(self, context: Context) -> None:
+    def main(self, context: Context) -> Optional[bool]:
         pass

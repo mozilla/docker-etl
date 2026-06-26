@@ -332,13 +332,19 @@ class BigQueryService:
 
 def poll_pending(
     hackbot_client: Hackbot, run_uuids: list[UUID]
-) -> Mapping[UUID, RunDoc]:
+) -> tuple[Mapping[UUID, RunDoc], list[UUID]]:
     complete_runs = {}
+    failed = []
     for run_uuid in run_uuids:
-        run_data, complete = hackbot_client.poll_run(run_uuid)
-        if complete:
-            complete_runs[run_data.run_id] = run_data
-    return complete_runs
+        try:
+            run_data, complete = hackbot_client.poll_run(run_uuid)
+        except Exception as e:
+            logging.error(f"Checking pending run failed: {e}")
+            failed.append(run_uuid)
+        else:
+            if complete:
+                complete_runs[run_data.run_id] = run_data
+    return complete_runs, failed
 
 
 @dataclass
@@ -686,15 +692,16 @@ def run(
     check_pending: bool,
     updaters: Sequence[Updater],
     tasks: Sequence[type[HackbotTask]],
-) -> None:
+) -> bool:
     bq_service = BigQueryService(project, bq_client, bz_client)
     source_times = bq_service.get_source_times()
 
     if check_pending:
         pending_runs = bq_service.get_pending()
-        complete_runs = poll_pending(hackbot_client, pending_runs)
+        complete_runs, poll_failed = poll_pending(hackbot_client, pending_runs)
     else:
         complete_runs = {}
+        poll_failed = []
 
     complete_runs_scheduled = bq_service.get_scheduled_by_uuid(
         list(complete_runs.keys())
@@ -740,6 +747,8 @@ def run(
             )
         )
 
+    return False if poll_failed else True
+
 
 class AutowebcompatJob(EtlJob):
     name = "autowebcompat"
@@ -770,7 +779,7 @@ class AutowebcompatJob(EtlJob):
     def default_dataset(self, context: Context) -> str:
         return "autowebcompat"
 
-    def main(self, context: Context) -> None:
+    def main(self, context: Context) -> bool:
         bz_config = bugzilla.BugzillaConfig(
             "https://bugzilla.mozilla.org",
             context.args.bugzilla_api_key,
@@ -785,7 +794,7 @@ class AutowebcompatJob(EtlJob):
             )
         )
 
-        run(
+        return run(
             context.project,
             context.bq_client,
             bz_client,
