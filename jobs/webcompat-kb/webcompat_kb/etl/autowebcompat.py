@@ -129,6 +129,7 @@ class ReproResult(BaseModel):
     reproduced: bool
     summary: str
     steps: str
+    chrome_mask_fixed: Optional[bool]
 
 
 class AutowebcompatReproRequest(CreateRequest):
@@ -673,6 +674,11 @@ class ReproTask(HackbotTask):
                                 content_type="text/markdown",
                             )
                         )
+
+                        if result.chrome_mask_fixed:
+                            require_whiteboard.append(
+                                "[autowebcompat:interv-ua-override-proposed]"
+                            )
 
                 for token in require_whiteboard:
                     current_whiteboard = (
