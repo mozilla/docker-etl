@@ -1,0 +1,19 @@
+[run_at]
+type = "DATETIME"
+mode = "REQUIRED"
+
+[run_infos]
+type = "RECORD"
+mode = "REPEATED"
+
+[run_infos.fields.source]
+type = "STRING"
+mode = "REQUIRED"
+
+[run_infos.fields.source_time]
+type = "DATETIME"
+mode = "NULLABLE"
+
+[run_infos.fields.next_url]
+type = "STRING"
+mode = "NULLABLE"
