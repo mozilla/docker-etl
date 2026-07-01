@@ -28,6 +28,7 @@ dependencies = [
   "pydantic==2.13.4",
   "tomli-w>=1.2.0",
   "web-features==3.1.0",
+  "zstandard>=0.25.0",
 ]
 
 [project.optional-dependencies]
