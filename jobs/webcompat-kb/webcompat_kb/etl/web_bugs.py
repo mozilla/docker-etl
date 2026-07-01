@@ -9,13 +9,16 @@ from typing import (
     Optional,
     TypeVar,
     Generic,
+    Callable,
 )
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 
 import html5lib
+import zstandard
 from google.cloud import bigquery
 from pydantic import AfterValidator, BaseModel, PlainSerializer
 
@@ -484,24 +487,96 @@ WHERE rn = 1""")
         )
 
 
+def load_from_file(
+    bq_service: BigQueryService,
+    repo: SourceRepo,
+    path: Path,
+    backfill_skip: Optional[Callable[[github.GitHubIssue], bool]],
+) -> Optional[datetime]:
+    logging.info(f"Backfilling from file {path}")
+    if path.suffix in {".zst", ".zstd"}:
+        f = zstandard.open(path, "r")
+    else:
+        f = open(path)
+
+    rows: dict[int, BaseModel] = {}
+    source_time = None
+    with f:
+        for line in f:
+            issue = github.GitHubIssue.model_validate_json(line)
+            if source_time is None or issue.updated_at > source_time:
+                source_time = issue.updated_at
+            if backfill_skip is None or not backfill_skip(issue):
+                rows[issue.number] = repo.process_issue(issue)
+
+            if len(rows) >= 10000:
+                bq_service.insert_issues(repo.dest_table, rows)
+                rows = {}
+
+    bq_service.insert_issues(repo.dest_table, rows)
+
+    return source_time
+
+
+def is_private_issue(issue: github.GitHubIssue) -> bool:
+    # Milestone 8 is invalid issues, private issues have both this milestone
+    # and a fixed title. Unmoderated issues have a known label and a fixed title.
+    return bool(
+        (
+            issue.title == "Issue closed."
+            and issue.milestone
+            and issue.milestone.number == 8
+        )
+        or (
+            issue.title == "In the moderation queue."
+            and any(
+                (isinstance(item, str) and item == "action-needsmoderation")
+                or (
+                    isinstance(item, github.GitHubLabel)
+                    and item.name == "action-needsmoderation"
+                )
+                for item in issue.labels
+            )
+        )
+    )
+
+
 def run(
     project: Project,
     bq_client: BigQuery,
     repos: Iterable[SourceRepo],
     backfill: bool = False,
+    backfill_files: Optional[Mapping[str, Path]] = None,
+    backfill_restart: bool = False,
 ) -> bool:
+    if backfill_files is None:
+        backfill_files = {}
+
     bq_service = BigQueryService(project, bq_client)
 
     source_states = bq_service.get_source_states()
     new_states: dict[str, SourceState] = {}
 
     for repo in repos:
-        state = source_states.get(repo.repo)
+        state = (
+            source_states.get(repo.repo)
+            if not (backfill and backfill_restart)
+            else None
+        )
+        backfill_file = None
+        backfill_skip = None
         if backfill or state is None or state.source_time is None or state.next_url:
             is_backfill = True
             start_url = state.next_url if state is not None else None
-            issue_params: IssueParams = IssueBackfill(start_url)
             source_time = state.source_time if state is not None else None
+            if backfill_files.get(repo.repo) and not start_url:
+                backfill_file = backfill_files[repo.repo]
+                if backfill_file and repo.repo == "webcompat/web-bugs":
+                    milestone = 8
+                    backfill_skip = is_private_issue
+            else:
+                milestone = None
+            issue_params: IssueParams = IssueBackfill(start_url, milestone=milestone)
         else:
             is_backfill = False
             issue_params = IssueUpdate(state.source_time)
@@ -509,6 +584,9 @@ def run(
 
         if source_time is not None:
             source_time = source_time.replace(tzinfo=UTC)
+
+        if backfill_file:
+            source_time = load_from_file(bq_service, repo, backfill_file, backfill_skip)
 
         resume_point = None
         try:
@@ -555,6 +633,32 @@ def run(
     return True
 
 
+def parse_backfill_paths(args: Iterable[str]) -> Mapping[str, Path]:
+    rv = {}
+    valid_repos = {
+        item.repo
+        for item in globals().values()
+        if type(item) is SourceRepo and item is not SourceRepo
+    }
+    for item in args:
+        if ":" not in item:
+            raise ValueError(
+                f"Invalid --web-bugs-backfill-file {item}; must use the format repo:path"
+            )
+        repo, path = item.split(":", 1)
+        if repo not in valid_repos:
+            raise ValueError(
+                f"Invalid --web-bugs-backfill-file {item}; {repo} is not a known repo"
+            )
+        path_obj = Path(path)
+        if not path_obj.exists():
+            raise ValueError(
+                f"Invalid --web-bugs-backfill-file {item}; path does not exist"
+            )
+        rv[repo] = path_obj
+    return rv
+
+
 class WebBugsJob(EtlJob):
     name = "web-bugs"
 
@@ -568,6 +672,16 @@ class WebBugsJob(EtlJob):
             action="store_true",
             help="Backfill all web-bugs data.",
         )
+        group.add_argument(
+            "--web-bugs-backfill-file",
+            action="append",
+            help="repo:filename for JSONL file to use as the starting points for backfill",
+        )
+        group.add_argument(
+            "--web-bugs-backfill-restart",
+            action="store_true",
+            help="Ignore any in-progress backfill.",
+        )
 
     def default_dataset(self, context: Context) -> str:
         return "web_bugs"
@@ -580,4 +694,8 @@ class WebBugsJob(EtlJob):
             context.bq_client,
             [WebBugsRepo(gh_client, context.project["web_bugs"]["web_bugs"].table())],
             backfill=context.args.web_bugs_backfill,
+            backfill_files=parse_backfill_paths(context.args.web_bugs_backfill_file)
+            if context.args.web_bugs_backfill_file
+            else None,
+            backfill_restart=context.args.web_bugs_backfill_restart,
         )
