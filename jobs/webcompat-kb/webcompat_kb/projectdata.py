@@ -3,6 +3,7 @@ import enum
 import logging
 import os
 import pathlib
+import re
 import tomllib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -658,7 +659,14 @@ def lint_templates(
             if project in template.template:
                 success = False
                 logging.error(f"Found project id in template {template.path}")
-            if dataset_templates.id.dataset in template.template:
+            # Only flag the dataset id when it's used as a table qualifier
+            # (e.g. `dataset.table`), not when the name happens to appear inside
+            # a string literal or column alias (e.g. a "[autowebcompat:...]"
+            # whiteboard token in a dataset also named "autowebcompat").
+            if re.search(
+                r"\b" + re.escape(dataset_templates.id.dataset) + r"\.",
+                template.template,
+            ):
                 success = False
                 logging.error(f"Found dataset id in template for {template.path}")
 
