@@ -3,6 +3,7 @@ import enum
 import logging
 import os
 import pathlib
+import re
 import tomllib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -480,7 +481,10 @@ class TableSchemaCreator:
             schema_data = tomllib.loads(output)
         except Exception as e:
             raise ValueError(f"Failed to load table schema {template.path}") from e
-        field_definitions = TableSchemaDefinition.model_validate(schema_data)
+        try:
+            field_definitions = TableSchemaDefinition.model_validate(schema_data)
+        except ValidationError as e:
+            raise ValueError(f"Invalid table schema {template.path}") from e
         for field_name, field_dfn in field_definitions.root.items():
             try:
                 fields.append(field_dfn.to_schema(field_name))
@@ -655,7 +659,14 @@ def lint_templates(
             if project in template.template:
                 success = False
                 logging.error(f"Found project id in template {template.path}")
-            if dataset_templates.id.dataset in template.template:
+            # Only flag the dataset id when it's used as a table qualifier
+            # (e.g. `dataset.table`), not when the name happens to appear inside
+            # a string literal or column alias (e.g. a "[autowebcompat:...]"
+            # whiteboard token in a dataset also named "autowebcompat").
+            if re.search(
+                r"\b" + re.escape(dataset_templates.id.dataset) + r"\.",
+                template.template,
+            ):
                 success = False
                 logging.error(f"Found dataset id in template for {template.path}")
 

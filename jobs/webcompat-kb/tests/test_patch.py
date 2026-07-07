@@ -2,7 +2,7 @@ import difflib
 
 import pytest
 
-from webcompat_kb.metric_changes import reverse_apply_diff
+from webcompat_kb.etl.metric_changes import reverse_apply_diff
 
 
 @pytest.mark.parametrize(

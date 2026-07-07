@@ -9,7 +9,7 @@ from .. import projectdata
 from ..base import Command
 from ..config import Config
 from ..bqhelpers import BigQuery, DatasetId, SchemaId, SchemaType, get_client
-from ..update_schema import render_schemas
+from ..etl.update_schema import render_schemas
 
 
 class Validate(Command):

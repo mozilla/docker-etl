@@ -8,12 +8,12 @@ from google.api_core.exceptions import NotFound
 from pydantic import BaseModel, Field, model_validator
 from google.cloud import bigquery
 
-from .base import Context, EtlJob
-from .bqhelpers import BigQuery, TableSchema
-from .github import GitHub
-from .httphelpers import get_json
+from ..base import Context, EtlJob
+from ..bqhelpers import BigQuery, TableSchema
+from ..github import GitHub
+from ..httphelpers import get_json
 from .interop import repo_arg
-from .projectdata import Project
+from ..projectdata import Project
 
 
 class AlterHeader(BaseModel):

@@ -5,7 +5,7 @@ from typing import Iterable, Optional
 
 # These imports are required to populate ALL_JOBS
 # Unhappily the ordering here is significant
-from . import (
+from .etl import (
     update_schema,  # noqa: F401
     bugzilla,  # noqa: F401
     siterank,  # noqa: F401
@@ -17,6 +17,7 @@ from . import (
     interop,  # noqa: F401
     user_reports_aggregate,  # noqa: F401
     interventions,  # noqa: F401
+    autowebcompat,  # noqa: F401
 )
 from .base import (
     ALL_JOBS,
@@ -122,7 +123,9 @@ class EtlCommand(Command):
             )
             context.bq_client = bq_client
             try:
-                job.main(context)
+                success = job.main(context)
+                if success is not None and not success:
+                    failed.append(job_name)
             except Exception as e:
                 if args.pdb or args.fail_on_error:
                     raise

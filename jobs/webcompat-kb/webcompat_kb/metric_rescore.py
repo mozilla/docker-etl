@@ -4,7 +4,7 @@ from typing import Mapping, Sequence
 
 from google.cloud import bigquery
 
-from . import metric_changes
+from .etl import metric_changes
 from .bqhelpers import (
     BigQuery,
     DatasetId,
@@ -14,7 +14,7 @@ from .bqhelpers import (
 )
 from .metrics import metrics, rescores
 from .metrics.rescores import Rescore
-from .metric_changes import ScoreChange
+from .etl.metric_changes import ScoreChange
 from .projectdata import Project
 
 

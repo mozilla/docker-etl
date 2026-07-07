@@ -1,0 +1,35 @@
+[run_id]
+type = "STRING"
+mode = "REQUIRED"
+
+[agent]
+type = "STRING"
+mode = "REQUIRED"
+
+[task_name]
+type = "STRING"
+mode = "REQUIRED"
+
+[source_key]
+type = "STRING"
+mode = "REQUIRED"
+
+[run_key]
+type = "STRING"
+mode = "REQUIRED"
+
+[source_time]
+type = "DATETIME"
+mode = "REQUIRED"
+
+[requested_at]
+type = "DATETIME"
+mode = "REQUIRED"
+
+[request_data]
+type = "JSON"
+mode = "REQUIRED"
+
+[extra_data]
+type = "JSON"
+mode = "NULLABLE"

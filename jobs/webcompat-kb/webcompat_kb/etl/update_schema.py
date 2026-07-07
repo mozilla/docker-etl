@@ -11,23 +11,23 @@ from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 import jinja2
 from google.cloud import bigquery
 
-from . import metric_rescore
-from .base import ALL_JOBS, Context, EtlJob
-from .bqhelpers import (
+from .. import metric_rescore
+from ..base import ALL_JOBS, Context, EtlJob
+from ..bqhelpers import (
     BigQuery,
     DatasetId,
     SchemaId,
     SchemaType,
     TableSchema,
 )
-from .projectdata import (
+from ..projectdata import (
     Project,
     ReferenceType,
     SchemaTemplate,
     TableSchemaCreator,
     lint_templates,
 )
-from .treehash import hash_tree
+from ..treehash import hash_tree
 
 
 here = os.path.dirname(__file__)

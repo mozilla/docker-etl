@@ -1,0 +1,14 @@
+[from]
+title = "From"
+type = "date"
+value = "2026-01-01"
+
+[to]
+title = "To"
+type = "date"
+value = "2026-04-30"
+
+[metric]
+title = "Metric"
+type = "enum"
+enum_options = [ {% for metric in metrics.values() %} "{{ metric.pretty_name }}", {% endfor %}]

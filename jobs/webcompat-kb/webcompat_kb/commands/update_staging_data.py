@@ -7,7 +7,7 @@ from ..base import Command
 from ..bqhelpers import BigQuery, get_client
 from ..config import Config
 from ..projectdata import SchemaId, ReferenceType
-from ..update_schema import update_schema_if_needed
+from ..etl.update_schema import update_schema_if_needed
 
 
 class UpdateStagingData(Command):
