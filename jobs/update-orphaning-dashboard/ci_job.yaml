@@ -3,7 +3,6 @@
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-
       - name: Check if job files changed
         id: changes
         uses: dorny/paths-filter@v3
@@ -11,38 +10,40 @@
           filters: |
             job:
               - 'jobs/update-orphaning-dashboard/**'
-
-      - name: Build Docker image
-        if: steps.changes.outputs.job == 'true' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[run-tests]')
-        run: docker build jobs/update-orphaning-dashboard/ -t app:build
-
+      - name: Build the Docker image
+        if: steps.changes.outputs.job == 'true'
+        # yamllint disable
+        run: |
+          docker build jobs/update-orphaning-dashboard -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/update-orphaning-dashboard:latest
+        # yamllint enable
       - name: Test Code
-        if: steps.changes.outputs.job == 'true' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[run-tests]')
+        if: steps.changes.outputs.job == 'true'
         # --entrypoint overrides the image's python -m ... entrypoint so the
         # lint/test commands run instead of being passed to the job as args.
-        run: docker run --entrypoint sh app:build -c "black --check . && flake8 . && pytest"
+        run: docker run --entrypoint sh us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/update-orphaning-dashboard:latest -c "black --check . && flake8 . && pytest"
 
-  push-job-update-orphaning-dashboard:
+  deploy-to-gar-update-orphaning-dashboard:
+    name: Deploy update-orphaning-dashboard to GAR
     runs-on: ubuntu-latest
-    needs: build-job-update-orphaning-dashboard
+    needs: [build-job-update-orphaning-dashboard]
     if: github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Configure Docker for GCR
-        run: gcloud auth configure-docker
-
-      - name: Build Docker image
-        run: docker build jobs/update-orphaning-dashboard/ -t gcr.io/${{ secrets.GCP_PROJECT }}/update-orphaning-dashboard_docker_etl:latest
-
-      - name: Push to GCR
-        run: docker push gcr.io/${{ secrets.GCP_PROJECT }}/update-orphaning-dashboard_docker_etl:latest
+          persist-credentials: false
+      - name: Build the Docker image
+        # yamllint disable
+        run: |
+          docker build jobs/update-orphaning-dashboard -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/update-orphaning-dashboard:latest
+        # yamllint enable
+      - name: Push Docker image latest to GAR
+        uses: mozilla-it/deploy-actions/docker-push@v4.3.2
+        with:
+          project_id: moz-fx-data-artifacts-prod
+          image_tags: us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/update-orphaning-dashboard:latest
+          workload_identity_pool_project_number: ${{ vars.GCPV2_WORKLOAD_IDENTITY_POOL_PROJECT_NUMBER }}
+          service_account_name: docker-etl

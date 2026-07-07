@@ -104,7 +104,7 @@ def fetch_latest_version(latest_ver_date_str):
     # Imported lazily so unit tests don't reach the network.
     from urllib.request import urlopen
 
-    major_releases = json.loads(urlopen(MAJOR_RELEASES_URL).read())
+    major_releases = json.loads(urlopen(MAJOR_RELEASES_URL, timeout=15).read())
     return latest_version_on_date(latest_ver_date_str, major_releases)
 
 

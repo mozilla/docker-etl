@@ -12,6 +12,10 @@ The dashboard is a static site that fetches a per-report week JSON file from
 `https://analysis-output.telemetry.mozilla.org/app-update/data/out-of-date/`).
 This job computes that JSON file from Firefox telemetry and uploads it.
 
+In production the job is scheduled by the Airflow DAG
+[`dags/update_orphaning_dashboard_etl.py`](https://github.com/mozilla/telemetry-airflow/blob/main/dags/update_orphaning_dashboard_etl.py),
+which runs the container weekly on Monday.
+
 ## What the job produces
 
 One file per run, named for the report week's Sunday (`<YYYYMMDD>.json`). The
