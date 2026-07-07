@@ -1,26 +1,20 @@
   build-job-quicksuggest2bq:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
-      - name: Check if job files changed
-        id: changes
-        uses: dorny/paths-filter@v3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          filters: |
-            job:
-              - 'jobs/quicksuggest2bq/**'
+          persist-credentials: false
       - name: Build the Docker image
-        if: steps.changes.outputs.job == 'true'
         # yamllint disable
         run: |
           docker build jobs/quicksuggest2bq -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/quicksuggest2bq:latest
         # yamllint enable
       - name: Test Code
-        if: steps.changes.outputs.job == 'true'
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/quicksuggest2bq:latest pytest --flake8 --black
       - name: Lint Code
-        if: steps.changes.outputs.job == 'true'
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/quicksuggest2bq:latest flake8
 
   deploy-to-gar-quicksuggest2bq:
@@ -33,7 +27,7 @@
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - name: Build the Docker image
@@ -42,7 +36,7 @@
           docker build jobs/quicksuggest2bq -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/quicksuggest2bq:latest
         # yamllint enable
       - name: Push Docker image latest to GAR
-        uses: mozilla/deploy-actions/docker-push@v6.6.3
+        uses: mozilla/deploy-actions/docker-push@ef0f037316873ff408a598f1cd98876dd7851e53 # v6.7.0
         with:
           project_id: moz-fx-data-artifacts-prod
           image_tags: us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/quicksuggest2bq:latest

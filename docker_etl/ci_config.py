@@ -57,34 +57,12 @@ def update_config(dry_run: bool = False) -> str:
         # Extract job name from path (e.g., jobs/bq2sftp/ci_job.yaml -> bq2sftp)
         job_name = job_config_path.parent.name
 
-        # Read the job config and remove path filter steps
         job_config_text = job_config_path.read_text()
-
-        # Remove the path filter step from job config
-        lines = job_config_text.split('\n')
-        filtered_lines = []
-        skip_until_next_step = False
-
-        for line in lines:
-            if '- name: Check if job files changed' in line:
-                skip_until_next_step = True
-                continue
-            if skip_until_next_step:
-                if line.strip().startswith('- name:'):
-                    skip_until_next_step = False
-                else:
-                    continue
-            # Remove 'if: steps.changes.outputs.job' lines
-            if "if: steps.changes.outputs.job == 'true'" in line:
-                continue
-            filtered_lines.append(line)
-
-        clean_job_config = '\n'.join(filtered_lines)
 
         # Generate workflow file
         workflow_text = workflow_template.render(
             job_name=job_name,
-            job_config=clean_job_config,
+            job_config=job_config_text,
         )
 
         workflow_filename = f"job-{job_name}.yml"

@@ -5,6 +5,8 @@
 
 name: dap-collector
 
+permissions: {}
+
 on:
   push:
     branches:
@@ -20,9 +22,13 @@ on:
 jobs:
   build-job-dap-collector:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Build the Docker image
         # yamllint disable
         run: |
@@ -39,7 +45,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - name: Build the Docker image
@@ -48,7 +54,7 @@ jobs:
           docker build jobs/dap-collector -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/dap-collector:latest
         # yamllint enable
       - name: Push Docker image latest to GAR
-        uses: mozilla/deploy-actions/docker-push@v6.6.3
+        uses: mozilla/deploy-actions/docker-push@ef0f037316873ff408a598f1cd98876dd7851e53 # v6.7.0
         with:
           project_id: moz-fx-data-artifacts-prod
           image_tags: us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/dap-collector:latest

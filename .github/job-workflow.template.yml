@@ -5,6 +5,8 @@
 
 name: {{ job_name }}
 
+permissions: {}
+
 on:
   push:
     branches:
