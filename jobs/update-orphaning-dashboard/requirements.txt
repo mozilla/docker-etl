@@ -1,0 +1,8 @@
+click==8.4.1
+google-cloud-bigquery==3.41.0
+google-cloud-bigquery-storage==2.39.0
+google-cloud-storage==3.11.0
+pyarrow==24.0.0
+pytest==9.0.3
+black==26.5.1
+flake8==7.3.0
