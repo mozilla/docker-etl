@@ -310,15 +310,19 @@ class DataMapping():
         mcountry = self.map_country(country)
         if mcountry in ["Belgium","Finland", "France", "Germany",
                         "Netherlands","Poland", "Spain", "Sweden",
-                        "Denmark", "Canada"]:
+                        "Denmark", "Austria", "Czech Republic",
+                        "Greece", "Italy"]:
             return "SEPA"
-        elif mcountry in ["Austria", "Czech Republic","Greece", "Italy",
-                            "United States"]:
+        elif mcountry in ["United States"]:
             return "ACH"
         elif mcountry in ["United Kingdom"]:
             return "BACS"
-        elif mcountry in ["Australia","New Zealand"]:
-            return "Wire"
+        elif mcountry in ["Australia",]:
+            return "EFT (AU)"
+        elif mcountry in ["New Zealand"]:
+            return "EFT (NZ)"        
+        elif mcountry in ["Canada"]:    
+            return "CPA"
         else:
             return None
 
@@ -416,8 +420,6 @@ class NetSuite():
         
     def build_comparison_string(self, ns_worker):
             
-            if ns_worker.get("External ID")=='200221':
-                print('s')
             if '__RANDOM_ID__' in fix_none(ns_worker.get('External ID','')):
                 # external_id = fix_none(ns_worker.get('Employee ID')).split('-')[0].strip()
                 external_id = self.extract_employee_id(ns_worker.get('Employee ID'))
