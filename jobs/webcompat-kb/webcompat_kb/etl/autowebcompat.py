@@ -8,6 +8,7 @@ from typing import (
     Iterable,
     Optional,
     Self,
+    Literal,
 )
 from abc import ABC, abstractmethod
 from collections.abc import Sequence, Mapping, MutableMapping
@@ -15,7 +16,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
-from bugdantic import bugzilla
+import filetype
+import httpx
+from bugdantic import bugzilla, userstory
 from google.cloud import bigquery
 from pydantic import BaseModel
 
@@ -126,11 +129,27 @@ class CompleteRun(BaseModel):
         return rv
 
 
+class TestPlanResult(BaseModel):
+    is_webcompat: bool
+    affects_platforms: list[str]
+    affects_os: Optional[Literal["all"] | list[str]]
+    affects_channels: list[str]
+
+
+class ReproductionResult(BaseModel):
+    reproduced: bool
+    failure_reason: Optional[str]
+
+
 class ReproResult(BaseModel):
     reproduced: bool
     summary: str
     steps: str
-    chrome_mask_fixed: Optional[bool]
+    failure_reason: Optional[str] = None
+    screenshot_url: Optional[str] = None
+    plan_result: Optional[TestPlanResult] = None
+    reproductions: list[tuple[str, ReproductionResult]] = []
+    chrome_mask_fixed: Optional[bool] = None
 
 
 class AutowebcompatReproRequest(CreateRequest):
@@ -207,7 +226,7 @@ class BigQueryService:
     def get_scheduled_by_key(
         self,
         keys: Iterable[RunKey],
-    ) -> set[str]:
+    ) -> set[RunKey]:
         query = f"""
     SELECT agent, task_name, source_key, run_key
     FROM `{self.scheduled_table}`
@@ -240,7 +259,10 @@ class BigQueryService:
                 ),
             ],
         )
-        return set(item.key for item in rows)
+        return set(
+            RunKey(item.agent, item.task_name, item.source_key, item.run_key)
+            for item in rows
+        )
 
     def get_new_bugs(
         self,
@@ -272,7 +294,7 @@ class BigQueryService:
             row.number: NewBugInfo.model_validate(dict(row.items())) for row in bug_rows
         }
         bug_ids = list(new_bugs.keys())
-        fields = ["id", "groups", "comments", "attachments"]
+        fields = ["id", "groups", "comments", "attachments", "cf_user_story"]
         for result in self.bz_client.bugs(bug_ids, include_fields=fields):
             # Do not include moco-confidential bugs
             if result.groups and "mozilla-employee-confidential" in result.groups:
@@ -417,6 +439,66 @@ class BugzillaUpdater(Updater):
                 self.client.update_bugs(bug_update.bug)
             for attachment in bug_update.add_attachments:
                 self.client.create_attachment(attachment)
+
+
+def try_get_file(url: str, allowed_types: Optional[set[str]] = None) -> Optional[bytes]:
+    try:
+        resp = httpx.get(url, follow_redirects=True)
+    except Exception:
+        return None
+    if resp.status_code != 200:
+        return None
+    data = resp.content
+    if allowed_types:
+        kind = filetype.guess(data)
+        if kind is None or kind.mime not in allowed_types:
+            return None
+    return data
+
+
+def update_whiteboard(
+    bug: bugzilla.Bug, bug_update: BugUpdate, require_tokens: list[str]
+) -> None:
+    for token in require_tokens:
+        current_whiteboard = (
+            bug_update.bug.whiteboard
+            if bug_update.bug.whiteboard is not None
+            else bug.whiteboard
+        )
+        assert current_whiteboard is not None
+        if token not in current_whiteboard:
+            bug_update.bug.whiteboard = current_whiteboard + token
+
+
+def update_user_story(
+    bug: bugzilla.Bug, bug_update: BugUpdate, require_tokens: Mapping[str, str]
+) -> None:
+    current_user_story = (
+        bug_update.bug.cf_user_story
+        if bug_update.bug.cf_user_story is not None
+        else bug.cf_user_story
+    )
+    if current_user_story is not None:
+        current_fields = userstory.parse_as_dict(current_user_story)
+    else:
+        current_fields = {}
+    changes = []
+    for key, value in require_tokens.items():
+        if key in current_fields:
+            current_value = current_fields[key]
+            if isinstance(current_value, list):
+                if value not in current_value:
+                    changes.append(userstory.UserStoryChange.append(key, value))
+            elif value != current_value:
+                changes.append(
+                    userstory.UserStoryChange.replace(key, current_value, value)
+                )
+        else:
+            changes.append(userstory.UserStoryChange.append(key, value))
+
+    new_value = userstory.update(current_user_story or "", changes)
+    if new_value is not None:
+        bug_update.bug.cf_user_story = new_value
 
 
 @dataclass
@@ -602,22 +684,20 @@ class ReproTask(HackbotTask):
         return self.schedule(requests)
 
     def configure_updater(self, updater: Updater) -> None:
-        if not isinstance(updater, BugzillaUpdater):
-            return
-
-        bugzilla_scheduled = itertools.chain.from_iterable(
-            value
-            for key, value in self.scheduled.items()
-            if key.startswith("bugzilla:")
-        )
-        updater.add_include_fields(["whiteboard"])
-        updater.add_bug_ids(
-            BugExtraData.model_validate(item.extra_data).bug_id
-            for item in bugzilla_scheduled
-        )
-        updater.add_bug_ids(
-            int(item.run_key) for item, _ in self.completed_runs.values()
-        )
+        if isinstance(updater, BugzillaUpdater):
+            bugzilla_scheduled = itertools.chain.from_iterable(
+                value
+                for key, value in self.scheduled.items()
+                if key.startswith("bugzilla:")
+            )
+            updater.add_include_fields(["whiteboard", "cf_user_story"])
+            updater.add_bug_ids(
+                BugExtraData.model_validate(item.extra_data).bug_id
+                for item in bugzilla_scheduled
+            )
+            updater.add_bug_ids(
+                int(item.run_key) for item, _ in self.completed_runs.values()
+            )
 
     def populate_updates(self, updater: Updater) -> None:
         if isinstance(updater, BugzillaUpdater):
@@ -656,40 +736,85 @@ class ReproTask(HackbotTask):
 
                 result = output.findings.result
                 require_whiteboard = []
+                require_user_story = {}
                 if result is None:
                     require_whiteboard.append("[autowebcompat:repro-failed]")
-                else:
-                    require_whiteboard.append(
-                        "[autowebcompat:repro-failed]"
-                        if not result.reproduced
-                        else "[autowebcompat:repro-success]"
-                    )
-                    if result.reproduced and result.steps:
+                    require_user_story["autowebcompat-repro-status"] = "failed"
+                    require_user_story["autowebcompat-repro-reason"] = "error"
+                elif result.reproduced:
+                    require_whiteboard.append("[autowebcompat:repro-success]")
+                    require_user_story["autowebcompat-repro-status"] = "success"
+                    if result.chrome_mask_fixed is not None:
+                        if result.chrome_mask_fixed:
+                            require_whiteboard.append(
+                                "[autowebcompat:interv-ua-override-proposed]"
+                            )
+                        require_user_story["autowebcompat-repro-chrome-mask-fixed"] = (
+                            "true" if result.chrome_mask_fixed else "false"
+                        )
+                    repro_channels = []
+                    for channel, reproduction in result.reproductions:
+                        if reproduction.reproduced:
+                            repro_channels.append(channel)
+                    if repro_channels:
+                        require_user_story["autowebcompat-repro-channels"] = ",".join(
+                            repro_channels
+                        )
+                    if result.steps:
                         bug_update.add_attachments.append(
                             bugzilla.AttachmentCreate.from_raw_data(
                                 ids=[bug_info.number],
                                 data=result.steps,
-                                file_name="reproduction_steps.txt",
+                                file_name="autowebcompat-repro-steps.txt",
                                 summary="Reproduction steps generated by autowebcompat bot",
                                 comment=html.escape(result.summary),
                                 content_type="text/markdown",
                             )
                         )
-
-                        if result.chrome_mask_fixed:
-                            require_whiteboard.append(
-                                "[autowebcompat:interv-ua-override-proposed]"
+                    if result.screenshot_url:
+                        if not result.screenshot_url.startswith("https://"):
+                            # This is an artifact name not a URL
+                            screenshot_url = self.hackbot_client.get_artifact_url(
+                                uuid, result.screenshot_url
                             )
+                        else:
+                            screenshot_url = result.screenshot_url
+                        data = try_get_file(screenshot_url, {"image/png"})
+                        if data is not None:
+                            bug_update.add_attachments.append(
+                                bugzilla.AttachmentCreate.from_raw_data(
+                                    ids=[bug_info.number],
+                                    data=data,
+                                    file_name="autowebcompat-repro-screenshot.png",
+                                    summary="Screenshot generated by autowebcompat bot",
+                                    content_type="image/png",
+                                )
+                            )
+                        else:
+                            logging.warning(
+                                "Failed to get screenshot data from %s",
+                                result.screenshot_url,
+                            )
+                else:
+                    require_user_story["autowebcompat-repro-status"] = "failed"
+                    require_whiteboard.append("[autowebcompat:repro-failed]")
+                    if result.failure_reason:
+                        reason = result.failure_reason
+                    elif result.plan_result is not None and (
+                        "desktop" not in result.plan_result.affects_platforms
+                        or (
+                            result.plan_result.affects_os is not None
+                            and isinstance(result.plan_result.affects_os, list)
+                            and "linux" not in result.plan_result.affects_os
+                        )
+                    ):
+                        reason = "unsupported_platform"
+                    else:
+                        reason = "unknown"
+                    require_user_story["autowebcompat-repro-reason"] = reason
 
-                for token in require_whiteboard:
-                    current_whiteboard = (
-                        bug_update.bug.whiteboard
-                        if bug_update.bug.whiteboard is not None
-                        else bug.whiteboard
-                    )
-                    assert current_whiteboard is not None
-                    if token not in current_whiteboard:
-                        bug_update.bug.whiteboard = current_whiteboard + token
+                update_whiteboard(bug, bug_update, require_whiteboard)
+                update_user_story(bug, bug_update, require_user_story)
         else:
             raise ValueError(
                 f"Don't know how to update for task {self} and updater type {updater}"
