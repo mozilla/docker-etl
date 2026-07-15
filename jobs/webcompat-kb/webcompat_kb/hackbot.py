@@ -29,6 +29,10 @@ class RunStatus(str, Enum):
 TERMINAL_STATUSES = {RunStatus.succeeded, RunStatus.failed, RunStatus.timed_out}
 
 
+class ArtifactUrl(BaseModel):
+    url: str
+
+
 class ArtifactRef(BaseModel):
     name: str
     size: int
@@ -170,3 +174,8 @@ class Hackbot:
         run_data = RunDoc.model_validate(self._request("GET", f"/runs/{run_uuid.hex}"))
         complete = run_data.status in TERMINAL_STATUSES
         return run_data, complete
+
+    def get_artifact_url(self, run_uuid: UUID, artifact_path: str) -> str:
+        return ArtifactUrl.model_validate(
+            self._request("GET", f"/runs/{run_uuid.hex}/artifacts/{artifact_path}")
+        ).url
