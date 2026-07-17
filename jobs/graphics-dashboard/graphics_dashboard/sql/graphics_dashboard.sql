@@ -147,6 +147,12 @@ sampled AS (
       BETWEEN DATE_SUB(params.end_date, INTERVAL params.time_window - 1 DAY) AND params.end_date
     AND m.sample_id < params.sample_id_count
     AND SAFE_CAST(SPLIT(m.client_info.app_display_version, '.')[SAFE_OFFSET(0)] AS INT64) >= 53
+    -- Drop pings with no primary graphics adapter, matching the legacy job. In
+    -- Glean the whole gfx.adapter.primary.* family is null together, so a null
+    -- vendor_id means "no adapter". Without this, adapterless clients (mostly
+    -- ESR 115, which never reported gfx metrics to Glean) land in a spurious
+    -- 'unknown' vendor bucket and inflate the general/device/mac/linux totals.
+    AND m.metrics.string.gfx_adapter_primary_vendor_id IS NOT NULL
 ),
 one_per_client AS (
   SELECT
