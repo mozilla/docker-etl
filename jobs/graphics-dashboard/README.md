@@ -248,6 +248,13 @@ Glean-specific semantic notes (also documented inline in the queries):
 - Histogram custom_distributions expose a `.values` array of
   `{key: bucket_index, value: count}`; `UNNEST` plus `SUM(value)` reproduces the
   legacy element-wise histogram sum.
+- Float-formatted numeric keys: legacy stored some numbers as floats and `str()`d
+  them, so whole numbers keyed as `<n>.0` (`60.0`, `45312.0`). Glean reports them
+  as int strings, and BigQuery's FLOAT64->STRING drops the `.0`, so the d3d11
+  version (`45312.0`), monitor refresh rate (`60.0`), and mac retina scale
+  (`2.0`) are formatted to re-append `.0` on whole numbers. Without it the keys
+  change (`45312` vs `45312.0`) and split a bucket across the legacy/Glean
+  boundary in the trends.
 - WebGL success/failure is a per-session classification: failure if the
   `false` counter > 0, success if `false == 0 AND true > 0` (successes are not
   double-counted with failures), matching the legacy 2-bucket logic.
@@ -260,6 +267,39 @@ Glean-specific semantic notes (also documented inline in the queries):
   matched by prefix.
 - system `wow` (OS bitness): Glean has no `isWow64`, so the legacy
   `32_on_64` bucket cannot be distinguished, and 32-bit builds map to `32`.
+- Empty vs missing adapter fields: legacy folded a missing or empty
+  vendorID/deviceID/driverVersion to `Unknown` (its `x or "Unknown"` helper).
+  Glean reports these as `''` (not null) for many adapters (Apple, for example),
+  so the queries `NULLIF(x, '')` before the `Unknown` coalesce; otherwise the
+  device key reads `0x106b/` instead of `0x106b/Unknown`. Linux `driverVendors`
+  drops empty strings for the same reason (legacy filtered `is not None`).
+
+### Glean gfx metrics added in a later Firefox version
+
+Both differences below share one root cause: the metric only exists from a
+certain Firefox version onward, so older clients report it null.
+
+- `gfx.features.*` coverage (compositor, d3d11, d2d, gpu_process,
+  content_backend): landed in Fx 140 (bug 1950412), so pre-140 clients report
+  them null even with a working adapter. Legacy `main_v5` always had these, so
+  the compositor and d3d11 breakdowns filter to clients that reported the metric
+  rather than inventing a `none`/`unknown` bucket legacy never had. Compositor
+  was also broken on Fx 140-145 (read `none` for ~everyone, fixed in 146), so it
+  is counted only from Fx 146 on. d2d is the exception: it stopped being set at
+  Fx 146 (Direct2D removed), so it is null for nearly all current clients, but
+  the legacy job already bucketed missing d2d as `unknown` (D2D has been off by
+  default for years), so we keep that mapping and leave the d2d breakdown
+  unfiltered as a mostly-`unknown` series. Filtering it would drop ~95% of
+  clients and make the small disabled/version tail look dominant.
+- No primary adapter: both queries drop pings whose
+  `gfx_adapter_primary_vendor_id` is null. In Glean the whole
+  `gfx.adapter.primary.*` family is null together, so a null vendor means no
+  adapter, and it was never wired up for older clients. The dashboard matches the
+  legacy `validate()` (which required an adapter). The trends job's legacy code
+  bucketed these as `unknown` instead, but `main_v5` pings almost always had an
+  adapter so that bucket was ~0; in Glean a large block of adapterless clients
+  (mostly ESR 115) would spike the `unknown` vendor and device-gen trends, so we
+  drop them there too for consistency.
 
 ## `layers-failureid-statistics.json` is dropped
 
@@ -301,3 +341,13 @@ differences:
   ~0.3% fraction, so trend `total`s shift but distributions are comparable. The
   legacy back-history in the existing `trend-*-v2.json` files is preserved, and
   new Glean weeks simply append.
+- Device-gen trends step at the legacy-to-Glean boundary: the newly computed
+  weeks skew a few points toward newer generations and `unknown` versus the
+  cached legacy weeks for the same calendar week (e.g. Intel `unknown` ~46% ->
+  ~49%, `gen9` ~28.6% -> ~30%, oldest gens down). Cause is the ping-population
+  difference: legacy weeks come from `main_v5`, Glean weeks from `metrics_v1`,
+  and the two cover overlapping-but-different client sets that skew slightly by
+  GPU age (the client-id namespaces differ, so they can't be matched per client
+  to isolate it further). Sampling bucket and device-id format were ruled out.
+  Expect a one-time level shift where the history switches over, then continuity
+  within the Glean weeks.

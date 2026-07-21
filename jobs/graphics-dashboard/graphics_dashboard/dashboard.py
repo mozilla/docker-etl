@@ -424,7 +424,7 @@ def main(
                 f"Wrote {common.write_local_json(test_output_dir, filename, payload)}"
             )
         else:
-            common.upload_json(output_bucket, output_prefix, filename, payload)
+            common.upload_json(billing_project, output_bucket, output_prefix, filename, payload)
 
 
 if __name__ == "__main__":

@@ -57,11 +57,13 @@ sampled AS (
     -- features.compositor; in Glean exploded to a top-level string scalar.
     m.metrics.string.gfx_features_compositor AS compositor,
     -- Primary adapter ids. Legacy folded the "Intel Open Source Technology
-    -- Center" vendor string into 0x8086; reproduce that here.
+    -- Center" vendor string into 0x8086, and mapped a missing or empty vendorID
+    -- to 'Unknown' (the `x or "Unknown"` helper). Reproduce both here; the empty
+    -- string case shows up in Glean for a small number of adapters.
     CASE
       WHEN m.metrics.string.gfx_adapter_primary_vendor_id = 'Intel Open Source Technology Center'
         THEN '0x8086'
-      ELSE m.metrics.string.gfx_adapter_primary_vendor_id
+      ELSE COALESCE(NULLIF(m.metrics.string.gfx_adapter_primary_vendor_id, ''), 'Unknown')
     END AS vendor_id,
     m.metrics.string.gfx_adapter_primary_device_id AS device_id,
     m.metrics.string.gfx_adapter_primary_driver_version AS driver_version,
@@ -74,16 +76,21 @@ sampled AS (
     m.metrics.custom_distribution.gfx_device_reset_reason.values AS tdr_values,
     m.metrics.custom_distribution.gfx_graphics_driver_startup_test.values AS startup_values,
     m.metrics.custom_distribution.gfx_sanity_test.values AS sanity_values,
-    -- deviceID/driverVersion are vendor-prefixed in the legacy output.
+    -- deviceID/driverVersion are vendor-prefixed in the legacy output. Legacy
+    -- folded a missing OR empty vendor/device/driver string to 'Unknown' (the
+    -- `x or "Unknown"` helper), so NULLIF empty strings before COALESCE. Glean
+    -- reports deviceID/driverVersion as '' (not null) for many adapters, e.g.
+    -- Apple, so without the NULLIF those keys end '0x106b/' instead of
+    -- '0x106b/Unknown'.
     CONCAT(
       CASE WHEN m.metrics.string.gfx_adapter_primary_vendor_id = 'Intel Open Source Technology Center'
-        THEN '0x8086' ELSE COALESCE(m.metrics.string.gfx_adapter_primary_vendor_id, 'Unknown') END,
-      '/', COALESCE(m.metrics.string.gfx_adapter_primary_device_id, 'Unknown')
+        THEN '0x8086' ELSE COALESCE(NULLIF(m.metrics.string.gfx_adapter_primary_vendor_id, ''), 'Unknown') END,
+      '/', COALESCE(NULLIF(m.metrics.string.gfx_adapter_primary_device_id, ''), 'Unknown')
     ) AS device_key,
     CONCAT(
       CASE WHEN m.metrics.string.gfx_adapter_primary_vendor_id = 'Intel Open Source Technology Center'
-        THEN '0x8086' ELSE COALESCE(m.metrics.string.gfx_adapter_primary_vendor_id, 'Unknown') END,
-      '/', COALESCE(m.metrics.string.gfx_adapter_primary_driver_version, 'Unknown')
+        THEN '0x8086' ELSE COALESCE(NULLIF(m.metrics.string.gfx_adapter_primary_vendor_id, ''), 'Unknown') END,
+      '/', COALESCE(NULLIF(m.metrics.string.gfx_adapter_primary_driver_version, ''), 'Unknown')
     ) AS driver_key,
     -- sanity 'windows' share uses bare OSVersion (e.g. '10.0.0'), not the
     -- 'Windows-' prefixed OS string that startup uses.
@@ -116,9 +123,9 @@ sampled AS (
     -- device_key/driver_key). deviceAndDriver appends driverVersion to deviceID.
     CONCAT(
       CASE WHEN m.metrics.string.gfx_adapter_primary_vendor_id = 'Intel Open Source Technology Center'
-        THEN '0x8086' ELSE COALESCE(m.metrics.string.gfx_adapter_primary_vendor_id, 'Unknown') END,
-      '/', COALESCE(m.metrics.string.gfx_adapter_primary_device_id, 'Unknown'),
-      '/', COALESCE(m.metrics.string.gfx_adapter_primary_driver_version, 'Unknown')
+        THEN '0x8086' ELSE COALESCE(NULLIF(m.metrics.string.gfx_adapter_primary_vendor_id, ''), 'Unknown') END,
+      '/', COALESCE(NULLIF(m.metrics.string.gfx_adapter_primary_device_id, ''), 'Unknown'),
+      '/', COALESCE(NULLIF(m.metrics.string.gfx_adapter_primary_driver_version, ''), 'Unknown')
     ) AS device_and_driver_key,
     -- general byFx 'windows' breakdown uses bare OSVersion (e.g. '10.0.0').
     SPLIT(m.client_info.app_display_version, '.')[SAFE_OFFSET(0)] AS fx_major,
@@ -261,9 +268,12 @@ linux_pings AS (
   SELECT * FROM one_per_client WHERE os_name = 'Linux'
 ),
 linux_rows AS (
-  -- driverVendors: legacy counts pings where adapter.driverVendor is set.
+  -- driverVendors: legacy counts pings where adapter.driverVendor is set (its
+  -- filter was `driverVendor is not None`). Glean reports the field as '' rather
+  -- than null for some clients, so drop empty strings too, matching the legacy
+  -- behavior of only counting a real driver vendor.
   SELECT 'driverVendors' AS dimension, driver_vendor AS key, CAST(NULL AS STRING) AS subkey, COUNT(*) AS value
-  FROM linux_pings WHERE driver_vendor IS NOT NULL GROUP BY key
+  FROM linux_pings WHERE NULLIF(driver_vendor, '') IS NOT NULL GROUP BY key
   UNION ALL
   -- compositors: legacy counts pings that have a gfx features block. A reported
   -- compositor implies a features block, so filter to non-null compositor.
@@ -331,12 +341,17 @@ monitor_rows AS (
          CAST(NULL AS STRING) AS subkey, COUNT(*) AS value
   FROM monitor_pings GROUP BY key
   UNION ALL
-  -- refreshRates: refresh rate (>1) per monitor, else 'Unknown'. Float-keyed.
+  -- refreshRates: refresh rate (>1) per monitor, else 'Unknown'. Legacy stored
+  -- the rate as a float and str()'d it, so a whole number renders '60.0', not
+  -- '60'; format whole numbers with the trailing '.0' to match. (Glean reports
+  -- refresh rates rounded to whole numbers.)
   SELECT 'refreshRates',
     CASE
-      WHEN SAFE_CAST(JSON_VALUE(mon, '$.refreshRate') AS FLOAT64) > 1
-        THEN CAST(SAFE_CAST(JSON_VALUE(mon, '$.refreshRate') AS FLOAT64) AS STRING)
-      ELSE 'Unknown'
+      WHEN COALESCE(SAFE_CAST(JSON_VALUE(mon, '$.refreshRate') AS FLOAT64), 0) <= 1 THEN 'Unknown'
+      WHEN SAFE_CAST(JSON_VALUE(mon, '$.refreshRate') AS FLOAT64)
+             = TRUNC(SAFE_CAST(JSON_VALUE(mon, '$.refreshRate') AS FLOAT64))
+        THEN CONCAT(CAST(SAFE_CAST(JSON_VALUE(mon, '$.refreshRate') AS INT64) AS STRING), '.0')
+      ELSE CAST(SAFE_CAST(JSON_VALUE(mon, '$.refreshRate') AS FLOAT64) AS STRING)
     END,
     CAST(NULL AS STRING), COUNT(*)
   FROM monitor_pings, UNNEST(monitors_arr) AS mon GROUP BY 2
@@ -542,8 +557,10 @@ wf_pings AS (
   SELECT *,
     os_version_key AS wf_version,
     -- compositor: legacy get_compositor; advancedLayers unavailable so the
-    -- 'd3d11' -> 'advanced_layers' promotion never fires.
-    COALESCE(compositor, 'none') AS wf_compositor,
+    -- 'd3d11' -> 'advanced_layers' promotion never fires. Kept as the raw value
+    -- (not COALESCEd to 'none') so the feature breakdowns can exclude clients
+    -- that never reported it; see the Fx 140 coverage note on the outputs below.
+    compositor AS wf_compositor,
     content_backend AS wf_content_backend,
     -- d3d11 status: available -> warp|version(float); else the status string.
     CASE
@@ -551,8 +568,14 @@ wf_pings AS (
       WHEN JSON_VALUE(d3d11_obj, '$.status') != 'available'
         THEN COALESCE(JSON_VALUE(d3d11_obj, '$.status'), 'unknown')
       WHEN COALESCE(SAFE_CAST(JSON_VALUE(d3d11_obj, '$.warp') AS BOOL), FALSE) THEN 'warp'
-      ELSE COALESCE(
-        CAST(SAFE_CAST(JSON_VALUE(d3d11_obj, '$.version') AS FLOAT64) AS STRING), 'unknown')
+      -- available: key on the feature version. Legacy stored it as a float and
+      -- str()'d it, so a whole number renders '45312.0', not '45312'. Glean gives
+      -- an int string; format whole numbers with the trailing '.0' to match.
+      WHEN SAFE_CAST(JSON_VALUE(d3d11_obj, '$.version') AS FLOAT64) IS NULL THEN 'unknown'
+      WHEN SAFE_CAST(JSON_VALUE(d3d11_obj, '$.version') AS FLOAT64)
+             = TRUNC(SAFE_CAST(JSON_VALUE(d3d11_obj, '$.version') AS FLOAT64))
+        THEN CONCAT(CAST(SAFE_CAST(JSON_VALUE(d3d11_obj, '$.version') AS INT64) AS STRING), '.0')
+      ELSE CAST(SAFE_CAST(JSON_VALUE(d3d11_obj, '$.version') AS FLOAT64) AS STRING)
     END AS wf_d3d11,
     -- d2d status: available -> version; else status.
     CASE
@@ -586,17 +609,31 @@ wf_important AS (
 ),
 windows_features_rows AS (
   -- ----- all: top-level feature breakdowns -----
+  -- The gfx.features.* metrics (compositor, d3d11, d2d, gpu_process, backend)
+  -- landed in Fx 140 (bug 1950412), so pre-140 clients report them null even
+  -- with a working adapter. Each breakdown filters to clients that reported the
+  -- underlying metric, rather than folding the absent ones into 'none'/'unknown'
+  -- and inflating those buckets. (d2d additionally stopped being populated at Fx
+  -- 146 when Direct2D was removed, so its breakdown is near-empty for current
+  -- versions.) Compositor gets a tighter gate: it was broken on Fx 140-145
+  -- (reported 'none' for ~everyone, fixed in 146), so only count it from 146 on.
+  -- A genuine "no compositor" from Fx 146+ is the literal string 'none', kept.
   SELECT 'all_compositors' AS dimension, wf_compositor AS key, CAST(NULL AS STRING) AS subkey, COUNT(*) AS value
-  FROM wf_pings GROUP BY wf_compositor
+  FROM wf_pings WHERE wf_compositor IS NOT NULL AND SAFE_CAST(fx_major AS INT64) >= 146 GROUP BY wf_compositor
   UNION ALL SELECT 'all_content_backends', wf_content_backend, CAST(NULL AS STRING), COUNT(*)
     FROM wf_pings WHERE wf_content_backend IS NOT NULL GROUP BY wf_content_backend
-  UNION ALL SELECT 'all_d3d11', wf_d3d11, CAST(NULL AS STRING), COUNT(*) FROM wf_pings GROUP BY wf_d3d11
+  UNION ALL SELECT 'all_d3d11', wf_d3d11, CAST(NULL AS STRING), COUNT(*) FROM wf_pings WHERE d3d11_obj IS NOT NULL GROUP BY wf_d3d11
+  -- d2d is left unfiltered: D2D was removed at Fx 146 so the object is null for
+  -- nearly everyone, but wf_d2d already maps a null object to 'unknown', which is
+  -- what the legacy job did too. Filtering the nulls would drop ~95% of clients
+  -- and make the small real tail look dominant.
   UNION ALL SELECT 'all_d2d', wf_d2d, CAST(NULL AS STRING), COUNT(*) FROM wf_pings GROUP BY wf_d2d
   UNION ALL SELECT 'all_textureSharing', wf_texture_sharing, CAST(NULL AS STRING), COUNT(*)
     FROM wf_pings WHERE wf_d3d11_working GROUP BY wf_texture_sharing
   UNION ALL SELECT 'all_warp', wf_warp, CAST(NULL AS STRING), COUNT(*)
     FROM wf_pings WHERE wf_d3d11 = 'warp' GROUP BY wf_warp
-  UNION ALL SELECT 'all_gpu_process', wf_gpu_process, CAST(NULL AS STRING), COUNT(*) FROM wf_pings GROUP BY wf_gpu_process
+  UNION ALL SELECT 'all_gpu_process', wf_gpu_process, CAST(NULL AS STRING), COUNT(*)
+    FROM wf_pings WHERE gpu_process_obj IS NOT NULL GROUP BY wf_gpu_process
   UNION ALL SELECT 'all_advanced_layers', 'none', CAST(NULL AS STRING), COUNT(*) FROM wf_pings
   UNION ALL SELECT 'all_media_decoders', v.key, CAST(NULL AS STRING), SUM(v.value)
     FROM wf_pings, UNNEST(media_values) AS v GROUP BY v.key
@@ -614,12 +651,16 @@ windows_features_rows AS (
     FROM wf_pings WHERE wf_d3d11_status_raw LIKE 'blocked%' GROUP BY 2
   -- ----- per-version breakdowns (key=version, subkey=value) -----
   UNION ALL SELECT 'byver_count', wf_version, CAST(NULL AS STRING), COUNT(*) FROM wf_important GROUP BY wf_version
-  UNION ALL SELECT 'byver_compositors', wf_version, wf_compositor, COUNT(*) FROM wf_important GROUP BY wf_version, wf_compositor
+  UNION ALL SELECT 'byver_compositors', wf_version, wf_compositor, COUNT(*)
+    FROM wf_important WHERE wf_compositor IS NOT NULL AND SAFE_CAST(fx_major AS INT64) >= 146
+    GROUP BY wf_version, wf_compositor
   UNION ALL SELECT 'byver_content_backends', wf_version, wf_content_backend, COUNT(*)
     FROM wf_important WHERE wf_content_backend IS NOT NULL GROUP BY wf_version, wf_content_backend
-  UNION ALL SELECT 'byver_gpu_process', wf_version, wf_gpu_process, COUNT(*) FROM wf_important GROUP BY wf_version, wf_gpu_process
+  UNION ALL SELECT 'byver_gpu_process', wf_version, wf_gpu_process, COUNT(*)
+    FROM wf_important WHERE gpu_process_obj IS NOT NULL GROUP BY wf_version, wf_gpu_process
   UNION ALL SELECT 'byver_advanced_layers', wf_version, 'none', COUNT(*) FROM wf_important GROUP BY wf_version
-  UNION ALL SELECT 'byver_d3d11', wf_version, wf_d3d11, COUNT(*) FROM wf_important GROUP BY wf_version, wf_d3d11
+  UNION ALL SELECT 'byver_d3d11', wf_version, wf_d3d11, COUNT(*)
+    FROM wf_important WHERE d3d11_obj IS NOT NULL GROUP BY wf_version, wf_d3d11
   UNION ALL SELECT 'byver_d2d', wf_version, wf_d2d, COUNT(*) FROM wf_important GROUP BY wf_version, wf_d2d
   UNION ALL SELECT 'byver_warp', wf_version, wf_warp, COUNT(*) FROM wf_important WHERE wf_d3d11 = 'warp' GROUP BY wf_version, wf_warp
   UNION ALL SELECT 'byver_media_decoders', wf_version, v.key, SUM(v.value)

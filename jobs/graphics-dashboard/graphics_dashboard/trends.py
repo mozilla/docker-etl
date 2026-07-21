@@ -16,7 +16,6 @@ complete) — matching the legacy backfill behavior.
 
 import datetime
 import json
-import time
 
 import click
 
@@ -67,11 +66,15 @@ def _week_bounds(week_start):
     """(start_ts, end_ts) for a Sunday week_start date, end = start + 7 days.
 
     Matches the legacy data points where end - start == 7 days (the Sunday that
-    begins the following week).
+    begins the following week). The timestamps are UTC midnight regardless of the
+    host timezone, so the merge keys on `start` line up whether the job runs in
+    production (UTC) or a local dry-run.
     """
-    start_dt = datetime.datetime(week_start.year, week_start.month, week_start.day)
+    start_dt = datetime.datetime(
+        week_start.year, week_start.month, week_start.day, tzinfo=datetime.UTC
+    )
     end_dt = start_dt + datetime.timedelta(days=7)
-    return time.mktime(start_dt.timetuple()), time.mktime(end_dt.timetuple())
+    return start_dt.timestamp(), end_dt.timestamp()
 
 
 def build_points(rows, output, device_map=None):
@@ -113,7 +116,7 @@ def merge_trend(cache, new_points):
     """
     if cache is None:
         cache = {
-            "created": time.mktime(datetime.datetime.now(datetime.UTC).timetuple()),
+            "created": datetime.datetime.now(datetime.UTC).timestamp(),
             "trend": [],
         }
     by_start = {pt["start"]: pt for pt in cache.get("trend") or []}
@@ -199,7 +202,7 @@ def main(
         new_points = build_points(rows, output, device_map=vendor_block)
         # Read the existing history in both modes so the merged file is the real
         # result; --dry-run only changes where the result is written.
-        cache = common.read_json(output_bucket, output_prefix, _filename(stem))
+        cache = common.read_json(billing_project, output_bucket, output_prefix, _filename(stem))
         results[stem] = merge_trend(cache, new_points)
 
     for stem, cache in results.items():
@@ -208,7 +211,7 @@ def main(
             path = common.write_local_json(test_output_dir, name, cache)
             print(f"Wrote {path} ({len(cache['trend'])} points)")
         else:
-            common.upload_json(output_bucket, output_prefix, name, cache)
+            common.upload_json(billing_project, output_bucket, output_prefix, name, cache)
 
 
 if __name__ == "__main__":

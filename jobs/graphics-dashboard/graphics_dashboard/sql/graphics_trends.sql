@@ -66,6 +66,14 @@ sampled AS (
     DATE(m.submission_timestamp) BETWEEN params.start_date AND params.end_date
     AND m.sample_id < params.sample_id_count
     AND SAFE_CAST(SPLIT(m.client_info.app_display_version, '.')[SAFE_OFFSET(0)] AS INT64) >= 53
+    -- Drop pings with no primary graphics adapter, matching the dashboard query.
+    -- In Glean the whole gfx.adapter.primary.* family is null together, so a null
+    -- vendor_id means "no adapter". Without this, adapterless clients (mostly ESR
+    -- 115, which never reported gfx metrics to Glean) spike the 'unknown' vendor
+    -- and device-gen trends. The legacy trends job bucketed them as 'unknown'
+    -- rather than dropping them, but main_v5 pings almost always had an adapter so
+    -- that bucket was ~0; dropping keeps the trend consistent with the dashboard.
+    AND m.metrics.string.gfx_adapter_primary_vendor_id IS NOT NULL
 ),
 -- Only keep whole Sunday-to-Saturday weeks fully inside the window, so a
 -- partial trailing week is never published (the legacy job re-queries the last
@@ -89,7 +97,14 @@ windows_week AS (
       WHEN JSON_VALUE(d3d11_obj, '$.status') != 'available'
         THEN COALESCE(JSON_VALUE(d3d11_obj, '$.status'), 'unknown')
       WHEN COALESCE(SAFE_CAST(JSON_VALUE(d3d11_obj, '$.warp') AS BOOL), FALSE) THEN 'warp'
-      ELSE COALESCE(CAST(SAFE_CAST(JSON_VALUE(d3d11_obj, '$.version') AS FLOAT64) AS STRING), 'unknown')
+      -- available: key on the feature version. Legacy stored it as a float and
+      -- str()'d it, so a whole number renders '45312.0', not '45312'. Glean gives
+      -- an int string; format whole numbers with the trailing '.0' to match.
+      WHEN SAFE_CAST(JSON_VALUE(d3d11_obj, '$.version') AS FLOAT64) IS NULL THEN 'unknown'
+      WHEN SAFE_CAST(JSON_VALUE(d3d11_obj, '$.version') AS FLOAT64)
+             = TRUNC(SAFE_CAST(JSON_VALUE(d3d11_obj, '$.version') AS FLOAT64))
+        THEN CONCAT(CAST(SAFE_CAST(JSON_VALUE(d3d11_obj, '$.version') AS INT64) AS STRING), '.0')
+      ELSE CAST(SAFE_CAST(JSON_VALUE(d3d11_obj, '$.version') AS FLOAT64) AS STRING)
     END AS d3d11_status,
     CASE
       WHEN d2d_obj IS NULL THEN 'unknown'
@@ -97,7 +112,7 @@ windows_week AS (
         THEN COALESCE(JSON_VALUE(d2d_obj, '$.status'), 'unknown')
       ELSE COALESCE(JSON_VALUE(d2d_obj, '$.version'), 'unknown')
     END AS d2d_status,
-    COALESCE(compositor, 'none') AS compositor_key,
+    compositor AS compositor_key,
     CASE
       WHEN architecture IN ('x86-64', 'x86_64', 'aarch64') THEN '64'
       WHEN architecture = 'x86' THEN '32' ELSE 'unknown'
@@ -113,20 +128,38 @@ UNION ALL
 SELECT week_start, 'windows-versions', os_version_key, COUNT(*)
 FROM windows_week GROUP BY week_start, os_version_key
 UNION ALL
+-- gfx.features.compositor landed in Fx 140 (bug 1950412) but was broken on 140
+-- through 145: it read 'none' for ~100% of clients (sampled before the
+-- compositor was created) even with a working D3D11 device. Fixed in Fx 146. So
+-- only trust it from 146 on. Pre-140 clients report it null (would bucket as
+-- 'none' too), and the buggy 140-145 clients report a spurious 'none'; both are
+-- excluded here. A genuine "no compositor" from Fx 146+ is the literal 'none'
+-- and is kept.
 SELECT week_start, 'windows-compositors', compositor_key, COUNT(*)
-FROM windows_week GROUP BY week_start, compositor_key
+FROM windows_week
+WHERE compositor_key IS NOT NULL AND SAFE_CAST(fx_major AS INT64) >= 146
+GROUP BY week_start, compositor_key
 UNION ALL
 SELECT week_start, 'windows-arch', arch_bucket, COUNT(*)
 FROM windows_week GROUP BY week_start, arch_bucket
 UNION ALL
-SELECT week_start, 'windows-vendors', COALESCE(vendor_id, 'unknown'), COUNT(*)
+SELECT week_start, 'windows-vendors', COALESCE(NULLIF(vendor_id, ''), 'unknown'), COUNT(*)
 FROM windows_week GROUP BY week_start, 3
 UNION ALL
+-- gfx.features.d2d: unlike compositor/d3d11, this metric is left unfiltered.
+-- D2D was removed from Firefox at Fx 146, so the object is null for nearly all
+-- current clients, but the d2d_status CASE already maps a null object to
+-- 'unknown'. That matches the legacy job, which also bucketed missing d2d as
+-- 'unknown' (D2D has been off by default for years), so the trend stays a mostly
+-- 'unknown' series with a small disabled/version tail. Filtering the nulls out
+-- instead would drop ~95% of clients and make the tiny tail look dominant.
 SELECT week_start, 'windows-d2d', d2d_status, COUNT(*)
 FROM windows_week GROUP BY week_start, d2d_status
 UNION ALL
+-- Same Fx 140 coverage floor as compositor: skip clients that didn't report the
+-- gfx.features.d3d11 object rather than counting them as 'unknown'.
 SELECT week_start, 'windows-d3d11', d3d11_status, COUNT(*)
-FROM windows_week GROUP BY week_start, d3d11_status
+FROM windows_week WHERE d3d11_obj IS NOT NULL GROUP BY week_start, d3d11_status
 UNION ALL
 -- device-gen: raw (vendor, device_id) counts for the three tracked vendors. The
 -- docker job maps device_id -> GPU generation via gfxdevices.json and

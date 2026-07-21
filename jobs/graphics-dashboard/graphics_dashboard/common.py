@@ -72,17 +72,17 @@ def run_query(billing_project, sql, **params):
     return list(job.result())
 
 
-def upload_json(bucket_name, prefix, name, payload):
+def upload_json(billing_project, bucket_name, prefix, name, payload):
     """Upload `payload` as JSON to gs://<bucket>/<prefix><name>."""
-    bucket = storage.Client().bucket(bucket_name)
+    bucket = storage.Client(project=billing_project).bucket(bucket_name)
     blob = bucket.blob(f"{prefix}{name}")
     blob.upload_from_string(json.dumps(payload), content_type="application/json")
     print(f"Wrote gs://{bucket_name}/{prefix}{name}")
 
 
-def read_json(bucket_name, prefix, name):
+def read_json(billing_project, bucket_name, prefix, name):
     """Read gs://<bucket>/<prefix><name> as JSON, or None if it doesn't exist."""
-    blob = storage.Client().bucket(bucket_name).blob(f"{prefix}{name}")
+    blob = storage.Client(project=billing_project).bucket(bucket_name).blob(f"{prefix}{name}")
     if not blob.exists():
         return None
     return json.loads(blob.download_as_text())
