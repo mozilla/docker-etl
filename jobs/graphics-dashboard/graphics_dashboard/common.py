@@ -82,7 +82,11 @@ def upload_json(billing_project, bucket_name, prefix, name, payload):
 
 def read_json(billing_project, bucket_name, prefix, name):
     """Read gs://<bucket>/<prefix><name> as JSON, or None if it doesn't exist."""
-    blob = storage.Client(project=billing_project).bucket(bucket_name).blob(f"{prefix}{name}")
+    blob = (
+        storage.Client(project=billing_project)
+        .bucket(bucket_name)
+        .blob(f"{prefix}{name}")
+    )
     if not blob.exists():
         return None
     return json.loads(blob.download_as_text())

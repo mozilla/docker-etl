@@ -202,7 +202,9 @@ def main(
         new_points = build_points(rows, output, device_map=vendor_block)
         # Read the existing history in both modes so the merged file is the real
         # result; --dry-run only changes where the result is written.
-        cache = common.read_json(billing_project, output_bucket, output_prefix, _filename(stem))
+        cache = common.read_json(
+            billing_project, output_bucket, output_prefix, _filename(stem)
+        )
         results[stem] = merge_trend(cache, new_points)
 
     for stem, cache in results.items():
@@ -211,7 +213,9 @@ def main(
             path = common.write_local_json(test_output_dir, name, cache)
             print(f"Wrote {path} ({len(cache['trend'])} points)")
         else:
-            common.upload_json(billing_project, output_bucket, output_prefix, name, cache)
+            common.upload_json(
+                billing_project, output_bucket, output_prefix, name, cache
+            )
 
 
 if __name__ == "__main__":
