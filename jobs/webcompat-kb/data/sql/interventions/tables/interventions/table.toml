@@ -1,0 +1,387 @@
+[intervention_id]
+type = "STRING"
+mode = "REQUIRED"
+
+[label]
+type = "STRING"
+mode = "REQUIRED"
+
+[interventions]
+type = "RECORD"
+mode = "REPEATED"
+
+[interventions.fields.alter_request_headers]
+type = "RECORD"
+mode = "REPEATED"
+
+[interventions.fields.alter_request_headers.fields.headers]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.alter_request_headers.fields.replacement]
+type = "STRING"
+mode = "REQUIRED"
+
+[interventions.fields.alter_request_headers.fields.fallback]
+type = "STRING"
+mode = "NULLABLE"
+
+[interventions.fields.alter_request_headers.fields.types]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.alter_request_headers.fields.replace]
+type = "STRING"
+mode = "NULLABLE"
+
+[interventions.fields.alter_request_headers.fields.urls]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.alter_response_headers]
+type = "RECORD"
+mode = "REPEATED"
+
+[interventions.fields.alter_response_headers.fields.headers]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.alter_response_headers.fields.replacement]
+type = "STRING"
+mode = "REQUIRED"
+
+[interventions.fields.alter_response_headers.fields.fallback]
+type = "STRING"
+mode = "NULLABLE"
+
+[interventions.fields.alter_response_headers.fields.types]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.alter_response_headers.fields.replace]
+type = "STRING"
+mode = "NULLABLE"
+
+[interventions.fields.alter_response_headers.fields.urls]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.content_scripts]
+type = "RECORD"
+mode = "NULLABLE"
+
+[interventions.fields.content_scripts.fields.all_frames]
+type = "BOOLEAN"
+mode = "NULLABLE"
+
+[interventions.fields.content_scripts.fields.isolated]
+type = "BOOLEAN"
+mode = "NULLABLE"
+
+[interventions.fields.content_scripts.fields.match_origin_as_fallback]
+type = "BOOLEAN"
+mode = "NULLABLE"
+
+[interventions.fields.content_scripts.fields.css]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.content_scripts.fields.js]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.css]
+type = "RECORD"
+mode = "NULLABLE"
+
+[interventions.fields.css.fields.which]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.css.fields.all_frames]
+type = "BOOLEAN"
+mode = "NULLABLE"
+
+[interventions.fields.css.fields.match_origin_as_fallback]
+type = "BOOLEAN"
+mode = "NULLABLE"
+
+[interventions.fields.hide_alerts]
+type = "RECORD"
+mode = "NULLABLE"
+
+[interventions.fields.hide_alerts.fields.alerts]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.hide_alerts.fields.all_frames]
+type = "BOOLEAN"
+mode = "NULLABLE"
+
+[interventions.fields.hide_alerts.fields.match_origin_as_fallback]
+type = "BOOLEAN"
+mode = "NULLABLE"
+
+[interventions.fields.hide_messages]
+type = "RECORD"
+mode = "NULLABLE"
+
+[interventions.fields.hide_messages.fields.messages]
+type = "RECORD"
+mode = "REPEATED"
+
+[interventions.fields.hide_messages.fields.messages.fields.message]
+type = "STRING"
+mode = "REQUIRED"
+
+[interventions.fields.hide_messages.fields.messages.fields.container]
+type = "STRING"
+mode = "REQUIRED"
+
+[interventions.fields.hide_messages.fields.messages.fields.click_adjacent]
+type = "STRING"
+mode = "NULLABLE"
+
+[interventions.fields.hide_messages.fields.all_frames]
+type = "BOOLEAN"
+mode = "NULLABLE"
+
+[interventions.fields.hide_messages.fields.match_origin_as_fallback]
+type = "BOOLEAN"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport]
+type = "RECORD"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify]
+type = "RECORD"
+mode = "REQUIRED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.height]
+type = "RECORD"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.height.fields.value]
+type = "STRING"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.height.fields.only_if_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.height.fields.only_if_not_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.initial_scale]
+type = "RECORD"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.initial_scale.fields.value]
+type = "STRING"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.initial_scale.fields.only_if_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.initial_scale.fields.only_if_not_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.interactive_widget]
+type = "RECORD"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.interactive_widget.fields.value]
+type = "STRING"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.interactive_widget.fields.only_if_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.interactive_widget.fields.only_if_not_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.maximum_scale]
+type = "RECORD"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.maximum_scale.fields.value]
+type = "STRING"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.maximum_scale.fields.only_if_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.maximum_scale.fields.only_if_not_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.minimum_scale]
+type = "RECORD"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.minimum_scale.fields.value]
+type = "STRING"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.minimum_scale.fields.only_if_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.minimum_scale.fields.only_if_not_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.user_scalable]
+type = "RECORD"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.user_scalable.fields.value]
+type = "STRING"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.user_scalable.fields.only_if_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.user_scalable.fields.only_if_not_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.viewport_fit]
+type = "RECORD"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.viewport_fit.fields.value]
+type = "STRING"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.viewport_fit.fields.only_if_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.viewport_fit.fields.only_if_not_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.width]
+type = "RECORD"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.width.fields.value]
+type = "STRING"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.width.fields.only_if_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.modify.fields.width.fields.only_if_not_equals]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.modify_meta_viewport.fields.all_frames]
+type = "BOOLEAN"
+mode = "NULLABLE"
+
+[interventions.fields.modify_meta_viewport.fields.match_origin_as_fallback]
+type = "BOOLEAN"
+mode = "NULLABLE"
+
+[interventions.fields.max_version]
+type = "FLOAT"
+mode = "NULLABLE"
+
+[interventions.fields.min_version]
+type = "FLOAT"
+mode = "NULLABLE"
+
+[interventions.fields.not_channels]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.not_platforms]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.only_channels]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.platforms]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.replace_string_in_request]
+type = "RECORD"
+mode = "REPEATED"
+
+[interventions.fields.replace_string_in_request.fields.find]
+type = "STRING"
+mode = "REQUIRED"
+
+[interventions.fields.replace_string_in_request.fields.replace]
+type = "STRING"
+mode = "REQUIRED"
+
+[interventions.fields.replace_string_in_request.fields.urls]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.replace_string_in_request.fields.types]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.run_script_before_request]
+type = "RECORD"
+mode = "NULLABLE"
+
+[interventions.fields.run_script_before_request.fields.message]
+type = "STRING"
+mode = "REQUIRED"
+
+[interventions.fields.run_script_before_request.fields.script]
+type = "STRING"
+mode = "REQUIRED"
+
+[interventions.fields.run_script_before_request.fields.urls]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.pref_check]
+type = "JSON"
+mode = "NULLABLE"
+
+[interventions.fields.skip_if]
+type = "STRING"
+mode = "REPEATED"
+
+[interventions.fields.ua_string]
+type = "RECORD"
+mode = "REPEATED"
+
+[interventions.fields.ua_string.fields.change]
+type = "STRING"
+mode = "REQUIRED"
+
+[interventions.fields.ua_string.fields.version]
+type = "STRING"
+mode = "NULLABLE"
+
+[css]
+type = "RECORD"
+mode = "REPEATED"
+
+[css.fields.id]
+type = "STRING"
+mode = "REQUIRED"
+
+[css.fields.src]
+type = "STRING"
+mode = "REQUIRED"

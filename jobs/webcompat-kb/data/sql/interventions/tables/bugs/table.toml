@@ -1,0 +1,59 @@
+[intervention_id]
+type = "STRING"
+mode = "REQUIRED"
+
+[number]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[issue]
+type = "STRING"
+mode = "REQUIRED"
+
+[matches]
+type = "RECORD"
+mode = "REPEATED"
+
+[matches.fields.types]
+type = "STRING"
+mode = "REPEATED"
+
+[matches.fields.url]
+type = "STRING"
+mode = "REQUIRED"
+
+[exclude_matches]
+type = "RECORD"
+mode = "REPEATED"
+
+[exclude_matches.fields.types]
+type = "STRING"
+mode = "REPEATED"
+
+[exclude_matches.fields.url]
+type = "STRING"
+mode = "REQUIRED"
+
+[blocks]
+type = "RECORD"
+mode = "REPEATED"
+
+[blocks.fields.types]
+type = "STRING"
+mode = "REPEATED"
+
+[blocks.fields.url]
+type = "STRING"
+mode = "REQUIRED"
+
+[exclude_blocks]
+type = "RECORD"
+mode = "REPEATED"
+
+[exclude_blocks.fields.types]
+type = "STRING"
+mode = "REPEATED"
+
+[exclude_blocks.fields.url]
+type = "STRING"
+mode = "REQUIRED"

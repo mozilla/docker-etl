@@ -1,0 +1,3 @@
+name = "hackbot_scheduled"
+description = "Runs requested from hackbot agents"
+etl=["autowebcompat"]

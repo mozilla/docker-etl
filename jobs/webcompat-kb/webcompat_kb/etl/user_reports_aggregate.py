@@ -2,9 +2,9 @@ import logging
 
 from google.cloud import bigquery
 
-from .base import Context, EtlJob
-from .bqhelpers import BigQuery
-from .projectdata import Project
+from ..base import Context, EtlJob
+from ..bqhelpers import BigQuery
+from ..projectdata import Project
 
 
 def update_user_report_aggregate(project: Project, client: BigQuery) -> None:

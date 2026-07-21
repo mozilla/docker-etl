@@ -1,0 +1,151 @@
+{
+  "bug": {
+    "comments": [
+      {
+        "text": "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 127/129\n\n**Steps to reproduce:**\n1. Go to https://www.kapwing.com/studio/editor\n2. Observe the warning message.\n\n**Expected Behavior:**\nThe page loads without any warning messages.\n\n**Actual Behavior:**\nThe page gets loaded with a warning message.\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in Firefox Nightly, Firefox Release\n- Website functionalities doesn't seem to be affected\n- Does not reproduce in Chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/138291",
+        "attachment_id": null,
+        "bug_id": 1903487,
+        "author": "ctanase@mozilla.com",
+        "count": 0,
+        "creation_time": "2024-06-19T06:44:01Z",
+        "is_private": false,
+        "reactions": {},
+        "id": 16989430,
+        "time": "2024-06-19T06:44:01Z",
+        "raw_text": "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 127/129\n\n**Steps to reproduce:**\n1. Go to https://www.kapwing.com/studio/editor\n2. Observe the warning message.\n\n**Expected Behavior:**\nThe page loads without any warning messages.\n\n**Actual Behavior:**\nThe page gets loaded with a warning message.\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in Firefox Nightly, Firefox Release\n- Website functionalities doesn't seem to be affected\n- Does not reproduce in Chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/138291",
+        "creator": "ctanase@mozilla.com",
+        "tags": []
+      }
+    ],
+    "attachments": [],
+    "groups": [],
+    "whiteboard": "[autowebcompat:processed]",
+    "cf_user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100\n",
+    "id": 1903487
+  },
+  "bug_update": {
+    "id": 1903487,
+    "whiteboard": "[autowebcompat:processed][autowebcompat:repro-success][autowebcompat:interv-ua-override-proposed]",
+    "cf_user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100\nautowebcompat-repro-status:success\nautowebcompat-repro-chrome-mask-fixed:true\nautowebcompat-repro-channels:nightly,stable,esr\n"
+  },
+  "hackbot_scheduled": {
+    "run_id": "445083ad-4f37-4747-95d2-783d4a0d09b1",
+    "agent": "autowebcompat-repro",
+    "task_name": "repro",
+    "source_key": "bugzilla:creation",
+    "run_key": "1903487",
+    "source_time": "2024-06-19T06:44:01",
+    "requested_at": "2026-07-14T23:45:04.691019",
+    "request_data": {
+      "attachments": [
+        {
+          "content_type": "image/png",
+          "file_name": "kapwing-FF-vs-Chrome.png",
+          "url": "https://bugzilla.mozilla.org/attachment.cgi?id=9408354"
+        }
+      ],
+      "comments": [
+        "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 127/129\n\n**Steps to reproduce:**\n1. Go to https://www.kapwing.com/studio/editor\n2. Observe the warning message.\n\n**Expected Behavior:**\nThe page loads without any warning messages.\n\n**Actual Behavior:**\nThe page gets loaded with a warning message.\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in Firefox Nightly, Firefox Release\n- Website functionalities doesn't seem to be affected\n- Does not reproduce in Chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/138291",
+        "Created attachment 9408354\nkapwing FF vs Chrome.png",
+        "Mass-assigning `diagnosis-team` to `webcompat` for \"Firefox is not supported\" bugs that don't already have a team assigned. This action is done by a script. For your convenience, feel free to filter your bugmail with 559a9604-41ec-11f0-9ec6-f3f21dcd7cf2."
+      ],
+      "creation_time": "2024-06-19T06:44:01Z",
+      "keywords": [
+        "webcompat:needs-contact"
+      ],
+      "number": 1903487,
+      "title": "www.kapwing.com - Unsupported browser warning",
+      "url": "https://www.kapwing.com/studio/editor",
+      "user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100",
+      "whiteboard": ""
+    },
+    "extra_data": {
+      "bug_id": 1903487
+    }
+  },
+  "hackbot_completed": {
+    "run_id": "445083ad-4f37-4747-95d2-783d4a0d09b1",
+    "status": "succeeded",
+    "created_at": "2026-07-15T03:45:05.173462",
+    "completed_at": "2026-07-15T04:03:44.701397",
+    "execution_name": "projects/hackbot-dev/locations/us-central1/jobs/hackbot-agent-autowebcompat-repro/executions/hackbot-agent-autowebcompat-repro-6gvhc",
+    "results_prefix": "runs/445083ad-4f37-4747-95d2-783d4a0d09b1/",
+    "summary": {
+      "status": "ok",
+      "error": null,
+      "findings": {
+        "end_time": "2026-07-15 04:03:34.272124",
+        "num_turns": 151,
+        "result": {
+          "chrome_mask_fixed": true,
+          "chrome_reproduced": false,
+          "failure_reason": null,
+          "plan_result": {
+            "affects_channels": [
+              "nightly",
+              "stable"
+            ],
+            "affects_os": "all",
+            "affects_platforms": [
+              "desktop"
+            ],
+            "is_webcompat": true
+          },
+          "reproduced": true,
+          "reproductions": [
+            [
+              "nightly",
+              {
+                "chrome_reproduced": false,
+                "failure_reason": null,
+                "reproduced": true,
+                "screenshot_path": null,
+                "steps": "1. Open Firefox (default configuration) and navigate to https://www.kapwing.com/studio/editor.\n2. Wait for the editor to finish loading. On a fresh session (no prior visit), observe a toast notification appear in the top area of the page reading: \"Warning — For the best editing experience, please consider switching to the Google Chrome Browser.\" with \"Google Chrome Browser.\" linking to https://www.google.com/chrome/.\n3. (If the warning does not appear because of a prior visit) In DevTools, run localStorage.removeItem('BROWSER_COOLDOWN_DATE') (or localStorage.clear()) in the page context, then reload https://www.kapwing.com/studio/editor. The warning toast reappears. This key is what gates how often the warning is shown; clearing it only resets Kapwing's own suppression timer and does not alter Firefox configuration.\n4. Confirm the warning is the reported unsupported-browser warning. The toast auto-dismisses after a few seconds, so capture it promptly after load.",
+                "summary": "Reproduced in Firefox. On loading https://www.kapwing.com/studio/editor, Kapwing displays a toast notification reading \"Warning — For the best editing experience, please consider switching to the Google Chrome Browser.\" (with a link to google.com/chrome). This is an unsupported-browser warning triggered by browser sniffing. The same page in Chrome shows no such warning (even on a fresh session with no cooldown), confirming this is Firefox-specific. Site functionality still works, but the warning degrades the Firefox experience relative to Chrome, which matches the report's \"unsupported-warning\" impact. Note: the warning is gated by a localStorage cooldown key (BROWSER_COOLDOWN_DATE), so it shows on the first visit / fresh session and is suppressed on immediate reloads."
+              }
+            ],
+            [
+              "stable",
+              {
+                "failure_reason": null,
+                "reproduced": true,
+                "screenshot_path": null
+              }
+            ],
+            [
+              "esr",
+              {
+                "failure_reason": null,
+                "reproduced": true,
+                "screenshot_path": null
+              }
+            ]
+          ],
+          "screenshot_url": "screenshot-FirefoxChannel.nightly.png",
+          "steps": "1. Open Firefox (default configuration) and navigate to https://www.kapwing.com/studio/editor.\n2. Wait for the editor to finish loading. On a fresh session (no prior visit), observe a toast notification appear in the top area of the page reading: \"Warning — For the best editing experience, please consider switching to the Google Chrome Browser.\" with \"Google Chrome Browser.\" linking to https://www.google.com/chrome/.\n3. (If the warning does not appear because of a prior visit) In DevTools, run localStorage.removeItem('BROWSER_COOLDOWN_DATE') (or localStorage.clear()) in the page context, then reload https://www.kapwing.com/studio/editor. The warning toast reappears. This key is what gates how often the warning is shown; clearing it only resets Kapwing's own suppression timer and does not alter Firefox configuration.\n4. Confirm the warning is the reported unsupported-browser warning. The toast auto-dismisses after a few seconds, so capture it promptly after load.",
+          "summary": "Reproduced in Firefox. On loading https://www.kapwing.com/studio/editor, Kapwing displays a toast notification reading \"Warning — For the best editing experience, please consider switching to the Google Chrome Browser.\" (with a link to google.com/chrome). This is an unsupported-browser warning triggered by browser sniffing. The same page in Chrome shows no such warning (even on a fresh session with no cooldown), confirming this is Firefox-specific. Site functionality still works, but the warning degrades the Firefox experience relative to Chrome, which matches the report's \"unsupported-warning\" impact. Note: the warning is gated by a localStorage cooldown key (BROWSER_COOLDOWN_DATE), so it shows on the first visit / fresh session and is suppressed on immediate reloads."
+        },
+        "start_time": "2026-07-15 03:46:46.519142",
+        "total_cost_usd": 5.269635
+      }
+    },
+    "artifacts": [
+      {
+        "name": "logs/agent.log",
+        "size": "63195",
+        "content_type": "text/plain"
+      },
+      {
+        "name": "screenshot-FirefoxChannel.nightly.png",
+        "size": "129172",
+        "content_type": "image/png"
+      },
+      {
+        "name": "summary.json",
+        "size": "4887",
+        "content_type": "application/json"
+      }
+    ],
+    "error": null
+  }
+}
