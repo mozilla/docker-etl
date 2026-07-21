@@ -5,6 +5,8 @@
 
 name: graphics-dashboard
 
+permissions: {}
+
 on:
   push:
     branches:

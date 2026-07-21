@@ -3,24 +3,14 @@
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-      - name: Check if job files changed
-        id: changes
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            job:
-              - 'jobs/graphics-dashboard/**'
       - name: Build the Docker image
-        if: steps.changes.outputs.job == 'true'
         # yamllint disable
         run: |
           docker build jobs/graphics-dashboard -t us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/graphics-dashboard:latest
         # yamllint enable
       - name: Test Code
-        if: steps.changes.outputs.job == 'true'
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/graphics-dashboard:latest pytest --flake8 --black
       - name: Lint Code
-        if: steps.changes.outputs.job == 'true'
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/graphics-dashboard:latest flake8
 
   deploy-to-gar-graphics-dashboard:
