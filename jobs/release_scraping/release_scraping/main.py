@@ -13,7 +13,6 @@ from google.cloud import storage
 from urllib.parse import urlparse
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.webdriver import WebDriver as ChromiumDriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -64,7 +63,6 @@ REQUEST_HEADERS = {
 }
 DRIVER_TYP = "Chromium"
 BINARY_LOC = "/usr/bin/chromium"
-DRIVER_PATH = "/usr/bin/chromedriver"
 
 # Browsers whose release notes pages require JavaScript rendering
 JS_RENDERED_BROWSERS = {
@@ -73,8 +71,13 @@ JS_RENDERED_BROWSERS = {
 }
 
 
-def initialize_driver(driver_type, binary_location, driver_path):
-    """Initialize a Selenium WebDriver instance."""
+def initialize_driver(driver_type, binary_location):
+    """Initialize a Selenium WebDriver instance.
+
+    Driver resolution is left to Selenium Manager, which downloads a driver
+    matching the installed browser binary rather than relying on the apt
+    chromium-driver package staying in lockstep with the chromium package.
+    """
     options = Options()
     options.binary_location = binary_location
     options.add_argument("--headless=new")
@@ -83,9 +86,9 @@ def initialize_driver(driver_type, binary_location, driver_path):
     options.add_argument("--window-size=1920,1080")
 
     if driver_type == "Chromium":
-        driver = ChromiumDriver(service=Service(driver_path), options=options)
+        driver = ChromiumDriver(options=options)
     elif driver_type == "Chrome":
-        driver = webdriver.Chrome(service=Service(driver_path), options=options)
+        driver = webdriver.Chrome(options=options)
     else:
         raise ValueError("DRIVER_TYPE needs to be either Chrome or Chromium")
 
@@ -283,7 +286,7 @@ def main():
             use_js = name in JS_RENDERED_BROWSERS
 
             if use_js and driver is None:
-                driver = initialize_driver(DRIVER_TYP, BINARY_LOC, DRIVER_PATH)
+                driver = initialize_driver(DRIVER_TYP, BINARY_LOC)
 
             try:
                 raw_text = scrape_page_text(
