@@ -62,6 +62,9 @@ class Record(ABC):
         )
 
     @abstractmethod
+    def natural_key(self) -> tuple: ...
+
+    @abstractmethod
     def __str__(self) -> str: ...
 
 
@@ -77,6 +80,9 @@ class Runs(Record):
     task_id: BigQueryTypes.STRING
     worker_group: Optional[BigQueryTypes.STRING]
     worker_id: Optional[BigQueryTypes.STRING]
+
+    def natural_key(self):
+        return (self.task_id, self.run_id)
 
     def __str__(self):
         return f"{self.task_id} run {self.run_id}"
@@ -105,6 +111,9 @@ class Tasks(Record):
     task_queue_id: BigQueryTypes.STRING
     tags: Tags
 
+    def natural_key(self):
+        return (self.task_id,)
+
     def __str__(self):
         return self.task_id
 
@@ -117,6 +126,9 @@ class Metrics(Record):
     uptime: BigQueryTypes.FLOAT
     interval_start_time: BigQueryTypes.TIMESTAMP
     interval_end_time: BigQueryTypes.TIMESTAMP
+
+    def natural_key(self):
+        return (self.instance_id, self.interval_start_time)
 
     def __str__(self):
         return f"worker {self.instance_id}"
@@ -144,6 +156,9 @@ class TaskDefinitions(Record):
     taskGroupId: BigQueryTypes.STRING
     taskQueueId: BigQueryTypes.STRING
     workerType: BigQueryTypes.STRING
+
+    def natural_key(self):
+        return (self.taskId,)
 
     def __str__(self):
         return self.taskId
