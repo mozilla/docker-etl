@@ -58,6 +58,20 @@ class BigQueryLoader:
         self.bucket = self.storage_client.bucket(config.storage.bucket)
         self._record_backup = self.bucket.blob(f"failed-bq-records.{table_type}.json")
 
+    def _deduplicate(self, records: list[Record]) -> list[Record]:
+        seen = set()
+        deduped = []
+        for record in records:
+            if (key := record.natural_key()) not in seen:
+                seen.add(key)
+                deduped.append(record)
+
+        if dupes := (len(records) - len(deduped)):
+            logger.warning(
+                f"Skipping {dupes} duplicate records before inserting into '{self.table_name}'"
+            )
+        return deduped
+
     def _chunk_batches(self, records: list[dict]):
         batch = []
         batch_size = 0
@@ -163,6 +177,8 @@ class BigQueryLoader:
                     records.append(Record.from_dict(obj))
             except NotFound:
                 pass
+
+        records = self._deduplicate(records)
 
         logger.info(f"{len(records)} records to insert into table '{self.table_name}'")
 
