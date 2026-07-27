@@ -29,17 +29,15 @@ class FullKeyword:
 class KintoSuggestion:
     """Class that holds information about a Suggestion returned by Kinto."""
 
-    # By being explicit about the fields we expect and not just storing the
-    # raw JSON, we control exactly what gets written to BigQuery. New fields
-    # added to the Remote Settings payload are ignored by `from_dict` (and
-    # logged) so that additive schema changes don't break the job. To start
-    # ingesting a new field, add it here and to the BigQuery schema in
-    # `store_suggestions`.
+    # Declaring fields explicitly controls exactly what gets written to
+    # BigQuery. `from_dict` drops added payload fields (logged) but lets a
+    # missing required field raise. To ingest a new field, add it here and to
+    # the BigQuery schema in `store_suggestions`.
     advertiser: str
     iab_category: str
     icon: str
     id: int
-    uuid: str
+    suggestion_id: str
     keywords: List[str]
     title: str
     url: str
@@ -158,7 +156,7 @@ def store_suggestions(
             bigquery.SchemaField("icon", "STRING"),
             bigquery.SchemaField("impression_url", "STRING"),
             bigquery.SchemaField("id", "INTEGER"),
-            bigquery.SchemaField("uuid", "STRING"),
+            bigquery.SchemaField("suggestion_id", "STRING"),
             bigquery.SchemaField("keywords", "STRING", "REPEATED"),
             bigquery.SchemaField(
                 "full_keywords",
