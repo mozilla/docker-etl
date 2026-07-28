@@ -26,7 +26,6 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     ca-certificates \
     chromium \
-    chromium-driver \
     fonts-liberation \
     libglib2.0-0 \
     libnss3 \
