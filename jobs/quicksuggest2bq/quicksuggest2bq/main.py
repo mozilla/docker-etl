@@ -37,11 +37,16 @@ class KintoSuggestion:
     iab_category: str
     icon: str
     id: int
-    suggestion_id: str
     keywords: List[str]
     title: str
     url: str
     full_keywords: List[FullKeyword]
+
+    # `suggestion_id` is missing from Remote Settings records that predate it and
+    # are no longer being republished (e.g. `sponsored-suggestions-us-tablet`,
+    # last modified in May 2025). Those suggestions are ingested with a NULL
+    # `suggestion_id` rather than failing the job.
+    suggestion_id: Optional[str] = None
 
     # `click_url` and `impression_url` are both optional, they're currently only
     # used by suggestions from adMarketplace. Mozilla's in-house Wikipedia suggestions
@@ -112,7 +117,25 @@ def download_suggestions(client: kinto_http.Client) -> Iterator[KintoSuggestion]
         # object contains a list of keywords. Load the suggestions into
         # KintoSuggestion dataclass instances to discard all fields which we
         # don't care about here.
-        for suggestion_data in response.json():
+        attachment = response.json()
+
+        without_suggestion_id = sum(
+            1
+            for suggestion_data in attachment
+            if "suggestion_id" not in suggestion_data
+        )
+        if without_suggestion_id:
+            # Warn rather than fail: a whole attachment missing `suggestion_id`
+            # is expected for records that are no longer republished, but it
+            # would also be the symptom of another upstream field rename.
+            logging.warning(
+                "%s of %s suggestions in record '%s' have no 'suggestion_id'.",
+                without_suggestion_id,
+                len(attachment),
+                record["id"],
+            )
+
+        for suggestion_data in attachment:
             suggestion: Dict[str, Any] = {
                 **suggestion_data,
                 "full_keywords": [

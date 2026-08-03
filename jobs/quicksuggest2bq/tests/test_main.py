@@ -82,6 +82,38 @@ def mocked_kinto_client(mocker: MockerFixture):
 
 
 @pytest.fixture()
+def mocked_kinto_client_without_suggestion_id(mocker: MockerFixture):
+    """Serve an attachment from a record that predates `suggestion_id`."""
+    session = mocker.MagicMock()
+
+    mock_server_info = {"capabilities": {"attachments": {"base_url": "discarded"}}}
+
+    mock_records = [
+        {"type": "amp", "id": 2802, "attachment": {"location": "discarded/again"}},
+    ]
+
+    class MockResponse:
+        status_code = 200
+
+        def json(self) -> List[Dict]:
+            return [
+                {
+                    key: value
+                    for key, value in SAMPLE_SUGGESTION.items()
+                    if key not in ("suggestion_id", "serp_categories")
+                }
+            ]
+
+    client = kinto_http.Client(session=session, bucket="mybucket")
+
+    mocker.patch.object(client, "server_info", return_value=mock_server_info)
+    mocker.patch.object(client, "get_records", return_value=mock_records)
+    mocker.patch("requests.Session.get", return_value=MockResponse())
+
+    yield client
+
+
+@pytest.fixture()
 def mocked_kinto_client_icon_only(mocker: MockerFixture):
     session = mocker.MagicMock()
 
@@ -163,6 +195,19 @@ class TestMain:
         assert (
             suggestions[1].suggestion_id == SAMPLE_WIKIPEDIA_SUGGESTION["suggestion_id"]
         )
+
+    def test_suggestion_id_missing(
+        self, mocked_kinto_client_without_suggestion_id, caplog
+    ):
+        # Records that are no longer republished predate `suggestion_id`, they
+        # are ingested with a NULL value instead of failing the job.
+        suggestions = list(
+            download_suggestions(mocked_kinto_client_without_suggestion_id)
+        )
+        assert len(suggestions) == 1
+        assert suggestions[0].suggestion_id is None
+        assert suggestions[0].id == SAMPLE_SUGGESTION["id"]
+        assert "1 of 1 suggestions in record '2802'" in caplog.text
 
     def test_icon_records_not_downloaded(self, mocked_kinto_client_icon_only):
         suggestions = list(download_suggestions(mocked_kinto_client_icon_only))
