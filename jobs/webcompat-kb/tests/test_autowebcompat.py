@@ -150,13 +150,26 @@ class MockBugzillaUpdater(autowebcompat.BugzillaUpdater):
                 )
 
 
-def test_repro_bugzilla_update():
+png_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVR4AWNgAAAAAgABc3UBGAAAAABJRU5ErkJggg=="
+
+
+def run_repro_update(
+    script_url: Optional[str] = None,
+    script_data: Optional[bytes] = None,
+) -> tuple[autowebcompat.BugUpdate, dict[str, Json]]:
+    """Run a repro task's Bugzilla update for the bug-1903487 fixture.
+
+    If `script_url` is set it's added to the fixture's result as an artifact
+    name, and `script_data` is what fetching it returns (None to simulate a
+    failed fetch).
+    """
+    screenshot_url = "https://hackbot.test/screenshot.png"
+    resolved_script_url = "https://hackbot.test/script.mjs"
+
     hackbot = MockHackbot()
     bq_service = MockBigQueryService()
     task = autowebcompat.ReproTask(hackbot, bq_service, {})
     updater = MockBugzillaUpdater()
-
-    png_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVR4AWNgAAAAAgABc3UBGAAAAABJRU5ErkJggg=="
 
     bug_data = load_data("bug-1903487.json")
     assert bug_data.bug is not None
@@ -168,9 +181,11 @@ def test_repro_bugzilla_update():
     )
     assert isinstance(result, dict)
 
-    hackbot.artifact_urls[bug_data.hackbot_completed.run_id][
-        result["screenshot_url"]
-    ] = "https://hackbot.test/screenshot.png"
+    artifact_urls = hackbot.artifact_urls[bug_data.hackbot_completed.run_id]
+    artifact_urls[cast(str, result["screenshot_url"])] = screenshot_url
+    if script_url is not None:
+        result["script_url"] = script_url
+        artifact_urls[script_url] = resolved_script_url
 
     run_doc = rundoc_from_bug_api(bug_data)
     updater.bug_data.append(bug_data.bug.model_dump())
@@ -191,14 +206,27 @@ def test_repro_bugzilla_update():
 
     updater.fetch_data()
 
+    def get_file(url: str, allowed_types: Optional[set[str]] = None) -> Optional[bytes]:
+        if url == screenshot_url:
+            return base64.b64decode(png_base64)
+        if url == resolved_script_url:
+            return script_data
+        raise AssertionError(f"Unexpected fetch of {url}")
+
     with patch("webcompat_kb.etl.autowebcompat.try_get_file") as mock_get_file:
-        mock_get_file.return_value = base64.b64decode(png_base64)
+        mock_get_file.side_effect = get_file
         task.populate_updates(updater)
 
     updates = updater.bug_updates[1903487][1]
     assert bug_data.bug_update is not None
     assert updates.bug.whiteboard == bug_data.bug_update.whiteboard
     assert updates.bug.cf_user_story == bug_data.bug_update.cf_user_story
+
+    return updates, result
+
+
+def test_repro_bugzilla_update() -> None:
+    updates, result = run_repro_update()
 
     assert updates.add_attachments[0].file_name == "autowebcompat-repro-steps.txt"
     assert (
@@ -207,3 +235,40 @@ def test_repro_bugzilla_update():
     )
     assert updates.add_attachments[1].file_name == "autowebcompat-repro-screenshot.png"
     assert updates.add_attachments[1].data == png_base64
+
+
+def test_repro_bugzilla_update_script() -> None:
+    """A fetched script is attached in place of the reproduction steps."""
+    script_source = "import puppeteer from 'puppeteer';\n"
+    updates, result = run_repro_update(
+        script_url="reproduction-nightly.mjs",
+        script_data=script_source.encode("utf8"),
+    )
+
+    file_names = [item.file_name for item in updates.add_attachments]
+    assert file_names == [
+        "autowebcompat-repro-script.mjs",
+        "autowebcompat-repro-screenshot.png",
+    ]
+
+    script_attachment = updates.add_attachments[0]
+    assert script_attachment.content_type == "text/javascript"
+    assert base64.b64decode(script_attachment.data).decode("utf8") == script_source
+    assert script_attachment.comment is not None
+
+
+def test_repro_bugzilla_update_script_fetch_failed() -> None:
+    """If the script can't be fetched we fall back to the steps."""
+    updates, result = run_repro_update(
+        script_url="reproduction-nightly.mjs", script_data=None
+    )
+
+    file_names = [item.file_name for item in updates.add_attachments]
+    assert file_names == [
+        "autowebcompat-repro-steps.txt",
+        "autowebcompat-repro-screenshot.png",
+    ]
+    assert (
+        base64.b64decode(updates.add_attachments[0].data).decode("utf8")
+        == result["steps"]
+    )
