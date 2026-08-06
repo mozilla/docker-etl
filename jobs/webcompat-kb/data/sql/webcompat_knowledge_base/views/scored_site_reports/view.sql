@@ -62,10 +62,8 @@ These could be inlined, but it's slightly easier to read if they're computed in 
 computed_scores AS (
   SELECT
     number,
-    `{{ ref('WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK') }}`(keywords,
-      user_story) AS triage_score_no_rank,
-    `{{ ref('WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFIER') }}`(url,
-      `{{ ref('WEBCOMPAT_METRIC_YYYYMM') }}`()) AS site_rank_score
+    `{{ ref('WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK') }}`(keywords, user_story) AS triage_score_no_rank,
+    `{{ ref('WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFIER') }}`(url, `{{ ref('WEBCOMPAT_METRIC_YYYYMM') }}`(), user_story) AS site_rank_score
   FROM
     `{{ ref('site_reports') }}` AS site_reports
 ),
