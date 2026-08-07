@@ -381,7 +381,7 @@ SELECT number,
        url,
        keywords,
        user_story,
-       CAST(`{score_no_rank}`(keywords, user_story) * `{rank_modifier}`(url, `{rank_yyyymm}`()) AS NUMERIC) as score
+       CAST(`{score_no_rank}`(keywords, user_story) * `{rank_modifier}`(url, `{rank_yyyymm}`(), user_story) AS NUMERIC) as score
 FROM `{tmp_table.name}`
 """
         bugs_with_webcompat_states = set()
