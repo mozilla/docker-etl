@@ -1,26 +1,5 @@
 CREATE OR REPLACE FUNCTION `{{ ref(name) }}`(url STRING, crux_yyyymm INT64, user_story JSON) RETURNS NUMERIC AS (
   (
-    WITH
-      host_ranks AS (
-        SELECT
-          MIN(global_rank) AS global_rank,
-          MIN(core_rank) AS core_rank,
-          MIN(india_rank) AS india_rank,
-          MIN(brazil_rank) AS brazil_rank,
-          MIN(indonesia_rank) AS indonesia_rank,
-          MIN(mexico_rank) AS mexico_rank,
-          MIN(italy_rank) AS italy_rank,
-          MIN(spain_rank) AS spain_rank,
-          MIN(netherlands_rank) AS netherlands_rank,
-          MIN(local_rank) AS local_rank
-        FROM
-          `{{ ref ('crux_imported.host_min_ranks') }}` AS host_ranks
-        WHERE
-          host_ranks.yyyymm = crux_yyyymm AND `{{ ref('WEBCOMPAT_HOST') }}`(host_ranks.host) = `{{ ref('WEBCOMPAT_HOST') }}`(url)
-      ),
-      site_rank_override AS (
-        SELECT `{{ ref('EXTRACT_ARRAY') }}`(user_story, "$.site-rank-override") AS ranks
-      )
     SELECT
       CAST(CASE
         WHEN
@@ -64,6 +43,25 @@ CREATE OR REPLACE FUNCTION `{{ ref(name) }}`(url STRING, crux_yyyymm INT64, user
         ELSE 1
       END AS NUMERIC)
     FROM
-      host_ranks, site_rank_override
+      (
+        SELECT
+          MIN(global_rank) AS global_rank,
+          MIN(core_rank) AS core_rank,
+          MIN(india_rank) AS india_rank,
+          MIN(brazil_rank) AS brazil_rank,
+          MIN(indonesia_rank) AS indonesia_rank,
+          MIN(mexico_rank) AS mexico_rank,
+          MIN(italy_rank) AS italy_rank,
+          MIN(spain_rank) AS spain_rank,
+          MIN(netherlands_rank) AS netherlands_rank,
+          MIN(local_rank) AS local_rank
+        FROM
+          `{{ ref ('crux_imported.host_min_ranks') }}` AS host_ranks
+        WHERE
+          host_ranks.yyyymm = crux_yyyymm AND `{{ ref('WEBCOMPAT_HOST') }}`(host_ranks.host) = `{{ ref('WEBCOMPAT_HOST') }}`(url)
+      ) AS host_ranks,
+      (
+        SELECT `{{ ref('EXTRACT_ARRAY') }}`(user_story, "$.site-rank-override") AS ranks
+      ) AS site_rank_override
   )
 );
