@@ -55,17 +55,24 @@ WITH
     `{{ ref('dim_bug_score') }}` AS weights
   GROUP BY
     number),
+site_rank_overrides AS (
+  SELECT
+    number,
+    url,
+    keywords,
+    user_story,
+    `{{ ref('EXTRACT_ARRAY') }}`(user_story, "$.site-rank-override") AS site_rank_override
+  FROM
+    `{{ ref('site_reports') }}` AS site_reports
+),
 
-/* Computed scores for each bug
-
-These could be inlined, but it's slightly easier to read if they're computed in one place*/
 computed_scores AS (
   SELECT
     number,
     `{{ ref('WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK') }}`(keywords, user_story) AS triage_score_no_rank,
-    `{{ ref('WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFIER') }}`(url, `{{ ref('WEBCOMPAT_METRIC_YYYYMM') }}`(), user_story) AS site_rank_score
+    `{{ ref('WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFIER') }}`(url, `{{ ref('WEBCOMPAT_METRIC_YYYYMM') }}`(), site_rank_override) AS site_rank_score
   FROM
-    `{{ ref('site_reports') }}` AS site_reports
+    site_rank_overrides
 ),
 
 site_report_scores AS (

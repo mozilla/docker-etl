@@ -65,7 +65,7 @@ computed_scores AS (
     `{{ ref('webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_NO_SITE_RANK') }}`(keywords,
       user_story) AS triage_score_no_rank,
     `{{ ref('webcompat_knowledge_base.WEBCOMPAT_METRIC_SCORE_SITE_RANK_MODIFIER') }}`(url,
-      `{{ ref('WEBCOMPAT_METRIC_YYYYMM_BEFORE_RESCORE_CRUX_202512') }}`()) AS site_rank_score
+      `{{ ref('WEBCOMPAT_METRIC_YYYYMM_BEFORE_RESCORE_CRUX_202512') }}`(), []) AS site_rank_score
   FROM
     `{{ ref('webcompat_knowledge_base.site_reports') }}` AS site_reports
 ),
