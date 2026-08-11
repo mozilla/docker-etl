@@ -20,7 +20,7 @@ import filetype
 import httpx
 from bugdantic import bugzilla, userstory
 from google.cloud import bigquery
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from ..base import Context, EtlJob
 from ..bqhelpers import BigQuery
@@ -725,11 +725,56 @@ class ReproTask(HackbotTask):
                 run_id: NewBugInfo.model_validate(scheduled_run.request_data)
                 for run_id, (scheduled_run, _) in self.completed_runs.items()
             }
-            run_outputs = {
-                run_id: ReproSummary.model_validate(run_doc.summary.model_dump())
-                for run_id, (_, run_doc) in self.completed_runs.items()
-                if run_doc.summary is not None
-            }
+            run_outputs = {}
+            overload_markers = {"529", "overloaded", "at capacity"}
+            for run_id, (scheduled_run, run_doc) in list(self.completed_runs.items()):
+                if run_doc.summary is None:
+                    continue
+                try:
+                    run_outputs[run_id] = ReproSummary.model_validate(
+                        run_doc.summary.model_dump()
+                    )
+                except ValidationError:
+                    error = run_doc.summary.error or ""
+                    if not any(
+                        marker in error.lower() for marker in overload_markers
+                    ):
+                        raise
+                    # The agent hit an overload error (e.g. 529) and never
+                    # produced a valid result. Reschedule a fresh hackbot run and
+                    # drop this errored run from the update path so it isn't marked
+                    # as a repro-failure.
+                    logging.info(
+                        "Run %s failed with an overload error, rescheduling: %s",
+                        run_id,
+                        error,
+                    )
+                    bug_info = NewBugInfo.model_validate(scheduled_run.request_data)
+                    source_time = bug_info.creation_time
+                    run_ref = self.hackbot_client.create_run(
+                        self.get_request_data(
+                            ScheduleRequest(
+                                source_key=scheduled_run.source_key,
+                                run_key=scheduled_run.run_key,
+                                source_time=source_time,
+                                request_data=bug_info,
+                            )
+                        )
+                    )
+                    self.scheduled[scheduled_run.source_key].append(
+                        ScheduledRun(
+                            run_id=run_ref.run_id,
+                            agent=scheduled_run.agent,
+                            task_name=scheduled_run.task_name,
+                            source_key=scheduled_run.source_key,
+                            run_key=scheduled_run.run_key,
+                            source_time=source_time,
+                            requested_at=datetime.now(),
+                            request_data=scheduled_run.request_data,
+                            extra_data=scheduled_run.extra_data,
+                        )
+                    )
+                    del self.completed_runs[run_id]
 
             for uuid, output in run_outputs.items():
                 bug_info = run_inputs[uuid]
