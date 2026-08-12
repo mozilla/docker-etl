@@ -126,7 +126,8 @@ def send_email(subject, body, sender, recipients):
     help=(
         "Only send email on these days of the week (0 is Sunday). The report is "
         "still built every day and printed. Works around Airflow not supporting "
-        "per-task schedules. Omit to send every day."
+        "per-task schedules. Omit to never send, so a run that forgets the flag "
+        "can't mail the distribution lists."
     ),
 )
 @click.option(
@@ -196,19 +197,25 @@ def main(
     fix_availability_args,
     dry_run,
 ):
-    run_date = run_date.date() if run_date else datetime.date.today()
+    run_date = (
+        run_date.date()
+        if run_date
+        else datetime.datetime.now(datetime.UTC).date()
+    )
     recipients = parse_recipients(recipients)
 
     # The job runs in full every day so failures surface on the day they break
     # rather than once a week. Only the send is weekly.
     # isoweekday() is 1-7 Mon-Sun; % 7 makes Sunday 0 to match --run-on-days.
-    off_schedule = run_on_days and run_date.isoweekday() % 7 not in run_on_days
+    weekday = run_date.isoweekday() % 7
+    off_schedule = weekday not in run_on_days
     if off_schedule:
-        click.echo(
-            f"{run_date} is day {run_date.isoweekday() % 7}, not in "
-            f"{sorted(run_on_days)}. Building the report but not sending it.",
-            err=True,
+        reason = (
+            f"{run_date} is day {weekday}, not in {sorted(run_on_days)}"
+            if run_on_days
+            else "no --run-on-days given, so there are no send days"
         )
+        click.echo(f"{reason}. Building the report but not sending it.", err=True)
 
     session = requests.Session()
     known_modules, firefox_modules, windows_modules = fetch_module_lists(session)

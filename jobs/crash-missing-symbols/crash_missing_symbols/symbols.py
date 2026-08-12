@@ -62,7 +62,7 @@ def fetch_old_firefox_versions(session=None, today=None):
     Returns major version numbers as strings, e.g. {"115", "116"}.
     """
     session = session or requests.Session()
-    today = today or datetime.datetime.utcnow()
+    today = today or datetime.datetime.now(datetime.UTC)
 
     response = session.get(RELEASE_HISTORY_URL, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()

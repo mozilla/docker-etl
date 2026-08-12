@@ -70,21 +70,32 @@ class TestDryRun:
 
 
 class TestRecipientOptions:
+    """These need an actual send, so they pass the send day for 2026-08-07."""
+
+    @staticmethod
+    def _send(run, *args):
+        _, send = run("--run-on-days", "5", *args)
+        return send
+
     def test_defaults(self, run):
-        _, send = run()
+        send = self._send(run)
         assert send.call_args.args[3] == list(cli.DEFAULT_EMAIL_RECIPIENTS)
         assert send.call_args.args[2] == cli.DEFAULT_EMAIL_SENDER
 
     def test_override_replaces_defaults(self, run):
-        _, send = run("--recipient", "a@mozilla.com", "--recipient", "b@mozilla.com")
+        send = self._send(
+            run, "--recipient", "a@mozilla.com", "--recipient", "b@mozilla.com"
+        )
         assert send.call_args.args[3] == ["a@mozilla.com", "b@mozilla.com"]
 
     def test_repeated_flags_deduplicated(self, run):
-        _, send = run("--recipient", "a@mozilla.com", "--recipient", "a@mozilla.com")
+        send = self._send(
+            run, "--recipient", "a@mozilla.com", "--recipient", "a@mozilla.com"
+        )
         assert send.call_args.args[3] == ["a@mozilla.com"]
 
     def test_custom_sender(self, run):
-        _, send = run("--sender", "alerts@mozilla.com")
+        send = self._send(run, "--sender", "alerts@mozilla.com")
         assert send.call_args.args[2] == "alerts@mozilla.com"
 
     def test_blank_recipient_rejected(self, run):
@@ -114,9 +125,17 @@ class TestRunOnDays:
         assert send.called
         assert "Sent report to" in result.stderr
 
-    def test_sends_every_day_when_unset(self, run):
-        _, send = run()
-        assert send.called
+    def test_never_sends_when_unset(self, run):
+        """No send days configured means no send, so a dropped flag can't mail."""
+        result, send = run()
+        assert result.exit_code == 0
+        assert not send.called
+        assert "no --run-on-days given" in result.stderr
+
+    def test_report_still_built_when_unset(self, run):
+        result, _ = run()
+        assert result.stdout.startswith("Weekly report of modules with missing")
+        assert "<table" in result.stdout
 
     def test_dry_run_wins_on_a_send_day(self, run):
         """--dry-run still suppresses the send, and says why."""

@@ -39,9 +39,9 @@ WITH modules AS (
   FROM `moz-fx-data-shared-prod.telemetry_derived.socorro_crash_v2`,
     UNNEST(json_dump.modules.list) AS m
   WHERE
-    -- Half open, matching the local baseline run: end_date is excluded, so a run
-    -- covers @window_days complete days and never a partial today. The deployed
-    -- Spark job had no upper bound at all; see the README.
+    -- Half open: end_date is excluded, so a run covers @window_days complete days
+    -- and never a partial today. The Spark job had no upper bound at all; see the
+    -- README.
     crash_date >= DATE_SUB(@end_date, INTERVAL @window_days DAY)
     AND crash_date < @end_date
     AND product = 'Firefox'

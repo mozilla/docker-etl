@@ -27,7 +27,7 @@ BODY = strip_comments(SQL)
 
 class TestWindow:
     def test_window_is_half_open(self):
-        """end_date is excluded, matching the local baseline run.
+        """end_date is excluded, so a run covers whole days only.
 
         With `<=` a run whose end_date has data covers an extra day. On
         2026-08-06 that was 321 rows against the correct 251.
