@@ -72,12 +72,11 @@ Useful options:
 | `--dry-run` | off | Print the email instead of sending it |
 
 `--recipient` replaces the defaults rather than adding to them, so a test run
-only mails you. Repeat the flag or pass one comma separated list, whichever is
-easier from the caller:
+only mails you. One address per flag, repeated for several:
 
 ```sh
 python -m crash_missing_symbols.main --recipient me@mozilla.com
-python -m crash_missing_symbols.main --recipient "me@mozilla.com,you@mozilla.com"
+python -m crash_missing_symbols.main --recipient me@mozilla.com --recipient you@mozilla.com
 ```
 
 `--run-on-days` exists because Airflow can't give one task in a DAG its own

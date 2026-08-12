@@ -76,7 +76,7 @@ class TestRecipientOptions:
         assert send.call_args.args[2] == cli.DEFAULT_EMAIL_SENDER
 
     def test_override_replaces_defaults(self, run):
-        _, send = run("--recipient", "a@mozilla.com,b@mozilla.com")
+        _, send = run("--recipient", "a@mozilla.com", "--recipient", "b@mozilla.com")
         assert send.call_args.args[3] == ["a@mozilla.com", "b@mozilla.com"]
 
     def test_repeated_flags_deduplicated(self, run):

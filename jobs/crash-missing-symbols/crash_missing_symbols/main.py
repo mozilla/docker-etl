@@ -91,18 +91,15 @@ def query_modules(
 
 
 def parse_recipients(values):
-    """Flatten repeated --recipient flags, each of which may be comma separated.
+    """Clean up repeated --recipient flags.
 
-    Accepting commas as well as repetition means Airflow can pass the whole list
-    as one argument. Order is preserved and duplicates dropped so the SES call
-    doesn't mail anyone twice.
+    Order is preserved and duplicates dropped.
     """
     recipients = []
     for value in values:
-        for address in value.split(","):
-            address = address.strip()
-            if address and address not in recipients:
-                recipients.append(address)
+        address = value.strip()
+        if address and address not in recipients:
+            recipients.append(address)
     if not recipients:
         raise click.UsageError("--recipient cannot be empty")
     return recipients
@@ -151,8 +148,8 @@ def send_email(subject, body, sender, recipients):
     default=DEFAULT_EMAIL_RECIPIENTS,
     show_default=True,
     help=(
-        "Address to send the report to. Repeat for several, or pass one "
-        "comma separated list. Replaces the defaults rather than adding to them."
+        "Address to send the report to. Repeat the flag for several. Replaces "
+        "the defaults rather than adding to them."
     ),
 )
 @click.option(
