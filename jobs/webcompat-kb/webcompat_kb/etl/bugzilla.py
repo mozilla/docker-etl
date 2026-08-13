@@ -78,11 +78,28 @@ UnsetAsNone = Annotated[Optional[str], unset_to_none("---")]
 Text = Annotated[str, BeforeValidator(none_to_empty)]
 
 
+class Attachment(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: int
+    file_name: str
+    summary: str
+    content_type: str
+    creator: str
+    creation_time: datetime
+    last_change_time: datetime
+    size: int
+    is_private: bool
+    is_obsolete: bool
+    is_patch: bool
+
+
 class Bug(BaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
 
     id: int
     alias: Optional[str] = None
+    attachments: list[Attachment]
     summary: str
     status: str
     resolution: str
@@ -119,7 +136,9 @@ class Bug(BaseModel):
     size_estimate: UnsetAsNone = Field(alias="cf_size_estimate", default=None)
     whiteboard: Text
     webcompat_priority: UnsetAsNone = Field(alias="cf_webcompat_priority", default=None)
-    webcompat_score: Annotated[Optional[int], int_from_field({"---": None, "?": None})] = Field(alias="cf_webcompat_score", default=None)
+    webcompat_score: Annotated[
+        Optional[int], int_from_field({"---": None, "?": None})
+    ] = Field(alias="cf_webcompat_score", default=None)
 
     @property
     def parsed_user_story(self) -> Mapping[str, Any]:
@@ -141,6 +160,9 @@ class Bug(BaseModel):
             {
                 "id": row.number,
                 "alias": row.alias,
+                "attachments": [
+                    Attachment.model_validate(item) for item in row.attachments
+                ],
                 "summary": row.title,
                 "status": row.status,
                 "resolution": row.resolution,
@@ -1436,6 +1458,7 @@ class BugzillaJob(EtlJob):
             "https://bugzilla.mozilla.org",
             context.args.bugzilla_api_key,
             allow_writes=context.config.write,
+            max_retries=5,
         )
         bz_client = bugdantic.Bugzilla(bz_config)
 
