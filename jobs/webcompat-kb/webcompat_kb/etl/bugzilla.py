@@ -10,6 +10,7 @@ from collections.abc import Iterable, Iterator, Mapping, MutableMapping, Sequenc
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import (
+    Annotated,
     Any,
     Optional,
     Self,
@@ -17,6 +18,7 @@ from typing import (
 
 import bugdantic
 from google.cloud import bigquery
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, computed_field
 
 from ..base import Context, EtlJob
 from ..bqhelpers import BigQuery, TableSchema
@@ -27,11 +29,58 @@ class BugLoadError(Exception):
     pass
 
 
-@dataclass(frozen=True)
-class Bug:
-    id: int
-    alias: Optional[str]
-    summary: str
+def extract_int_from_field(
+    field_value: Optional[str], value_map: Optional[Mapping[str, Optional[int]]] = None
+) -> Optional[int]:
+    if field_value:
+        if value_map and field_value.lower() in value_map:
+            return value_map[field_value.lower()]
+
+        match = re.search(r"\d+", field_value)
+        if match:
+            return int(match.group())
+        logging.warning(
+            f"Unexpected field value '{field_value}', could not convert to integer"
+        )
+    return None
+
+
+def int_from_field(value_map: Mapping[str, Optional[int]]) -> BeforeValidator:
+    """Convert a Bugzilla string field into an integer.
+
+    Values read back from BigQuery or the JSON cache are already integers."""
+
+    def convert(value: Any) -> Any:
+        if isinstance(value, str):
+            return extract_int_from_field(value, value_map)
+        return value
+
+    return BeforeValidator(convert)
+
+
+def unset_to_none(unset: str) -> BeforeValidator:
+    """Map a placeholder for an unset field onto None"""
+
+    def convert(value: Any) -> Any:
+        return None if value == unset else value
+
+    return BeforeValidator(convert)
+
+
+def none_to_empty(value: Any) -> Any:
+    return "" if value is None else value
+
+
+UnsetAsNone = Annotated[Optional[str], unset_to_none("---")]
+Text = Annotated[str, BeforeValidator(none_to_empty)]
+
+
+class Bug(BaseModel):
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
+
+    id: int = Field(serialization_alias="number")
+    alias: Optional[str] = None
+    summary: str = Field(serialization_alias="title")
     status: str
     resolution: str
     product: str
@@ -40,24 +89,51 @@ class Bug:
     see_also: list[str]
     depends_on: list[int]
     blocks: list[int]
-    priority: Optional[int]
-    severity: Optional[int]
+    priority: Annotated[Optional[int], int_from_field({"--": None})]
+    severity: Annotated[
+        Optional[int],
+        int_from_field(
+            {
+                "n/a": None,
+                "--": None,
+                "blocker": 1,
+                "critical": 1,
+                "major": 2,
+                "normal": 3,
+                "minor": 4,
+                "trivial": 4,
+                "enhancement": 4,
+            }
+        ),
+    ]
     creation_time: datetime
-    assigned_to: Optional[str]
+    assigned_to: Annotated[Optional[str], unset_to_none("nobody@mozilla.org")]
     keywords: list[str]
-    url: str
-    user_story: str
-    last_resolved: Optional[datetime]
+    url: Text
+    user_story: Text = Field(
+        validation_alias="cf_user_story", serialization_alias="user_story_raw"
+    )
+    last_resolved: Optional[datetime] = Field(
+        validation_alias="cf_last_resolved", default=None
+    )
     last_change_time: datetime
-    size_estimate: Optional[str]
-    whiteboard: str
-    webcompat_priority: Optional[str]
-    webcompat_score: Optional[int]
+    size_estimate: UnsetAsNone = Field(
+        validation_alias="cf_size_estimate", default=None
+    )
+    whiteboard: Text
+    webcompat_priority: UnsetAsNone = Field(
+        validation_alias="cf_webcompat_priority", default=None
+    )
+    webcompat_score: Annotated[
+        Optional[int], int_from_field({"---": None, "?": None})
+    ] = Field(validation_alias="cf_webcompat_score", default=None)
 
+    @computed_field(alias="user_story")  # type: ignore[prop-decorator]
     @property
-    def parsed_user_story(self) -> Mapping[str, Any]:
+    def parsed_user_story(self) -> Mapping[str, str | list[str]]:
         return parse_user_story(self.user_story)
 
+    @computed_field(alias="resolved_time")  # type: ignore[prop-decorator]
     @property
     def resolved(self) -> Optional[datetime]:
         if self.status in {"RESOLVED", "VERIFIED"} and self.last_resolved:
@@ -65,123 +141,50 @@ class Bug:
         return None
 
     @classmethod
-    def from_bugzilla(cls, bug: bugdantic.bugzilla.Bug) -> Self:
-        assert bug.id is not None
-        assert bug.summary is not None
-        assert bug.status is not None
-        assert bug.resolution is not None
-        assert bug.product is not None
-        assert bug.component is not None
-        assert bug.creator is not None
-        assert bug.see_also is not None
-        assert bug.depends_on is not None
-        assert bug.blocks is not None
-        assert bug.priority is not None
-        assert bug.severity is not None
-        assert bug.creation_time is not None
-        assert bug.assigned_to is not None
-        assert bug.keywords is not None
-        assert bug.url is not None
-        assert bug.last_change_time is not None
-        assert bug.whiteboard is not None
-        assert bug.cf_user_story is not None
+    def from_bq_row(cls, row: bigquery.Row) -> Self:
+        """Load a bug from a row of the bugzilla_bugs table.
 
-        return cls(
-            id=bug.id,
-            alias=bug.alias,
-            summary=bug.summary,
-            status=bug.status,
-            resolution=bug.resolution,
-            product=bug.product,
-            component=bug.component,
-            see_also=bug.see_also,
-            depends_on=bug.depends_on,
-            blocks=bug.blocks,
-            priority=extract_int_from_field(
-                bug.priority,
-                value_map={
-                    "--": None,
-                },
-            ),
-            severity=extract_int_from_field(
-                bug.severity,
-                value_map={
-                    "n/a": None,
-                    "--": None,
-                    "blocker": 1,
-                    "critical": 1,
-                    "major": 2,
-                    "normal": 3,
-                    "minor": 4,
-                    "trivial": 4,
-                    "enhancement": 4,
-                },
-            ),
-            creation_time=bug.creation_time,
-            assigned_to=bug.assigned_to
-            if bug.assigned_to != "nobody@mozilla.org"
-            else None,
-            keywords=bug.keywords,
-            url=bug.url,
-            user_story=bug.cf_user_story,
-            last_resolved=bug.cf_last_resolved,
-            last_change_time=bug.last_change_time,
-            whiteboard=bug.whiteboard,
-            creator=bug.creator,
-            size_estimate=(
-                bug.cf_size_estimate if bug.cf_size_estimate != "---" else None
-            ),
-            webcompat_priority=(
-                bug.cf_webcompat_priority
-                if bug.cf_webcompat_priority != "---"
-                else None
-            ),
-            webcompat_score=extract_int_from_field(
-                bug.cf_webcompat_score,
-                value_map={
-                    "---": None,
-                    "?": None,
-                },
-            ),
+        Note that resolved_time is only set for resolved bugs, so this isn't
+        quite the inverse of to_bq_row."""
+        return cls.model_validate(
+            {
+                "id": row.number,
+                "alias": row.alias,
+                "summary": row.title,
+                "status": row.status,
+                "resolution": row.resolution,
+                "product": row.product,
+                "component": row.component,
+                "creator": row.creator,
+                "see_also": row.see_also,
+                "depends_on": row.depends_on,
+                "blocks": row.blocks,
+                "priority": row.priority,
+                "severity": row.severity,
+                "creation_time": row.creation_time,
+                "assigned_to": row.assigned_to,
+                "keywords": row.keywords,
+                "url": row.url,
+                "user_story": row.user_story_raw,
+                "last_resolved": row.resolved_time,
+                "last_change_time": row.last_change_time,
+                "size_estimate": row.size_estimate,
+                "whiteboard": row.whiteboard,
+                "webcompat_priority": row.webcompat_priority,
+                "webcompat_score": row.webcompat_score,
+            }
         )
 
+    def to_bq_row(self) -> Mapping[str, Any]:
+        """Convert to a row of the bugzilla_bugs table."""
+        return self.model_dump(mode="json", by_alias=True, exclude={"last_resolved"})
+
     def to_json(self) -> Mapping[str, Any]:
-        fields = {**vars(self)}
-        for key, value in fields.items():
-            if isinstance(value, datetime):
-                fields[key] = value.isoformat()
-        return fields
+        return self.model_dump(mode="json", exclude={"parsed_user_story", "resolved"})
 
     @classmethod
     def from_json(cls, bug_data: Mapping[str, Any]) -> Self:
-        return cls(
-            id=bug_data["id"],
-            alias=bug_data["alias"],
-            summary=bug_data["summary"],
-            status=bug_data["status"],
-            resolution=bug_data["resolution"],
-            product=bug_data["product"],
-            component=bug_data["component"],
-            see_also=bug_data["see_also"],
-            depends_on=bug_data["depends_on"],
-            blocks=bug_data["blocks"],
-            priority=bug_data["priority"],
-            severity=bug_data["severity"],
-            creation_time=datetime.fromisoformat(bug_data["creation_time"]),
-            assigned_to=bug_data["assigned_to"],
-            keywords=bug_data["keywords"],
-            url=bug_data["url"],
-            user_story=bug_data["user_story"],
-            last_resolved=datetime.fromisoformat(bug_data["last_resolved"])
-            if bug_data["last_resolved"] is not None
-            else None,
-            last_change_time=datetime.fromisoformat(bug_data["last_change_time"]),
-            whiteboard=bug_data["whiteboard"],
-            creator=bug_data["creator"],
-            size_estimate=bug_data["size_estimate"],
-            webcompat_priority=bug_data["webcompat_priority"],
-            webcompat_score=bug_data["webcompat_score"],
-        )
+        return cls.model_validate(bug_data)
 
 
 @dataclass(frozen=True)
@@ -384,22 +387,6 @@ EXTERNAL_LINK_CONFIGS = {
 }
 
 
-def extract_int_from_field(
-    field_value: Optional[str], value_map: Optional[Mapping[str, Optional[int]]] = None
-) -> Optional[int]:
-    if field_value:
-        if value_map and field_value.lower() in value_map:
-            return value_map[field_value.lower()]
-
-        match = re.search(r"\d+", field_value)
-        if match:
-            return int(match.group())
-        logging.warning(
-            f"Unexpected field value '{field_value}', could not convert to integer"
-        )
-    return None
-
-
 def parse_user_story(input_string: str) -> Mapping[str, str | list[str]]:
     if not input_string:
         return {}
@@ -476,33 +463,9 @@ class BugCache(Mapping):
         yield from self.bugs
 
     def bq_fetch_bugs(self, bugs_table: TableSchema) -> None:
-        for bug in self.bq_client.query(f"SELECT * FROM {bugs_table}"):
-            self.bugs[bug.number] = Bug(
-                id=bug.number,
-                alias=bug.alias,
-                summary=bug.title,
-                status=bug.status,
-                resolution=bug.resolution,
-                product=bug.product,
-                component=bug.component,
-                creator=bug.creator,
-                see_also=bug.see_also,
-                depends_on=bug.depends_on,
-                blocks=bug.blocks,
-                priority=bug.priority,
-                severity=bug.severity,
-                creation_time=bug.creation_time,
-                assigned_to=bug.assigned_to,
-                keywords=bug.keywords,
-                url=bug.url,
-                user_story=bug.user_story_raw,
-                last_resolved=bug.resolved_time,
-                last_change_time=bug.last_change_time,
-                size_estimate=bug.size_estimate,
-                whiteboard=bug.whiteboard,
-                webcompat_priority=bug.webcompat_priority,
-                webcompat_score=bug.webcompat_score,
-            )
+        for row in self.bq_client.query(f"SELECT * FROM {bugs_table}"):
+            bug = Bug.from_bq_row(row)
+            self.bugs[bug.id] = bug
 
     def bz_fetch_bugs(
         self,
@@ -514,49 +477,19 @@ class BugCache(Mapping):
         ):
             raise ValueError("Must pass params or ids but not both")
 
-        fields = [
-            "id",
-            "alias",
-            "summary",
-            "status",
-            "resolution",
-            "product",
-            "component",
-            "creator",
-            "see_also",
-            "depends_on",
-            "blocks",
-            "priority",
-            "severity",
-            "creation_time",
-            "assigned_to",
-            "keywords",
-            "url",
-            "cf_user_story",
-            "cf_last_resolved",
-            "last_change_time",
-            "whiteboard",
-            "cf_size_estimate",
-            "cf_webcompat_priority",
-            "cf_webcompat_score",
-        ]
-
         bugs_fetched = set()
 
         try:
             if params is not None:
-                bugs = self.bz_client.search(
-                    query=params, include_fields=fields, page_size=200
+                bugs = self.bz_client.search_as(
+                    query=params, bug_type=Bug, page_size=200
                 )
             else:
                 assert bug_ids is not None
-                bugs = self.bz_client.bugs(
-                    bug_ids, include_fields=fields, page_size=200
-                )
+                bugs = self.bz_client.bugs_as(bug_ids, Bug, page_size=200)
             logging.info(f"Got {len(bugs)} bugs")
             for bug in bugs:
-                assert bug.id is not None
-                self.bugs[bug.id] = Bug.from_bugzilla(bug)
+                self.bugs[bug.id] = bug
                 bugs_fetched.add(bug.id)
         except Exception as e:
             logging.error(f"Error: {e}")
@@ -1128,37 +1061,6 @@ class BigQueryImporter:
     ) -> None:
         self.client.write_table(table, table.schema, rows, overwrite=overwrite)
 
-    def convert_bug(self, bug: Bug) -> Mapping[str, Any]:
-        return {
-            "number": bug.id,
-            "alias": bug.alias,
-            "title": bug.summary,
-            "status": bug.status,
-            "resolution": bug.resolution,
-            "product": bug.product,
-            "component": bug.component,
-            "creator": bug.creator,
-            "severity": bug.severity,
-            "priority": bug.priority,
-            "creation_time": bug.creation_time.isoformat(),
-            "last_change_time": bug.last_change_time.isoformat(),
-            "assigned_to": bug.assigned_to,
-            "keywords": bug.keywords,
-            "url": bug.url,
-            "user_story": bug.parsed_user_story,
-            "user_story_raw": bug.user_story,
-            "resolved_time": bug.resolved.isoformat()
-            if bug.resolved is not None
-            else None,
-            "whiteboard": bug.whiteboard,
-            "size_estimate": bug.size_estimate,
-            "webcompat_priority": bug.webcompat_priority,
-            "webcompat_score": bug.webcompat_score,
-            "depends_on": bug.depends_on,
-            "blocks": bug.blocks,
-            "see_also": bug.see_also,
-        }
-
     def convert_history_entry(self, entry: BugHistoryEntry) -> Mapping[str, Any]:
         return {
             "number": entry.number,
@@ -1187,7 +1089,7 @@ WHERE is_history_fetch_completed = TRUE"""
 
     def insert_bugs(self, all_bugs: BugsById) -> None:
         table = self.project["webcompat_knowledge_base"]["bugzilla_bugs"].table()
-        rows = [self.convert_bug(bug) for bug in all_bugs.values()]
+        rows = [bug.to_bq_row() for bug in all_bugs.values()]
         self.write_table(table, rows, overwrite=True)
 
     def insert_history_changes(
