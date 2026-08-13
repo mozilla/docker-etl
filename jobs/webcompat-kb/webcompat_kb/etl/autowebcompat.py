@@ -170,6 +170,42 @@ class ReproSummary(BaseSummary):
     findings: WebcompatReproResult
 
 
+# Whiteboard token that requests a diagnosis run. It's removed from the bug as
+# soon as the run is scheduled, so re-adding it requests another run.
+DIAGNOSE_REQUEST_TOKEN = "[autowebcompat:diagnose]"
+
+
+class AutowebcompatDiagnosisRequest(CreateRequest):
+    bug_id: int
+    model: Optional[str] = None
+    max_turns: Optional[int] = None
+    effort: Optional[str] = None
+    agent: str = "autowebcompat-diagnosis"
+
+
+class DiagnosisResult(BaseModel):
+    reproduced: bool
+    failure_reason: Optional[str] = None
+    root_cause: Optional[str] = None
+    evidence: Optional[str] = None
+    testcase_url: Optional[str] = None
+
+
+class WebcompatDiagnosisResult(HackbotAgentResult):
+    result: Optional[DiagnosisResult] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+
+
+class DiagnosisSummary(BaseSummary):
+    findings: WebcompatDiagnosisResult
+
+
+class DiagnosisBugInfo(BaseModel):
+    number: int
+    source_time: datetime
+
+
 class BigQueryService:
     def __init__(
         self, project: Project, bq_client: BigQuery, bz_client: bugzilla.Bugzilla
@@ -320,6 +356,58 @@ class BigQueryService:
 
         return new_bugs
 
+    def get_diagnosis_requested_bugs(self) -> Mapping[int, DiagnosisBugInfo]:
+        """Bugs currently carrying the diagnosis request token.
+
+        This is level-triggered on the token being present rather than
+        watermarked on a timestamp: the token is removed when a run is
+        scheduled, and that removal is what stops the bug being picked up
+        again on the next tick."""
+        query = f"""
+    SELECT
+      number,
+      CAST(IFNULL(last_change_time, creation_time) AS DATETIME) AS source_time
+    FROM `{self.project["webcompat_knowledge_base"]["site_reports"]}`
+    WHERE
+      resolution = "" AND
+      whiteboard LIKE @token_pattern
+    """
+        rows = self.bq_client.query(
+            query,
+            parameters=[
+                bigquery.ScalarQueryParameter(
+                    "token_pattern", "STRING", f"%{DIAGNOSE_REQUEST_TOKEN}%"
+                )
+            ],
+        )
+        bugs = {
+            row.number: DiagnosisBugInfo.model_validate(dict(row.items()))
+            for row in rows
+        }
+        if not bugs:
+            return {}
+
+        # site_reports is only as fresh as the last Bugzilla import, so confirm
+        # against live data that the token is still there before dispatching:
+        # a previous run may already have consumed it. Also drop bugs Bugzilla
+        # doesn't return, or that are moco-confidential.
+
+        diagnosis_bugs: dict[int, DiagnosisBugInfo] = {}
+        for result in self.bz_client.bugs(
+            list(bugs.keys()), include_fields=["id", "groups", "whiteboard"]
+        ):
+            assert result.id is not None
+            if result.groups and "mozilla-employee-confidential" in result.groups:
+                continue
+            if DIAGNOSE_REQUEST_TOKEN not in (result.whiteboard or ""):
+                logging.info(
+                    f"Bug {result.id} no longer has {DIAGNOSE_REQUEST_TOKEN}, skipping"
+                )
+                continue
+            diagnosis_bugs[result.id] = bugs[result.id]
+
+        return diagnosis_bugs
+
     def insert_new_runs(self, new_runs: Iterable[ScheduledRun]) -> None:
         rows = [item.to_json() for item in new_runs]
         self.bq_client.insert_rows(self.scheduled_table, rows)
@@ -469,6 +557,22 @@ def update_whiteboard(
         assert current_whiteboard is not None
         if token not in current_whiteboard:
             bug_update.bug.whiteboard = current_whiteboard + token
+
+
+def remove_whiteboard(
+    bug: bugzilla.Bug, bug_update: BugUpdate, remove_tokens: list[str]
+) -> None:
+    current_whiteboard = (
+        bug_update.bug.whiteboard
+        if bug_update.bug.whiteboard is not None
+        else bug.whiteboard
+    )
+    assert current_whiteboard is not None
+    new_whiteboard = current_whiteboard
+    for token in remove_tokens:
+        new_whiteboard = new_whiteboard.replace(token, "")
+    if new_whiteboard != current_whiteboard:
+        bug_update.bug.whiteboard = new_whiteboard
 
 
 def update_user_story(
@@ -850,6 +954,143 @@ class ReproTask(HackbotTask):
             )
 
 
+class DiagnosisTask(HackbotTask):
+    """Diagnose a bug's root cause, on request via a whiteboard token.
+
+    Unlike ReproTask this isn't driven by a timestamp watermark: a run is
+    requested by adding DIAGNOSE_REQUEST_TOKEN to a bug's whiteboard, and the
+    token is removed when the run is scheduled. The import_runs watermark is
+    still recorded for consistency with other tasks, but isn't read back."""
+
+    agent: str = "autowebcompat-diagnosis"
+    task_name: str = "diagnosis"
+
+    def get_request_data(
+        self, request: ScheduleRequest
+    ) -> AutowebcompatDiagnosisRequest:
+        bug_info = DiagnosisBugInfo.model_validate(request.request_data.model_dump())
+        return AutowebcompatDiagnosisRequest(agent=self.agent, bug_id=bug_info.number)
+
+    def create_new(self) -> Mapping[str, Sequence[ScheduledRun]]:
+        source_key = self.key("bugzilla", "diagnose-flag")
+        requested_bugs = self.bq_service.get_diagnosis_requested_bugs()
+        logging.info(f"Found {len(requested_bugs)} bugs that requested diagnosis")
+
+        if not requested_bugs:
+            return {}
+
+        requests = [
+            ScheduleRequest(
+                source_key=source_key,
+                run_key=self.key(str(bug_number)),
+                source_time=bug_info.source_time,
+                request_data=bug_info,
+                extra_data=BugExtraData(bug_id=bug_number),
+            )
+            for bug_number, bug_info in requested_bugs.items()
+        ]
+
+        return self.schedule(requests)
+
+    def scheduled_bug_ids(self) -> Iterable[int]:
+        bugzilla_scheduled = itertools.chain.from_iterable(
+            value
+            for key, value in self.scheduled.items()
+            if key.startswith("bugzilla:")
+        )
+        return [
+            BugExtraData.model_validate(item.extra_data).bug_id
+            for item in bugzilla_scheduled
+        ]
+
+    def configure_updater(self, updater: Updater) -> None:
+        if isinstance(updater, BugzillaUpdater):
+            updater.add_include_fields(["whiteboard", "cf_user_story"])
+            updater.add_bug_ids(self.scheduled_bug_ids())
+            updater.add_bug_ids(
+                int(item.run_key) for item, _ in self.completed_runs.values()
+            )
+
+    def populate_updates(self, updater: Updater) -> None:
+        if isinstance(updater, BugzillaUpdater):
+            # Consume the request token so the bug isn't picked up again on the
+            # next tick. Re-adding it requests a fresh run.
+            for bug_id in self.scheduled_bug_ids():
+                bug, bug_update = updater.bug_updates[bug_id]
+                remove_whiteboard(bug, bug_update, [DIAGNOSE_REQUEST_TOKEN])
+
+            run_outputs = {
+                run_id: (
+                    int(scheduled_run.run_key),
+                    DiagnosisSummary.model_validate(run_doc.summary.model_dump()),
+                )
+                for run_id, (scheduled_run, run_doc) in self.completed_runs.items()
+                if run_doc.summary is not None
+            }
+
+            for uuid, (bug_number, output) in run_outputs.items():
+                bug, bug_update = updater.bug_updates[bug_number]
+
+                result = output.findings.result
+                require_user_story = {}
+                if result is None:
+                    require_user_story["autowebcompat-diagnosis-status"] = "failed"
+                    require_user_story["autowebcompat-diagnosis-reason"] = "error"
+                elif result.reproduced and result.root_cause:
+                    require_user_story["autowebcompat-diagnosis-status"] = "success"
+
+                    comment_parts = [
+                        "Root cause analysis generated by autowebcompat bot:",
+                        "",
+                        result.root_cause,
+                    ]
+                    if result.evidence:
+                        comment_parts += ["", "Evidence:", "", result.evidence]
+                    bug_update.bug.comment = bugzilla.Comment(
+                        body="\n".join(comment_parts)
+                    )
+
+                    if result.testcase_url:
+                        if not result.testcase_url.startswith("https://"):
+                            # This is an artifact name not a URL
+                            testcase_url = self.hackbot_client.get_artifact_url(
+                                uuid, result.testcase_url
+                            )
+                        else:
+                            testcase_url = result.testcase_url
+                        data = try_get_file(testcase_url)
+                        if data is not None:
+                            bug_update.add_attachments.append(
+                                bugzilla.AttachmentCreate.from_raw_data(
+                                    ids=[bug_number],
+                                    data=data,
+                                    file_name="autowebcompat-diagnosis-testcase.html",
+                                    summary="Reduced testcase generated by autowebcompat bot",
+                                    content_type="text/html",
+                                )
+                            )
+                        else:
+                            logging.warning(
+                                "Failed to get testcase data from %s",
+                                result.testcase_url,
+                            )
+                else:
+                    require_user_story["autowebcompat-diagnosis-status"] = "failed"
+                    require_user_story["autowebcompat-diagnosis-reason"] = (
+                        result.failure_reason
+                        if result.failure_reason
+                        else "no_root_cause"
+                        if result.reproduced
+                        else "no_repro"
+                    )
+
+                update_user_story(bug, bug_update, require_user_story)
+        else:
+            raise ValueError(
+                f"Don't know how to update for task {self} and updater type {updater}"
+            )
+
+
 def run(
     project: Project,
     bq_client: BigQuery,
@@ -967,5 +1208,5 @@ class AutowebcompatJob(EtlJob):
             hackbot_client,
             context.args.autowebcompat_check_pending,
             updaters=[BugzillaUpdater(bz_client)],
-            tasks=[ReproTask],
+            tasks=[ReproTask, DiagnosisTask],
         )
