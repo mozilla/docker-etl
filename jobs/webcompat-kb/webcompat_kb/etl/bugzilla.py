@@ -75,11 +75,28 @@ UnsetAsNone = Annotated[Optional[str], unset_to_none("---")]
 Text = Annotated[str, BeforeValidator(none_to_empty)]
 
 
+class Attachment(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: int
+    file_name: str
+    summary: str
+    content_type: str
+    creator: str
+    creation_time: datetime
+    last_change_time: datetime
+    size: int
+    is_private: bool
+    is_obsolete: bool
+    is_patch: bool
+
+
 class Bug(BaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
 
     id: int = Field(serialization_alias="number")
     alias: Optional[str] = None
+    attachments: list[Attachment]
     summary: str = Field(serialization_alias="title")
     status: str
     resolution: str
@@ -150,6 +167,9 @@ class Bug(BaseModel):
             {
                 "id": row.number,
                 "alias": row.alias,
+                "attachments": [
+                    Attachment.model_validate(item) for item in row.attachments
+                ],
                 "summary": row.title,
                 "status": row.status,
                 "resolution": row.resolution,
@@ -482,7 +502,10 @@ class BugCache(Mapping):
         try:
             if params is not None:
                 bugs = self.bz_client.search_as(
-                    query=params, bug_type=Bug, page_size=200
+                    query=params,
+                    bug_type=Bug,
+                    exclude_fields=["attachments.data"],
+                    page_size=100,
                 )
             else:
                 assert bug_ids is not None
@@ -1417,6 +1440,7 @@ class BugzillaJob(EtlJob):
             "https://bugzilla.mozilla.org",
             context.args.bugzilla_api_key,
             allow_writes=context.config.write,
+            max_retries=5,
         )
         bz_client = bugdantic.Bugzilla(bz_config)
 
