@@ -1,0 +1,73 @@
+{
+  "bug": {
+    "comments": [],
+    "attachments": [],
+    "groups": [],
+    "whiteboard": "[autowebcompat:processed][autowebcompat:repro-success]",
+    "cf_user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100\nautowebcompat-repro-status:success\n",
+    "id": 1903487
+  },
+  "bug_update": {
+    "id": 1903487,
+    "cf_user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100\nautowebcompat-repro-status:success\nautowebcompat-diagnosis-status:success\n"
+  },
+  "hackbot_scheduled": {
+    "run_id": "9f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+    "agent": "autowebcompat-diagnosis",
+    "task_name": "diagnosis",
+    "source_key": "bugzilla:diagnose-flag",
+    "run_key": "1903487",
+    "source_time": "2026-08-10T12:00:00",
+    "requested_at": "2026-08-10T12:15:04.691019",
+    "request_data": {
+      "number": 1903487,
+      "source_time": "2026-08-10T12:00:00"
+    },
+    "extra_data": {
+      "bug_id": 1903487
+    }
+  },
+  "hackbot_completed": {
+    "run_id": "9f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+    "status": "succeeded",
+    "created_at": "2026-08-10T12:15:05.173462",
+    "completed_at": "2026-08-10T12:48:44.701397",
+    "execution_name": "projects/hackbot-dev/locations/us-central1/jobs/hackbot-agent-autowebcompat-diagnosis/executions/hackbot-agent-autowebcompat-diagnosis-4kfp2",
+    "results_prefix": "runs/9f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f/",
+    "summary": {
+      "status": "ok",
+      "error": null,
+      "findings": {
+        "start_time": "2026-08-10 12:16:46.519142",
+        "end_time": "2026-08-10 12:48:34.272124",
+        "num_turns": 96,
+        "total_cost_usd": 7.318221,
+        "result": {
+          "reproduced": true,
+          "failure_reason": null,
+          "root_cause": "Kapwing gates its editor on a user-agent sniff in its bundled browser-detection helper, which matches only Chrome/Chromium tokens. Firefox falls through to the unsupported branch, which renders the warning toast. The check is purely on navigator.userAgent; no feature detection is involved, so the warning appears regardless of Firefox's actual capabilities.",
+          "evidence": "Loading the editor in Firefox logs no console errors, but evaluate_script on navigator.userAgent inside the page followed by inspecting the bundled detection helper shows a regex matching /Chrome|CriOS/ only. Spoofing the Chrome UA string suppresses the toast entirely. The same page in Chrome never renders the toast element. A reduced testcase reproducing the same regex against both UA strings shows the warning path taken in Firefox only.",
+          "testcase_url": "testcase.html"
+        }
+      }
+    },
+    "artifacts": [
+      {
+        "name": "logs/agent.log",
+        "size": "51204",
+        "content_type": "text/plain"
+      },
+      {
+        "name": "testcase.html",
+        "size": "1842",
+        "content_type": "text/html"
+      },
+      {
+        "name": "summary.json",
+        "size": "3311",
+        "content_type": "application/json"
+      }
+    ],
+    "error": null
+  }
+}
