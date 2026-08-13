@@ -63,6 +63,15 @@ class MockHackbot(hackbot.Hackbot):
         self.client = Mock()
         self.runs: dict[UUID, tuple[hackbot.RunDoc, bool]] = {}
         self.artifact_urls: dict[UUID, dict[str, str]] = defaultdict(dict)
+        self.created: list[hackbot.CreateRequest] = []
+
+    def create_run(self, request: hackbot.CreateRequest) -> hackbot.RunRef:
+        self.created.append(request)
+        return hackbot.RunRef(
+            run_id=UUID(int=len(self.created)),
+            agent=request.agent,
+            status=hackbot.RunStatus.pending,
+        )
 
     def poll_run(self, run_uuid: UUID) -> tuple[hackbot.RunDoc, bool]:
         if run_uuid in self.runs:
@@ -87,6 +96,7 @@ class MockBigQueryService(autowebcompat.BigQueryService):
         self.pending = []
         self.scheduled = []
         self.new_bugs = []
+        self.diagnosis_bugs: list[Json] = []
 
     def get_source_times(
         self,
@@ -132,6 +142,15 @@ class MockBigQueryService(autowebcompat.BigQueryService):
             new_bug = autowebcompat.NewBugInfo.model_validate(item)
             if not created_since or new_bug.creation_time > created_since:
                 rv[new_bug.number] = new_bug
+        return rv
+
+    def get_diagnosis_requested_bugs(
+        self,
+    ) -> Mapping[int, autowebcompat.DiagnosisBugInfo]:
+        rv = {}
+        for item in self.diagnosis_bugs:
+            bug = autowebcompat.DiagnosisBugInfo.model_validate(item)
+            rv[bug.number] = bug
         return rv
 
 
@@ -272,3 +291,178 @@ def test_repro_bugzilla_update_script_fetch_failed() -> None:
         base64.b64decode(updates.add_attachments[0].data).decode("utf8")
         == result["steps"]
     )
+
+
+def run_diagnosis_update(
+    testcase_data: Optional[bytes] = None,
+    result_overrides: Optional[dict[str, Json]] = None,
+) -> tuple[autowebcompat.BugUpdate, dict[str, Json]]:
+    """Run a diagnosis task's Bugzilla update for the diagnosis fixture.
+
+    `testcase_data` is what fetching the testcase artifact returns (None to
+    simulate a failed fetch). `result_overrides` is merged into the fixture's
+    agent result before the update runs.
+    """
+    resolved_testcase_url = "https://hackbot.test/testcase.html"
+
+    hackbot_client = MockHackbot()
+    bq_service = MockBigQueryService()
+    task = autowebcompat.DiagnosisTask(hackbot_client, bq_service, {})
+    updater = MockBugzillaUpdater()
+
+    bug_data = load_data("bug-1903487-diagnosis.json")
+    assert bug_data.bug is not None
+    assert bug_data.hackbot_scheduled is not None
+    assert bug_data.hackbot_completed is not None
+    assert bug_data.hackbot_completed.summary is not None
+    result = cast(
+        dict[str, Json], bug_data.hackbot_completed.summary.findings["result"]
+    )
+    assert isinstance(result, dict)
+    if result_overrides:
+        result.update(result_overrides)
+
+    if result.get("testcase_url"):
+        artifact_urls = hackbot_client.artifact_urls[bug_data.hackbot_completed.run_id]
+        artifact_urls[cast(str, result["testcase_url"])] = resolved_testcase_url
+
+    run_doc = rundoc_from_bug_api(bug_data)
+    updater.bug_data.append(bug_data.bug.model_dump())
+
+    complete_runs = {run_doc.run_id: (bug_data.hackbot_scheduled, run_doc)}
+    task.take_completed_runs(complete_runs)
+    assert complete_runs == {}
+
+    task.configure_updater(updater)
+    assert updater.include_fields == {"id", "whiteboard", "cf_user_story"}
+    assert updater.bug_ids == {1903487}
+
+    updater.fetch_data()
+
+    def get_file(url: str, allowed_types: Optional[set[str]] = None) -> Optional[bytes]:
+        if url == resolved_testcase_url:
+            return testcase_data
+        raise AssertionError(f"Unexpected fetch of {url}")
+
+    with patch("webcompat_kb.etl.autowebcompat.try_get_file") as mock_get_file:
+        mock_get_file.side_effect = get_file
+        task.populate_updates(updater)
+
+    return updater.bug_updates[1903487][1], result
+
+
+def test_diagnosis_bugzilla_update() -> None:
+    """A successful diagnosis sets status fields, comments, and attaches the testcase."""
+    testcase_source = "<!doctype html><title>reduced</title>\n"
+    updates, result = run_diagnosis_update(testcase_data=testcase_source.encode("utf8"))
+
+    bug_data = load_data("bug-1903487-diagnosis.json")
+    assert bug_data.bug_update is not None
+    assert updates.bug.cf_user_story == bug_data.bug_update.cf_user_story
+    assert updates.bug.whiteboard is None
+
+    assert updates.bug.comment is not None
+    assert cast(str, result["root_cause"]) in updates.bug.comment.body
+    assert cast(str, result["evidence"]) in updates.bug.comment.body
+
+    assert len(updates.add_attachments) == 1
+    attachment = updates.add_attachments[0]
+    assert attachment.file_name == "autowebcompat-diagnosis-testcase.html"
+    assert attachment.content_type == "text/html"
+    assert base64.b64decode(attachment.data).decode("utf8") == testcase_source
+
+
+def test_diagnosis_bugzilla_update_testcase_fetch_failed() -> None:
+    """A testcase that can't be fetched doesn't block the rest of the update."""
+    updates, _ = run_diagnosis_update(testcase_data=None)
+
+    assert updates.add_attachments == []
+    assert updates.bug.comment is not None
+    assert updates.bug.cf_user_story is not None
+    assert "autowebcompat-diagnosis-status:success" in updates.bug.cf_user_story
+
+
+def test_diagnosis_bugzilla_update_no_testcase() -> None:
+    """A diagnosis with no reduced testcase still comments and sets status."""
+    updates, _ = run_diagnosis_update(result_overrides={"testcase_url": None})
+
+    assert updates.add_attachments == []
+    assert updates.bug.comment is not None
+    assert updates.bug.cf_user_story is not None
+    assert "autowebcompat-diagnosis-status:success" in updates.bug.cf_user_story
+
+
+def test_diagnosis_bugzilla_update_not_reproduced() -> None:
+    """A run that couldn't reproduce records the failure reason and no comment."""
+    updates, _ = run_diagnosis_update(
+        result_overrides={
+            "reproduced": False,
+            "failure_reason": "blocked_captcha",
+            "root_cause": None,
+            "evidence": None,
+            "testcase_url": None,
+        }
+    )
+
+    assert updates.bug.whiteboard is None
+    assert updates.bug.cf_user_story is not None
+    assert "autowebcompat-diagnosis-status:failed" in updates.bug.cf_user_story
+    assert "autowebcompat-diagnosis-reason:blocked_captcha" in updates.bug.cf_user_story
+    assert updates.bug.comment is None
+    assert updates.add_attachments == []
+
+
+def test_diagnosis_schedule_clears_flag() -> None:
+    """Scheduling a run consumes the request token from the whiteboard."""
+    hackbot_client = MockHackbot()
+    bq_service = MockBigQueryService()
+    bq_service.diagnosis_bugs.append(
+        {"number": 1903487, "source_time": "2026-08-10T12:00:00"}
+    )
+    task = autowebcompat.DiagnosisTask(hackbot_client, bq_service, {})
+    updater = MockBugzillaUpdater()
+    updater.bug_data.append(
+        {
+            "id": 1903487,
+            "whiteboard": "[autowebcompat:processed][autowebcompat:diagnose]",
+            "cf_user_story": "",
+        }
+    )
+
+    scheduled = task.create_new()
+    assert list(scheduled.keys()) == ["bugzilla:diagnose-flag"]
+    assert len(hackbot_client.created) == 1
+    request = hackbot_client.created[0]
+    assert isinstance(request, autowebcompat.AutowebcompatDiagnosisRequest)
+    assert request.agent == "autowebcompat-diagnosis"
+    assert request.bug_id == 1903487
+
+    task.configure_updater(updater)
+    assert updater.bug_ids == {1903487}
+    updater.fetch_data()
+    task.populate_updates(updater)
+
+    updates = updater.bug_updates[1903487][1]
+    assert updates.bug.whiteboard == "[autowebcompat:processed]"
+    assert updates.has_updates()
+
+
+def test_diagnosis_schedule_skips_in_flight() -> None:
+    """A bug with an incomplete run isn't dispatched again."""
+    hackbot_client = MockHackbot()
+    bq_service = MockBigQueryService()
+    bq_service.diagnosis_bugs.append(
+        {"number": 1903487, "source_time": "2026-08-10T12:00:00"}
+    )
+    bq_service.scheduled.append(
+        {
+            "agent": "autowebcompat-diagnosis",
+            "task_name": "diagnosis",
+            "source_key": "bugzilla:diagnose-flag",
+            "run_key": "1903487",
+        }
+    )
+    task = autowebcompat.DiagnosisTask(hackbot_client, bq_service, {})
+
+    assert task.create_new() == {}
+    assert hackbot_client.created == []
