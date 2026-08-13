@@ -1664,7 +1664,7 @@ def test_parse_user_story(input, expected):
         ({"cf_webcompat_score": "10"}, {"webcompat_score": 10}),
     ],
 )
-def test_from_bugzilla(input_data, test_fields):
+def test_bug_from_bugzilla_data(input_data, test_fields):
     bug_data = {
         "id": 1,
         "alias": None,
@@ -1683,7 +1683,7 @@ def test_from_bugzilla(input_data, test_fields):
         "keywords": [],
         "url": "https://example.test",
         "cf_user_story": "",
-        "last_resolved": None,
+        "cf_last_resolved": None,
         "last_change_time": "2024-03-22T16:40:27Z",
         "whiteboard": "",
         "creator": "nobody@mozilla.org",
@@ -1692,8 +1692,7 @@ def test_from_bugzilla(input_data, test_fields):
         "cf_size_estimate": "---",
     }
     bug_data.update(input_data)
-    bugzilla_bug = bugdantic.bugzilla.Bug.model_validate(bug_data)
-    bug = Bug.from_bugzilla(bugzilla_bug)
+    bug = Bug.model_validate(bug_data)
 
     for attr, expected in test_fields.items():
         assert getattr(bug, attr) == expected
