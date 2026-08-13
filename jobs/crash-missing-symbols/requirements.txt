@@ -1,0 +1,7 @@
+boto3==1.40.5
+click==8.4.1
+google-cloud-bigquery==3.41.0
+requests==2.32.4
+
+flake8==7.3.0
+pytest==9.0.3
