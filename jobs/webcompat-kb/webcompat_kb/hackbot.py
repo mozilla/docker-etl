@@ -84,8 +84,18 @@ class HackbotAgentResult(BaseModel):
     total_cost_usd: float | None = None
 
 
+class ErrorFindings(BaseModel):
+    traceback: Optional[str] = None
+
+
+class ErrorSummary(BaseModel):
+    status: Literal["error"]
+    error: str
+    findings: ErrorFindings
+
+
 class BaseSummary(BaseModel):
-    status: str
+    status: Literal["ok"]
     error: Optional[str]
     # Subclasses will usually have something that inherits from HackbotAgentResult
     # findings: HackbotAgentResult
