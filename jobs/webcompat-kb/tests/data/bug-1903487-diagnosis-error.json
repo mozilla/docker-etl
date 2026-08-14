@@ -1,0 +1,59 @@
+{
+  "bug": {
+    "comments": [],
+    "attachments": [],
+    "groups": [],
+    "whiteboard": "[autowebcompat:processed][autowebcompat:repro-success]",
+    "cf_user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100\nautowebcompat-repro-status:success\n",
+    "id": 1903487
+  },
+  "bug_update": {
+    "id": 1903487,
+    "cf_user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100\nautowebcompat-repro-status:success\nautowebcompat-diagnosis-status:failed\nautowebcompat-diagnosis-reason:error\n"
+  },
+  "hackbot_scheduled": {
+    "run_id": "3c0b6a71-5d84-4e29-b1f7-2a9c8e5d0431",
+    "agent": "autowebcompat-diagnosis",
+    "task_name": "diagnosis",
+    "source_key": "bugzilla:diagnose-flag",
+    "run_key": "1903487",
+    "source_time": "2026-08-10T12:00:00",
+    "requested_at": "2026-08-10T12:15:04.691019",
+    "request_data": {
+      "number": 1903487,
+      "source_time": "2026-08-10T12:00:00"
+    },
+    "extra_data": {
+      "bug_id": 1903487
+    }
+  },
+  "hackbot_completed": {
+    "run_id": "3c0b6a71-5d84-4e29-b1f7-2a9c8e5d0431",
+    "status": "succeeded",
+    "created_at": "2026-08-10T12:15:05.173462",
+    "completed_at": "2026-08-10T12:26:44.701397",
+    "execution_name": "projects/hackbot-dev/locations/us-central1/jobs/hackbot-agent-autowebcompat-diagnosis/executions/hackbot-agent-autowebcompat-diagnosis-7bnq8",
+    "results_prefix": "runs/3c0b6a71-5d84-4e29-b1f7-2a9c8e5d0431/",
+    "summary": {
+      "status": "error",
+      "error": "AgentError: https://www.kapwing.com/studio/editor: agent finished without submitting a result via submit_result",
+      "findings": {
+        "traceback": "NoneType: None\n"
+      },
+      "actions": []
+    },
+    "artifacts": [
+      {
+        "name": "logs/agent.log",
+        "size": "18337",
+        "content_type": "text/plain"
+      },
+      {
+        "name": "summary.json",
+        "size": "223",
+        "content_type": "application/json"
+      }
+    ],
+    "error": null
+  }
+}

@@ -173,14 +173,19 @@ png_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVR4AWNgAAAAAg
 
 
 def run_repro_update(
+    data_file: str,
     script_url: Optional[str] = None,
     script_data: Optional[bytes] = None,
-) -> tuple[autowebcompat.BugUpdate, dict[str, Json]]:
-    """Run a repro task's Bugzilla update for the bug-1903487 fixture.
+) -> tuple[autowebcompat.BugUpdate, Optional[dict[str, Json]]]:
+    """Run a repro task's Bugzilla update for a bug API fixture.
 
-    If `script_url` is set it's added to the fixture's result as an artifact
-    name, and `script_data` is what fetching it returns (None to simulate a
-    failed fetch).
+    :param data_file: name of the fixture file in the data directory to use.
+    :param script_url: artifact name to add to the fixture's result as the
+                       reproduction script.
+    :param script_data: data returned when fetching `script_url`, or None to
+                        simulate a failed fetch.
+    :returns: the resulting bug update, along with the agent result from the
+              fixture, if it has one.
     """
     screenshot_url = "https://hackbot.test/screenshot.png"
     resolved_script_url = "https://hackbot.test/script.mjs"
@@ -190,21 +195,22 @@ def run_repro_update(
     task = autowebcompat.ReproTask(hackbot, bq_service, {})
     updater = MockBugzillaUpdater()
 
-    bug_data = load_data("bug-1903487.json")
+    bug_data = load_data(data_file)
     assert bug_data.bug is not None
     assert bug_data.hackbot_scheduled is not None
     assert bug_data.hackbot_completed is not None
     assert bug_data.hackbot_completed.summary is not None
     result = cast(
-        dict[str, Json], bug_data.hackbot_completed.summary.findings["result"]
+        Optional[dict[str, Json]],
+        bug_data.hackbot_completed.summary.findings.get("result"),
     )
-    assert isinstance(result, dict)
 
-    artifact_urls = hackbot.artifact_urls[bug_data.hackbot_completed.run_id]
-    artifact_urls[cast(str, result["screenshot_url"])] = screenshot_url
-    if script_url is not None:
-        result["script_url"] = script_url
-        artifact_urls[script_url] = resolved_script_url
+    if result is not None:
+        artifact_urls = hackbot.artifact_urls[bug_data.hackbot_completed.run_id]
+        artifact_urls[cast(str, result["screenshot_url"])] = screenshot_url
+        if script_url is not None:
+            result["script_url"] = script_url
+            artifact_urls[script_url] = resolved_script_url
 
     run_doc = rundoc_from_bug_api(bug_data)
     updater.bug_data.append(bug_data.bug.model_dump())
@@ -245,7 +251,8 @@ def run_repro_update(
 
 
 def test_repro_bugzilla_update() -> None:
-    updates, result = run_repro_update()
+    updates, result = run_repro_update("bug-1903487.json")
+    assert result is not None
 
     assert updates.add_attachments[0].file_name == "autowebcompat-repro-steps.txt"
     assert (
@@ -259,7 +266,8 @@ def test_repro_bugzilla_update() -> None:
 def test_repro_bugzilla_update_script() -> None:
     """A fetched script is attached in place of the reproduction steps."""
     script_source = "import puppeteer from 'puppeteer';\n"
-    updates, result = run_repro_update(
+    updates, _ = run_repro_update(
+        "bug-1903487.json",
         script_url="reproduction-nightly.mjs",
         script_data=script_source.encode("utf8"),
     )
@@ -279,8 +287,9 @@ def test_repro_bugzilla_update_script() -> None:
 def test_repro_bugzilla_update_script_fetch_failed() -> None:
     """If the script can't be fetched we fall back to the steps."""
     updates, result = run_repro_update(
-        script_url="reproduction-nightly.mjs", script_data=None
+        "bug-1903487.json", script_url="reproduction-nightly.mjs", script_data=None
     )
+    assert result is not None
 
     file_names = [item.file_name for item in updates.add_attachments]
     assert file_names == [
@@ -293,15 +302,33 @@ def test_repro_bugzilla_update_script_fetch_failed() -> None:
     )
 
 
+def test_repro_bugzilla_update_error() -> None:
+    """A run that errored out is recorded as a failed reproduction.
+
+    The expected whiteboard and user story are in the fixture, and checked by
+    run_repro_update.
+    """
+    updates, result = run_repro_update(data_file="bug-1903487-repro-error.json")
+
+    assert result is None
+    assert updates.bug.comment is None
+    assert updates.add_attachments == []
+
+
 def run_diagnosis_update(
+    data_file: str,
     testcase_data: Optional[bytes] = None,
     result_overrides: Optional[dict[str, Json]] = None,
-) -> tuple[autowebcompat.BugUpdate, dict[str, Json]]:
-    """Run a diagnosis task's Bugzilla update for the diagnosis fixture.
+) -> tuple[autowebcompat.BugUpdate, Optional[dict[str, Json]]]:
+    """Run a diagnosis task's Bugzilla update for a bug API fixture.
 
-    `testcase_data` is what fetching the testcase artifact returns (None to
-    simulate a failed fetch). `result_overrides` is merged into the fixture's
-    agent result before the update runs.
+    :param data_file: name of the fixture file in the data directory to use.
+    :param testcase_data: data returned when fetching the testcase artifact, or
+                          None to simulate a failed fetch.
+    :param result_overrides: values merged into the fixture's agent result
+                             before the update runs.
+    :returns: the resulting bug update, along with the agent result from the
+              fixture, if it has one.
     """
     resolved_testcase_url = "https://hackbot.test/testcase.html"
 
@@ -310,21 +337,25 @@ def run_diagnosis_update(
     task = autowebcompat.DiagnosisTask(hackbot_client, bq_service, {})
     updater = MockBugzillaUpdater()
 
-    bug_data = load_data("bug-1903487-diagnosis.json")
+    bug_data = load_data(data_file)
     assert bug_data.bug is not None
     assert bug_data.hackbot_scheduled is not None
     assert bug_data.hackbot_completed is not None
     assert bug_data.hackbot_completed.summary is not None
     result = cast(
-        dict[str, Json], bug_data.hackbot_completed.summary.findings["result"]
+        Optional[dict[str, Json]],
+        bug_data.hackbot_completed.summary.findings.get("result"),
     )
-    assert isinstance(result, dict)
-    if result_overrides:
-        result.update(result_overrides)
 
-    if result.get("testcase_url"):
-        artifact_urls = hackbot_client.artifact_urls[bug_data.hackbot_completed.run_id]
-        artifact_urls[cast(str, result["testcase_url"])] = resolved_testcase_url
+    if result is not None:
+        if result_overrides:
+            result.update(result_overrides)
+
+        if result.get("testcase_url"):
+            artifact_urls = hackbot_client.artifact_urls[
+                bug_data.hackbot_completed.run_id
+            ]
+            artifact_urls[cast(str, result["testcase_url"])] = resolved_testcase_url
 
     run_doc = rundoc_from_bug_api(bug_data)
     updater.bug_data.append(bug_data.bug.model_dump())
@@ -354,7 +385,10 @@ def run_diagnosis_update(
 def test_diagnosis_bugzilla_update() -> None:
     """A successful diagnosis sets status fields, comments, and attaches the testcase."""
     testcase_source = "<!doctype html><title>reduced</title>\n"
-    updates, result = run_diagnosis_update(testcase_data=testcase_source.encode("utf8"))
+    updates, result = run_diagnosis_update(
+        "bug-1903487-diagnosis.json", testcase_data=testcase_source.encode("utf8")
+    )
+    assert result is not None
 
     bug_data = load_data("bug-1903487-diagnosis.json")
     assert bug_data.bug_update is not None
@@ -374,7 +408,7 @@ def test_diagnosis_bugzilla_update() -> None:
 
 def test_diagnosis_bugzilla_update_testcase_fetch_failed() -> None:
     """A testcase that can't be fetched doesn't block the rest of the update."""
-    updates, _ = run_diagnosis_update(testcase_data=None)
+    updates, _ = run_diagnosis_update("bug-1903487-diagnosis.json", testcase_data=None)
 
     assert updates.add_attachments == []
     assert updates.bug.comment is not None
@@ -384,7 +418,9 @@ def test_diagnosis_bugzilla_update_testcase_fetch_failed() -> None:
 
 def test_diagnosis_bugzilla_update_no_testcase() -> None:
     """A diagnosis with no reduced testcase still comments and sets status."""
-    updates, _ = run_diagnosis_update(result_overrides={"testcase_url": None})
+    updates, _ = run_diagnosis_update(
+        "bug-1903487-diagnosis.json", result_overrides={"testcase_url": None}
+    )
 
     assert updates.add_attachments == []
     assert updates.bug.comment is not None
@@ -395,19 +431,34 @@ def test_diagnosis_bugzilla_update_no_testcase() -> None:
 def test_diagnosis_bugzilla_update_not_reproduced() -> None:
     """A run that couldn't reproduce records the failure reason and no comment."""
     updates, _ = run_diagnosis_update(
+        "bug-1903487-diagnosis.json",
         result_overrides={
             "reproduced": False,
             "failure_reason": "blocked_captcha",
             "root_cause": None,
             "evidence": None,
             "testcase_url": None,
-        }
+        },
     )
 
     assert updates.bug.whiteboard is None
     assert updates.bug.cf_user_story is not None
     assert "autowebcompat-diagnosis-status:failed" in updates.bug.cf_user_story
     assert "autowebcompat-diagnosis-reason:blocked_captcha" in updates.bug.cf_user_story
+    assert updates.bug.comment is None
+    assert updates.add_attachments == []
+
+
+def test_diagnosis_bugzilla_update_error() -> None:
+    """A run that errored out is recorded as a failed diagnosis."""
+    data_file = "bug-1903487-diagnosis-error.json"
+    updates, result = run_diagnosis_update(data_file=data_file)
+    assert result is None
+
+    bug_data = load_data(data_file)
+    assert bug_data.bug_update is not None
+    assert updates.bug.cf_user_story == bug_data.bug_update.cf_user_story
+    assert updates.bug.whiteboard is None
     assert updates.bug.comment is None
     assert updates.add_attachments == []
 

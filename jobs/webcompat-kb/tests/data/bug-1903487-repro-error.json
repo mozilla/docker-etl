@@ -1,0 +1,69 @@
+{
+  "bug": {
+    "comments": [],
+    "attachments": [],
+    "groups": [],
+    "whiteboard": "[autowebcompat:processed]",
+    "cf_user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100\n",
+    "id": 1903487
+  },
+  "bug_update": {
+    "id": 1903487,
+    "whiteboard": "[autowebcompat:processed][autowebcompat:repro-failed]",
+    "cf_user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100\nautowebcompat-repro-status:failed\nautowebcompat-repro-reason:error\n"
+  },
+  "hackbot_scheduled": {
+    "run_id": "b70d4c9e-1f52-4a0c-9c3d-8de6a1f4b207",
+    "agent": "autowebcompat-repro",
+    "task_name": "repro",
+    "source_key": "bugzilla:creation",
+    "run_key": "1903487",
+    "source_time": "2024-06-19T06:44:01",
+    "requested_at": "2026-07-14T23:45:04.691019",
+    "request_data": {
+      "attachments": [],
+      "comments": [],
+      "creation_time": "2024-06-19T06:44:01Z",
+      "keywords": [
+        "webcompat:needs-contact"
+      ],
+      "number": 1903487,
+      "title": "www.kapwing.com - Unsupported browser warning",
+      "url": "https://www.kapwing.com/studio/editor",
+      "user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100",
+      "whiteboard": "[autowebcompat:processed]"
+    },
+    "extra_data": {
+      "bug_id": 1903487
+    }
+  },
+  "hackbot_completed": {
+    "run_id": "b70d4c9e-1f52-4a0c-9c3d-8de6a1f4b207",
+    "status": "succeeded",
+    "created_at": "2026-07-15T03:45:05.173462",
+    "completed_at": "2026-07-15T03:52:44.701397",
+    "execution_name": "projects/hackbot-dev/locations/us-central1/jobs/hackbot-agent-autowebcompat-repro/executions/hackbot-agent-autowebcompat-repro-9htz4",
+    "results_prefix": "runs/b70d4c9e-1f52-4a0c-9c3d-8de6a1f4b207/",
+    "summary": {
+      "status": "error",
+      "error": "AgentError: https://www.kapwing.com/studio/editor: agent finished without submitting a result via submit_result",
+      "findings": {
+        "traceback": "NoneType: None\n"
+      },
+      "actions": []
+    },
+    "artifacts": [
+      {
+        "name": "logs/agent.log",
+        "size": "21044",
+        "content_type": "text/plain"
+      },
+      {
+        "name": "summary.json",
+        "size": "223",
+        "content_type": "application/json"
+      }
+    ],
+    "error": null
+  }
+}
