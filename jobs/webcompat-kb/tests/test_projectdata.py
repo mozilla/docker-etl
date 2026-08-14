@@ -1,4 +1,5 @@
 import os
+
 import pytest
 
 from webcompat_kb.bqhelpers import SchemaField, TableSchema
@@ -10,9 +11,9 @@ from webcompat_kb.projectdata import (
     SchemaId,
     SchemaIdMapper,
     SchemaType,
+    TableMetadata,
     TableSchemaCreator,
     TableTemplate,
-    TableMetadata,
     ViewTemplate,
     stage_dataset,
 )

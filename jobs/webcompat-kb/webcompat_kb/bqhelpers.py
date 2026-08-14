@@ -2,15 +2,20 @@ import enum
 import logging
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from types import TracebackType
-from typing import Any, Iterable, Iterator, Mapping, Optional, Self, Sequence, cast
+from typing import Any, Optional, Self, cast
 
 import google.auth
 from google.cloud import bigquery
 
 from .httphelpers import Json
+
+
+class BigQueryError(Exception):
+    pass
 
 
 def get_client(bq_project_id: str) -> bigquery.Client:
@@ -203,7 +208,7 @@ class Schema(ABC):
     def __str__(self) -> str:
         return str(self.id)
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
             return False
 
@@ -223,7 +228,7 @@ class Schema(ABC):
 
         This is helpful as an assert for typechecking."""
         if not isinstance(self, TableSchema):
-            raise ValueError(f"Schema {self.id} is not a TableSchema")
+            raise TypeError(f"Schema {self.id} is not a TableSchema")
         return self
 
     def view(self) -> "ViewSchema":
@@ -231,7 +236,7 @@ class Schema(ABC):
 
         This is helpful as an assert for typechecking."""
         if not isinstance(self, ViewSchema):
-            raise ValueError(f"Schema {self.id} is not a ViewSchema")
+            raise TypeError(f"Schema {self.id} is not a ViewSchema")
         return self
 
     def routine(self) -> "RoutineSchema":
@@ -239,7 +244,7 @@ class Schema(ABC):
 
         This is helpful as an assert for typechecking."""
         if not isinstance(self, RoutineSchema):
-            raise ValueError(f"Schema {self.id} is not a RoutineSchema")
+            raise TypeError(f"Schema {self.id} is not a RoutineSchema")
         return self
 
 
@@ -272,14 +277,16 @@ class TableSchema(Schema):
         ):
             raise ValueError(f"Partition field {partition.field} not found in table")
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         if not super().__eq__(other):
             return False
-        return (
-            self.fields == other.fields
-            and self.etl_jobs == other.etl_jobs
-            and self.partition == other.partition
-        )
+        if isinstance(other, TableSchema):
+            return (
+                self.fields == other.fields
+                and self.etl_jobs == other.etl_jobs
+                and self.partition == other.partition
+            )
+        return False
 
     @property
     def schema(self) -> Sequence[bigquery.SchemaField]:
@@ -345,8 +352,7 @@ class Dataset:
             raise KeyError(f"No such schema {name}") from e
 
     def __iter__(self) -> Iterator[Schema]:
-        for schema in self.schemas.values():
-            yield schema
+        yield from self.schemas.values()
 
     def tables(self) -> Iterator[TableSchema]:
         for item in self:
@@ -550,7 +556,7 @@ class BigQuery:
             )
 
         if len(table.schema) != len(new_schema):
-            raise Exception("Table update failed")
+            raise BigQueryError("Table update failed")
         return table
 
     def get_table(
@@ -730,8 +736,7 @@ WHERE {condition}
         self, dataset_id: str | DatasetId | Dataset
     ) -> Iterator[bigquery.Routine]:
         dataset_id = self.get_dataset_id(dataset_id)
-        for item in self.client.list_routines(str(dataset_id)):
-            yield item
+        yield from self.client.list_routines(str(dataset_id))
 
     def get_tables(
         self, dataset_id: str | DatasetId | Dataset

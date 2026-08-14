@@ -1,9 +1,10 @@
-from datetime import UTC, datetime, timedelta
 import logging
 import re
 import time
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Iterator, Mapping, Optional, Sequence
+from datetime import UTC, datetime, timedelta
+from typing import Optional
 
 import httpx
 
@@ -60,7 +61,7 @@ def retry_time(resp: httpx.Response) -> Optional[datetime]:
     retry_after = resp.headers.get("retry-after")
     if retry_after is not None:
         try:
-            return datetime.now() + timedelta(seconds=float(retry_after))
+            return datetime.now(tz=UTC) + timedelta(seconds=float(retry_after))
         except ValueError:
             pass
 
@@ -97,7 +98,7 @@ def iter_paginated_json(
                 data=None, next_url=next_url, resume_at=resume_at
             )
             # Add a small offset to reduce the chance of races
-            sleep_seconds = resume_at.timestamp() - datetime.now().timestamp() + 1
+            sleep_seconds = resume_at.timestamp() - datetime.now(tz=UTC).timestamp() + 1
             if sleep_seconds > 0:
                 logging.warning(
                     f"Rate limited fetching {next_url}; sleeping until {resume_at.isoformat()} ({sleep_seconds:.0f}s)"

@@ -1,19 +1,19 @@
 import argparse
 import logging
-import re
-import pathlib
 import os
+import pathlib
+import re
 import sys
 from abc import ABC, abstractmethod
+from collections.abc import MutableMapping
 from dataclasses import dataclass
-from typing import Any, MutableMapping, Optional
+from typing import Any, Optional
 
 from google.auth import exceptions as auth_exceptions
 
 from .bqhelpers import BigQuery, SchemaId
 from .config import Config
 from .projectdata import Project, TableSchema
-
 
 here = pathlib.Path(os.path.dirname(__file__))
 
@@ -114,7 +114,7 @@ gcloud auth login --enable-gdrive-access --update-adc
             sys.exit(1)
         except Exception:
             if "pdb" in args and args.pdb:
-                import pdb
+                import pdb  # noqa: T100
 
                 pdb.post_mortem()
             else:
