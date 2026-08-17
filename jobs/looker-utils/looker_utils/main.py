@@ -10,6 +10,7 @@ import looker_sdk
 import pandas as pd
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery, pubsub_v1
+from looker_sdk import error
 from looker_sdk import methods40 as methods
 from looker_sdk.sdk.api40 import models
 
@@ -275,9 +276,7 @@ def disable_exited_employees(ctx, subscription_id, max_messages):
     sdk = ctx.obj["SDK"]
     subscriber = pubsub_v1.SubscriberClient()
 
-    print("process")
     _disable_user_in_looker(sdk, "tzhang@mozilla.com")
-    return
 
     with subscriber:
         response = subscriber.pull(
@@ -340,6 +339,76 @@ def disable_exited_employees(ctx, subscription_id, max_messages):
         print(
             f"Done: {len(ack_ids)} message(s) succeeded, {len(nack_ids)} message(s) failed"
         )
+
+
+def _enable_api3_for_user(sdk: methods.Looker40SDK, user, dry_run: bool = False):
+    """Enable can_manage_api3 for a single user object.
+
+    Note: `can_manage_api3` is version-gated on Looker (Google Cloud core) and may
+    be read-only on some instances. After updating we re-fetch the user and confirm
+    the flag actually flipped, warning if the write had no effect.
+    """
+    if not user.id:
+        print(f"User {user.email} has no ID, skipping.")
+        return
+
+    if getattr(user, "can_manage_api3_creds", None) is True:
+        return
+
+    if dry_run:
+        print(
+            f"[dry-run] Would enable API key management for {user.email} "
+            f"(ID: {user.id})."
+        )
+        return
+
+    try:
+        sdk.update_user(
+            user.id,
+            models.WriteUser(can_manage_api3_creds=True),
+        )
+    except error.SDKError as e:
+        print(f"Error enabling API keys for {user.email} (ID: {user.id}): {e}")
+        return
+
+    # Verify the flag actually changed
+    try:
+        updated = sdk.user(user.id)
+        if getattr(updated, "can_manage_api3_creds", None) is True:
+            print(f"Enabled API key management for {user.email} (ID: {user.id}).")
+        else:
+            print(
+                f"WARNING: update_user for {user.email} (ID: {user.id}) did not "
+                "enable can_manage_api3_creds "
+                f"(value={getattr(updated, 'can_manage_api3_creds', None)})."
+            )
+    except error.SDKError as e:
+        print(
+            f"Enabled API keys for {user.email} (ID: {user.id}) but could not "
+            f"verify: {e}"
+        )
+
+
+@cli.command(name="enable-api-keys")
+@click.option(
+    "--dry-run",
+    "--dry_run",
+    is_flag=True,
+    default=False,
+    help="Show what would change without writing.",
+)
+@click.pass_context
+def enable_api_keys(ctx, dry_run):
+    """Enable API key management (can_manage_api3) for every Looker user."""
+    sdk = ctx.obj["SDK"]
+
+    users = sdk.all_users()
+    print(
+        f"Enabling API key management for all {len(users)} user(s)"
+        f"{' (dry-run)' if dry_run else ''}."
+    )
+    for user in users:
+        _enable_api3_for_user(sdk, user, dry_run=dry_run)
 
 
 if __name__ == "__main__":
