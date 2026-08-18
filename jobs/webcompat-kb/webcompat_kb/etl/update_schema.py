@@ -515,7 +515,9 @@ def update_schemas(
 
     table_updater = TableUpdater(current_schemas.tables)
     # Only create tables when they're needed for a job that we'll run
-
+    logging.debug(
+        f"Will update table schemas: {', '.join(str(item) for item in update_table_schemas)}"
+    )
     for table_schema in update_table_schemas:
         if table_updater.needs_update(table_schema):
             table_updater.update(client, table_schema)

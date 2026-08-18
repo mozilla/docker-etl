@@ -86,8 +86,10 @@ web_features_re = re.compile(
 )
 
 
-def get_bugs(body: str) -> set[int]:
-    results = set()
+def get_bugs(body: Optional[str]) -> set[int]:
+    results: set[int] = set()
+    if body is None:
+        return results
     for m in bugzilla_re.finditer(body):
         try:
             results.add(int(m["bug_id"]))
@@ -96,7 +98,9 @@ def get_bugs(body: str) -> set[int]:
     return results
 
 
-def get_features(body: str) -> set[str]:
+def get_features(body: Optional[str]) -> set[str]:
+    if body is None:
+        return set()
     return {m["feature_name"] for m in web_features_re.finditer(body)}
 
 
