@@ -1,8 +1,11 @@
-CREATE OR REPLACE FUNCTION `{{ ref(name) }}`(url STRING, crux_yyyymm INT64) RETURNS NUMERIC AS (
+CREATE OR REPLACE FUNCTION `{{ ref(name) }}`(url STRING, crux_yyyymm INT64, site_rank_override ARRAY<STRING>) RETURNS NUMERIC AS (
   (
     SELECT
       CAST(CASE
-        WHEN MIN(host_ranks.global_rank) <= 1000 THEN 15
+        WHEN
+          MIN(host_ranks.global_rank) <= 1000 OR
+          "global-1k" IN UNNEST(site_rank_override)
+          THEN 15
         WHEN
           MIN(host_ranks.core_rank) <= 1000 OR
           MIN(host_ranks.india_rank) <= 1000 OR
@@ -11,10 +14,17 @@ CREATE OR REPLACE FUNCTION `{{ ref(name) }}`(url STRING, crux_yyyymm INT64) RETU
           MIN(host_ranks.mexico_rank) <= 1000 OR
           MIN(host_ranks.italy_rank) <= 1000 OR
           MIN(host_ranks.spain_rank) <= 1000 OR
-          MIN(host_ranks.netherlands_rank) <= 1000
+          MIN(host_ranks.netherlands_rank) <= 1000 OR
+          "core-1k" IN UNNEST(site_rank_override)
           THEN 10
-        WHEN MIN(host_ranks.global_rank) <= 10000 THEN 7.5
-        WHEN MIN(host_ranks.local_rank) <= 1000 THEN 5
+        WHEN
+          MIN(host_ranks.global_rank) <= 10000 OR
+          "global-10k" IN UNNEST(site_rank_override)
+          THEN 7.5
+        WHEN
+          MIN(host_ranks.local_rank) <= 1000 OR
+          "local-1k" IN UNNEST(site_rank_override)
+          THEN 5
         WHEN
           MIN(host_ranks.core_rank) <= 10000 OR
           MIN(host_ranks.india_rank) <= 10000 OR
@@ -23,9 +33,13 @@ CREATE OR REPLACE FUNCTION `{{ ref(name) }}`(url STRING, crux_yyyymm INT64) RETU
           MIN(host_ranks.mexico_rank) <= 10000 OR
           MIN(host_ranks.italy_rank) <= 10000 OR
           MIN(host_ranks.spain_rank) <= 10000 OR
-          MIN(host_ranks.netherlands_rank) <= 10000
+          MIN(host_ranks.netherlands_rank) <= 10000 OR
+          "core-10k" IN UNNEST(site_rank_override)
           THEN 5
-        WHEN MIN(host_ranks.local_rank) <= 10000 THEN 2.5
+        WHEN
+          MIN(host_ranks.local_rank) <= 10000 OR
+          "local-10k" IN UNNEST(site_rank_override)
+          THEN 2.5
         ELSE 1
       END AS NUMERIC)
     FROM

@@ -374,16 +374,27 @@ def compute_historic_scores(
     rank_yyyymm = project["webcompat_knowledge_base"][
         "WEBCOMPAT_METRIC_YYYYMM"
     ].routine()
+    extract_array = project["webcompat_knowledge_base"]["EXTRACT_ARRAY"].routine()
     with client.temporary_table(schema, rows) as tmp_table:
         score_query = f"""
+WITH overrides AS (
+  SELECT number,
+         index,
+         url,
+         keywords,
+         user_story,
+         `{extract_array}`(user_story, "$.site-rank-override") AS site_rank_override
+  FROM `{tmp_table.name}`
+)
 SELECT number,
        index,
        url,
        keywords,
        user_story,
-       CAST(`{score_no_rank}`(keywords, user_story) * `{rank_modifier}`(url, `{rank_yyyymm}`()) AS NUMERIC) as score
-FROM `{tmp_table.name}`
+       CAST(`{score_no_rank}`(keywords, user_story) * `{rank_modifier}`(url, `{rank_yyyymm}`(), site_rank_override) AS NUMERIC) as score
+FROM overrides
 """
+
         bugs_with_webcompat_states = set()
         scores = tmp_table.query(score_query)
         for row in scores:
