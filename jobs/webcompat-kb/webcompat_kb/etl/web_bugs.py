@@ -9,7 +9,6 @@ from typing import (
     Optional,
     TypeVar,
     Generic,
-    Callable,
 )
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
@@ -103,10 +102,15 @@ IssueParams = IssueBackfill | IssueUpdate
 
 class SourceRepo(ABC, Generic[OutputT]):
     repo: str
+    private_milestone: Optional[int]
 
     def __init__(self, gh_client: github.GitHub, dest_table: TableSchema):
         self.gh_client = gh_client
         self.dest_table = dest_table
+
+    def skip_from_file(self, issue: github.GitHubIssue) -> bool:
+        """Whether to ignore an issue in a data dump and refetch it from the API."""
+        return False
 
     def iter_issues(self, params: IssueParams) -> Iterator[github.GitHubIssuesPage]:
         if isinstance(params, IssueUpdate):
@@ -141,6 +145,29 @@ class WebcompatParserState(Enum):
 
 class WebBugsRepo(SourceRepo[WebBugsRow]):
     repo = "webcompat/web-bugs"
+    private_milestone = 8
+
+    def skip_from_file(self, issue: github.GitHubIssue) -> bool:
+        # Milestone 8 is invalid issues, private issues have both this milestone
+        # and a fixed title. Unmoderated issues have a known label and a fixed title.
+        return bool(
+            (
+                issue.title == "Issue closed."
+                and issue.milestone
+                and issue.milestone.number == self.private_milestone
+            )
+            or (
+                issue.title == "In the moderation queue."
+                and any(
+                    (isinstance(item, str) and item == "action-needsmoderation")
+                    or (
+                        isinstance(item, github.GitHubLabel)
+                        and item.name == "action-needsmoderation"
+                    )
+                    for item in issue.labels
+                )
+            )
+        )
 
     def process_issue(self, issue: github.GitHubIssue) -> WebBugsRow:
         labels: list[str] = []
@@ -491,8 +518,8 @@ def load_from_file(
     bq_service: BigQueryService,
     repo: SourceRepo,
     path: Path,
-    backfill_skip: Optional[Callable[[github.GitHubIssue], bool]],
-) -> Optional[datetime]:
+) -> datetime:
+    """Import issues from a data dump, returning how far up to date the dump is."""
     logging.info(f"Backfilling from file {path}")
     if path.suffix in {".zst", ".zstd"}:
         f = zstandard.open(path, "r")
@@ -504,9 +531,11 @@ def load_from_file(
     with f:
         for line in f:
             issue = github.GitHubIssue.model_validate_json(line)
+            # Skipped issues still count towards the source time; they're
+            # refetched from the API rather than being missing from the dump.
             if source_time is None or issue.updated_at > source_time:
                 source_time = issue.updated_at
-            if backfill_skip is None or not backfill_skip(issue):
+            if not repo.skip_from_file(issue):
                 rows[issue.number] = repo.process_issue(issue)
 
             if len(rows) >= 10000:
@@ -515,30 +544,115 @@ def load_from_file(
 
     bq_service.insert_issues(repo.dest_table, rows)
 
+    if source_time is None:
+        raise ValueError(f"No issues found in {path}")
+
     return source_time
 
 
-def is_private_issue(issue: github.GitHubIssue) -> bool:
-    # Milestone 8 is invalid issues, private issues have both this milestone
-    # and a fixed title. Unmoderated issues have a known label and a fixed title.
-    return bool(
-        (
-            issue.title == "Issue closed."
-            and issue.milestone
-            and issue.milestone.number == 8
-        )
-        or (
-            issue.title == "In the moderation queue."
-            and any(
-                (isinstance(item, str) and item == "action-needsmoderation")
-                or (
-                    isinstance(item, github.GitHubLabel)
-                    and item.name == "action-needsmoderation"
+class IncompleteImport(Exception):
+    """An import made some progress, but didn't run to completion."""
+
+    def __init__(self, state: SourceState):
+        super().__init__()
+        self.state = state
+
+
+def import_issues(
+    bq_service: BigQueryService,
+    repo: SourceRepo,
+    params: IssueParams,
+    source_time: datetime,
+) -> datetime:
+    """Import the issues matching params, returning the latest time at which
+    we have all known issues.
+
+    For a backfill the returned time will be equal to the input source_time.
+    This is conservative to ensure that we don't miss any issues.
+    """
+    is_backfill = isinstance(params, IssueBackfill)
+    resume_point = None
+    try:
+        rows = {}
+        for issues_page in repo.iter_issues(params):
+            if issues_page.issues:
+                if not is_backfill:
+                    source_time = max(
+                        source_time,
+                        max(issue.updated_at for issue in issues_page.issues),
+                    )
+                rows.update(
+                    {
+                        issue.number: repo.process_issue(issue)
+                        for issue in issues_page.issues
+                    }
                 )
-                for item in issue.labels
-            )
-        )
+
+            if rows and (
+                len(rows) >= 1000
+                or issues_page.next_url is None
+                or issues_page.resume_at
+            ):
+                bq_service.insert_issues(repo.dest_table, rows)
+
+                if issues_page.next_url is not None:
+                    resume_point = SourceState(
+                        source_time=source_time,
+                        next_url=issues_page.next_url if is_backfill else None,
+                    )
+                rows = {}
+    except (Exception, KeyboardInterrupt) as e:
+        if resume_point is None:
+            raise
+        raise IncompleteImport(resume_point) from e
+
+    return source_time
+
+
+def import_repo(
+    bq_service: BigQueryService,
+    repo: SourceRepo,
+    state: Optional[SourceState],
+    backfill: bool,
+    backfill_file: Optional[Path],
+) -> SourceState:
+    source_time = (
+        state.source_time.replace(tzinfo=UTC)
+        if state is not None and state.source_time is not None
+        else None
     )
+    next_url = state.next_url if state is not None else None
+
+    # If we're doing a backfill start with that
+    if backfill or source_time is None or next_url:
+        milestone = None
+        if next_url is None and backfill_file is not None:
+            source_time = load_from_file(bq_service, repo, backfill_file)
+            # The dump doesn't contain the content of private issues, so fetch
+            # those from the API.
+            milestone = repo.private_milestone
+        elif source_time is None or next_url is None:
+            latest = repo.gh_client.latest_issue_update(repo.repo)
+            if latest is None:
+                # This implies the repo is empty
+                return SourceState()
+            source_time = latest
+
+        assert source_time is not None
+        import_issues(bq_service, repo, IssueBackfill(next_url, milestone), source_time)
+
+    # Now update to the latest state of the upstream repo either based on the
+    # source_time of the last import, or of the backfill
+    try:
+        source_time = import_issues(
+            bq_service, repo, IssueUpdate(source_time), source_time
+        )
+    except IncompleteImport:
+        raise
+    except (Exception, KeyboardInterrupt) as e:
+        raise IncompleteImport(SourceState(source_time=source_time)) from e
+
+    return SourceState(source_time=source_time)
 
 
 def run(
@@ -563,71 +677,16 @@ def run(
             if not (backfill and backfill_restart)
             else None
         )
-        backfill_file = None
-        backfill_skip = None
-        if backfill or state is None or state.source_time is None or state.next_url:
-            is_backfill = True
-            start_url = state.next_url if state is not None else None
-            source_time = state.source_time if state is not None else None
-            if backfill_files.get(repo.repo) and not start_url:
-                backfill_file = backfill_files[repo.repo]
-                if backfill_file and repo.repo == "webcompat/web-bugs":
-                    milestone = 8
-                    backfill_skip = is_private_issue
-            else:
-                milestone = None
-            issue_params: IssueParams = IssueBackfill(start_url, milestone=milestone)
-        else:
-            is_backfill = False
-            issue_params = IssueUpdate(state.source_time)
-            source_time = None
-
-        if source_time is not None:
-            source_time = source_time.replace(tzinfo=UTC)
-
-        if backfill_file:
-            source_time = load_from_file(bq_service, repo, backfill_file, backfill_skip)
-
-        resume_point = None
         try:
-            rows = {}
-            for issues_page in repo.iter_issues(issue_params):
-                if issues_page.issues:
-                    for issue in issues_page.issues:
-                        if source_time is None or issue.updated_at > source_time:
-                            source_time = issue.updated_at
-                    rows.update(
-                        {
-                            issue.number: repo.process_issue(issue)
-                            for issue in issues_page.issues
-                        }
-                    )
-
-                if rows and (
-                    len(rows) >= 1000
-                    or issues_page.next_url is None
-                    or issues_page.resume_at
-                ):
-                    bq_service.insert_issues(repo.dest_table, rows)
-
-                    if issues_page.next_url is not None:
-                        resume_point = SourceState(
-                            source_time=source_time,
-                            next_url=issues_page.next_url if is_backfill else None,
-                        )
-                    rows = {}
-        except (Exception, KeyboardInterrupt) as e:
-            if resume_point:
-                if isinstance(e, Exception):
-                    logging.error(f"Failed with exception: {e}")
-                # We made some progress on a backfill, but it wasn't complete
-                new_states[repo.repo] = resume_point
-                bq_service.record_update(new_states)
-                return False
-            raise
-
-        # If we got here we completed the full import
-        new_states[repo.repo] = SourceState(source_time=source_time, next_url=None)
+            new_states[repo.repo] = import_repo(
+                bq_service, repo, state, backfill, backfill_files.get(repo.repo)
+            )
+        except IncompleteImport as e:
+            if isinstance(e.__cause__, Exception):
+                logging.error(f"Failed with exception: {e.__cause__}")
+            new_states[repo.repo] = e.state
+            bq_service.record_update(new_states)
+            return False
 
     bq_service.record_update(new_states)
     return True
@@ -638,7 +697,9 @@ def parse_backfill_paths(args: Iterable[str]) -> Mapping[str, Path]:
     valid_repos = {
         item.repo
         for item in globals().values()
-        if type(item) is SourceRepo and item is not SourceRepo
+        if isinstance(item, type)
+        and issubclass(item, SourceRepo)
+        and item is not SourceRepo
     }
     for item in args:
         if ":" not in item:

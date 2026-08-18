@@ -121,6 +121,18 @@ class GitHub:
                 rows.extend(issues_page.issues)
         return rows
 
+    def latest_issue_update(self, repo: str) -> Optional[datetime]:
+        """updated_at of the most recently updated issue in repo, if any."""
+        query = {"state": "all", "per_page": 1, "sort": "updated", "direction": "desc"}
+        data = get_json(
+            f"https://api.github.com/repos/{repo}/issues?{urlencode(query)}",
+            self.headers(),
+        )
+        assert isinstance(data, list)
+        if not data:
+            return None
+        return GitHubIssue.model_validate(data[0]).updated_at
+
     def iter_issues(
         self,
         repo: str,
