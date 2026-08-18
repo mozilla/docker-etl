@@ -22,11 +22,13 @@ dependencies = [
   "bugdantic==0.3.0",
   "filetype==1.2.0",
   "google-cloud-bigquery==3.41.0",
+  "html5lib==1.1",
   "httpx[http2]>=0.28.1",
   "jinja2>=3.1.6",
   "pydantic==2.13.4",
   "tomli-w>=1.2.0",
   "web-features==3.1.0",
+  "zstandard>=0.25.0",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +39,7 @@ test = [
   "pytest-ruff==0.5",
   "pytest==9.0.3",
   "ruff==0.15.13",
+  "types-html5lib==1.1.11.20250917",
   "types-cachetools==7.0.0.20260518",
   "types-cffi==2.0.0.20260518",
   "types-protobuf==7.34.1.20260518",

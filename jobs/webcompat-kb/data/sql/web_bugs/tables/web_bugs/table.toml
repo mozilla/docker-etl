@@ -1,0 +1,91 @@
+[number]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[state]
+type = "STRING"
+mode = "REQUIRED"
+
+[title]
+type = "STRING"
+mode = "REQUIRED"
+
+[body]
+type = "STRING"
+mode = "REQUIRED"
+
+[labels]
+type = "STRING"
+mode = "REPEATED"
+
+[created_at]
+type = "DATETIME"
+mode = "REQUIRED"
+
+[updated_at]
+type = "DATETIME"
+mode = "REQUIRED"
+
+[milestone]
+type = "RECORD"
+mode = "NULLABLE"
+
+[milestone.fields.number]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[milestone.fields.title]
+type = "STRING"
+mode = "REQUIRED"
+
+[moderated]
+type = "BOOLEAN"
+mode = "REQUIRED"
+
+[ua_header]
+type = "STRING"
+mode = "NULLABLE"
+
+[source]
+type = "STRING"
+mode = "NULLABLE"
+
+[bug_url]
+type = "STRING"
+mode = "NULLABLE"
+
+[browser]
+type = "STRING"
+mode = "NULLABLE"
+
+[os]
+type = "STRING"
+mode = "NULLABLE"
+
+[problem_type]
+type = "STRING"
+mode = "NULLABLE"
+
+[description]
+type = "STRING"
+mode = "NULLABLE"
+
+[steps_to_reproduce]
+type = "STRING"
+mode = "NULLABLE"
+
+[screenshot]
+type = "STRING"
+mode = "NULLABLE"
+
+[configuration]
+type = "RECORD"
+mode = "REPEATED"
+
+[configuration.fields.name]
+type = "STRING"
+mode = "NULLABLE"
+
+[configuration.fields.value]
+type = "STRING"
+mode = "NULLABLE"
