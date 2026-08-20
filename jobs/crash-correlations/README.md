@@ -9,9 +9,10 @@ Used in the [crash stats correlations tab](https://crash-stats.mozilla.org/signa
 
 This replaces the PySpark `top_signatures_correlations` job in 
 [python_mozetl](https://github.com/mozilla/python_mozetl/blob/main/mozetl/symbolication/top_signatures_correlations.py)
-(`mozetl/symbolication/`). The feature table moved into BigQuery and the rest is plain Python, so
-there is no Spark or Dataproc. The old job had several bugs that changed its output, so its
-numbers are not a reference to check this one against; see "Changes from the old job".
+(`mozetl/symbolication/`) that pulls code from https://github.com/marco-c/crashcorrelations.
+The feature table moved into BigQuery and the rest is plain Python, so there is no Spark or Dataproc.
+The old job had several bugs that changed its output, so its numbers are not a reference to check
+this one against; see "Changes from the old job".
 
 ## Input
 
@@ -84,6 +85,11 @@ Writing locally is the default and uploading is opt-in, so a dev run doesn't nee
 credentials. The local layout mirrors the bucket and the bytes are identical.
 
 The job requires Python 3.11+.
+
+Requires authenticating through `gcloud` in order to query BigQuery:
+```sh
+gcloud auth application-default login
+```
 
 ```sh
 pip install -r requirements.txt
