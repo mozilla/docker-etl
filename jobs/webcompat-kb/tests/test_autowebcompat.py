@@ -3,7 +3,7 @@ from collections import defaultdict
 from pathlib import Path
 import json
 from datetime import datetime
-from typing import Mapping, Optional, Iterable, cast
+from typing import Literal, Mapping, Optional, Iterable, cast
 from uuid import UUID
 from unittest.mock import Mock, patch
 
@@ -248,6 +248,28 @@ def run_repro_update(
     assert updates.bug.cf_user_story == bug_data.bug_update.cf_user_story
 
     return updates, result
+
+
+def plan_result(
+    affects_os: Optional[Literal["all"] | list[str]],
+) -> autowebcompat.TestPlanResult:
+    return autowebcompat.TestPlanResult(
+        is_webcompat=True,
+        affects_platforms=["desktop"],
+        affects_os=affects_os,
+        affects_channels=["nightly"],
+    )
+
+
+def test_report_os_value() -> None:
+    assert autowebcompat.report_os_value(plan_result("all")) == "all"
+    assert autowebcompat.report_os_value(plan_result(["windows"])) == "windows"
+    assert (
+        autowebcompat.report_os_value(plan_result(["windows", "linux"]))
+        == "windows,linux"
+    )
+    assert autowebcompat.report_os_value(None) is None
+    assert autowebcompat.report_os_value(plan_result(None)) is None
 
 
 def test_repro_bugzilla_update() -> None:
