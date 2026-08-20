@@ -37,7 +37,7 @@ jobs:
       - name: Test Code
         run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/crash-correlations:latest -m pytest
       - name: Lint Code
-        run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/crash-correlations:latest -m flake8 crash_correlations/ tests/ validate.py
+        run: docker run us-docker.pkg.dev/moz-fx-data-artifacts-prod/docker-etl/crash-correlations:latest -m flake8 crash_correlations/ tests/
 
   deploy-to-gar-crash-correlations:
     name: Deploy crash-correlations to GAR
