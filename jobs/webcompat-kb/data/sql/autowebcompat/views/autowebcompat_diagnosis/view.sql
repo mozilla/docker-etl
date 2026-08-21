@@ -21,10 +21,6 @@ hackbot_diagnosis AS (
   JOIN `{{ ref('hackbot_completed') }}` completed USING (run_id)
   WHERE scheduled.task_name = 'diagnosis'
   AND STARTS_WITH(scheduled.source_key, "bugzilla:")
-  QUALIFY ROW_NUMBER() OVER (
-    PARTITION BY PARSE_NUMERIC(scheduled.run_key)
-    ORDER BY completed.completed_at DESC
-  ) = 1
 )
 SELECT
 reports.number AS number,
