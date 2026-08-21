@@ -560,6 +560,15 @@ def try_get_file(url: str, allowed_types: Optional[set[str]] = None) -> Optional
     return data
 
 
+def report_os_value(plan_result: Optional[TestPlanResult]) -> Optional[str]:
+    """The user story value describing which OS a report affects."""
+    if plan_result is None or plan_result.affects_os is None:
+        return None
+    if isinstance(plan_result.affects_os, list):
+        return ",".join(plan_result.affects_os) or None
+    return plan_result.affects_os
+
+
 def update_whiteboard(
     bug: bugzilla.Bug, bug_update: BugUpdate, require_tokens: list[str]
 ) -> None:
@@ -957,18 +966,16 @@ class ReproTask(HackbotTask):
                         require_whiteboard.append("[autowebcompat:repro-failed]")
                         if result.failure_reason:
                             reason = result.failure_reason
-                        elif result.plan_result is not None and (
-                            "desktop" not in result.plan_result.affects_platforms
-                            or (
-                                result.plan_result.affects_os is not None
-                                and isinstance(result.plan_result.affects_os, list)
-                                and "linux" not in result.plan_result.affects_os
-                            )
-                        ):
-                            reason = "unsupported_platform"
                         else:
                             reason = "unknown"
                         require_user_story["autowebcompat-repro-reason"] = reason
+
+                    if result is not None:
+                        report_os = report_os_value(result.plan_result)
+                        if report_os is not None:
+                            require_user_story["autowebcompat-repro-report-os"] = (
+                                report_os
+                            )
 
                 update_whiteboard(bug, bug_update, require_whiteboard)
                 update_user_story(bug, bug_update, require_user_story)
