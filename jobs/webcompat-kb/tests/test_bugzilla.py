@@ -63,6 +63,7 @@ SAMPLE_KB_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "test@example.org",
+            "attachments": [],
             "blocks": [],
             "component": "Knowledge Base",
             "creation_time": "2000-07-25T13:50:04Z",
@@ -100,6 +101,7 @@ SAMPLE_KB_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [],
             "component": "Knowledge Base",
             "creation_time": "2000-07-25T13:50:04Z",
@@ -136,6 +138,7 @@ SAMPLE_KB_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [222222, 1734557],
             "component": "Knowledge Base",
             "creation_time": "2000-07-25T13:50:04Z",
@@ -174,6 +177,7 @@ SAMPLE_CORE_BUGS = to_bugs_by_id(
         {
             "alias": "core-bug-1",
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [1754236, 1835339],
             "component": "DOM: Events",
             "creation_time": "2000-07-25T13:50:04Z",
@@ -209,6 +213,7 @@ SAMPLE_CORE_BUGS = to_bugs_by_id(
         {
             "assigned_to": "nobody@mozilla.org",
             "alias": None,
+            "attachments": [],
             "blocks": [111111],
             "component": "Test",
             "creation_time": "2000-07-25T13:50:04Z",
@@ -235,6 +240,7 @@ SAMPLE_CORE_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [],
             "component": "Test",
             "creation_time": "2000-07-25T13:50:04Z",
@@ -266,6 +272,7 @@ SAMPLE_BREAKAGE_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [],
             "component": "Site Reports",
             "creation_time": "2000-07-25T13:50:04Z",
@@ -292,6 +299,7 @@ SAMPLE_BREAKAGE_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [],
             "component": "Site Reports",
             "creation_time": "2000-07-25T13:50:04Z",
@@ -323,6 +331,7 @@ SAMPLE_ETP_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [1101005],
             "component": "Privacy: Site Reports",
             "creation_time": "2024-07-30T07:37:28Z",
@@ -349,6 +358,7 @@ SAMPLE_ETP_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [],
             "component": "Privacy: Site Reports",
             "creation_time": "2024-10-01T08:50:58Z",
@@ -379,6 +389,7 @@ SAMPLE_ETP_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [],
             "component": "Privacy: Site Reports",
             "creation_time": "2024-10-30T15:04:41Z",
@@ -410,6 +421,7 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [
                 1526695,
                 1903311,
@@ -474,6 +486,7 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [1101005, 1773684, 1921943],
             "component": "Privacy: Anti-Tracking",
             "creation_time": "2022-10-26T09:33:25Z",
@@ -506,6 +519,7 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [
                 1101005,
                 1901474,
@@ -549,6 +563,7 @@ SAMPLE_ETP_DEPENDENCIES_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [],
             "component": "Privacy: Anti-Tracking",
             "creation_time": "2024-01-17T13:40:16Z",
@@ -580,6 +595,7 @@ SAMPLE_CORE_AS_KB_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [1539848, 1729514, 1896383],
             "component": "JavaScript Engine",
             "creation_time": "2024-03-21T16:40:27Z",
@@ -606,6 +622,7 @@ SAMPLE_CORE_AS_KB_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [1656444, 1835339, 222222],
             "component": "DOM: Window and Location",
             "creation_time": "2024-04-30T14:04:23Z",
@@ -632,6 +649,7 @@ SAMPLE_CORE_AS_KB_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [],
             "component": "JavaScript Engine",
             "creation_time": "2024-03-21T16:40:27Z",
@@ -949,6 +967,7 @@ MISSING_KEYWORDS_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [],
             "component": "Site Reports",
             "creation_time": "2024-05-23T16:40:29Z",
@@ -975,6 +994,7 @@ MISSING_KEYWORDS_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [],
             "component": "Site Reports",
             "creation_time": "2024-05-13T13:02:11Z",
@@ -1001,6 +1021,7 @@ MISSING_KEYWORDS_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [],
             "component": "Desktop",
             "creation_time": "2024-05-13T13:02:11Z",
@@ -1032,6 +1053,7 @@ REMOVED_READDED_BUGS = to_bugs_by_id(
         {
             "alias": None,
             "assigned_to": "nobody@mozilla.org",
+            "attachments": [],
             "blocks": [],
             "component": "Desktop",
             "creation_time": "2024-05-13T13:02:11Z",
@@ -1664,7 +1686,7 @@ def test_parse_user_story(input, expected):
         ({"cf_webcompat_score": "10"}, {"webcompat_score": 10}),
     ],
 )
-def test_from_bugzilla(input_data, test_fields):
+def test_bug_from_bugzilla_data(input_data, test_fields):
     bug_data = {
         "id": 1,
         "alias": None,
@@ -1680,10 +1702,11 @@ def test_from_bugzilla(input_data, test_fields):
         "severity": "--",
         "creation_time": "2024-03-21T16:40:27Z",
         "assigned_to": "nobody@mozilla.org",
+        "attachments": [],
         "keywords": [],
         "url": "https://example.test",
         "cf_user_story": "",
-        "last_resolved": None,
+        "cf_last_resolved": None,
         "last_change_time": "2024-03-22T16:40:27Z",
         "whiteboard": "",
         "creator": "nobody@mozilla.org",
@@ -1692,8 +1715,7 @@ def test_from_bugzilla(input_data, test_fields):
         "cf_size_estimate": "---",
     }
     bug_data.update(input_data)
-    bugzilla_bug = bugdantic.bugzilla.Bug.model_validate(bug_data)
-    bug = Bug.from_bugzilla(bugzilla_bug)
+    bug = Bug.model_validate(bug_data)
 
     for attr, expected in test_fields.items():
         assert getattr(bug, attr) == expected
@@ -1803,6 +1825,7 @@ def _bug_defaults():
         "severity": None,
         "creation_time": datetime(2025, 1, 1),
         "assigned_to": None,
+        "attachments": [],
         "keywords": [],
         "url": "",
         "user_story": "",
