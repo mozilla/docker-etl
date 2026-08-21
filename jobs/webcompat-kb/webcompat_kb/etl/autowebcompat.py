@@ -178,11 +178,6 @@ ReproSummary = RootModel[
 ]
 
 
-# Whiteboard token that requests a diagnosis run. It's removed from the bug as
-# soon as the run is scheduled, so re-adding it requests another run.
-DIAGNOSE_REQUEST_TOKEN = "[autowebcompat:diagnose]"
-
-
 class AutowebcompatDiagnosisRequest(CreateRequest):
     bug_id: int
     model: Optional[str] = None
@@ -371,7 +366,9 @@ class BigQueryService:
 
         return new_bugs
 
-    def get_diagnosis_requested_bugs(self) -> Mapping[int, DiagnosisBugInfo]:
+    def get_diagnosis_requested_bugs(
+        self, whiteboard_token: str
+    ) -> Mapping[int, DiagnosisBugInfo]:
         """Bugs currently carrying the diagnosis request token.
 
         This is level-triggered on the token being present rather than
@@ -391,7 +388,7 @@ class BigQueryService:
             query,
             parameters=[
                 bigquery.ScalarQueryParameter(
-                    "token_pattern", "STRING", f"%{DIAGNOSE_REQUEST_TOKEN}%"
+                    "token_pattern", "STRING", f"%{whiteboard_token}%"
                 )
             ],
         )
@@ -414,9 +411,9 @@ class BigQueryService:
             assert result.id is not None
             if result.groups and "mozilla-employee-confidential" in result.groups:
                 continue
-            if DIAGNOSE_REQUEST_TOKEN not in (result.whiteboard or ""):
+            if whiteboard_token not in (result.whiteboard or ""):
                 logging.info(
-                    f"Bug {result.id} no longer has {DIAGNOSE_REQUEST_TOKEN}, skipping"
+                    f"Bug {result.id} no longer has {whiteboard_token}, skipping"
                 )
                 continue
             diagnosis_bugs[result.id] = bugs[result.id]
@@ -988,6 +985,8 @@ class DiagnosisTask(HackbotTask):
 
     agent: str = "autowebcompat-diagnosis"
     task_name: str = "diagnosis"
+    whiteboard_request_token = "[autowebcompat:diagnose]"
+    whiteboard_progress_token = "[autowebcompat:diagnosis-in-progress]"
 
     def get_request_data(
         self, request: ScheduleRequest
@@ -997,7 +996,9 @@ class DiagnosisTask(HackbotTask):
 
     def create_new(self) -> Mapping[str, Sequence[ScheduledRun]]:
         source_key = self.key("bugzilla", "diagnose-flag")
-        requested_bugs = self.bq_service.get_diagnosis_requested_bugs()
+        requested_bugs = self.bq_service.get_diagnosis_requested_bugs(
+            self.whiteboard_request_token
+        )
         logging.info(f"Found {len(requested_bugs)} bugs that requested diagnosis")
 
         if not requested_bugs:
@@ -1041,7 +1042,8 @@ class DiagnosisTask(HackbotTask):
             # next tick. Re-adding it requests a fresh run.
             for bug_id in self.scheduled_bug_ids():
                 bug, bug_update = updater.bug_updates[bug_id]
-                remove_whiteboard(bug, bug_update, [DIAGNOSE_REQUEST_TOKEN])
+                remove_whiteboard(bug, bug_update, [self.whiteboard_request_token])
+                update_whiteboard(bug, bug_update, [self.whiteboard_progress_token])
 
             run_outputs = {
                 run_id: (
@@ -1061,6 +1063,7 @@ class DiagnosisTask(HackbotTask):
                 bug, bug_update = updater.bug_updates[bug_number]
 
                 require_user_story = {}
+                remove_whiteboard(bug, bug_update, [self.whiteboard_progress_token])
                 if isinstance(output, ErrorSummary):
                     require_user_story.update(error_fields)
                 else:
