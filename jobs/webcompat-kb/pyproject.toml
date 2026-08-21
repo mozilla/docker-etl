@@ -19,9 +19,9 @@ classifiers = [
 ]
 license = "MPL-2.0"
 dependencies = [
-  "bugdantic==0.3.0",
+  "bugdantic==0.4.3",
   "filetype==1.2.0",
-  "google-cloud-bigquery==3.41.0",
+  "google-cloud-bigquery==3.43.0",
   "html5lib==1.1",
   "httpx[http2]>=0.28.1",
   "jinja2>=3.1.6",
@@ -33,22 +33,22 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
-  "mypy==2.1.0",
-  "ty==0.0.37",
-  "pandas-stubs==3.0.0.260204",
+  "mypy==2.3.0",
+  "ty==0.0.71",
+  "pandas-stubs==3.0.5.260730",
   "pytest-ruff==0.5",
-  "pytest==9.0.3",
-  "ruff==0.15.13",
+  "pytest==9.1.1",
+  "ruff==0.16.3",
   "types-html5lib==1.1.11.20250917",
-  "types-cachetools==7.0.0.20260518",
+  "types-cachetools==7.0.0.20260713",
   "types-cffi==2.0.0.20260518",
   "types-protobuf==7.34.1.20260518",
   "types-pyOpenSSL==24.1.0.20240722",
-  "types-python-dateutil==2.9.0.20260518",
-  "types-pytz==2026.2.0.20260518",
-  "types-requests==2.33.0.20260518",
-  "types-setuptools==82.0.0.20260518",
-  "types-tqdm==4.67.3.20260518",
+  "types-python-dateutil==2.9.0.20260807",
+  "types-pytz==2026.3.1.20260727",
+  "types-requests==2.33.0.20260712",
+  "types-setuptools==84.0.0.20260812",
+  "types-tqdm==4.70.0.20260805",
 ]
 
 [project.scripts]
@@ -75,3 +75,6 @@ disallow_untyped_defs = true
 [[tool.mypy.overrides]]
 module = ["filetype"]
 ignore_missing_imports = true
+
+[tool.ruff.lint]
+ignore = ["UP045", "LOG015", "BLE001"]

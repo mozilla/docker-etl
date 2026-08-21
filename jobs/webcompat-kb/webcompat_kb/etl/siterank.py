@@ -3,8 +3,9 @@ import csv
 import logging
 from collections.abc import Collection, Iterator
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Optional, cast
+
 import httpx
 from google.cloud import bigquery
 
@@ -54,6 +55,9 @@ LIMIT 1
                 )
             )
         except Exception:
+            logging.exception(
+                f"Failed to get latest import with complete status {complete}"
+            )
             continue
 
         if len(result) != 1:
@@ -303,7 +307,7 @@ def update_crux_latest(
     and store this in the import_runs table. Only when the number of rows matches
     between ETL runs do we actually perform the import."""
 
-    last_month_yyyymm = get_previous_month_yyyymm(datetime.now())
+    last_month_yyyymm = get_previous_month_yyyymm(datetime.now(tz=UTC))
     logging.debug(f"Last month was {last_month_yyyymm}")
 
     complete_import, incomplete_import = get_latest_import(client, import_runs_table)
