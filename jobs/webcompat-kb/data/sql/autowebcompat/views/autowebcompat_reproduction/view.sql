@@ -40,4 +40,4 @@ SELECT
 FROM `{{ ref('webcompat_knowledge_base.site_reports') }}` reports
 LEFT JOIN `{{ ref('webcompat_knowledge_base.scored_site_reports') }}` scored USING (number)
 INNER JOIN hackbot_repro USING (number)
-ORDER BY reports.creation_time DESC;
+ORDER BY reports.creation_time DESC
