@@ -955,7 +955,7 @@ class BugHistoryUpdater:
                     )
                     for change in record.changes
                     if change.field_name
-                    in ["keywords", "status", "url", "cf_user_story"]
+                    in ["keywords", "status", "url", "cf_user_story", "whiteboard"]
                 ]
 
                 if relevant_changes:
