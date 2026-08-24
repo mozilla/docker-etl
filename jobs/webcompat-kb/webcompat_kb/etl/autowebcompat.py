@@ -349,6 +349,15 @@ class BigQueryService:
         agent: str,
         latest_new_bugs_repro_run: Optional[datetime],
     ) -> Mapping[int, NewBugInfo]:
+        """Bugs to reproduce from the backlog, highest impact score first."""
+
+        # Don't schedule anything while this many runs are still in flight,
+        # and add at most batch_size per run
+        max_queue_length = 2
+        batch_size = 3
+        # Runs in flight longer than this are assumed stuck and don't count
+        # towards in flight limit
+        queue_max_age_hours = 6
 
         bugs_query = f"""
     SELECT number, title, url, keywords, whiteboard, user_story_raw as user_story, creation_time
@@ -365,9 +374,18 @@ class BigQueryService:
         SELECT SAFE_CAST(run_key AS INT64)
         FROM `{self.scheduled_table}`
         WHERE agent = @agent AND SAFE_CAST(run_key AS INT64) IS NOT NULL
-      )
+      ) AND
+      (
+        SELECT COUNT(*)
+        FROM `{self.scheduled_table}` AS scheduled
+        LEFT JOIN `{self.completed_table}` AS completed USING(run_id)
+        WHERE
+          completed.run_id IS NULL AND
+          scheduled.requested_at >
+            DATETIME_SUB(CURRENT_DATETIME(), INTERVAL @queue_max_age_hours HOUR)
+      ) < @max_queue_length
     ORDER BY score DESC, number ASC
-    LIMIT 10
+    LIMIT @batch_size
     """
         bug_rows = self.bq_client.query(
             bugs_query,
@@ -376,6 +394,13 @@ class BigQueryService:
                 bigquery.ScalarQueryParameter(
                     "latest_new_bugs_repro_run", "DATETIME", latest_new_bugs_repro_run
                 ),
+                bigquery.ScalarQueryParameter(
+                    "max_queue_length", "INT64", max_queue_length
+                ),
+                bigquery.ScalarQueryParameter(
+                    "queue_max_age_hours", "INT64", queue_max_age_hours
+                ),
+                bigquery.ScalarQueryParameter("batch_size", "INT64", batch_size),
             ],
         )
         return self.add_bugzilla_data(
@@ -1047,7 +1072,7 @@ class BacklogReproTask(ReproTask):
             self.agent, latest_new_bugs_repro_run
         )
         if not backlog_bugs:
-            logging.info("Found no backlog bugs that require reproduction")
+            logging.info("Not scheduling any backlog bugs for reproduction")
             return {}
 
         logging.info(
