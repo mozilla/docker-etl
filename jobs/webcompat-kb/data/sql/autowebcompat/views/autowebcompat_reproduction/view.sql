@@ -30,6 +30,7 @@ SELECT
   JSON_VALUE(reports.user_story, "$.autowebcompat-repro-reason") AS repro_failure_cause,
   JSON_VALUE(reports.user_story, "$.autowebcompat-repro-chrome-mask-fixed") AS chrome_mask_fixed,
   JSON_VALUE(reports.user_story, "$.autowebcompat-repro-channels") AS repro_channels,
+  JSON_VALUE(reports.user_story, "$.autowebcompat-repro-report-os") AS report_os,
   CASE
     WHEN reports.whiteboard LIKE '%autowebcompat:interv-ua-override-proposed%'
       OR JSON_VALUE(reports.user_story, "$.autowebcompat-repro-chrome-mask-fixed") = "true"
