@@ -923,6 +923,10 @@ class ReproTask(HackbotTask):
                     elif result.reproduced:
                         require_whiteboard.append("[autowebcompat:repro-success]")
                         require_user_story["autowebcompat-repro-status"] = "success"
+                        if not result.chrome_mask_fixed:
+                            require_whiteboard.append(
+                                DiagnosisTask.whiteboard_request_token
+                            )
                         if result.chrome_mask_fixed is not None:
                             if result.chrome_mask_fixed:
                                 require_whiteboard.append(
