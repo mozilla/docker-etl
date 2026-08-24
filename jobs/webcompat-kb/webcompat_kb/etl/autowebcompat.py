@@ -560,13 +560,10 @@ def try_get_file(url: str, allowed_types: Optional[set[str]] = None) -> Optional
     return data
 
 
-def report_os_value(plan_result: Optional[TestPlanResult]) -> Optional[str]:
-    """The user story value describing which OS a report affects."""
-    if plan_result is None or plan_result.affects_os is None:
-        return None
-    if isinstance(plan_result.affects_os, list):
-        return ",".join(plan_result.affects_os) or None
-    return plan_result.affects_os
+def format_user_story_value(value: str | list[str]) -> str:
+    if isinstance(value, list):
+        return ",".join(value)
+    return value
 
 
 def update_whiteboard(
@@ -970,9 +967,15 @@ class ReproTask(HackbotTask):
                             reason = "unknown"
                         require_user_story["autowebcompat-repro-reason"] = reason
 
-                    if result is not None:
-                        report_os = report_os_value(result.plan_result)
-                        if report_os is not None:
+                    if (
+                        result is not None
+                        and result.plan_result is not None
+                        and result.plan_result.affects_os is not None
+                    ):
+                        report_os = format_user_story_value(
+                            result.plan_result.affects_os
+                        )
+                        if report_os:
                             require_user_story["autowebcompat-repro-report-os"] = (
                                 report_os
                             )
