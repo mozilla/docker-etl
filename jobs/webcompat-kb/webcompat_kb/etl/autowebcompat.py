@@ -557,6 +557,12 @@ def try_get_file(url: str, allowed_types: Optional[set[str]] = None) -> Optional
     return data
 
 
+def format_user_story_value(value: str | list[str]) -> str:
+    if isinstance(value, list):
+        return ",".join(value)
+    return value
+
+
 def update_whiteboard(
     bug: bugzilla.Bug, bug_update: BugUpdate, require_tokens: list[str]
 ) -> None:
@@ -954,18 +960,22 @@ class ReproTask(HackbotTask):
                         require_whiteboard.append("[autowebcompat:repro-failed]")
                         if result.failure_reason:
                             reason = result.failure_reason
-                        elif result.plan_result is not None and (
-                            "desktop" not in result.plan_result.affects_platforms
-                            or (
-                                result.plan_result.affects_os is not None
-                                and isinstance(result.plan_result.affects_os, list)
-                                and "linux" not in result.plan_result.affects_os
-                            )
-                        ):
-                            reason = "unsupported_platform"
                         else:
                             reason = "unknown"
                         require_user_story["autowebcompat-repro-reason"] = reason
+
+                    if (
+                        result is not None
+                        and result.plan_result is not None
+                        and result.plan_result.affects_os is not None
+                    ):
+                        report_os = format_user_story_value(
+                            result.plan_result.affects_os
+                        )
+                        if report_os:
+                            require_user_story["autowebcompat-repro-report-os"] = (
+                                report_os
+                            )
 
                 update_whiteboard(bug, bug_update, require_whiteboard)
                 update_user_story(bug, bug_update, require_user_story)

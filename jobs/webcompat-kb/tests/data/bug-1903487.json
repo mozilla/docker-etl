@@ -26,7 +26,7 @@
   "bug_update": {
     "id": 1903487,
     "whiteboard": "[autowebcompat:processed][autowebcompat:repro-success][autowebcompat:interv-ua-override-proposed]",
-    "cf_user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100\nautowebcompat-repro-status:success\nautowebcompat-repro-chrome-mask-fixed:true\nautowebcompat-repro-channels:nightly,stable,esr\n"
+    "cf_user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100\nautowebcompat-repro-status:success\nautowebcompat-repro-chrome-mask-fixed:true\nautowebcompat-repro-channels:nightly,stable,esr\nautowebcompat-repro-report-os:all\n"
   },
   "hackbot_scheduled": {
     "run_id": "445083ad-4f37-4747-95d2-783d4a0d09b1",
