@@ -145,7 +145,7 @@ class MockBigQueryService(autowebcompat.BigQueryService):
         return rv
 
     def get_diagnosis_requested_bugs(
-        self,
+        self, whiteboard_token: str
     ) -> Mapping[int, autowebcompat.DiagnosisBugInfo]:
         rv = {}
         for item in self.diagnosis_bugs:
@@ -463,7 +463,7 @@ def test_diagnosis_bugzilla_update_error() -> None:
     assert updates.add_attachments == []
 
 
-def test_diagnosis_schedule_clears_flag() -> None:
+def test_diagnosis_schedule_updates_flag() -> None:
     """Scheduling a run consumes the request token from the whiteboard."""
     hackbot_client = MockHackbot()
     bq_service = MockBigQueryService()
@@ -494,7 +494,10 @@ def test_diagnosis_schedule_clears_flag() -> None:
     task.populate_updates(updater)
 
     updates = updater.bug_updates[1903487][1]
-    assert updates.bug.whiteboard == "[autowebcompat:processed]"
+    assert (
+        updates.bug.whiteboard
+        == "[autowebcompat:processed][autowebcompat:diagnosis-in-progress]"
+    )
     assert updates.has_updates()
 
 

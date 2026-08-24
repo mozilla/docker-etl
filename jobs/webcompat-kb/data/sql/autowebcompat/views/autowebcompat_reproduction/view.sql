@@ -1,5 +1,5 @@
 WITH
-  hackbot_repro AS (
+hackbot_repro AS (
   SELECT
     PARSE_NUMERIC(JSON_VALUE(scheduled.extra_data, "$.bug_id")) AS number,
     DATETIME_DIFF(completed.completed_at, completed.created_at, SECOND) AS execution_time
@@ -8,7 +8,6 @@ WITH
   WHERE scheduled.task_name = 'repro'
     AND STARTS_WITH(scheduled.source_key, "bugzilla:")
 )
-
 SELECT
   reports.number AS number,
   DATE(reports.creation_time) AS creation_date,
