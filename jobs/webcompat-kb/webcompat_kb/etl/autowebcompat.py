@@ -346,7 +346,6 @@ class BigQueryService:
 
     def get_backlog_bugs(
         self,
-        agent: str,
         latest_new_bugs_repro_run: Optional[datetime],
     ) -> Mapping[int, NewBugInfo]:
         """Bugs to reproduce from the backlog, highest impact score first."""
@@ -358,6 +357,7 @@ class BigQueryService:
         # Runs in flight longer than this are assumed stuck and don't count
         # towards in flight limit
         queue_max_age_hours = 6
+        exclude_agents = [ReproTask.agent, DiagnosisTask.agent]
 
         bugs_query = f"""
     SELECT number, title, url, keywords, whiteboard, user_story_raw as user_story, creation_time
@@ -370,10 +370,15 @@ class BigQueryService:
       CAST(creation_time AS DATETIME) <= IFNULL(
         @latest_new_bugs_repro_run, DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 WEEK)
       ) AND
+      -- Bugs that agents have scheduled to reproduce or diagnose are excluded, 
+      -- whether the runs completed or are still in flight
       number NOT IN (
-        SELECT SAFE_CAST(run_key AS INT64)
+        SELECT CAST(JSON_VALUE(extra_data, "$.bug_id") AS INT64)
         FROM `{self.scheduled_table}`
-        WHERE agent = @agent AND SAFE_CAST(run_key AS INT64) IS NOT NULL
+        WHERE
+          agent IN UNNEST(@exclude_agents) AND
+          STARTS_WITH(source_key, "bugzilla:") AND
+          JSON_VALUE(extra_data, "$.bug_id") IS NOT NULL
       ) AND
       (
         SELECT COUNT(*)
@@ -390,7 +395,9 @@ class BigQueryService:
         bug_rows = self.bq_client.query(
             bugs_query,
             parameters=[
-                bigquery.ScalarQueryParameter("agent", "STRING", agent),
+                bigquery.ArrayQueryParameter(
+                    "exclude_agents", "STRING", exclude_agents
+                ),
                 bigquery.ScalarQueryParameter(
                     "latest_new_bugs_repro_run", "DATETIME", latest_new_bugs_repro_run
                 ),
@@ -1068,9 +1075,7 @@ class BacklogReproTask(ReproTask):
             .get((ReproTask.agent, ReproTask.task_name), {})
             .get(ReproTask.key("bugzilla", "creation"))
         )
-        backlog_bugs = self.bq_service.get_backlog_bugs(
-            self.agent, latest_new_bugs_repro_run
-        )
+        backlog_bugs = self.bq_service.get_backlog_bugs(latest_new_bugs_repro_run)
         if not backlog_bugs:
             logging.info("Not scheduling any backlog bugs for reproduction")
             return {}
