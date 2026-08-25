@@ -4,7 +4,7 @@
     "attachments": [],
     "groups": [],
     "whiteboard": "[autowebcompat:processed][autowebcompat:repro-success]",
-    "cf_user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100\nautowebcompat-repro-status:success\n",
+    "cf_user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100\nautowebcompat-repro-status:success\nautowebcompat-diagnosis-status:failed\nautowebcompat-diagnosis-reason:no_repro\n",
     "id": 1903487
   },
   "bug_update": {
