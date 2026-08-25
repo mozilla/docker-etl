@@ -609,20 +609,22 @@ def update_user_story(
     for key, value in require_tokens.items():
         if key in current_fields:
             current_value = current_fields[key]
-            if isinstance(current_value, list):
-                assert value is not None
+            if value is None:
+                if isinstance(current_value, str):
+                    changes.append(userstory.UserStoryChange.delete(key, current_value))
+                elif isinstance(current_value, list):
+                    for val in current_value:
+                        changes.append(userstory.UserStoryChange.delete(key, val))
+            elif isinstance(current_value, list):
                 if value not in current_value:
                     changes.append(userstory.UserStoryChange.append(key, value))
-            elif value != current_value:
-                if value is None:
-                    changes.append(userstory.UserStoryChange.delete(key, current_value))
-                else:
-                    changes.append(
-                        userstory.UserStoryChange.replace(key, current_value, value)
-                    )
+            else:
+                changes.append(
+                    userstory.UserStoryChange.replace(key, current_value, value)
+                )
         else:
-            assert value is not None
-            changes.append(userstory.UserStoryChange.append(key, value))
+            if value is not None:
+                changes.append(userstory.UserStoryChange.append(key, value))
 
     new_value = userstory.update(current_user_story or "", changes)
     if new_value is not None:
