@@ -404,6 +404,7 @@ def test_diagnosis_bugzilla_update() -> None:
     assert attachment.file_name == "autowebcompat-diagnosis-testcase.html"
     assert attachment.content_type == "text/html"
     assert base64.b64decode(attachment.data).decode("utf8") == testcase_source
+    assert "autowebcompat-diagnosis-reason" not in updates.bug.cf_user_story
 
 
 def test_diagnosis_bugzilla_update_testcase_fetch_failed() -> None:
