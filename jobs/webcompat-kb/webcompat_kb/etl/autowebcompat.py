@@ -5,7 +5,6 @@ from collections import defaultdict
 import logging
 import os
 from typing import (
-    Dict,
     Iterable,
     Optional,
     Self,
@@ -1078,7 +1077,7 @@ class DiagnosisTask(HackbotTask):
             for uuid, (bug_number, output) in run_outputs.items():
                 bug, bug_update = updater.bug_updates[bug_number]
 
-                require_user_story: Dict[str, str | None] = {}
+                require_user_story: dict[str, str | None] = {}
                 remove_whiteboard(bug, bug_update, [self.whiteboard_progress_token])
                 if isinstance(output, ErrorSummary):
                     require_user_story.update(error_fields)
