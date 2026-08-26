@@ -321,6 +321,14 @@ class BigQueryService:
     WHERE
       resolution = "" AND
       whiteboard NOT LIKE "%[autowebcompat:processed]%" AND
+      number NOT IN (
+        SELECT CAST(JSON_VALUE(extra_data, "$.bug_id") AS INT64)
+        FROM `{self.scheduled_table}`
+        WHERE
+          agent = @agent AND
+          source_key = "bugzilla:creation" AND
+          JSON_VALUE(extra_data, "$.bug_id") IS NOT NULL
+      ) AND
       (
         (@created_since IS NOT NULL AND CAST(creation_time AS DATETIME) > @created_since) OR
         (
@@ -332,9 +340,10 @@ class BigQueryService:
         bug_rows = self.bq_client.query(
             bugs_query,
             parameters=[
+                bigquery.ScalarQueryParameter("agent", "STRING", ReproTask.agent),
                 bigquery.ScalarQueryParameter(
                     "created_since", "DATETIME", created_since
-                )
+                ),
             ],
         )
         return self.add_bugzilla_data(
@@ -426,7 +435,33 @@ class BigQueryService:
         if not bug_ids:
             return bugs
         fields = ["id", "groups", "comments", "attachments", "cf_user_story"]
-        for result in self.bz_client.bugs(bug_ids, include_fields=fields):
+        try:
+            results = list(self.bz_client.bugs(bug_ids, include_fields=fields))
+        except Exception as e:
+            # Bugzilla fails the whole request if it can't load the content of
+            # deleted attachments. Fetch the bugs one at a time so we only lose
+            # the attachments of the bug that's actually broken.
+            logging.warning(f"Fetching bugs failed, trying one at a time: {e}")
+            without_attachments = [item for item in fields if item != "attachments"]
+            results = []
+            for bug_id in bug_ids:
+                try:
+                    results.extend(self.bz_client.bugs([bug_id], include_fields=fields))
+                except Exception:
+                    logging.warning(
+                        f"Fetching bug {bug_id} failed, trying without attachments"
+                    )
+                    try:
+                        results.extend(
+                            self.bz_client.bugs(
+                                [bug_id], include_fields=without_attachments
+                            )
+                        )
+                    except Exception as bug_error:
+                        logging.error(f"Skipping bug {bug_id}: {bug_error}")
+                        del bugs[bug_id]
+
+        for result in results:
             assert result.id is not None
             # Do not include moco-confidential bugs
             if result.groups and "mozilla-employee-confidential" in result.groups:
@@ -795,21 +830,21 @@ class HackbotTask(ABC):
                 f"Scheduling run with agent {self.agent}, task {self.task_name}, source {request.source_key}, run id {request.run_key}"
             )
             run_ref = self.hackbot_client.create_run(self.get_request_data(request))
-            self.scheduled[request.source_key].append(
-                ScheduledRun(
-                    run_id=run_ref.run_id,
-                    agent=self.agent,
-                    task_name=self.task_name,
-                    source_key=request.source_key,
-                    run_key=request.run_key,
-                    source_time=request.source_time,
-                    requested_at=requested_at,
-                    request_data=request.request_data.model_dump(mode="json"),
-                    extra_data=request.extra_data.model_dump(mode="json")
-                    if request.extra_data
-                    else {},
-                )
+            scheduled_run = ScheduledRun(
+                run_id=run_ref.run_id,
+                agent=self.agent,
+                task_name=self.task_name,
+                source_key=request.source_key,
+                run_key=request.run_key,
+                source_time=request.source_time,
+                requested_at=requested_at,
+                request_data=request.request_data.model_dump(mode="json"),
+                extra_data=request.extra_data.model_dump(mode="json")
+                if request.extra_data
+                else {},
             )
+
+            self.scheduled[request.source_key].append(scheduled_run)
 
         return self.scheduled
 
