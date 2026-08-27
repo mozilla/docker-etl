@@ -1,9 +1,10 @@
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterable, Mapping, Optional, Sequence
+from typing import Iterable, Iterator, Literal, Mapping, Optional, Sequence
 from urllib.parse import urlencode
 
 from pydantic import BaseModel
-from .httphelpers import get_json, get_paginated_json
+from .httphelpers import get_json, get_paginated_json, iter_paginated_json
 
 
 class GitHubUser(BaseModel):
@@ -14,17 +15,35 @@ class GitHubUser(BaseModel):
 
 
 class GitHubLabel(BaseModel):
-    id: Optional[int] = None
-    url: Optional[str] = None
-    name: Optional[str] = None
-    description: Optional[str] = None
-    color: Optional[str] = None
-    default: Optional[bool] = None
+    id: int
+    url: str
+    name: str
+    description: Optional[str]
+    color: str
+    default: bool
+
+
+class GitHubMilestone(BaseModel):
+    id: Optional[int]
+    url: str
+    html_url: str
+    labels_url: str
+    number: int
+    state: str
+    title: str
+    description: Optional[str]
+    creator: GitHubUser
+    open_issues: int
+    closed_issues: int
+    created_at: datetime
+    updated_at: datetime
+    closed_at: Optional[datetime]
+    due_on: Optional[datetime]
 
 
 class GitHubIssue(BaseModel):
     assignee: Optional[GitHubUser] = None
-    body: str
+    body: Optional[str] = None
     closed_at: Optional[datetime] = None
     comments: int
     comments_url: str
@@ -34,6 +53,7 @@ class GitHubIssue(BaseModel):
     id: int
     labels: list[str | GitHubLabel]
     labels_url: str
+    milestone: Optional[GitHubMilestone]
     number: int
     repository_url: str
     state: str
@@ -71,6 +91,13 @@ class GitHubContentTree(BaseModel):
     _links: GitHubContentTreeLinks
 
 
+@dataclass
+class GitHubIssuesPage:
+    issues: Optional[Sequence[GitHubIssue]]
+    next_url: Optional[str]
+    resume_at: Optional[datetime]
+
+
 class GitHub:
     def __init__(self, token: Optional[str]):
         self.token = token
@@ -88,17 +115,59 @@ class GitHub:
         last_updated: Optional[datetime],
         state: Optional[str] = "all",
     ) -> Sequence[GitHubIssue]:
-        query = {"state": state}
-        if labels is not None:
-            query["labels"] = ",".join(labels)
-        if last_updated is not None:
-            query["since"] = last_updated.isoformat()
+        rows: list[GitHubIssue] = []
+        for issues_page in self.iter_issues(repo, labels, last_updated, state=state):
+            if issues_page.issues:
+                rows.extend(issues_page.issues)
+        return rows
 
-        url = f"https://api.github.com/repos/{repo}/issues?{urlencode(query)}"
-        return [
-            GitHubIssue.model_validate(item)
-            for item in get_paginated_json(url, self.headers())
-        ]
+    def latest_issue_update(self, repo: str) -> Optional[datetime]:
+        """updated_at of the most recently updated issue in repo, if any."""
+        query = {"state": "all", "per_page": 1, "sort": "updated", "direction": "desc"}
+        data = get_json(
+            f"https://api.github.com/repos/{repo}/issues?{urlencode(query)}",
+            self.headers(),
+        )
+        assert isinstance(data, list)
+        if not data:
+            return None
+        return GitHubIssue.model_validate(data[0]).updated_at
+
+    def iter_issues(
+        self,
+        repo: str,
+        labels: Iterable[str],
+        last_updated: Optional[datetime] = None,
+        state: Optional[str] = "all",
+        sort: Optional[str] = None,
+        direction: Optional[str] = None,
+        milestone: Optional[int | Literal["none"]] = None,
+        start_url: Optional[str] = None,
+    ) -> Iterator[GitHubIssuesPage]:
+
+        if start_url is None:
+            query = {"state": state, "per_page": 100}
+            if labels is not None:
+                query["labels"] = ",".join(labels)
+            if last_updated is not None:
+                query["since"] = last_updated.isoformat()
+            if sort is not None:
+                query["sort"] = sort
+            if direction is not None:
+                query["direction"] = direction
+            if milestone is not None:
+                query["milestone"] = milestone
+
+            url = f"https://api.github.com/repos/{repo}/issues?{urlencode(query)}"
+        else:
+            url = start_url
+        for resp in iter_paginated_json(url, self.headers()):
+            issues = (
+                [GitHubIssue.model_validate(item) for item in resp.data]
+                if resp.data
+                else None
+            )
+            yield GitHubIssuesPage(issues, resp.next_url, resp.resume_at)
 
     def issue_comments(
         self, issue: GitHubIssue, all_pages: bool = False
