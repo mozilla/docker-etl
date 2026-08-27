@@ -1,0 +1,12 @@
+click==8.4.1
+google-cloud-bigquery==3.41.0
+# The feature table is ~2,100 columns wide and the row-at-a-time BigQuery path costs
+# ~97ms per row on it. These two enable to_arrow(), which measured ~1.1ms per row.
+google-cloud-bigquery-storage==2.40.0
+pyarrow==25.0.1
+google-cloud-storage==2.19.0
+requests==2.32.4
+scipy==1.16.2
+
+flake8==7.3.0
+pytest==9.0.3
