@@ -1,10 +1,9 @@
 import logging
+from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Mapping, Sequence
 
 from google.cloud import bigquery
 
-from .etl import metric_changes
 from .bqhelpers import (
     BigQuery,
     DatasetId,
@@ -12,9 +11,10 @@ from .bqhelpers import (
     SchemaType,
     TableSchema,
 )
+from .etl import metric_changes
+from .etl.metric_changes import ScoreChange
 from .metrics import metrics, rescores
 from .metrics.rescores import Rescore
-from .etl.metric_changes import ScoreChange
 from .projectdata import Project
 
 
@@ -153,7 +153,7 @@ JOIN `{new_scored_site_reports}` AS after USING(number)
 WHERE before.resolution = ""
 """
 
-    assert set(columns) == set(item.name for item in rescores_table.fields)
+    assert set(columns) == {item.name for item in rescores_table.fields}
     parameters = [
         bigquery.ScalarQueryParameter("change_time", "DATETIME", change_time),
         bigquery.ScalarQueryParameter("reason", "STRING", rescore.reason),
@@ -163,7 +163,7 @@ WHERE before.resolution = ""
     client.insert_query(rescores_table, columns, query, parameters=parameters)
     if not client.write:
         # Extra logging
-        result = list(client.query(query, parameters=parameters))[0]
+        result = next(client.query(query, parameters=parameters))
         changes = []
         for metric in metric_dfns:
             score_change = (

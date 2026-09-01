@@ -1,4 +1,6 @@
 import pytest
+from google.cloud import bigquery
+from google.cloud.bigquery import SchemaField
 
 from webcompat_kb.bqhelpers import (
     Dataset,
@@ -7,8 +9,6 @@ from webcompat_kb.bqhelpers import (
     TableSchema,
     ViewSchema,
 )
-from google.cloud import bigquery
-from google.cloud.bigquery import SchemaField
 
 from .conftest import Call
 

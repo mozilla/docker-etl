@@ -1,9 +1,10 @@
 import argparse
 import logging
 import re
+from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Mapping, MutableMapping, Optional
+from datetime import UTC, datetime
+from typing import Optional
 
 from google.api_core.exceptions import NotFound
 from pydantic import BaseModel
@@ -38,7 +39,7 @@ class InteropYear:
     proposals_open: datetime
 
 
-interop_years = [InteropYear(2026, datetime(2025, 9, 4))]
+interop_years = [InteropYear(2026, datetime(2025, 9, 4, tzinfo=UTC))]
 
 
 def get_last_import(
@@ -189,7 +190,11 @@ def update_interop_data(
         [item.to_json() for item in interop_proposals.values()],
         True,
     )
-    client.insert_rows(import_runs_table, [{"run_at": datetime.now().isoformat()}])
+    client.insert_rows(
+        import_runs_table,
+        # run_at is a DATETIME column, so it can't have a timezone offset
+        [{"run_at": datetime.now(tz=UTC).replace(tzinfo=None).isoformat()}],
+    )
 
 
 def repo_arg(value: str) -> str:

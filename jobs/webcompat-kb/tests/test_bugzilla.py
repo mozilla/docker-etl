@@ -1,18 +1,19 @@
 import tempfile
 from collections import defaultdict
-from datetime import datetime, timezone
+from collections.abc import Iterable, Mapping
+from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import patch
-from typing import Any, Iterable, Mapping
 
-import pytest
 import bugdantic.bugzilla
+import pytest
 
 from webcompat_kb.etl.bugzilla import (
+    EXTERNAL_LINK_CONFIGS,
     Bug,
     BugHistoryChange,
     BugHistoryEntry,
     BugHistoryUpdater,
-    EXTERNAL_LINK_CONFIGS,
     PropertyHistory,
     add_datetime_limit,
     extract_int_from_field,
@@ -92,7 +93,7 @@ SAMPLE_KB_BUGS = to_bugs_by_id(
             "status": "NEW",
             "summary": "Missing implementation of textinput event",
             "url": "",
-            "user_story": "url:cmcreg.bancosantander.es/*\r\nurl:new.reddit.com/*\r\nurl:web.whatsapp.com/*\r\nurl:facebook.com/*\r\nurl:twitter.com/*\r\nurl:reddit.com/*\r\nurl:mobilevikings.be/*\r\nurl:book.ersthelfer.tv/*",  # noqa
+            "user_story": "url:cmcreg.bancosantander.es/*\r\nurl:new.reddit.com/*\r\nurl:web.whatsapp.com/*\r\nurl:facebook.com/*\r\nurl:twitter.com/*\r\nurl:reddit.com/*\r\nurl:mobilevikings.be/*\r\nurl:book.ersthelfer.tv/*",
             "webcompat_priority": None,
             "webcompat_score": None,
             "whiteboard": "",
@@ -128,7 +129,7 @@ SAMPLE_KB_BUGS = to_bugs_by_id(
             "status": "NEW",
             "summary": "Sites breaking due to the lack of WebUSB support",
             "url": "",
-            "user_story": "url:webminidisc.com/*\r\nurl:app.webadb.com/*\r\nurl:www.numworks.com/*\r\nurl:webadb.github.io/*\r\nurl:www.stemplayer.com/*\r\nurl:wootility.io/*\r\nurl:python.microbit.org/*\r\nurl:flash.android.com/*",  # noqa
+            "user_story": "url:webminidisc.com/*\r\nurl:app.webadb.com/*\r\nurl:www.numworks.com/*\r\nurl:webadb.github.io/*\r\nurl:www.stemplayer.com/*\r\nurl:wootility.io/*\r\nurl:python.microbit.org/*\r\nurl:flash.android.com/*",
             "webcompat_priority": None,
             "webcompat_score": None,
             "whiteboard": "",
@@ -702,7 +703,7 @@ SAMPLE_HISTORY = to_history(
                     "changes": [
                         {
                             "field_name": "cf_user_story",
-                            "added": "@@ -0,0 +1,3 @@\n+platform:linux\r\n+impact:feature-broken\r\n+affects:some\n\\ No newline at end of file\n",  # noqa
+                            "added": "@@ -0,0 +1,3 @@\n+platform:linux\r\n+impact:feature-broken\r\n+affects:some\n\\ No newline at end of file\n",
                             "removed": "",
                         },
                         {"field_name": "priority", "removed": "--", "added": "P3"},
@@ -786,7 +787,7 @@ MISSING_KEYWORDS_HISTORY = to_history(
                     "when": "2024-05-27T15:10:10Z",
                     "changes": [
                         {
-                            "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux,android\r\n+impact:blocked\r\n+configuration:general\r\n+affects:all\n",  # noqa
+                            "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux,android\r\n+impact:blocked\r\n+configuration:general\r\n+affects:all\n",
                             "field_name": "cf_user_story",
                             "removed": "",
                         },
@@ -811,7 +812,7 @@ MISSING_KEYWORDS_HISTORY = to_history(
                     "changes": [
                         {
                             "field_name": "cf_user_story",
-                            "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux\r\n+impact:site-broken\r\n+configuration:general\r\n+affects:all\n",  # noqa
+                            "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux\r\n+impact:site-broken\r\n+configuration:general\r\n+affects:all\n",
                             "removed": "",
                         },
                         {"removed": "P3", "added": "P1", "field_name": "priority"},
@@ -1320,7 +1321,7 @@ def test_bugzilla_to_history_entry(history_updater):
                     "changes": [
                         {
                             "field_name": "cf_user_story",
-                            "added": "@@ -0,0 +1,3 @@\n+platform:linux\r\n+impact:feature-broken\r\n+affects:some\n\\ No newline at end of file\n",  # noqa
+                            "added": "@@ -0,0 +1,3 @@\n+platform:linux\r\n+impact:feature-broken\r\n+affects:some\n\\ No newline at end of file\n",
                             "removed": "",
                         }
                     ],
@@ -1421,20 +1422,20 @@ def test_missing_initial_add():
     keyword_map = {
         "added": {
             "webcompat:needs-sitepatch": [
-                datetime(2024, 6, 15, 16, 34, 22, tzinfo=timezone.utc)
+                datetime(2024, 6, 15, 16, 34, 22, tzinfo=UTC)
             ],
             "webcompat:needs-diagnosis": [
-                datetime(2024, 7, 11, 16, 34, 22, tzinfo=timezone.utc),
-                datetime(2024, 12, 11, 16, 34, 22, tzinfo=timezone.utc),
+                datetime(2024, 7, 11, 16, 34, 22, tzinfo=UTC),
+                datetime(2024, 12, 11, 16, 34, 22, tzinfo=UTC),
             ],
         },
         "removed": {
             "webcompat:needs-diagnosis": [
-                datetime(2024, 6, 11, 16, 34, 22, tzinfo=timezone.utc),
-                datetime(2024, 9, 11, 16, 34, 22, tzinfo=timezone.utc),
+                datetime(2024, 6, 11, 16, 34, 22, tzinfo=UTC),
+                datetime(2024, 9, 11, 16, 34, 22, tzinfo=UTC),
             ],
             "webcompat:needs-sitepatch": [
-                datetime(2024, 7, 14, 16, 34, 22, tzinfo=timezone.utc)
+                datetime(2024, 7, 14, 16, 34, 22, tzinfo=UTC)
             ],
         },
     }
@@ -1448,10 +1449,10 @@ def test_missing_initial_add():
     assert property_histories["webcompat:needs-diagnosis"].missing_initial_add()
     assert not property_histories["webcompat:needs-sitepatch"].missing_initial_add()
     removed_first = PropertyHistory()
-    removed_first.add(datetime(2024, 7, 14, 16, 34, 22, tzinfo=timezone.utc), "removed")
+    removed_first.add(datetime(2024, 7, 14, 16, 34, 22, tzinfo=UTC), "removed")
     assert removed_first.missing_initial_add()
     added_first = PropertyHistory()
-    added_first.add(datetime(2024, 7, 14, 16, 34, 22, tzinfo=timezone.utc), "added")
+    added_first.add(datetime(2024, 7, 14, 16, 34, 22, tzinfo=UTC), "added")
     assert not added_first.missing_initial_add()
     empty_history = PropertyHistory()
     assert empty_history.missing_initial_add()
@@ -1464,7 +1465,7 @@ def test_existing_bugs_history(mock_bugzilla_fetch_history, history_updater):
     )
 
     result = history_updater.existing_bugs_history(
-        MISSING_KEYWORDS_BUGS, datetime(2020, 1, 1, tzinfo=timezone.utc)
+        MISSING_KEYWORDS_BUGS, datetime(2020, 1, 1, tzinfo=UTC)
     )
 
     expected = to_history_entry(
@@ -1475,7 +1476,7 @@ def test_existing_bugs_history(mock_bugzilla_fetch_history, history_updater):
                 "change_time": datetime.fromisoformat("2024-05-27T15:10:10Z"),
                 "changes": [
                     {
-                        "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux,android\r\n+impact:blocked\r\n+configuration:general\r\n+affects:all\n",  # noqa
+                        "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux,android\r\n+impact:blocked\r\n+configuration:general\r\n+affects:all\n",
                         "field_name": "cf_user_story",
                         "removed": "",
                     },
@@ -1488,7 +1489,7 @@ def test_existing_bugs_history(mock_bugzilla_fetch_history, history_updater):
                 "changes": [
                     {
                         "field_name": "cf_user_story",
-                        "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux\r\n+impact:site-broken\r\n+configuration:general\r\n+affects:all\n",  # noqa
+                        "added": "@@ -1 +1,4 @@\n-\n+platform:windows,mac,linux\r\n+impact:site-broken\r\n+configuration:general\r\n+affects:all\n",
                         "removed": "",
                     },
                     {
@@ -1549,7 +1550,7 @@ def test_existing_bugs_history_filter_updated(
     )
 
     result = history_updater.existing_bugs_history(
-        MISSING_KEYWORDS_BUGS, datetime(2024, 5, 28, tzinfo=timezone.utc)
+        MISSING_KEYWORDS_BUGS, datetime(2024, 5, 28, tzinfo=UTC)
     )
 
     expected = to_history_entry(
@@ -1771,7 +1772,8 @@ def test_read_write_data(project):
 )
 def test_add_datetime_limit(input_query, expected_query):
     assert (
-        add_datetime_limit(input_query, datetime(2025, 5, 10, 0, 30)) == expected_query
+        add_datetime_limit(input_query, datetime(2025, 5, 10, 0, 30, tzinfo=UTC))
+        == expected_query
     )
 
 
@@ -1785,7 +1787,7 @@ def test_add_datetime_limit_error():
                 "o1": "equals",
                 "v1": "Web Compatibility",
             },
-            datetime(2025, 5, 10, 0, 30),
+            datetime(2025, 5, 10, 0, 30, tzinfo=UTC),
         )
 
 
@@ -1801,13 +1803,13 @@ def _bug_defaults():
         "see_also": [],
         "priority": None,
         "severity": None,
-        "creation_time": datetime(2025, 1, 1),
+        "creation_time": datetime(2025, 1, 1, tzinfo=UTC),
         "assigned_to": None,
         "keywords": [],
         "url": "",
         "user_story": "",
         "last_resolved": None,
-        "last_change_time": datetime(2025, 10, 1),
+        "last_change_time": datetime(2025, 10, 1, tzinfo=UTC),
         "size_estimate": None,
         "whiteboard": "",
         "webcompat_priority": None,

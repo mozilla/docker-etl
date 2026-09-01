@@ -1,10 +1,9 @@
 import json
 import logging
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime
-from typing import Any, Literal, Optional, Annotated
+from datetime import UTC, date, datetime
+from typing import Annotated, Any, Literal, Optional
 from urllib.parse import urljoin
-
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
@@ -118,7 +117,7 @@ class RedashDateTimeParameter(RedashParameterBase):
     @classmethod
     def parse_value(cls, v: Any) -> Any:
         if isinstance(v, str):
-            return datetime.strptime(v, "%Y-%m-%d %H:%M")
+            return datetime.strptime(v, "%Y-%m-%d %H:%M").replace(tzinfo=UTC)
         return v
 
     @field_serializer("value", when_used="always")
@@ -134,7 +133,7 @@ class RedashDateTimeWithSecondsParameter(RedashParameterBase):
     @classmethod
     def parse_value(cls, v: Any) -> Any:
         if isinstance(v, str):
-            return datetime.strptime(v, "%Y-%m-%d %H:%M:%S")
+            return datetime.strptime(v, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
         return v
 
     @field_serializer("value", when_used="always")
@@ -164,7 +163,7 @@ class RedashDateTimeRangeValue(BaseModel):
     @classmethod
     def parse_datetime(cls, v: Any) -> Any:
         if isinstance(v, str):
-            return datetime.strptime(v, "%Y-%m-%d %H:%M")
+            return datetime.strptime(v, "%Y-%m-%d %H:%M").replace(tzinfo=UTC)
         return v
 
     @field_serializer("start", "end", when_used="always")
@@ -185,7 +184,7 @@ class RedashDateTimeWithSecondsRangeValue(BaseModel):
     @classmethod
     def parse_datetime(cls, v: Any) -> Any:
         if isinstance(v, str):
-            return datetime.strptime(v, "%Y-%m-%d %H:%M:%S")
+            return datetime.strptime(v, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
         return v
 
     @field_serializer("start", "end", when_used="always")
@@ -246,7 +245,7 @@ class RedashClientException(Exception):
     pass
 
 
-class RedashClient(object):
+class RedashClient:
     def __init__(
         self,
         api_key: str,
@@ -294,7 +293,7 @@ class RedashClient(object):
         try:
             json_result = response.json()
         except ValueError as e:
-            raise RedashClientException((f"Unable to parse JSON response: {e}"))
+            raise RedashClientException(f"Unable to parse JSON response: {e}")
 
         return json_result
 

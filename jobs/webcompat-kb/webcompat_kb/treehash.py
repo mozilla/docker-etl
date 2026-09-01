@@ -75,7 +75,7 @@ class TreeEntry:
     def append(self, other: Self) -> None:
         assert other != self
         if isinstance(self.content, Blob):
-            raise ValueError("Cannot append to a Blob TreeEntry")
+            raise TypeError("Cannot append to a Blob TreeEntry")
         self.content.contents.append(other)
 
 

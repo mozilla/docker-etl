@@ -1,6 +1,7 @@
 import os
 import tomllib
-from typing import Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Optional
 
 from pydantic import BaseModel, RootModel
 

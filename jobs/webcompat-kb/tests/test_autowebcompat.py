@@ -1,11 +1,12 @@
 import base64
-from collections import defaultdict
-from pathlib import Path
 import json
+from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from datetime import datetime
-from typing import Mapping, Optional, Iterable, cast
-from uuid import UUID
+from pathlib import Path
+from typing import Optional, cast
 from unittest.mock import Mock, patch
+from uuid import UUID
 
 import httpx
 from bugdantic import bugzilla
@@ -14,7 +15,6 @@ from pydantic import BaseModel
 from webcompat_kb import hackbot
 from webcompat_kb.etl import autowebcompat
 from webcompat_kb.etl.autowebcompat import Json
-
 
 DATA_PATH = Path(__file__).parent / "data"
 
@@ -81,9 +81,11 @@ class MockHackbot(hackbot.Hackbot):
         raise httpx.HTTPError()
 
     def get_artifact_url(self, run_uuid: UUID, artifact_path: str) -> str:
-        if run_uuid in self.artifact_urls:
-            if artifact_path in self.artifact_urls[run_uuid]:
-                return self.artifact_urls[run_uuid][artifact_path]
+        if (
+            run_uuid in self.artifact_urls
+            and artifact_path in self.artifact_urls[run_uuid]
+        ):
+            return self.artifact_urls[run_uuid][artifact_path]
         # TODO this should really be a HTTPStatusError but we don't have a
         # request or response object
         raise httpx.HTTPError()

@@ -1,9 +1,9 @@
 import inspect
 from collections import defaultdict, deque
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 from unittest.mock import Mock
-
 
 import pytest
 from google.cloud import bigquery
@@ -67,8 +67,7 @@ class MockClient:
             arguments[args.varargs] = args.locals[args.varargs]
         if args.keywords:
             arguments.update(args.locals.get(args.keywords, {}))
-        if "self" in arguments:
-            del arguments["self"]
+        arguments.pop("self", None)
         call = Call(function=caller.f_code.co_name, arguments=arguments)
         self.called.append(call)
         rvs = self.return_values.get(call.function)

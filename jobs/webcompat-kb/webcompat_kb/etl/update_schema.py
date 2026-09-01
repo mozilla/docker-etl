@@ -2,11 +2,12 @@ import argparse
 import difflib
 import json
 import logging
-import re
 import os
+import re
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
+from datetime import UTC, datetime
+from typing import Any, Optional
 
 import jinja2
 from google.cloud import bigquery
@@ -28,7 +29,6 @@ from ..projectdata import (
     lint_templates,
 )
 from ..treehash import hash_tree
-
 
 here = os.path.dirname(__file__)
 
@@ -537,13 +537,13 @@ def update_schemas(
         schema.id for dataset in project for schema in dataset.routines()
     }
 
-    for item in current_schemas.views.keys():
+    for item in current_schemas.views:
         if item not in output_view_ids:
             logging.info(f"View {item} not found in local definition")
             if delete_missing:
                 client.delete_table(str(item))
 
-    for item in current_schemas.routines.keys():
+    for item in current_schemas.routines:
         if item not in output_routine_ids:
             logging.info(f"Routine {item} not found in local definition")
             if delete_missing:
@@ -555,18 +555,18 @@ def get_last_update(
 ) -> tuple[Optional[datetime], Optional[str]]:
     table = project["metadata"]["schema_updates"]
     try:
-        rows = list(
-            client.query(f"""SELECT run_at, schema_hash
+        rows = client.query(f"""SELECT run_at, schema_hash
 FROM `{table}`
 ORDER BY run_at DESC
 LIMIT 1""")
-        )
     except Exception:
         return None, None
-    if not rows:
+
+    try:
+        row = next(rows)
+    except StopIteration:
         return None, None
 
-    row = list(rows)[0]
     return row.run_at, row.schema_hash
 
 
@@ -607,7 +607,7 @@ def update_schema_if_needed(
     update_needed = (
         recreate
         or last_update_hash != src_hash
-        or (last_update_time and last_update_time.date() < datetime.now().date())
+        or (last_update_time and last_update_time.date() < datetime.now(tz=UTC).date())
     )
     if not update_needed:
         logging.info("No changes to deploy")

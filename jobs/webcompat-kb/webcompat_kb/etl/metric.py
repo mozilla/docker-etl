@@ -1,5 +1,5 @@
 import logging
-from datetime import date
+from datetime import UTC, datetime
 
 from ..base import Context, EtlJob
 from ..bqhelpers import BigQuery
@@ -29,7 +29,7 @@ def update_metric_history(project: Project, client: BigQuery) -> None:
 
         rows = list(client.query(query))
 
-        today = date.today()
+        today = datetime.now(tz=UTC).date()
 
         if rows and rows[0]["recorded_date"] >= today:
             # We've already recorded historic data today
@@ -73,7 +73,7 @@ def update_metric_daily(project: Project, client: BigQuery) -> None:
 
     rows = list(client.query(query))
 
-    today = date.today()
+    today = datetime.now(tz=UTC).date()
 
     if rows and rows[0]["date"] >= today:
         # We've already recorded historic data today

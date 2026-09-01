@@ -1,7 +1,8 @@
 import os
 import tomllib
 from abc import ABC, abstractmethod
-from typing import Literal, Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Literal, Optional
 
 from pydantic import BaseModel, RootModel
 
@@ -178,7 +179,7 @@ _metric_types = [
 
 
 class MetricTable(ABC):
-    type: Literal["table"] | Literal["view"]
+    type: Literal["table", "view"]
 
     @abstractmethod
     def name(self, metric: Metric) -> str: ...

@@ -57,7 +57,7 @@ def main() -> None:
             print(outputs[schema_id][1])
     except Exception:
         if args.pdb:
-            import pdb
+            import pdb  # noqa: T100
 
             pdb.post_mortem()
         raise

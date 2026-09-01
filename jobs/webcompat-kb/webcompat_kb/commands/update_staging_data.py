@@ -6,8 +6,8 @@ from .. import projectdata
 from ..base import Command
 from ..bqhelpers import BigQuery, get_client
 from ..config import Config
-from ..projectdata import SchemaId, ReferenceType
 from ..etl.update_schema import update_schema_if_needed
+from ..projectdata import ReferenceType, SchemaId
 
 
 class UpdateStagingData(Command):
@@ -49,9 +49,6 @@ class UpdateStagingData(Command):
 
         if invalid:
             logging.error(f"Unknown datasets {' '.join(invalid)}")
-            import pdb
-
-            pdb.set_trace()
             return 1
 
         dataset_mapping = {
@@ -67,11 +64,11 @@ class UpdateStagingData(Command):
             )
 
             bq_client.ensure_dataset(dataset, None)
-            tables = list(
+            tables = [
                 SchemaId(dataset.project, dataset.dataset, item.table_id)
                 for item in bq_client.client.list_tables(dataset.dataset)
                 if item.table_type != "VIEW"
-            )
+            ]
             schema_id_mapper = projectdata.SchemaIdMapper(dataset_mapping, set(tables))
             for src_table in tables:
                 dest_table = schema_id_mapper(ReferenceType.table, src_table)

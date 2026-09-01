@@ -1,19 +1,17 @@
-import uuid
 import json
 import logging
-from collections.abc import Mapping, Sequence
+import uuid
+from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, Optional, MutableMapping
-from urllib.parse import urljoin
 from enum import Enum
-from typing import Any
+from typing import Any, Literal, Optional
+from urllib.parse import urljoin
 from uuid import UUID
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
 from bugdantic.bugzilla import QueryParams
-
+from pydantic import BaseModel, ConfigDict, Field
 
 type Json = Mapping[str, Json] | Sequence[Json] | str | int | float | bool | None
 
@@ -126,7 +124,7 @@ class Hackbot:
 
     def _request(
         self,
-        method: Literal["GET"] | Literal["POST"],
+        method: Literal["GET", "POST"],
         path: str,
         params: Optional[QueryParams] = None,
         headers: Optional[dict[str, str]] = None,
@@ -149,10 +147,10 @@ class Hackbot:
             assert response is not None
             try:
                 response.raise_for_status()
-            except Exception as e:
+            except Exception:
                 msg = f"Request failed\n{response.text}"
                 logging.error(msg)
-                raise e
+                raise
             return response.json()
         else:
             logging.info(f"""Not updating, would send {method} request to {path} with body:

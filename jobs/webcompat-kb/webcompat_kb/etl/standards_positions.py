@@ -1,7 +1,8 @@
 import argparse
 import logging
-from datetime import datetime
-from typing import Any, Optional, Sequence, cast
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from typing import Any, Optional, cast
 from urllib.parse import urlparse
 
 import pydantic
@@ -131,7 +132,7 @@ def record_import(
             {
                 "mozilla_id": gecko_sha,
                 "webkit_id": webkit_sha,
-                "run_at": datetime.now().isoformat(),
+                "run_at": datetime.now(tz=UTC).isoformat(),
             }
         ],
     )

@@ -2,18 +2,19 @@ import argparse
 import logging
 import os
 from collections import defaultdict
-from typing import Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Optional
 
 from .. import projectdata
 from ..base import Command
 from ..bqhelpers import BigQuery, DatasetId, SchemaId, get_client
 from ..config import Config
+from ..metrics.metrics import Metric, MetricTable, metric_tables
 from ..projectdata import (
     Project,
     SchemaMetadata,
     TableMetadata,
 )
-from ..metrics.metrics import Metric, MetricTable, metric_tables
 
 
 def all_metric_tables(project: Project) -> Mapping[Metric, Sequence[MetricTable]]:

@@ -1,30 +1,27 @@
-import logging
-from enum import Enum
 import argparse
+import logging
 import re
-from typing import (
-    Annotated,
-    Iterable,
-    Iterator,
-    Optional,
-    TypeVar,
-    Generic,
-)
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+from enum import Enum
 from pathlib import Path
+from typing import (
+    Annotated,
+    Optional,
+    TypeVar,
+)
 
 import html5lib
 import zstandard
 from google.cloud import bigquery
 from pydantic import AfterValidator, BaseModel, PlainSerializer
 
+from .. import github
 from ..base import Context, EtlJob
 from ..bqhelpers import BigQuery, TableSchema
 from ..projectdata import Project
-from .. import github
 from ..serialization import to_naive_datetime, utc_from_naive_datetime
 
 
@@ -100,7 +97,7 @@ class IssueUpdate:
 IssueParams = IssueBackfill | IssueUpdate
 
 
-class SourceRepo(ABC, Generic[OutputT]):
+class SourceRepo[OutputT](ABC):
     repo: str
     private_milestone: Optional[int]
 
@@ -303,9 +300,8 @@ class WebBugsRepo(SourceRepo[WebBugsRow]):
                         data.source = value
             if state == WebcompatParserState.key_values:
                 for attr, prefix in prefix_extracts.items():
-                    if getattr(data, attr) is None:
-                        if line.startswith(prefix):
-                            setattr(data, attr, line[len(prefix) :].strip())
+                    if getattr(data, attr) is None and line.startswith(prefix):
+                        setattr(data, attr, line[len(prefix) :].strip())
                 if line.startswith("**Steps to Reproduce**"):
                     state = WebcompatParserState.steps_to_reproduce
                     continue
@@ -314,7 +310,7 @@ class WebBugsRepo(SourceRepo[WebBugsRow]):
                     state = WebcompatParserState.details
                 else:
                     steps_to_reproduce.append(line)
-            if state == WebcompatParserState.after_details:
+            if state == WebcompatParserState.after_details:  # noqa: SIM102
                 if line.startswith("<details>"):
                     state = WebcompatParserState.details
             if state == WebcompatParserState.details:
@@ -410,9 +406,9 @@ class WebBugsRepo(SourceRepo[WebBugsRow]):
 
             # Check if we're entering a new section
             for new_section, regexp in sections_regexp.items():
-                m = regexp.match(line)
-                if m:
-                    if new_section not in seen_sections:
+                if new_section not in seen_sections:
+                    m = regexp.match(line)
+                    if m:
                         flush_parsed_lines()
                         in_section = new_section
                         line = line[m.end() :]
@@ -524,7 +520,7 @@ def load_from_file(
     if path.suffix in {".zst", ".zstd"}:
         f = zstandard.open(path, "r")
     else:
-        f = open(path)
+        f = open(path, "r")  # noqa: SIM115
 
     rows: dict[int, BaseModel] = {}
     source_time = None

@@ -1,25 +1,19 @@
-import shutil
 import enum
 import logging
 import os
 import pathlib
 import re
+import shutil
 import tomllib
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import (
     Any,
-    Callable,
     ClassVar,
-    Generic,
-    Iterable,
-    Iterator,
     Literal,
-    Mapping,
     Optional,
     Self,
-    Sequence,
-    TypeVar,
 )
 
 import jinja2
@@ -27,7 +21,6 @@ import tomli_w
 from google.cloud import bigquery
 from pydantic import BaseModel, ConfigDict, RootModel, ValidationError
 
-from .config import Config
 from .bqhelpers import (
     Dataset,
     DatasetId,
@@ -40,6 +33,7 @@ from .bqhelpers import (
     TableSchema,
     ViewSchema,
 )
+from .config import Config
 from .metrics import metrics, ranks
 
 
@@ -67,9 +61,7 @@ class SchemaMetadata(BaseModel):
 class SchemaFieldDefinition(BaseModel):
     model_config = ConfigDict(frozen=True)
     type: str
-    mode: Optional[Literal["NULLABLE"] | Literal["REQUIRED"] | Literal["REPEATED"]] = (
-        None
-    )
+    mode: Optional[Literal["NULLABLE", "REQUIRED", "REPEATED"]] = None
     max_length: Optional[int] = None
 
     def to_schema(self, name: str) -> SchemaField:
@@ -86,9 +78,7 @@ class SchemaFieldDefinition(BaseModel):
 class SchemaRecordFieldDefinition(BaseModel):
     model_config = ConfigDict(frozen=True)
     type: Literal["RECORD"]
-    mode: Optional[Literal["NULLABLE"] | Literal["REQUIRED"] | Literal["REPEATED"]] = (
-        None
-    )
+    mode: Optional[Literal["NULLABLE", "REQUIRED", "REPEATED"]] = None
     fields: Mapping[str, SchemaFieldDefinition | Self]
 
     def to_schema(self, name: str) -> SchemaRecordField:
@@ -124,10 +114,7 @@ class TableSchemaDefinition(RootModel):
     root: Mapping[str, SchemaRecordFieldDefinition | SchemaFieldDefinition]
 
 
-TemplateCls = TypeVar("TemplateCls", bound=BaseModel)
-
-
-class SchemaTemplate(ABC, Generic[TemplateCls]):
+class SchemaTemplate[TemplateCls: BaseModel](ABC):
     filename: ClassVar[str]
 
     def __init__(self, path: os.PathLike, metadata: TemplateCls, template: str):
@@ -256,7 +243,7 @@ class DatasetTemplates:
         elif isinstance(template, RoutineTemplate):
             self.routines.append(template)
         else:
-            raise ValueError(f"Don't know how to append {template}")
+            raise TypeError(f"Don't know how to append {template}")
 
     def remove(self, template: SchemaTemplate) -> None:
         if isinstance(template, TableTemplate):
@@ -266,7 +253,7 @@ class DatasetTemplates:
         elif isinstance(template, RoutineTemplate):
             self.routines.remove(template)
         else:
-            raise ValueError(f"Don't know how to remove {template}")
+            raise TypeError(f"Don't know how to remove {template}")
 
 
 class TemplatesByDataset(dict[DatasetId, DatasetTemplates]):
@@ -448,8 +435,7 @@ class Project:
         return dataset
 
     def __iter__(self) -> Iterator[Dataset]:
-        for dataset in self.datasets.values():
-            yield dataset
+        yield from self.datasets.values()
 
 
 class TableSchemaCreator:
@@ -585,8 +571,7 @@ class DatasetMapper:
     def __init__(self, project_data: ProjectData, stage: bool):
         # Mapping from canonical dataset id to output dataset id
         self.dataset_mapping = {
-            dataset_id: dataset_id
-            for dataset_id in project_data.templates_by_dataset.keys()
+            dataset_id: dataset_id for dataset_id in project_data.templates_by_dataset
         }
         if stage:
             self.dataset_mapping = {
@@ -745,6 +730,7 @@ def load(
                 tables = list(client.list_tables(dataset.id.dataset))
             except Exception:
                 # If the dataset doesn't exist we don't know about tables it contains
+                logging.debug(f"{dataset.id} doesn't exist")
                 continue
             for table in tables:
                 if table.table_type != "VIEW":

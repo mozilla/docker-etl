@@ -1,6 +1,6 @@
 import hashlib
-import pathlib
 import os
+import pathlib
 
 from webcompat_kb import treehash
 
@@ -24,21 +24,21 @@ def test_tree(tmp_path: pathlib.Path):
 
     assert len(tree.content.contents) == 3
 
-    file_1_blob = [
+    file_1_blob = next(
         item.content
         for item in tree.content.contents
         if os.path.basename(item.path) == b"file1.txt"
-    ][0]
-    file_2_blob = [
+    )
+    file_2_blob = next(
         item.content
         for item in tree.content.contents
         if os.path.basename(item.path) == b"file2.txt"
-    ][0]
-    subdir_tree = [
+    )
+    subdir_tree = next(
         item.content
         for item in tree.content.contents
         if os.path.basename(item.path) == b"sub"
-    ][0]
+    )
 
     assert isinstance(file_1_blob, treehash.Blob)
     file_1_blob_data = b"blob 5\x00%b" % file_1_contents
