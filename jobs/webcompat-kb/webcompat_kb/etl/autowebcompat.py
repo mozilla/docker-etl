@@ -1011,10 +1011,6 @@ class ReproTask(HackbotTask):
                                 DiagnosisTask.whiteboard_request_token
                             )
                         if result.chrome_mask_fixed is not None:
-                            if result.chrome_mask_fixed:
-                                require_whiteboard.append(
-                                    "[autowebcompat:interv-ua-override-proposed]"
-                                )
                             require_user_story[
                                 "autowebcompat-repro-chrome-mask-fixed"
                             ] = "true" if result.chrome_mask_fixed else "false"
