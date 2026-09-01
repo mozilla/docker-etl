@@ -1,21 +1,19 @@
-import itertools
 import argparse
 import html
-from collections import defaultdict
+import itertools
 import logging
 import os
+from abc import ABC, abstractmethod
+from collections import defaultdict
+from collections.abc import Iterable, Mapping, MutableMapping, Sequence
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import (
-    Iterable,
+    Annotated,
+    Literal,
     Optional,
     Self,
-    Literal,
-    Annotated,
-    Union,
 )
-from abc import ABC, abstractmethod
-from collections.abc import Sequence, Mapping, MutableMapping
-from dataclasses import dataclass, field
-from datetime import datetime
 from uuid import UUID
 
 import filetype
@@ -26,7 +24,6 @@ from pydantic import BaseModel, Field, RootModel
 
 from ..base import Context, EtlJob
 from ..bqhelpers import BigQuery
-from ..projectdata import Project
 from ..hackbot import (
     ArtifactRef,
     BaseSummary,
@@ -39,6 +36,7 @@ from ..hackbot import (
     RunDoc,
     RunSummary,
 )
+from ..projectdata import Project
 
 
 class RunInfo(BaseModel):
@@ -97,6 +95,7 @@ class ScheduledRun(BaseModel):
     def to_json(self) -> Mapping[str, Json]:
         rv = self.model_dump(mode="json")
         rv["source_time"] = self.source_time.replace(tzinfo=None).isoformat()
+        rv["requested_at"] = self.requested_at.replace(tzinfo=None).isoformat()
         return rv
 
 
@@ -174,7 +173,7 @@ class ReproResultSummary(BaseSummary):
 
 
 ReproSummary = RootModel[
-    Annotated[Union[ReproResultSummary, ErrorSummary], Field(discriminator="status")]
+    Annotated[ReproResultSummary | ErrorSummary, Field(discriminator="status")]
 ]
 
 
@@ -205,9 +204,7 @@ class DiagnosisResultSummary(BaseSummary):
 
 
 DiagnosisSummary = RootModel[
-    Annotated[
-        Union[DiagnosisResultSummary, ErrorSummary], Field(discriminator="status")
-    ]
+    Annotated[DiagnosisResultSummary | ErrorSummary, Field(discriminator="status")]
 ]
 
 
@@ -306,10 +303,10 @@ class BigQueryService:
                 ),
             ],
         )
-        return set(
+        return {
             RunKey(item.agent, item.task_name, item.source_key, item.run_key)
             for item in rows
-        )
+        }
 
     def get_new_bugs(
         self,
@@ -600,7 +597,7 @@ def poll_pending(
 @dataclass
 class BugUpdate:
     bug: bugzilla.BugUpdate
-    add_attachments: list[bugzilla.AttachmentCreate] = field(default_factory=lambda: [])
+    add_attachments: list[bugzilla.AttachmentCreate] = field(default_factory=list)
 
     def has_updates(self) -> bool:
         if self.add_attachments:
@@ -634,7 +631,7 @@ class Updater(ABC):
 class BugzillaUpdater(Updater):
     def __init__(self, client: bugzilla.Bugzilla):
         self.client = client
-        self.include_fields = set(["id"])
+        self.include_fields = {"id"}
         self.bug_ids: set[int] = set()
         self.bug_updates: dict[int, tuple[bugzilla.Bug, BugUpdate]] = {}
 
@@ -825,7 +822,7 @@ class HackbotTask(ABC):
                 )
                 continue
 
-            requested_at = datetime.now()
+            requested_at = datetime.now(tz=UTC)
             logging.info(
                 f"Scheduling run with agent {self.agent}, task {self.task_name}, source {request.source_key}, run id {request.run_key}"
             )
@@ -1117,7 +1114,7 @@ class ReproTask(HackbotTask):
                 update_whiteboard(bug, bug_update, require_whiteboard)
                 update_user_story(bug, bug_update, require_user_story)
         else:
-            raise ValueError(
+            raise TypeError(
                 f"Don't know how to update for task {self} and updater type {updater}"
             )
 
@@ -1306,7 +1303,7 @@ class DiagnosisTask(HackbotTask):
 
                 update_user_story(bug, bug_update, require_user_story)
         else:
-            raise ValueError(
+            raise TypeError(
                 f"Don't know how to update for task {self} and updater type {updater}"
             )
 
@@ -1374,7 +1371,7 @@ def run(
             )
         )
 
-    return False if poll_failed else True
+    return not poll_failed
 
 
 class AutowebcompatJob(EtlJob):

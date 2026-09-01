@@ -4,12 +4,12 @@ from typing import Optional
 
 from google.cloud import bigquery
 
-from . import metric_rescore
 from .. import projectdata
 from ..base import Command
 from ..bqhelpers import BigQuery, DatasetId, SchemaId, SchemaType, get_client
 from ..config import Config
 from ..projectdata import Project, RoutineTemplate, SchemaMetadata
+from . import metric_rescore
 
 
 def check_yyyymm(project: Project, client: BigQuery, yyyymm: int) -> bool:
@@ -18,7 +18,7 @@ SELECT EXISTS (
   SELECT 1 FROM `{project["crux_imported"]["host_min_ranks"]}` WHERE yyyymm = @yyyymm) as has_yyyymm
 """
     parameters = [bigquery.ScalarQueryParameter("yyyymm", "INTEGER", yyyymm)]
-    result = list(client.query(query, parameters=parameters))[0]
+    result = next(client.query(query, parameters=parameters))
     return result.has_yyyymm
 
 

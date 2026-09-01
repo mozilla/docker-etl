@@ -1,14 +1,15 @@
 import argparse
 import logging
 import os
-from typing import Sequence, Optional
+from collections.abc import Sequence
+from typing import Optional
 
 from .. import projectdata
 from ..base import Command
 from ..bqhelpers import BigQuery, DatasetId, get_client
 from ..config import Config
-from ..projectdata import Project
 from ..etl.siterank import host_min_ranks_query
+from ..projectdata import Project
 
 
 def backfill_host_min_ranks(
