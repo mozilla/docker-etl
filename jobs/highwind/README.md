@@ -19,7 +19,7 @@ A proof of concept. What it does not cover is under [Proof-of-concept scope](#pr
 3. Each source query returns six aggregates per (slug, branch, window, metric): `n`, `sum`, `sumsq`,
    `pre_sum`, `pre_sumsq` and `xp`. Those are everything a covariate-adjusted mean comparison needs,
    so the per-unit stages stay inside the query that aggregates them away.
-4. gbstats fits the CUPED coefficient over the two arms being compared and computes an always-valid
+4. gbstats fits the CUPED coefficient over the branches being compared and computes an always-valid
    two-sided interval on the relative difference.
 5. Every declared cell is written, in one of five states: `not_started`, `insufficient_data`,
    `forming`, `confident` or `error`. Cells that produced nothing are written too, so an experiment
@@ -40,13 +40,19 @@ than defaulted.
 
 | Output | Grain |
 | --- | --- |
-| `moz-fx-data-experiments.monitoring.highwind_statistics_v1` | (slug, metric, window, comparison) |
-| `moz-fx-data-experiments.monitoring.highwind_sufficient_stats_v1` | (slug, metric, window, branch) |
+| `moz-fx-data-experiments.highwind_poc.highwind_statistics_v1` | (slug, metric, window, comparison) |
+| `moz-fx-data-experiments.highwind_poc.highwind_sufficient_stats_v1` | (slug, metric, window, branch) |
 | `gs://mozanalysis/highwind/<slug>.json` | experiment, the seam Experimenter reads |
 
 All three come from one computation, which is why they are one job rather than three. Both tables are
-partitioned on `as_of_date`, and a run replaces its own date's partition rather than appending to it,
-so a retry produces the same table as the first run instead of doubling it.
+partitioned on `as_of_date` and clustered on `slug`, and a run replaces its own date's partition
+rather than appending to it, so a retry produces the same table as the first run instead of doubling
+it. An object is named for its experiment with the slug's hyphens as underscores, so
+`new-tab-example-151` is written to `new_tab_example_151.json`.
+
+The cohort of enrolled units each run materializes is an intermediate rather than an output. It goes
+to a table of its own in `moz-fx-data-experiments.highwind_poc`, named per run so two runs of one
+date cannot truncate each other's cohort, and it expires a day later.
 
 ## Usage
 
@@ -77,8 +83,8 @@ gcloud auth application-default login
 | `--dry-run` | off | Write the per-experiment JSON to `--local-output`, skip the tables |
 | `--local-output` | `test_output` | Directory `--dry-run` writes to |
 | `--validate-sql` | off | Submit every query for validation without executing it, write nothing |
-| `--sample-percent` | no sampling | Restrict the cohort to this percent of clients |
-| `--billing-project` | `mozdata` | Project the queries run and bill in |
+| `--sample-percent` | no sampling | Restrict the cohort to this percent of clients, as an integer |
+| `--billing-project` | `moz-fx-data-experiments` | Project the queries run and bill in |
 
 `--slug` and `--limit` write blobs but never tables. A filtered run is not the day's complete output,
 and the table write replaces the whole partition, so letting one through would delete every
@@ -86,11 +92,16 @@ experiment the filter excluded.
 
 `--dry-run` still runs the queries, so it costs what a real run costs; what changes is where the
 output goes. `--validate-sql` is the opposite, checking that the generated SQL is well formed and
-typed without executing any of it. `--sample-percent` samples whole analysis units, and widens the
-intervals, so it is for development rather than for reading. Where the unit is the client id it uses
-the `sample_id` the source tables are clustered on and the scan falls with the sample; where it is
-not, keeping a unit whole costs that pruning, because sampling on the clustered column would split
-units across the sample boundary and aggregate partial ones.
+typed without executing any of it.
+
+`--sample-percent` samples whole analysis units and widens the intervals, so it is for development
+rather than for reading. It writes neither tables nor GCS blobs: unlike a filtered run, every number
+it produces comes from a fraction of a cohort, and an object named for its experiment gives a reader
+no sign of that, so publishing one would replace a correct answer with a sampled one. Pair it with
+`--dry-run` to read its output, which puts the same JSON in a local directory. Where the unit is the
+client id it uses the `sample_id` the source tables are clustered on and the scan falls with the
+sample; where it is not, keeping a unit whole costs that pruning, because sampling on the clustered
+column would split units across the sample boundary and aggregate partial ones.
 
 ## Development
 

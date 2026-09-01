@@ -7,7 +7,8 @@ One run writes three things:
 
     highwind_statistics_v1        one row per (slug, metric, window, comparison), the results
     highwind_sufficient_stats_v1  one row per (slug, metric, window, branch), what they came from
-    gs://mozanalysis/highwind/<slug>.json   per-experiment results, the seam Experimenter reads
+    gs://mozanalysis/highwind/<slug>.json   per-experiment results, the seam Experimenter reads,
+                                            named with the slug's hyphens as underscores
 
 All three come from one computation, which is why they are one job rather than three.
 """
@@ -86,11 +87,12 @@ DEFAULT_LOCAL_OUTPUT = "test_output"
 )
 @click.option(
     "--sample-percent",
-    type=float,
+    type=int,
     default=None,
     help=(
         "Restrict the cohort to this percent of analysis units, so a run costs roughly that share "
-        "of a full one. For development: the intervals it produces are wider than the real ones."
+        "of a full one. For development: the intervals it produces are wider than the real ones, "
+        "so it writes no tables and no GCS blobs. Pair it with --dry-run to read its output."
     ),
 )
 @click.option(
@@ -114,11 +116,11 @@ def main(
     billing_project,
 ):
     """Analyse every live Firefox Desktop experiment for the run date."""
-    outcomes = run_daily_job(
+    summaries = run_daily_job(
         as_of=run_date.date(),
         only_slugs=list(slugs) or None,
         limit=limit,
-        dry_run=validate_sql,
+        validate_only=validate_sql,
         workers=workers,
         live_only=True,
         sample_percent=sample_percent,
@@ -127,7 +129,7 @@ def main(
     )
     # A run where nothing succeeded must not exit zero. Under Airflow that is a green task that did
     # nothing, which is the failure mode hardest to notice and slowest to diagnose.
-    if systemic_failure(outcomes):
+    if systemic_failure(summaries):
         raise SystemExit("Highwind produced no results for any experiment")
 
 

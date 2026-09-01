@@ -36,8 +36,8 @@ EXPERIMENT = Experiment(
 )
 
 
-def arm(units, mean, second_moment, cross_moment):
-    """One arm's aggregates for `units` units whose covariate has the same mean as the outcome."""
+def branch(units, mean, second_moment, cross_moment):
+    """One branch's aggregates, for units whose covariate mean equals their metric mean."""
     return dict(
         n=units,
         sum=units * mean,
@@ -98,8 +98,8 @@ def test_a_failure_marks_every_declared_cell_an_error_so_the_run_can_see_it():
 
 def test_a_branch_below_the_minimum_units_is_insufficient_data_not_an_error():
     cells = {
-        ("active_hours", "cumu:1", "control"): arm(400, 1.0, 2.0, 1.5),
-        ("active_hours", "cumu:1", "treatment-a"): arm(1, 1.0, 2.0, 1.5),
+        ("active_hours", "cumu:1", "control"): branch(400, 1.0, 2.0, 1.5),
+        ("active_hours", "cumu:1", "treatment-a"): branch(1, 1.0, 2.0, 1.5),
     }
     results = {
         result["branch"]: result
@@ -117,8 +117,8 @@ def test_a_branch_below_the_minimum_units_is_insufficient_data_not_an_error():
 
 def test_a_populated_pair_produces_a_relative_interval_around_the_difference():
     cells = {
-        ("active_hours", "cumu:1", "control"): arm(1000, 1.0, 2.0, 1.5),
-        ("active_hours", "cumu:1", "treatment-a"): arm(1000, 1.1, 2.42, 1.65),
+        ("active_hours", "cumu:1", "control"): branch(1000, 1.0, 2.0, 1.5),
+        ("active_hours", "cumu:1", "treatment-a"): branch(1000, 1.1, 2.42, 1.65),
     }
     results = {
         result["branch"]: result
@@ -140,14 +140,14 @@ def test_theta_is_zero_when_the_covariate_never_moves():
     assert gbstats_compute.pooled_theta([flat, flat]) == 0.0
 
 
-def test_theta_is_the_slope_of_the_outcome_on_the_covariate():
-    # Two units per arm, each unit's outcome exactly twice its covariate, so the slope is 2.
-    arms = [
+def test_theta_is_the_slope_of_the_metric_on_the_covariate():
+    # Two units per branch, each unit's value exactly twice its covariate, so the slope is 2.
+    branches = [
         dict(n=2, sum=6.0, sumsq=20.0, pre_sum=3.0, pre_sumsq=5.0, xp=10.0),
         dict(n=2, sum=14.0, sumsq=100.0, pre_sum=7.0, pre_sumsq=25.0, xp=50.0),
     ]
 
-    assert gbstats_compute.pooled_theta(arms) == pytest.approx(2.0)
+    assert gbstats_compute.pooled_theta(branches) == pytest.approx(2.0)
 
 
 def test_an_interval_clear_of_zero_is_what_separates_confident_from_forming():
@@ -161,11 +161,11 @@ def test_an_interval_clear_of_zero_is_what_separates_confident_from_forming():
 
 def test_the_tuning_parameter_reaches_the_test_on_the_scale_gbstats_reads_it_at():
     # gbstats multiplies the mixture variance it derives from this number by its own unit count,
-    # which is the two arms summed. A parameter set on any other scale is silently mistuned, and
+    # which is the two branches summed. A parameter set on any other scale is silently mistuned, and
     # nothing downstream would say so, since it moves width rather than validity.
-    test = gbstats_compute.build_test(
-        gbstats_compute.adjusted(arm(6000, 1.0, 2.0, 1.5), 0.5),
-        gbstats_compute.adjusted(arm(4000, 1.0, 2.0, 1.5), 0.5),
+    test = gbstats_compute.build_t_test(
+        gbstats_compute.adjusted(branch(6000, 1.0, 2.0, 1.5), 0.5),
+        gbstats_compute.adjusted(branch(4000, 1.0, 2.0, 1.5), 0.5),
     )
 
     assert test.n == 10000
@@ -198,14 +198,15 @@ def test_the_tuning_parameter_tracks_the_unit_count_across_scales():
     assert gbstats_compute.tuning_parameter(0) == 1
 
 
-# ------------------------------------------------------------- theta across every arm ----
+# ---------------------------------------------------------- theta across every branch ----
 
 
-def arm_moments(units, post_mean, post_variance, pre_mean, pre_variance, covariance):
-    """One arm's six aggregates, written as the moments they encode.
+def branch_moments(units, post_mean, post_variance, pre_mean, pre_variance, covariance):
+    """One branch's six aggregates, written as the moments they encode.
 
-    The arms differ in their covariate mean as well as their slope, which is the case CUPED exists
-    for and the case where the choice of theta moves the point estimate rather than only the width.
+    The branches differ in their covariate mean as well as their slope, which is the case CUPED
+    exists for and the case where the choice of theta moves the point estimate rather than only the
+    width.
     """
     return dict(
         n=units,
@@ -217,14 +218,16 @@ def arm_moments(units, post_mean, post_variance, pre_mean, pre_variance, covaria
     )
 
 
-def three_arm_cells(window="cumu:1"):
-    """One (metric, window) whose three arms have visibly different covariate slopes."""
+def three_branch_cells(window="cumu:1"):
+    """One (metric, window) whose three branches have visibly different covariate slopes."""
     return {
-        ("active_hours", window, "control"): arm_moments(1000, 1.0, 1.0, 1.0, 1.0, 0.5),
-        ("active_hours", window, "treatment-a"): arm_moments(
+        ("active_hours", window, "control"): branch_moments(
+            1000, 1.0, 1.0, 1.0, 1.0, 0.5
+        ),
+        ("active_hours", window, "treatment-a"): branch_moments(
             1000, 1.5, 1.2, 1.3, 1.4, 0.9
         ),
-        ("active_hours", window, "treatment-b"): arm_moments(
+        ("active_hours", window, "treatment-b"): branch_moments(
             1000, 0.9, 0.8, 0.7, 0.6, 0.2
         ),
     }
@@ -232,7 +235,7 @@ def three_arm_cells(window="cumu:1"):
 
 def test_every_comparison_of_one_metric_and_window_shares_one_theta():
     results = gbstats_compute.compute_statistics(
-        EXPERIMENT, [CONTINUOUS], WINDOWS, three_arm_cells()
+        EXPERIMENT, [CONTINUOUS], WINDOWS, three_branch_cells()
     )
     thetas = {result["branch"]: result["theta"] for result in results}
 
@@ -240,10 +243,10 @@ def test_every_comparison_of_one_metric_and_window_shares_one_theta():
     assert thetas["treatment-a"] == thetas["treatment-b"]
 
 
-def test_three_arms_pool_a_different_theta_than_either_pair_would():
-    # The assertion that pins the change: pooling over all arms is not the same number as pooling
-    # over the pair being compared, so a run's intervals move rather than merely being relabelled.
-    cells = three_arm_cells()
+def test_three_branches_pool_a_different_theta_than_either_pair_would():
+    # The assertion that pins the change: pooling over all branches is not the same number as
+    # pooling over the pair being compared, so a run's intervals move rather than being relabelled.
+    cells = three_branch_cells()
     reference = cells[("active_hours", "cumu:1", "control")]
     results = {
         result["branch"]: result
@@ -265,7 +268,7 @@ def test_three_arms_pool_a_different_theta_than_either_pair_would():
 
 def test_theta_pools_only_the_arms_that_reported_the_window():
     # A branch with no cell for this window contributes nothing rather than crashing the group.
-    cells = three_arm_cells()
+    cells = three_branch_cells()
     del cells[("active_hours", "cumu:1", "treatment-b")]
     window = next(w for w in WINDOWS if w.label == "cumu:1")
 

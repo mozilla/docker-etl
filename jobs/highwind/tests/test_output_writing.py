@@ -115,21 +115,29 @@ def test_a_prefix_with_a_path_component_becomes_a_bucket_and_a_key():
     blob = output_writing.blob_for(FakeStorage(), "an-experiment", "gs://mozanalysis/highwind")
 
     assert blob.bucket_name == "mozanalysis"
-    assert blob.key == "highwind/an-experiment.json"
+    assert blob.key == "highwind/an_experiment.json"
 
 
 def test_a_bare_bucket_prefix_puts_the_blob_at_the_root():
     blob = output_writing.blob_for(FakeStorage(), "an-experiment", "gs://mozanalysis")
 
     assert blob.bucket_name == "mozanalysis"
-    assert blob.key == "an-experiment.json"
+    assert blob.key == "an_experiment.json"
 
 
 def test_a_nested_prefix_keeps_every_path_component():
     blob = output_writing.blob_for(FakeStorage(), "an-experiment", "gs://a-bucket/one/two")
 
     assert blob.bucket_name == "a-bucket"
-    assert blob.key == "one/two/an-experiment.json"
+    assert blob.key == "one/two/an_experiment.json"
+
+
+def test_an_object_is_named_with_underscores_wherever_its_slug_has_hyphens():
+    # The slug is the key the ingest looks an experiment up by, so only the separator changes.
+    assert output_writing.blob_name("new-tab-tab-groups-promo-151") == (
+        "new_tab_tab_groups_promo_151.json"
+    )
+    assert output_writing.blob_name("already_underscored") == "already_underscored.json"
 
 
 def test_each_table_is_created_partitioned_on_the_run_date_before_anything_is_loaded():
@@ -142,6 +150,17 @@ def test_each_table_is_created_partitioned_on_the_run_date_before_anything_is_lo
         output_writing.PARTITION_FIELD,
     ]
     assert all(exists_ok for _, exists_ok in client.created)
+
+
+def test_each_table_is_clustered_so_one_experiment_can_be_read_without_the_partition():
+    client = RecordingClient()
+
+    write_one_run(client)
+
+    assert [table.clustering_fields for table, _ in client.created] == [
+        output_writing.CLUSTERING_FIELDS,
+        output_writing.CLUSTERING_FIELDS,
+    ]
 
 
 def test_a_run_writes_one_partition_of_each_table():
@@ -224,9 +243,11 @@ def test_a_local_run_writes_the_experiments_json_to_a_directory(tmp_path):
     )
     payload = json.loads(pathlib.Path(path).read_text())
 
-    assert payload["metrics_meta"]["slug"] == "an-experiment"
-    assert payload["metrics_meta"]["as_of_date"] == "2026-08-01"
-    assert payload["metrics_meta"]["pipeline_version"] == output_writing.PIPELINE_VERSION
-    assert payload["metrics_meta"]["branches"] == ["control", "treatment"]
+    assert pathlib.Path(path).name == "an_experiment.json"
+
+    assert payload["metrics_metadata"]["slug"] == "an-experiment"
+    assert payload["metrics_metadata"]["as_of_date"] == "2026-08-01"
+    assert payload["metrics_metadata"]["pipeline_version"] == output_writing.PIPELINE_VERSION
+    assert payload["metrics_metadata"]["branches"] == ["control", "treatment"]
     assert payload["statistics"] == [CONFIDENT_CELL, ERROR_CELL]
     assert payload["errors"] == [ERROR_CELL]

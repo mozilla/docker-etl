@@ -156,6 +156,41 @@ def test_a_randomization_unit_with_no_analysis_unit_is_skipped_not_defaulted():
     assert "nimbus_id" in why
 
 
+def test_an_ended_recipe_a_live_only_run_declines_is_reported_rather_than_dropped():
+    # Every recipe the mirror returned has to be accounted for by one of the two lists, so a run's
+    # own count says how many recipes it saw and what it did with each.
+    ended = AS_OF - datetime.timedelta(days=2)
+    experiments, skipped = discovery.discover(
+        FakeClient(
+            [
+                mirror_row(slug="still-live"),
+                mirror_row(slug="finished", end_date=ended),
+            ]
+        ),
+        AS_OF,
+        live_only=True,
+    )
+
+    assert [e.slug for e in experiments] == ["still-live"]
+    assert len(skipped) == 1
+    slug, why = skipped[0]
+    assert slug == "finished"
+    assert str(ended) in why
+
+
+def test_a_slug_filter_reports_only_refusals_rather_than_every_recipe_it_passed_over():
+    # The slugs were named by the caller, so the rest of the mirror is out of scope rather than
+    # declined, and listing it would bury the refusals the list exists to surface.
+    experiments, skipped = discovery.discover(
+        FakeClient([mirror_row(slug="wanted"), mirror_row(slug="not-wanted")]),
+        AS_OF,
+        only_slugs=["wanted"],
+    )
+
+    assert [e.slug for e in experiments] == ["wanted"]
+    assert skipped == []
+
+
 def test_a_unit_this_app_does_not_declare_is_skipped_even_where_another_app_declares_it():
     experiments, skipped = discovery.discover(
         FakeClient([mirror_row(app_name="fenix", randomization_unit="group_id")]), AS_OF

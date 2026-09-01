@@ -53,15 +53,15 @@ from .units import PROFILE_GROUP_ID
 PRE_BUCKET = -1
 
 # Granularity of the branch-balancing hash. A unit is kept when its hash modulo this falls under
-# the arm's retention rate times this, so it sets how finely a rate can be expressed: one part per
-# million is far below the sampling error on any arm large enough to need balancing.
+# the branch's retention rate times this, so it sets how finely a rate can be expressed: one part
+# per million is far below the sampling error on any branch large enough to need balancing.
 BALANCE_RESOLUTION = 1_000_000
 
 # A profile group fanning out to more than this many client ids is a cloned or bot fleet rather
 # than a household. The threshold and the distribution behind it are the SQL spec's, §3.4 and §1.4:
 # a real group is one client, and the tail runs orders of magnitude above that. It matters at group
 # grain in a way it does not at client grain, because the whole fleet collapses into a single
-# analysis unit carrying a physically impossible value and lands entirely in whichever arm its id
+# analysis unit carrying a physically impossible value and lands entirely in whichever branch its id
 # hashes to.
 #
 # Detected over enrollment events rather than over `baseline_clients_daily` across the window as the
@@ -75,7 +75,7 @@ MAX_CLIENTS_PER_GROUP = 10
 # counting it costs a column rather than a join.
 FLEET_CLIENT_COLUMN = "legacy_telemetry_client_id"
 
-# How many times the smallest arm the largest is allowed to be. Chosen at the knee of the
+# How many times the smallest branch the largest is allowed to be. Chosen at the knee of the
 # precision-versus-units curve for a 90/10 split: 4:1 discards about half the units for ~6% wider
 # intervals, where 1:1 discards 80% for 34%. Above ~6:1 there is little left to save, below ~3:1
 # the interval cost climbs steeply.
@@ -98,7 +98,8 @@ MAX_BRANCH_RATIO = 4
 # would keep some members of a unit and drop others, so a sampled run would aggregate partial units
 # and report wrong numbers rather than a smaller correct sample. Those runs hash the unit on both
 # sides and give up the pruning, which is the right trade because `--sample-percent` is a
-# development lever and `is_partial_run` already keeps its output out of the tables.
+# development lever, and `is_partial_run` and `writes_blobs` already keep its numbers out of both
+# the tables and the published blobs.
 
 
 def sample_clause(column, sample_percent, prefix="AND "):
@@ -266,17 +267,17 @@ def cohort_query(run):
 
     A unit is taken at its FIRST enrollment in each experiment, so a client that re-enrols is
     anchored once. Units seen on more than one branch of the same experiment are dropped rather than
-    resolved: a contradictory assignment is a data problem, and picking an arm would silently bias
+    resolved: a contradictory assignment is a data problem, and picking a branch would silently bias
     the comparison it feeds. A unit in several DIFFERENT experiments is kept in each, which is why
     the grouping is by (slug, unit) rather than by unit.
 
     Lopsided branches are then capped rather than equalised, per slug. A holdback splits 90/10 or
-    worse, so the large arm carries most of the units the aggregation has to move while adding
+    worse, so the large branch carries most of the units the aggregation has to move while adding
     little to the precision of the contrast, whose standard error goes as sqrt(1/n_ref + 1/n_treat)
-    and is dominated by the smaller arm. But "adds little" is not "adds nothing", and equalising is
-    the expensive way to find that out: on a 90/10 split, cutting the large arm to 1:1 discards 80%
-    of the units and widens the interval by 34%, whereas capping at 4:1 discards about half for
-    roughly 6%. The knee of that curve is the point of the cap.
+    and is dominated by the smaller branch. But "adds little" is not "adds nothing", and equalising
+    is the expensive way to find that out: on a 90/10 split, cutting the large branch to 1:1
+    discards 80% of the units and widens the interval by 34%, whereas capping at 4:1 discards about
+    half for roughly 6%. The knee of that curve is the point of the cap.
 
     The sampling is a hash of the unit id, so it is deterministic across runs and nested as the rate
     moves, which stops the cohort churning from day to day and the results jittering for reasons
@@ -292,13 +293,13 @@ def cohort_query(run):
         branch_sizes AS (
           SELECT slug, branch, COUNT(*) AS units FROM assigned GROUP BY slug, branch
         ),
-        smallest_arm AS (
+        smallest_branch AS (
           SELECT slug, MIN(units) AS smallest FROM branch_sizes GROUP BY slug
         )
         SELECT a.slug, a.unit_kind, a.unit_id, a.branch, a.enrollment_date
         FROM assigned AS a
         JOIN branch_sizes AS b USING (slug, branch)
-        JOIN smallest_arm AS s USING (slug)
+        JOIN smallest_branch AS s USING (slug)
         WHERE MOD(ABS(FARM_FINGERPRINT(a.unit_id)), {BALANCE_RESOLUTION})
               < {BALANCE_RESOLUTION}
                 * LEAST(1.0, {MAX_BRANCH_RATIO} * s.smallest / b.units)
@@ -409,10 +410,10 @@ def enrollment_unit_id(run):
     run_units = run.units
     if len(run_units) == 1:
         return f"e.{run_units[0].enrollment_column}"
-    arms = " ".join(
+    cases = " ".join(
         f"WHEN '{unit.kind}' THEN e.{unit.enrollment_column}" for unit in run_units
     )
-    return f"CASE v.unit_kind {arms} END"
+    return f"CASE v.unit_kind {cases} END"
 
 
 # ----------------------------------------------------------------------- the source queries ----
@@ -465,9 +466,10 @@ def cohort_source(cohort_table, unit):
     The cohort holds every experiment in the run, and `unit_id` means a different thing in the rows
     of each unit, so a source query reads only the rows whose ids its join key can match.
 
-    On a dry run the cohort table has deliberately not been created, so referencing it would fail
-    validation for a reason that says nothing about the query being validated. An empty literal of
-    the same shape lets BigQuery check everything downstream of it instead.
+    When only validating the SQL the cohort table has deliberately not been created, so
+    referencing it would fail validation for a reason that says nothing about the query being
+    validated. An empty literal of the same shape lets BigQuery check everything downstream of it
+    instead.
     """
     if cohort_table is None:
         return (

@@ -49,14 +49,15 @@ def compute_statistics(experiment, metrics, windows, cells, failure=None):
 
 
 def window_theta(experiment, metric, window, cells):
-    """Fit one CUPED slope for a (metric, window), pooled over every arm that reported.
+    """Fit one CUPED slope for a (metric, window), pooled over every branch that reported.
 
-    One theta per group rather than one per contrast. Every arm's adjusted mean is then shifted by
-    the same coefficient, so the contrasts of a three-or-more-arm experiment stay differences of one
-    quantity and can be read against each other; a slope fitted per pair makes each comparison a
-    different adjusted metric under one metric's name. Pooling also fits the slope on the whole
-    cohort rather than on a fraction of it, and keeps it independent of which pair is being read,
-    which is what stops the adjustment being a function of the contrast it is meant to sharpen.
+    One theta per group rather than one per contrast. Every branch's adjusted mean is then shifted
+    by the same coefficient, so the contrasts of an experiment with three or more branches stay
+    differences of one quantity and can be read against each other; a slope fitted per pair makes
+    each comparison a different adjusted metric under one metric's name. Pooling also fits the slope
+    on the whole cohort rather than on a fraction of it, and keeps it independent of which pair is
+    being read, which is what stops the adjustment being a function of the contrast it is meant to
+    sharpen.
     """
     reported = [
         cells[(metric.name, window.label, branch)]
@@ -118,10 +119,10 @@ def compute_cell(experiment, metric, window, treatment, cells, theta, failure):
 def sequential_interval(reference, treatment, theta):
     """Compute the always-valid relative interval for one comparison, as percentages.
 
-    The group's one theta is applied to both arms, so the covariate adjustment is identical on each
-    side of the contrast and cannot move the difference it is meant to sharpen.
+    The group's one theta is applied to both branches, so the covariate adjustment is identical on
+    each side of the contrast and cannot move the difference it is meant to sharpen.
     """
-    test = build_test(adjusted(reference, theta), adjusted(treatment, theta))
+    test = build_t_test(adjusted(reference, theta), adjusted(treatment, theta))
     result = test.compute_result()
     if result.expected is None or result.ci is None:
         return dict(point=None, lower=None, upper=None, theta=theta)
@@ -133,12 +134,13 @@ def sequential_interval(reference, treatment, theta):
     )
 
 
-def build_test(reference_statistic, treatment_statistic):
-    """Construct the sequential test for one pair of arms.
+def build_t_test(reference_statistic, treatment_statistic):
+    """Construct the sequential test for one pair of branches.
 
-    Written against the pinned gbstats signature directly rather than detected at import. Sniffing
-    it from a rendered type annotation fails silently if upstream restyles its annotations, and the
-    failure would surface as every cell in the run erroring rather than as one exception at startup.
+    gbstats takes a list of pairs and would compare several in one test. Each is built on its own
+    here so the tuning parameter can be set from that pair's own combined unit count: a test
+    covering several pairs would have to share one parameter across pairs of different sizes, and
+    the width penalty for a mistuned parameter is steep. See `tuning_parameter`.
     """
     return SequentialTwoSidedTTest(
         [(reference_statistic, treatment_statistic)],
@@ -156,10 +158,10 @@ def tuning_parameter(units_in_test):
 
     An mSPRT is narrowest near one chosen sample size and wider away from it. gbstats reduces this
     number to a mixture variance and only ever uses it multiplied by its own unit count, which is
-    the two arms summed rather than either arm alone, so the parameter belongs on that same scale:
-    setting it to the summed count puts the sequence within a fraction of a percent of its
-    narrowest, while a per-arm count leaves a small avoidable premium and the library default leaves
-    a large one at the cohort sizes analysed here.
+    the two branches summed rather than either branch alone, so the parameter belongs on that same
+    scale: setting it to the summed count puts the sequence within a fraction of a percent of its
+    narrowest, while a per-branch count leaves a small avoidable premium and the library default
+    leaves a large one at the cohort sizes analysed here.
 
     Quantised onto a coarse grid rather than taken at the count itself, and the reason is the
     guarantee rather than the width. An always-valid interval is honest at every look because one
@@ -183,27 +185,29 @@ def tuning_parameter(units_in_test):
     return TUNING_GRID ** round(math.log(max(units_in_test, 1), TUNING_GRID))
 
 
-def pooled_theta(arms):
-    """Fit the CUPED slope, cov(pre, post) / var(pre), pooled over the arms passed in.
+def pooled_theta(branches):
+    """Fit the CUPED slope, cov(pre, post) / var(pre), pooled over the branches passed in.
 
     Falls back to no adjustment when the covariate has no variance, rather than dividing by zero.
     """
-    n = sum(arm["n"] for arm in arms)
+    n = sum(branch["n"] for branch in branches)
     if n < 2:
         return 0.0
-    sum_post = sum(arm["sum"] for arm in arms)
-    sum_pre = sum(arm["pre_sum"] for arm in arms)
-    pre_variance = (sum(arm["pre_sumsq"] for arm in arms) - sum_pre * sum_pre / n) / (
-        n - 1
-    )
+    sum_post = sum(branch["sum"] for branch in branches)
+    sum_pre = sum(branch["pre_sum"] for branch in branches)
+    pre_variance = (
+        sum(branch["pre_sumsq"] for branch in branches) - sum_pre * sum_pre / n
+    ) / (n - 1)
     if pre_variance <= 0:
         return 0.0
-    covariance = (sum(arm["xp"] for arm in arms) - sum_pre * sum_post / n) / (n - 1)
+    covariance = (
+        sum(branch["xp"] for branch in branches) - sum_pre * sum_post / n
+    ) / (n - 1)
     return covariance / pre_variance
 
 
 def adjusted(cell, theta):
-    """One arm's sufficient statistics as a CUPED-adjusted sample mean.
+    """One branch's sufficient statistics as a CUPED-adjusted sample mean.
 
     gbstats forms the adjusted mean and variance from these six numbers alone; nothing per-unit is
     needed, which is the property the whole pipeline is built around.

@@ -27,20 +27,22 @@ from . import discovery, gbstats_compute
 from . import metrics as metric_definitions_module
 from . import output_writing, sql_generation, sql_running
 
-# The covariate window: days before a unit's enrollment used to predict its outcome. Fixed rather
-# than matched to each window's length, so one pre-period serves every window of a metric.
+# The covariate window: days before a unit's enrollment used to predict its post-enrollment value.
+# Fixed rather than matched to each window's length, so one pre-period serves every window of a
+# metric.
 COVARIATE_DAYS = 28
 
 # The project the queries run and bill in. Every table they read is named by its own project, so
-# this selects who pays rather than what is read.
-DEFAULT_BILLING_PROJECT = "mozdata"
+# this selects who pays rather than what is read, and this job's consumption is attributable to the
+# project that owns its results.
+DEFAULT_BILLING_PROJECT = "moz-fx-data-experiments"
 
 
 def run_daily_job(
     as_of,
     only_slugs=None,
     limit=None,
-    dry_run=False,
+    validate_only=False,
     workers=8,
     live_only=False,
     sample_percent=None,
@@ -79,11 +81,12 @@ def run_daily_job(
     )
 
     cells_by_slug, timings, failure = gather_sufficient_statistics(
-        client, run, metrics_by_source, as_of, dry_run
+        client, run, metrics_by_source, as_of, validate_only
     )
+    write_blobs = writes_blobs(validate_only, sample_percent, outputs)
 
     # No lock: `as_completed` yields in this thread, so the accumulation below is single-threaded.
-    outcomes, results_by_slug, done = [], {}, 0
+    summaries, results_by_slug, done = [], {}, 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [
             pool.submit(
@@ -96,33 +99,33 @@ def run_daily_job(
                 cells_by_slug.get(experiment.slug, {}),
                 failure,
                 outputs,
-                dry_run,
+                write_blobs,
             )
             for experiment in experiments
         ]
         for future in as_completed(futures):
-            outcome, results = future.result()
-            outcomes.append(outcome)
-            results_by_slug[outcome["slug"]] = results
+            summary, results = future.result()
+            summaries.append(summary)
+            results_by_slug[summary["slug"]] = results
             done += 1
-            report_progress(outcome, done, len(experiments))
+            report_progress(summary, done, len(experiments))
 
-    partial = is_partial_run(only_slugs, limit, sample_percent)
-    if partial:
+    if is_partial_run(only_slugs, limit, sample_percent):
         # A partial run is not the day's complete output, and the write replaces the whole
         # partition, so letting it through would overwrite the full run's rows. A filter drops
         # experiments the partition should still hold; a sample keeps every experiment but computes
         # each from a fraction of its cohort, which is the more dangerous of the two because the
-        # rows it writes look complete. Blobs are still written, since those are keyed per slug.
+        # rows it writes look complete.
+        blobs = "blobs written" if write_blobs else "blobs skipped"
         print(
-            f"\npartial run ({len(experiments)} experiments): blobs written, tables skipped "
+            f"\npartial run ({len(experiments)} experiments): {blobs}, tables skipped "
             f"so the {as_of} partition keeps the full run's rows"
         )
     elif outputs.local_blob_dir:
         # Blobs went to a directory, so there is nowhere for the tables to be part of the same
         # output. Writing them would put a local run's numbers in the production partition.
         print(f"\nlocal run: blobs written to {outputs.local_blob_dir}, tables skipped")
-    elif not dry_run:
+    elif not validate_only:
         # After the loop, not inside it. Every experiment's rows share one daily partition, so a
         # per-experiment write could only append, and appending makes a retried run double its own
         # output. Writing the run together lets the load replace the partition instead.
@@ -133,10 +136,10 @@ def run_daily_job(
             f"\nwrote {written[0]:,} statistics rows and {written[1]:,} "
             f"sufficient-statistics rows for {as_of}"
         )
-    report_run(outcomes, timings)
-    if not dry_run:
-        report_anomalies(outcomes)
-    return outcomes
+    report_run(summaries, timings)
+    if not validate_only:
+        report_anomalies(summaries)
+    return summaries
 
 
 def is_partial_run(only_slugs, limit, sample_percent):
@@ -150,7 +153,22 @@ def is_partial_run(only_slugs, limit, sample_percent):
     return bool(only_slugs or limit or sample_percent)
 
 
-def gather_sufficient_statistics(client, run, metrics_by_source, as_of, dry_run):
+def writes_blobs(validate_only, sample_percent, outputs):
+    """Whether this run may write the per-experiment blobs Experimenter reads.
+
+    A blob is named by its experiment alone, so writing one replaces that experiment's published
+    answer. A filtered run's experiments are each computed from their whole cohort, so its blobs
+    are correct for the experiments it covered and are written. A sampled run's are not: every one
+    of its numbers comes from a fraction of a cohort, and the name it would be published under
+    carries no sign of that, so a sampled run publishes nothing. Directed at a local directory a
+    sample is inspectable rather than published, which is how its output is read.
+    """
+    if validate_only:
+        return False
+    return sample_percent is None or outputs.local_blob_dir is not None
+
+
+def gather_sufficient_statistics(client, run, metrics_by_source, as_of, validate_only):
     """Run the shared scan: cohort once, then one query per source and unit, split by slug.
 
     Returns the cells keyed by slug plus whatever went wrong, rather than raising, so a source
@@ -161,11 +179,11 @@ def gather_sufficient_statistics(client, run, metrics_by_source, as_of, dry_run)
         return {}, [], None
     try:
         cohort_table, cohort_timing = sql_running.materialize_cohort(
-            client, sql_generation.cohort_query(run), as_of, dry_run
+            client, sql_generation.cohort_query(run), as_of, validate_only
         )
         queries = sql_generation.build_queries(run, metrics_by_source, cohort_table)
         cells_by_slug, timings = sql_running.run_queries(
-            client, queries, dry_run=dry_run
+            client, queries, validate_only=validate_only
         )
         return cells_by_slug, [cohort_timing, *timings], None
     # Recorded against every experiment rather than raised, so a source failure becomes an error
@@ -175,18 +193,18 @@ def gather_sufficient_statistics(client, run, metrics_by_source, as_of, dry_run)
         return {}, [], error
 
 
-def report_progress(outcome, done, total):
+def report_progress(summary, done, total):
     """One line per finished experiment.
 
-    Flags on the outcome's error as well as on error cells. An experiment that failed before
+    Flags on the summary's error as well as on error cells. An experiment that failed before
     producing any cells has an error but no error cells, so keying only on cell states reports the
-    worst outcome as `ok`.
+    worst case as `ok`.
     """
-    flag = "ERROR" if (outcome["states"].get("error") or outcome["error"]) else "ok   "
-    reason = f"  {outcome['error']}" if outcome["error"] else ""
+    flag = "ERROR" if (summary["states"].get("error") or summary["error"]) else "ok   "
+    reason = f"  {summary['error']}" if summary["error"] else ""
     print(
-        f"[{done:3d}/{total}] {flag} {outcome['slug'][:52]:52s} "
-        f"{outcome['cells']:5d} cells{reason}"
+        f"[{done:3d}/{total}] {flag} {summary['slug'][:52]:52s} "
+        f"{summary['cells']:5d} cells{reason}"
     )
 
 
@@ -199,7 +217,7 @@ def analyze_experiment(
     cells,
     shared_failure,
     outputs,
-    dry_run=False,
+    write_blobs=False,
 ):
     """One experiment's statistics and outputs, from cells the shared scan already produced.
 
@@ -209,7 +227,7 @@ def analyze_experiment(
     """
     try:
         if shared_failure is not None:
-            return failed_outcome(
+            return failed_summary(
                 storage_client,
                 experiment,
                 as_of,
@@ -217,24 +235,24 @@ def analyze_experiment(
                 metrics_by_source,
                 shared_failure,
                 outputs,
-                dry_run,
+                write_blobs,
             )
         if not windows:
             # Younger than the shortest window, so no unit has completed one and there is nothing
             # to compute. Its cells are all `not_started` by construction.
-            return experiment_outcome(experiment, []), []
+            return experiment_summary(experiment, []), []
         results = gbstats_compute.compute_statistics(
             experiment, all_metrics(metrics_by_source), windows, cells
         )
-        if not dry_run:
+        if write_blobs:
             output_writing.write_blob(
                 storage_client, experiment, as_of, results, outputs
             )
-        return experiment_outcome(experiment, results), results
+        return experiment_summary(experiment, results), results
     # The whole point is to record it, not to raise.
     except Exception as error:
         try:
-            return failed_outcome(
+            return failed_summary(
                 storage_client,
                 experiment,
                 as_of,
@@ -242,7 +260,7 @@ def analyze_experiment(
                 metrics_by_source,
                 error,
                 outputs,
-                dry_run,
+                write_blobs,
             )
         except Exception as while_recording:
             # A failure while recording a failure must not propagate: it would come back out of
@@ -250,7 +268,7 @@ def analyze_experiment(
             # isolation this design claims to have.
             traceback.print_exc()
             return (
-                experiment_outcome(
+                experiment_summary(
                     experiment,
                     [],
                     error=f"{error} (recording it also failed: {while_recording})",
@@ -259,7 +277,7 @@ def analyze_experiment(
             )
 
 
-def failed_outcome(
+def failed_summary(
     storage_client,
     experiment,
     as_of,
@@ -267,7 +285,7 @@ def failed_outcome(
     metrics_by_source,
     error,
     outputs,
-    dry_run,
+    write_blobs,
 ):
     """Record a query-level failure across every cell this experiment expected to produce.
 
@@ -278,7 +296,7 @@ def failed_outcome(
     results = gbstats_compute.compute_statistics(
         experiment, all_metrics(metrics_by_source), windows, cells={}, failure=error
     )
-    if not dry_run:
+    if write_blobs:
         try:
             output_writing.write_blob(
                 storage_client, experiment, as_of, results, outputs
@@ -288,7 +306,7 @@ def failed_outcome(
             # returned either way, so the failure stays visible in this run's accounting and in the
             # table written at the end, even when the blob could not be written.
             traceback.print_exc()
-    return experiment_outcome(experiment, results, error=error), results
+    return experiment_summary(experiment, results, error=error), results
 
 
 def run_windows(experiment, as_of, metrics_by_source=None):
@@ -311,11 +329,11 @@ def all_metrics(metrics_by_source):
     return [metric for metrics in metrics_by_source.values() for metric in metrics]
 
 
-def experiment_outcome(experiment, results, error=None):
+def experiment_summary(experiment, results, error=None):
     """Summarise what this experiment produced, for the run report and the health measurement.
 
-    Carries no scan cost: the scan is shared across the run, so bytes and slot-hours are properties
-    of the run and are reported there.
+    Carries no scan consumption: the scan is shared across the run, so bytes and slot-hours are
+    properties of the run and are reported there.
     """
     return dict(
         slug=experiment.slug,
@@ -334,17 +352,18 @@ def report_selection(experiments, skipped, as_of):
         print(f"   skipped {slug}: {why}")
 
 
-def report_run(outcomes, timings):
-    """Print the per-run operational summary: what it cost and how many cells failed.
+def report_run(summaries, timings):
+    """Print the per-run operational summary: what it consumed and how many cells failed.
 
-    Cost is a property of the run, not of an experiment: one pass over each source serves all of
-    them, so there is no per-experiment byte count to report.
+    Bytes scanned and slot-hours are consumption rather than a price, since the slots are a shared
+    reservation. Both are properties of the run and not of an experiment: one pass over each source
+    serves all of them, so there is no per-experiment byte count to report.
     """
-    cells = sum(outcome["cells"] for outcome in outcomes)
-    errors = sum(outcome["states"].get("error", 0) for outcome in outcomes)
-    failed = sum(1 for outcome in outcomes if outcome["error"])
+    cells = sum(summary["cells"] for summary in summaries)
+    errors = sum(summary["states"].get("error", 0) for summary in summaries)
+    failed = sum(1 for summary in summaries if summary["error"])
     print(
-        f"\n{len(outcomes)} experiments ({failed} failed outright), {cells:,} cells, "
+        f"\n{len(summaries)} experiments ({failed} failed outright), {cells:,} cells, "
         f"{sum(t['gb_scanned'] for t in timings) / 1000:.2f} TB scanned, "
         f"{sum(t['slot_hours'] or 0 for t in timings):.1f} slot-hours "
         f"over {len(timings)} queries"
@@ -363,7 +382,7 @@ def report_run(outcomes, timings):
     )
 
 
-def systemic_failure(outcomes):
+def systemic_failure(summaries):
     """Report whether the run failed as a whole, rather than losing individual experiments.
 
     Keyed on cell STATE, not on how many cells there are. A failing experiment still produces a
@@ -375,22 +394,22 @@ def systemic_failure(outcomes):
     experiment is simply too young to have matured a window produces no cells and no errors, and is
     not a failure.
     """
-    if not outcomes:
+    if not summaries:
         return False
     produced = any(
         count
-        for outcome in outcomes
-        for state, count in outcome["states"].items()
+        for summary in summaries
+        for state, count in summary["states"].items()
         if state != gbstats_compute.ERROR
     )
     failed = any(
-        outcome["error"] or outcome["states"].get(gbstats_compute.ERROR)
-        for outcome in outcomes
+        summary["error"] or summary["states"].get(gbstats_compute.ERROR)
+        for summary in summaries
     )
     return failed and not produced
 
 
-def report_anomalies(outcomes):
+def report_anomalies(summaries):
     """Results that ran without erroring but do not look like an analysis.
 
     Worth reporting separately because the failure that cost us most in this prototype produced no
@@ -398,20 +417,20 @@ def report_anomalies(outcomes):
     run reported perfect health. A clean error rate is not evidence the numbers mean anything.
     """
     suspicious = []
-    for outcome in outcomes:
-        states = outcome["states"]
-        if outcome["error"]:
-            suspicious.append((outcome["slug"], f"failed: {outcome['error'][:90]}"))
+    for summary in summaries:
+        states = summary["states"]
+        if summary["error"]:
+            suspicious.append((summary["slug"], f"failed: {summary['error'][:90]}"))
             continue
-        if outcome["cells"]:
-            if states.get("not_started", 0) == outcome["cells"]:
+        if summary["cells"]:
+            if states.get("not_started", 0) == summary["cells"]:
                 suspicious.append(
-                    (outcome["slug"], "every cell not_started: cohort or join empty")
+                    (summary["slug"], "every cell not_started: cohort or join empty")
                 )
-            elif states.get("insufficient_data", 0) == outcome["cells"]:
-                suspicious.append((outcome["slug"], "every cell insufficient_data"))
-        if outcome["cells"] == 0:
-            suspicious.append((outcome["slug"], "no cells: no window has matured yet"))
+            elif states.get("insufficient_data", 0) == summary["cells"]:
+                suspicious.append((summary["slug"], "every cell insufficient_data"))
+        if summary["cells"] == 0:
+            suspicious.append((summary["slug"], "no cells: no window has matured yet"))
     if suspicious:
         print(f"\n{len(suspicious)} experiments to look at:")
         for slug, why in suspicious:

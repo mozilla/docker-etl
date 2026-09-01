@@ -111,13 +111,20 @@ def discover(client, as_of, tail_days=90, limit=None, only_slugs=None, live_only
     )
     experiments, skipped = [], []
     for row in client.query(DISCOVERY_SQL, job_config=job_config).result():
+        # Not reported as skipped, and that is the point of the `skipped` list rather than an
+        # exception to it: the caller named the slugs it wants, so every other recipe in the mirror
+        # is out of scope rather than declined, and listing them all would bury the refusals below.
         if only_slugs and row.slug not in only_slugs:
             continue
         # The 90-day tail mirrors Jetstream's selection rule, so a parallel run compares the same
         # population. It roughly triples the count, because most of it is finished experiments, so
         # `live_only` is the cheaper choice when the point is to exercise the job rather than to
-        # produce results anyone reads.
+        # produce results anyone reads. Reported, so the count still accounts for every recipe the
+        # query returned.
         if live_only and row.end_date is not None:
+            skipped.append(
+                (row.slug, f"ended {row.end_date}, and this run is live recipes only")
+            )
             continue
         others = tuple(b for b in row.branch_slugs if b != row.reference_branch)
         if not row.reference_branch or not others:

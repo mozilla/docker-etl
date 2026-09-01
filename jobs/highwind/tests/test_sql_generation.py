@@ -331,7 +331,7 @@ def test_a_single_unit_run_resolves_the_id_without_a_branch_to_take():
 
 
 def test_the_dedup_and_the_branch_cap_both_key_on_the_resolved_unit():
-    # A unit seen on two branches is dropped, and the cap keeps a deterministic share of an arm.
+    # A unit seen on two branches is dropped, and the cap keeps a deterministic share of a branch.
     # Both have to be the randomized unit: applied to a client inside a group-randomized experiment
     # they would split groups across the cap and count one contradictory assignment as many.
     run = run_of(
@@ -346,7 +346,7 @@ def test_the_dedup_and_the_branch_cap_both_key_on_the_resolved_unit():
 
 def test_a_group_randomized_run_drops_groups_that_fan_out_to_a_fleet():
     # At group grain a cloned fleet is one analysis unit carrying an impossible value, and it lands
-    # whole in whichever arm its id hashes to, so it has to go before the branch cap sees it.
+    # whole in whichever branch its id hashes to, so it has to go before the branch cap sees it.
     run = run_of(
         {"grouped": cumulative_windows(2)}, units_by_slug={"grouped": GROUP_UNIT}
     )

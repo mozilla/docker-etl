@@ -13,16 +13,22 @@ from dataclasses import dataclass
 
 from google.cloud import bigquery
 
-# Production targets, the defaults an `Outputs` takes when nothing overrides them.
-RESULTS_TABLE = "moz-fx-data-experiments.monitoring.highwind_statistics_v1"
+# Production targets, the defaults an `Outputs` takes when nothing overrides them. Their own
+# dataset, so this job's artifacts are separable from the production analysis tables around them.
+RESULTS_TABLE = "moz-fx-data-experiments.highwind_poc.highwind_statistics_v1"
 SUFFICIENT_STATS_TABLE = (
-    "moz-fx-data-experiments.monitoring.highwind_sufficient_stats_v1"
+    "moz-fx-data-experiments.highwind_poc.highwind_sufficient_stats_v1"
 )
 BLOB_PREFIX = "gs://mozanalysis/highwind"
 PIPELINE_VERSION = "poc-1"
 
 # The column both tables are partitioned on, and the run date every row carries.
 PARTITION_FIELD = "as_of_date"
+
+# The column both tables are clustered on. Reading one experiment's results is the common query, so
+# clustering on the slug lets it prune blocks rather than scan the whole partition. It matters more
+# as the corpus grows, since a partition holds every experiment analysed that day.
+CLUSTERING_FIELDS = ["slug"]
 
 # The results table, one row per (slug, metric, window, comparison). The descriptions are the
 # documentation of these columns, so they are carried into the table itself rather than kept here.
@@ -121,7 +127,7 @@ RESULTS_SCHEMA = [
         "INT64",
         description=(
             "Analysis units of the reference branch that had matured this window. After branch "
-            "balancing: where one arm is more than a few times the size of the smallest, it is "
+            "balancing: where one branch is more than a few times the size of the smallest, it is "
             "down-sampled on a hash of the analysis unit, so this is the analysed population "
             "rather than the enrolled one and will not match an enrollment count for a lopsided "
             "experiment."
@@ -243,8 +249,9 @@ def write_blob(storage, experiment, as_of, results, outputs):
     """Write the per-experiment JSON Experimenter ingests.
 
     Written per experiment, unlike the tables below, because the blob IS per experiment and its name
-    is the key: rewriting `<slug>.json` replaces the previous run's answer, so this leg is
-    idempotent without any extra machinery.
+    is the key: rewriting one experiment's object replaces the previous run's answer, so this leg is
+    idempotent without any extra machinery. That is also why only a run computed from whole cohorts
+    may write one, which `analysis.writes_blobs` decides.
 
     Carries `generated_at` and `pipeline_version` in the header and as object metadata, so the
     ingest can tell a new run from an old one without downloading the blob.
@@ -253,7 +260,7 @@ def write_blob(storage, experiment, as_of, results, outputs):
     # have to be distinguishable, which is the whole purpose of the field.
     generated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     payload = {
-        "metrics_meta": {
+        "metrics_metadata": {
             "slug": experiment.slug,
             "as_of_date": as_of.isoformat(),
             "generated_at": generated_at,
@@ -264,8 +271,9 @@ def write_blob(storage, experiment, as_of, results, outputs):
         "statistics": results,
         "errors": [result for result in results if result["state"] == "error"],
     }
+    name = blob_name(experiment.slug)
     if outputs.local_blob_dir:
-        path = pathlib.Path(outputs.local_blob_dir) / f"{experiment.slug}.json"
+        path = pathlib.Path(outputs.local_blob_dir) / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, indent=2))
         return str(path)
@@ -276,7 +284,7 @@ def write_blob(storage, experiment, as_of, results, outputs):
         "pipeline_version": PIPELINE_VERSION,
     }
     blob.upload_from_string(json.dumps(payload), content_type="application/json")
-    return f"{outputs.blob_prefix}/{experiment.slug}.json"
+    return f"{outputs.blob_prefix}/{name}"
 
 
 def write_tables(client, as_of, results_by_slug, cells_by_slug, outputs):
@@ -331,6 +339,7 @@ def ensure_table(client, table, schema):
     """
     definition = bigquery.Table(table, schema=schema)
     definition.time_partitioning = bigquery.TimePartitioning(field=PARTITION_FIELD)
+    definition.clustering_fields = CLUSTERING_FIELDS
     client.create_table(definition, exists_ok=True)
 
 
@@ -359,10 +368,21 @@ def replace_partition(client, table, schema, rows, as_of):
     client.load_table_from_json(rows, target, job_config=config).result()
 
 
+def blob_name(slug):
+    """The object name one experiment's results are written under.
+
+    Underscores rather than the hyphens a slug carries, matching the naming of the other artifacts
+    this bucket holds. The name is otherwise the slug itself, since it is the key the ingest looks
+    an experiment up by.
+    """
+    return f"{slug.replace('-', '_')}.json"
+
+
 def blob_for(storage, slug, blob_prefix):
     """Resolve one experiment's blob from a gs:// prefix, with or without a path component."""
     bucket_name, _, prefix = blob_prefix.removeprefix("gs://").partition("/")
-    key = f"{prefix}/{slug}.json" if prefix else f"{slug}.json"
+    name = blob_name(slug)
+    key = f"{prefix}/{name}" if prefix else name
     return storage.bucket(bucket_name).blob(key)
 
 
