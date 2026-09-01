@@ -28,7 +28,7 @@ PARTITION_FIELD = "as_of_date"
 # The column both tables are clustered on. Reading one experiment's results is the common query, so
 # clustering on the slug lets it prune blocks rather than scan the whole partition. It matters more
 # as the corpus grows, since a partition holds every experiment analysed that day.
-CLUSTERING_FIELDS = ["slug"]
+CLUSTERING_FIELDS = ["experiment_slug"]
 
 # The results table, one row per (slug, metric, window, comparison). The descriptions are the
 # documentation of these columns, so they are carried into the table itself rather than kept here.
@@ -38,7 +38,9 @@ RESULTS_SCHEMA = [
         "DATE",
         description="Run date the analysis was computed for. Partition column.",
     ),
-    bigquery.SchemaField("slug", "STRING", description="Experiment slug."),
+    bigquery.SchemaField(
+        "experiment_slug", "STRING", description="Experiment slug."
+    ),
     bigquery.SchemaField(
         "metric",
         "STRING",
@@ -164,7 +166,9 @@ SUFFICIENT_STATS_SCHEMA = [
         "DATE",
         description="Run date the aggregates were computed for. Partition column.",
     ),
-    bigquery.SchemaField("slug", "STRING", description="Experiment slug."),
+    bigquery.SchemaField(
+        "experiment_slug", "STRING", description="Experiment slug."
+    ),
     bigquery.SchemaField(
         "metric",
         "STRING",
@@ -261,7 +265,7 @@ def write_blob(storage, experiment, as_of, results, outputs):
     generated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     payload = {
         "metrics_metadata": {
-            "slug": experiment.slug,
+            "experiment_slug": experiment.slug,
             "as_of_date": as_of.isoformat(),
             "generated_at": generated_at,
             "pipeline_version": PIPELINE_VERSION,
@@ -303,7 +307,7 @@ def write_tables(client, as_of, results_by_slug, cells_by_slug, outputs):
     results_rows = [
         dict(
             result,
-            slug=slug,
+            experiment_slug=slug,
             as_of_date=as_of.isoformat(),
             pipeline_version=PIPELINE_VERSION,
         )
@@ -313,7 +317,7 @@ def write_tables(client, as_of, results_by_slug, cells_by_slug, outputs):
     stats_rows = [
         dict(
             stats,
-            slug=slug,
+            experiment_slug=slug,
             as_of_date=as_of.isoformat(),
             metric=metric,
             window=window,

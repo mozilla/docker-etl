@@ -213,7 +213,10 @@ def test_every_row_carries_the_run_date_the_slug_and_the_pipeline_version():
     stats_rows = client.loads[1][1]
 
     assert all(row["as_of_date"] == "2026-08-01" for row in results_rows + stats_rows)
-    assert all(row["slug"] == "an-experiment" for row in results_rows + stats_rows)
+    assert all(
+        row["experiment_slug"] == "an-experiment"
+        for row in results_rows + stats_rows
+    )
     assert all(
         row["pipeline_version"] == output_writing.PIPELINE_VERSION for row in results_rows
     )
@@ -252,7 +255,7 @@ def test_a_local_run_writes_the_experiments_json_to_a_directory(tmp_path):
 
     assert pathlib.Path(path).name == "an_experiment.json"
 
-    assert payload["metrics_metadata"]["slug"] == "an-experiment"
+    assert payload["metrics_metadata"]["experiment_slug"] == "an-experiment"
     assert payload["metrics_metadata"]["as_of_date"] == "2026-08-01"
     assert payload["metrics_metadata"]["pipeline_version"] == output_writing.PIPELINE_VERSION
     assert payload["metrics_metadata"]["branches"] == ["control", "treatment"]
