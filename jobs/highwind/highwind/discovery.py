@@ -53,10 +53,10 @@ WHERE app_name = @app_name
   AND normandy_slug IS NOT NULL
   AND start_date IS NOT NULL
   AND start_date <= @as_of
-  -- Live, or ended recently enough that a final run would still be worth producing. The scheduled
-  -- job passes live_only, so in production the tail is unused; it exists so an ad-hoc run can
-  -- reproduce Jetstream's selection rule, which analyses an experiment for a period after it ends.
-  AND (end_date IS NULL OR DATE_ADD(end_date, INTERVAL @tail_days DAY) >= @as_of)
+  -- Live recipes only. An ended recipe gets no final analysis, so its last result is whatever the
+  -- last run before it ended produced. Running once after an experiment ends is worth doing and is
+  -- not done here.
+  AND end_date IS NULL
 -- Shortest first, which is what makes `limit` select the cheapest experiments to analyse rather
 -- than an arbitrary set. Duration is the cost proxy: it sets how far back the shared scan reaches.
 ORDER BY DATE_DIFF(@as_of, start_date, DAY) ASC
@@ -92,7 +92,7 @@ class Experiment:
         return (as_of - self.start_date).days
 
 
-def discover(client, as_of, tail_days=90, limit=None, only_slugs=None, live_only=False):
+def discover(client, as_of, limit=None, only_slugs=None):
     """Experiments to analyse on `as_of`, read from the mirror.
 
     `reference_branch` is occasionally absent in the mirror, and a comparison needs one, so those
@@ -106,7 +106,6 @@ def discover(client, as_of, tail_days=90, limit=None, only_slugs=None, live_only
         query_parameters=[
             bigquery.ScalarQueryParameter("app_name", "STRING", APP_NAME),
             bigquery.ScalarQueryParameter("as_of", "DATE", as_of),
-            bigquery.ScalarQueryParameter("tail_days", "INT64", tail_days),
         ]
     )
     experiments, skipped = [], []
@@ -115,16 +114,6 @@ def discover(client, as_of, tail_days=90, limit=None, only_slugs=None, live_only
         # exception to it: the caller named the slugs it wants, so every other recipe in the mirror
         # is out of scope rather than declined, and listing them all would bury the refusals below.
         if only_slugs and row.slug not in only_slugs:
-            continue
-        # The 90-day tail mirrors Jetstream's selection rule, so a parallel run compares the same
-        # population. It roughly triples the count, because most of it is finished experiments, so
-        # `live_only` is the cheaper choice when the point is to exercise the job rather than to
-        # produce results anyone reads. Reported, so the count still accounts for every recipe the
-        # query returned.
-        if live_only and row.end_date is not None:
-            skipped.append(
-                (row.slug, f"ended {row.end_date}, and this run is live recipes only")
-            )
             continue
         others = tuple(b for b in row.branch_slugs if b != row.reference_branch)
         if not row.reference_branch or not others:

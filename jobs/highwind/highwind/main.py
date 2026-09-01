@@ -122,7 +122,6 @@ def main(
         limit=limit,
         validate_only=validate_sql,
         workers=workers,
-        live_only=True,
         sample_percent=sample_percent,
         billing_project=billing_project,
         outputs=Outputs(local_blob_dir=local_output) if dry_run else None,

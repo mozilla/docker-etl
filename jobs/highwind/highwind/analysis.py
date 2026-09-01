@@ -44,7 +44,6 @@ def run_daily_job(
     limit=None,
     validate_only=False,
     workers=8,
-    live_only=False,
     sample_percent=None,
     outputs=None,
     billing_project=DEFAULT_BILLING_PROJECT,
@@ -66,7 +65,7 @@ def run_daily_job(
     client = bigquery.Client(project=billing_project)
     storage_client = storage.Client()
     experiments, skipped = discovery.discover(
-        client, as_of, limit=limit, only_slugs=only_slugs, live_only=live_only
+        client, as_of, limit=limit, only_slugs=only_slugs
     )
     report_selection(experiments, skipped, as_of)
     if not experiments:
