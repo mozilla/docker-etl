@@ -1,8 +1,9 @@
 import argparse
-from dataclasses import dataclass
 import logging
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Mapping, Optional, Union
+from typing import Optional
 
 import webfeatures
 from google.cloud import bigquery
@@ -144,7 +145,7 @@ class FeaturesTable:
 def update_features(
     client: BigQuery,
     release_name: str,
-    features_data: Mapping[str, Union[Feature, FeatureMoved, FeatureSplit]],
+    features_data: Mapping[str, Feature | FeatureMoved | FeatureSplit],
     recreate: bool,
 ) -> None:
     features = FeaturesTable(

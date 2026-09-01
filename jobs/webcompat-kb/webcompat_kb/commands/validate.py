@@ -4,11 +4,10 @@ from typing import Optional
 
 from google.auth.exceptions import RefreshError
 
-
 from .. import projectdata
 from ..base import Command
-from ..config import Config
 from ..bqhelpers import BigQuery, DatasetId, SchemaId, SchemaType, get_client
+from ..config import Config
 from ..etl.update_schema import render_schemas
 
 
@@ -71,9 +70,10 @@ class Validate(Command):
                     raise
                 except Exception as e:
                     messages = []
-                    if hasattr(e, "errors"):
-                        for error in getattr(e, "errors"):
-                            messages.append(error.get("message"))
+                    if hasattr(e, "errors") and isinstance(e.errors, list):
+                        for error in e.errors:
+                            if isinstance(error, dict):
+                                messages.append(str(error.get("message")))
                     if messages:
                         msg = "\n    ".join(messages)
                     else:

@@ -6,11 +6,10 @@ from typing import Optional
 from .. import projectdata, redashdata
 from ..base import ALL_JOBS, Command
 from ..bqhelpers import get_client
-from ..config import Config
-from ..projectdata import lint_templates
 from ..commands.update_redash import render_dashboards
+from ..config import Config
 from ..etl.update_schema import SchemaCreator
-
+from ..projectdata import lint_templates
 
 here = os.path.dirname(__file__)
 

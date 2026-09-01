@@ -1,6 +1,7 @@
 import argparse
 import logging
-from typing import Mapping, Optional
+from collections.abc import Mapping
+from typing import Optional
 
 from google.cloud import bigquery
 
@@ -14,8 +15,8 @@ from ..etl.metric_changes import (
     bugs_historic_states,
     compute_historic_scores,
     compute_score_changes,
-    get_current_scores,
     get_bugs,
+    get_current_scores,
 )
 from ..projectdata import Project
 
@@ -98,7 +99,7 @@ class BugScoreChanges(Command):
             print(f"  * Keywords: {', '.join(state.keywords)}")
             print(f"  * User story: ```{state.user_story.strip()}```")
             print(f"  * Score: {score}")
-            print("")
+            print()
         score_changes = compute_score_changes(
             changes_by_bug,
             current_bug_data,

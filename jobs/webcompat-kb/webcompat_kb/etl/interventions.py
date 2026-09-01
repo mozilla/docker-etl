@@ -1,19 +1,19 @@
-import logging
-from dataclasses import dataclass, asdict
 import argparse
-from typing import Optional, Self, Mapping
+import logging
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass
+from typing import Optional, Self
 
 from google.api_core.exceptions import NotFound
-
-from pydantic import BaseModel, Field, model_validator
 from google.cloud import bigquery
+from pydantic import BaseModel, Field, model_validator
 
 from ..base import Context, EtlJob
 from ..bqhelpers import BigQuery, TableSchema
 from ..github import GitHub
 from ..httphelpers import get_json
-from .interop import repo_arg
 from ..projectdata import Project
+from .interop import repo_arg
 
 
 class AlterHeader(BaseModel):

@@ -5,18 +5,15 @@ import logging
 import os
 import re
 import time
+from collections import defaultdict
+from collections.abc import Iterable, Iterator, Mapping, MutableMapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import (
     Any,
-    Iterable,
-    Iterator,
-    MutableMapping,
     Optional,
     Self,
 )
-from collections import defaultdict
-from collections.abc import Sequence, Mapping
-from dataclasses import dataclass
-from datetime import datetime, timedelta
 
 import bugdantic
 from google.cloud import bigquery
@@ -150,9 +147,9 @@ class Bug:
 
     def to_json(self) -> Mapping[str, Any]:
         fields = {**vars(self)}
-        for key in fields:
-            if isinstance(fields[key], datetime):
-                fields[key] = fields[key].isoformat()
+        for key, value in fields.items():
+            if isinstance(value, datetime):
+                fields[key] = value.isoformat()
         return fields
 
     @classmethod
@@ -311,7 +308,7 @@ def add_datetime_limit(
 ) -> Mapping[str, str | list[str]]:
     max_clause_id = 0
     field_re = re.compile(r"(?:f|J|o|v)(\d+)")
-    for key in query.keys():
+    for key in query:
         if key == "j_top":
             raise ValueError(
                 "add_datetime_limit doesn't support queries with top-level OR relation"
@@ -319,8 +316,7 @@ def add_datetime_limit(
         m = field_re.match(key)
         if m is not None:
             key_clause_id = int(m.group(1))
-            if key_clause_id > max_clause_id:
-                max_clause_id = key_clause_id
+            max_clause_id = max(max_clause_id, key_clause_id)
 
     new_clause = max_clause_id + 1
     query = {**query}

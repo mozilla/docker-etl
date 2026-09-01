@@ -2,10 +2,12 @@ import logging
 import os
 import pathlib
 import tomllib
-from typing import Any, Mapping, MutableMapping
+from collections.abc import Mapping, MutableMapping
+from typing import Any
 
 import tomli_w
 from pydantic import BaseModel, RootModel
+
 from ..bqhelpers import DatasetId, SchemaId, SchemaType
 
 

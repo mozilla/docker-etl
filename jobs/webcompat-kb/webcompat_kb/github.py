@@ -1,9 +1,11 @@
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterable, Iterator, Literal, Mapping, Optional, Sequence
+from typing import Literal, Optional
 from urllib.parse import urlencode
 
 from pydantic import BaseModel
+
 from .httphelpers import get_json, get_paginated_json, iter_paginated_json
 
 

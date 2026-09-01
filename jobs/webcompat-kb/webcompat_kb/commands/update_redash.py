@@ -1,12 +1,11 @@
-import difflib
 import argparse
+import difflib
 import logging
 import os
-from typing import Iterator, Mapping, Optional
+from collections.abc import Iterator, Mapping
+from typing import Optional
 
-
-from .. import projectdata
-from .. import redashdata
+from .. import projectdata, redashdata
 from ..base import Command
 from ..bqhelpers import get_client
 from ..config import Config
@@ -159,10 +158,7 @@ def render_dashboards(
                     ),
                 )
             except Exception as e:
-                logging.error(
-                    f"Failed to render query {query.metadata.name}: {e}",
-                    exc_info=True,
-                )
+                logging.exception(f"Failed to render query {query.metadata.name}")
                 failures.append((dashboard, query, e))
             else:
                 yield dashboard, query, parameters, rendered_sql
@@ -208,10 +204,9 @@ def update_dashboards(
                 query.metadata.id = id
                 query.update(write)
                 created += 1
-        except Exception as e:
-            logging.error(
-                f"Failed to deploy query {query.metadata.name}: {e}",
-                exc_info=True,
+        except Exception:
+            logging.exception(
+                f"Failed to deploy query {query.metadata.name}",
             )
             errors += 1
 

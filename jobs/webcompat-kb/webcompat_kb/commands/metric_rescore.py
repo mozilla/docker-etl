@@ -2,14 +2,15 @@ import argparse
 import logging
 import os
 import re
-from typing import Callable, Mapping, Optional
+from collections.abc import Callable, Mapping
+from typing import Optional
 
 from .. import projectdata
 from ..base import Command
 from ..bqhelpers import BigQuery, DatasetId, SchemaId, SchemaType, get_client
 from ..config import Config
-from ..metrics import rescores
 from ..metric_rescore import conditional_metrics
+from ..metrics import rescores
 from ..metrics.rescores import Rescore
 from ..projectdata import Project, SchemaMetadata
 

@@ -2,20 +2,21 @@ import argparse
 import logging
 import re
 from collections import defaultdict
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Iterator, Mapping, Optional, Sequence, cast
+from typing import Optional, cast
 
 from google.cloud import bigquery
 
 from ..base import Context, EtlJob
 from ..bqhelpers import BigQuery, Json, TableSchema
-from .bugzilla import parse_user_story
 from ..projectdata import Project
+from .bugzilla import parse_user_story
 
 FIXED_STATES = {"RESOLVED", "VERIFIED"}
-MIN_CHANGE_DATE = datetime(2024, 1, 1, tzinfo=timezone.utc)
+MIN_CHANGE_DATE = datetime(2024, 1, 1, tzinfo=UTC)
 
 
 @dataclass
@@ -400,7 +401,7 @@ FROM overrides
         for row in scores:
             bugs_with_webcompat_states.add(row.number)
             logging.debug(
-                f"Bug {row.number}: {row.url} {row.keywords}, {repr(row.user_story)} SCORE: {row.score}"
+                f"Bug {row.number}: {row.url} {row.keywords}, {row.user_story!r} SCORE: {row.score}"
             )
             rv[row.number][row.index] = Decimal(row.score)
 

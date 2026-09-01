@@ -1,11 +1,11 @@
-from collections.abc import Iterator
-from dataclasses import dataclass
-from datetime import date, datetime
 import logging
 import os
 import pathlib
 import tomllib
-from typing import Annotated, Callable, Literal, Mapping, Optional, Self, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
+from typing import Annotated, Literal, Optional, Self
 
 import jinja2
 import tomli_w
@@ -187,7 +187,7 @@ class RedashDateParameter(RedashParameterBase):
         elif reference is not None:
             value = reference.value
         else:
-            value = date.today()
+            value = datetime.now(tz=UTC).date()
         return client.RedashDateParameter(
             name=name, title=self._get_title(name, reference), value=value
         )
@@ -207,7 +207,7 @@ class RedashDateTimeParameter(RedashParameterBase):
         elif reference is not None:
             value = reference.value
         else:
-            value = datetime.now()
+            value = datetime.now(tz=UTC)
         return client.RedashDateTimeParameter(
             name=name, title=self._get_title(name, reference), value=value
         )
@@ -227,7 +227,7 @@ class RedashDateTimeWithSecondsParameter(RedashParameterBase):
         elif reference is not None:
             value = reference.value
         else:
-            value = datetime.now()
+            value = datetime.now(tz=UTC)
         return client.RedashDateTimeWithSecondsParameter(
             name=name, title=self._get_title(name, reference), value=value
         )
@@ -256,7 +256,7 @@ class RedashDateRangeParameter(RedashParameterBase):
         elif reference is not None:
             value = reference.value
         else:
-            today = date.today()
+            today = datetime.now(tz=UTC).date()
             value = client.RedashDateRangeValue(start=today, end=today)
         return client.RedashDateRangeParameter(
             name=name, title=self._get_title(name, reference), value=value
@@ -286,7 +286,7 @@ class RedashDateTimeRangeParameter(RedashParameterBase):
         elif reference is not None:
             value = reference.value
         else:
-            now = datetime.now()
+            now = datetime.now(tz=UTC)
             value = client.RedashDateTimeRangeValue(start=now, end=now)
         return client.RedashDateTimeRangeParameter(
             name=name, title=self._get_title(name, reference), value=value
@@ -309,7 +309,7 @@ class RedashDateTimeWithSecondsRangeParameter(RedashParameterBase):
         elif reference is not None:
             value = reference.value
         else:
-            now = datetime.now()
+            now = datetime.now(tz=UTC)
             value = client.RedashDateTimeWithSecondsRangeValue(start=now, end=now)
         return client.RedashDateTimeWithSecondsRangeParameter(
             name=name, title=self._get_title(name, reference), value=value
@@ -501,8 +501,7 @@ class RedashData:
                 if name in name_filter:
                     yield value
         else:
-            for item in self.dashboards.values():
-                yield item
+            yield from self.dashboards.values()
 
 
 class RedashTemplateRenderer:

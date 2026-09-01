@@ -1,10 +1,23 @@
 import argparse
 import logging
 import os
-from typing import Iterable, Optional
+from collections.abc import Iterable
+from typing import Optional
+
+from . import projectdata
+from .base import (
+    ALL_JOBS,
+    Command,
+    Config,
+    Context,
+    EtlJob,
+    dataset_arg,
+)
+from .bqhelpers import BigQuery, DatasetId, get_client
 
 # These imports are required to populate ALL_JOBS
 # Unhappily the ordering here is significant
+# isort: off
 from .etl import (
     update_schema,  # noqa: F401
     bugzilla,  # noqa: F401
@@ -20,17 +33,8 @@ from .etl import (
     autowebcompat,  # noqa: F401
     web_bugs,  # noqa: F401
 )
-from .base import (
-    ALL_JOBS,
-    Command,
-    Context,
-    Config,
-    EtlJob,
-    dataset_arg,
-)
-from .bqhelpers import get_client, BigQuery, DatasetId
-from . import projectdata
 
+# isort: on
 
 here = os.path.dirname(__file__)
 
