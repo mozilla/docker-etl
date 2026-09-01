@@ -900,6 +900,10 @@ class ReproTask(HackbotTask):
     agent: str = "autowebcompat-repro"
     task_name: str = "repro"
 
+    def requests_diagnosis(self, keywords: list[str]) -> bool:
+        """Whether a successful reproduction should also request a diagnosis."""
+        return True
+
     def get_request_data(self, request: ScheduleRequest) -> AutowebcompatReproRequest:
         return AutowebcompatReproRequest(
             agent=self.agent, bug_data=request.request_data.model_dump_json()
@@ -1000,7 +1004,9 @@ class ReproTask(HackbotTask):
                     elif result.reproduced:
                         require_whiteboard.append("[autowebcompat:repro-success]")
                         require_user_story["autowebcompat-repro-status"] = "success"
-                        if not result.chrome_mask_fixed:
+                        if not result.chrome_mask_fixed and self.requests_diagnosis(
+                            bug_info.keywords
+                        ):
                             require_whiteboard.append(
                                 DiagnosisTask.whiteboard_request_token
                             )
@@ -1116,6 +1122,9 @@ class ReproTask(HackbotTask):
 class BacklogReproTask(ReproTask):
     agent: str = "autowebcompat-repro"
     task_name: str = "repro-backlog"
+
+    def requests_diagnosis(self, keywords: list[str]) -> bool:
+        return "webcompat:needs-diagnosis" in keywords
 
     def create_new(self) -> Mapping[str, Sequence[ScheduledRun]]:
         source_key = self.key("bugzilla", "backlog")
