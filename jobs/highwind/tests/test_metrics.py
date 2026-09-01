@@ -6,7 +6,7 @@ from highwind import metrics
 def test_a_sum_reduces_with_a_sum_and_finalizes_to_itself():
     reducer = metrics.per_unit_sum("active_hours_sum")
 
-    assert reducer.bucket_agg == "SUM(active_hours_sum)"
+    assert reducer.bucket_aggregate == "SUM(active_hours_sum)"
     assert reducer.combine == "SUM"
     assert reducer.no_rows == "0"
     assert reducer.finalize("combined") == "combined"
@@ -15,7 +15,7 @@ def test_a_sum_reduces_with_a_sum_and_finalizes_to_itself():
 def test_distinct_days_sums_over_buckets_because_buckets_partition_tenure():
     reducer = metrics.per_unit_distinct_days()
 
-    assert reducer.bucket_agg == "COUNT(DISTINCT submission_date)"
+    assert reducer.bucket_aggregate == "COUNT(DISTINCT submission_date)"
     assert reducer.combine == "SUM"
     assert reducer.finalize("combined") == "combined"
 
@@ -23,7 +23,7 @@ def test_distinct_days_sums_over_buckets_because_buckets_partition_tenure():
 def test_any_counts_per_bucket_and_thresholds_the_combined_count():
     reducer = metrics.per_unit_any("is_default_browser")
 
-    assert reducer.bucket_agg == "COUNTIF(is_default_browser)"
+    assert reducer.bucket_aggregate == "COUNTIF(is_default_browser)"
     assert reducer.combine == "SUM"
     assert reducer.finalize("combined") == "CAST(combined > 0 AS INT64)"
 
@@ -31,14 +31,14 @@ def test_any_counts_per_bucket_and_thresholds_the_combined_count():
 def test_countif_keeps_the_count_rather_than_reducing_it_to_a_flag():
     reducer = metrics.per_unit_countif("is_dau")
 
-    assert reducer.bucket_agg == "COUNTIF(is_dau)"
+    assert reducer.bucket_aggregate == "COUNTIF(is_dau)"
     assert reducer.finalize("combined") == "combined"
 
 
 def test_sum_positive_thresholds_the_summed_total_not_each_bucket():
     reducer = metrics.per_unit_sum_positive("pings_aggregated_by_this_row")
 
-    assert reducer.bucket_agg == "SUM(pings_aggregated_by_this_row)"
+    assert reducer.bucket_aggregate == "SUM(pings_aggregated_by_this_row)"
     assert reducer.combine == "SUM"
     assert reducer.finalize("combined") == "CAST(combined > 0 AS INT64)"
 
@@ -46,7 +46,7 @@ def test_sum_positive_thresholds_the_summed_total_not_each_bucket():
 def test_min_below_combines_with_min_and_carries_its_own_missing_value():
     reducer = metrics.per_unit_min_below("days_since_seen", 3, 30)
 
-    assert reducer.bucket_agg == "MIN(days_since_seen)"
+    assert reducer.bucket_aggregate == "MIN(days_since_seen)"
     assert reducer.combine == "MIN"
     assert reducer.no_rows == "30"
     assert reducer.finalize("combined") == "CAST(combined < 3 AS INT64)"
@@ -56,7 +56,7 @@ def test_scaling_multiplies_the_finalized_value_and_leaves_the_bucket_aggregate_
     inner = metrics.per_unit_countif("is_dau")
     scaled = metrics.per_unit_scaled(inner, 1000)
 
-    assert scaled.bucket_agg == inner.bucket_agg
+    assert scaled.bucket_aggregate == inner.bucket_aggregate
     assert scaled.combine == inner.combine
     assert scaled.no_rows == inner.no_rows
     assert scaled.finalize("combined") == "(combined) * 1000"

@@ -196,12 +196,12 @@ def pooled_theta(branches):
     sum_post = sum(branch["sum"] for branch in branches)
     sum_pre = sum(branch["pre_sum"] for branch in branches)
     pre_variance = (
-        sum(branch["pre_sumsq"] for branch in branches) - sum_pre * sum_pre / n
+        sum(branch["pre_sum_squares"] for branch in branches) - sum_pre * sum_pre / n
     ) / (n - 1)
     if pre_variance <= 0:
         return 0.0
     covariance = (
-        sum(branch["xp"] for branch in branches) - sum_pre * sum_post / n
+        sum(branch["sum_x_pre"] for branch in branches) - sum_pre * sum_post / n
     ) / (n - 1)
     return covariance / pre_variance
 
@@ -215,12 +215,12 @@ def adjusted(cell, theta):
     return RegressionAdjustedStatistic(
         n=cell["n"],
         post_statistic=SampleMeanStatistic(
-            n=cell["n"], sum=cell["sum"], sum_squares=cell["sumsq"]
+            n=cell["n"], sum=cell["sum"], sum_squares=cell["sum_squares"]
         ),
         pre_statistic=SampleMeanStatistic(
-            n=cell["n"], sum=cell["pre_sum"], sum_squares=cell["pre_sumsq"]
+            n=cell["n"], sum=cell["pre_sum"], sum_squares=cell["pre_sum_squares"]
         ),
-        post_pre_sum_of_products=cell["xp"],
+        post_pre_sum_of_products=cell["sum_x_pre"],
         theta=theta,
     )
 

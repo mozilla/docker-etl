@@ -21,9 +21,9 @@ disjoint buckets, and a source row's bucket is `DIV(tenure_day, bucket_length)`,
 once no matter how many windows an experiment has. Each source query is six CTEs, of which three
 do the aggregation:
 
-    cohort          the run's assignment table, one row per (slug, unit)
-    meta            per-slug facts, currently how many buckets each experiment has matured
-    source_rows     the single scan, bounded to the columns this source's metrics name
+    cohort           the run's assignment table, one row per (slug, unit)
+    experiment_meta  per-slug facts, currently how many buckets each experiment has matured
+    source_rows      the single scan, bounded to the columns this source's metrics name
 
     A  bucket_totals   one pass over source rows, grouped to (slug, unit, bucket), one raw
                        aggregate per metric. Metrics are columns here, bounded by the metric set,
@@ -133,24 +133,38 @@ class Run:
         self.sample_percent = sample_percent
         # Only experiments with at least one matured window take part in the shared queries. A
         # younger one contributes no rows and would only widen the scan.
-        self.experiments = [e for e in experiments if windows_by_slug.get(e.slug)]
+        self.experiments = [
+            experiment
+            for experiment in experiments
+            if windows_by_slug.get(experiment.slug)
+        ]
         self.windows_by_slug = windows_by_slug
-        every_window = [w for e in self.experiments for w in windows_by_slug[e.slug]]
+        every_window = [
+            window
+            for experiment in self.experiments
+            for window in windows_by_slug[experiment.slug]
+        ]
         self.length = bucket_length(every_window) if every_window else 7
         self.buckets_by_slug = {
-            e.slug: max((w.end + 1) // self.length for w in windows_by_slug[e.slug])
-            for e in self.experiments
+            experiment.slug: max(
+                (window.end + 1) // self.length
+                for window in windows_by_slug[experiment.slug]
+            )
+            for experiment in self.experiments
         }
 
     @property
     def slugs(self):
         """Return the slugs taking part in this run's shared queries."""
-        return [e.slug for e in self.experiments]
+        return [experiment.slug for experiment in self.experiments]
 
     @property
     def units(self):
         """Return the analysis units this run's experiments randomized on, in a stable order."""
-        return sorted({e.unit for e in self.experiments}, key=lambda unit: unit.kind)
+        return sorted(
+            {experiment.unit for experiment in self.experiments},
+            key=lambda unit: unit.kind,
+        )
 
     def by_unit(self):
         """Split into one sub-run per analysis unit, each covering only that unit's experiments.
@@ -161,7 +175,11 @@ class Run:
         """
         return {
             unit: Run(
-                [e for e in self.experiments if e.unit == unit],
+                [
+                    experiment
+                    for experiment in self.experiments
+                    if experiment.unit == unit
+                ],
                 self.windows_by_slug,
                 self.as_of,
                 self.covariate_days,
@@ -172,7 +190,7 @@ class Run:
 
     def earliest_start(self):
         """Return the start date of the run's oldest experiment."""
-        return min(e.start_date for e in self.experiments)
+        return min(experiment.start_date for experiment in self.experiments)
 
     def first_source_date(self):
         """Return the oldest submission_date any experiment in the run needs.
@@ -182,7 +200,7 @@ class Run:
         """
         return self.earliest_start() - datetime.timedelta(days=self.covariate_days)
 
-    def meta_cte(self):
+    def experiment_meta_cte(self):
         """Per-slug facts the shared queries join against: how many buckets each has matured.
 
         A literal rather than a table because it is one short row per experiment, derived from the
@@ -203,8 +221,11 @@ class Run:
         window label, so they are built, joined, sorted and only then discarded. It also bounds the
         source rows each unit contributes, since stage A reaches only this far.
         """
-        elapsed = f"DIV(DATE_DIFF(DATE '{self.as_of}', c.enrollment_date, DAY), {self.length})"
-        return f"LEAST({elapsed}, m.matured_buckets)"
+        elapsed = (
+            f"DIV(DATE_DIFF(DATE '{self.as_of}', cohort.enrollment_date, DAY), "
+            f"{self.length})"
+        )
+        return f"LEAST({elapsed}, experiment_meta.matured_buckets)"
 
 
 def bucket_length(windows):
@@ -296,13 +317,18 @@ def cohort_query(run):
         smallest_branch AS (
           SELECT slug, MIN(units) AS smallest FROM branch_sizes GROUP BY slug
         )
-        SELECT a.slug, a.unit_kind, a.unit_id, a.branch, a.enrollment_date
-        FROM assigned AS a
-        JOIN branch_sizes AS b USING (slug, branch)
-        JOIN smallest_branch AS s USING (slug)
-        WHERE MOD(ABS(FARM_FINGERPRINT(a.unit_id)), {BALANCE_RESOLUTION})
+        SELECT
+          assignment.slug,
+          assignment.unit_kind,
+          assignment.unit_id,
+          assignment.branch,
+          assignment.enrollment_date
+        FROM assigned AS assignment
+        JOIN branch_sizes AS branch_size USING (slug, branch)
+        JOIN smallest_branch AS smallest USING (slug)
+        WHERE MOD(ABS(FARM_FINGERPRINT(assignment.unit_id)), {BALANCE_RESOLUTION})
               < {BALANCE_RESOLUTION}
-                * LEAST(1.0, {MAX_BRANCH_RATIO} * s.smallest / b.units)
+                * LEAST(1.0, {MAX_BRANCH_RATIO} * smallest.smallest / branch_size.units)
     """).strip()
 
 
@@ -332,10 +358,10 @@ def assignment_query(run):
     and every metric would silently sum to zero rather than fail.
     """
     slugs = ", ".join(f"'{slug}'" for slug in run.slugs)
-    columns = {u.enrollment_column for u in run.units}
+    columns = {unit.enrollment_column for unit in run.units}
     if detects_fleets(run):
         columns.add(FLEET_CLIENT_COLUMN)
-    ids = ",\n      ".join(sorted(columns))
+    id_columns = ",\n      ".join(sorted(columns))
     return textwrap.dedent(f"""
         SELECT
           slug,
@@ -345,15 +371,15 @@ def assignment_query(run):
           MIN(enrollment_date) AS enrollment_date
         FROM (
           SELECT
-            e.slug,
-            v.unit_kind,
+            event.slug,
+            valid.unit_kind,
             {enrollment_unit_id(run)} AS unit_id,
-            e.branch_slug,
-            e.enrollment_date{fleet_select(run)}
+            event.branch_slug,
+            event.enrollment_date{fleet_select(run)}
           FROM (
             SELECT
               JSON_VALUE(event_extra, '$.experiment') AS slug,
-              {ids},
+              {id_columns},
               JSON_VALUE(event_extra, '$.branch') AS branch_slug,
               DATE(submission_timestamp) AS enrollment_date
             FROM `mozdata.firefox_desktop.events_stream`
@@ -362,9 +388,9 @@ def assignment_query(run):
               AND event_category = 'nimbus_events'
               AND event_name = 'enrollment'
               AND JSON_VALUE(event_extra, '$.experiment') IN ({slugs})
-          ) AS e
-          JOIN valid_branch AS v
-            ON v.slug = e.slug AND v.branch = e.branch_slug
+          ) AS event
+          JOIN valid_branch AS valid
+            ON valid.slug = event.slug AND valid.branch = event.branch_slug
         )
         WHERE unit_id IS NOT NULL
           {sample_clause("unit_id", run.sample_percent, prefix="AND ")}
@@ -380,7 +406,7 @@ def detects_fleets(run):
 
 def fleet_select(run):
     """Carry the client id up to the aggregation, where a group's fan-out is counted."""
-    return f",\n            e.{FLEET_CLIENT_COLUMN}" if detects_fleets(run) else ""
+    return f",\n            event.{FLEET_CLIENT_COLUMN}" if detects_fleets(run) else ""
 
 
 def fleet_having(run):
@@ -409,11 +435,11 @@ def enrollment_unit_id(run):
     """
     run_units = run.units
     if len(run_units) == 1:
-        return f"e.{run_units[0].enrollment_column}"
+        return f"event.{run_units[0].enrollment_column}"
     cases = " ".join(
-        f"WHEN '{unit.kind}' THEN e.{unit.enrollment_column}" for unit in run_units
+        f"WHEN '{unit.kind}' THEN event.{unit.enrollment_column}" for unit in run_units
     )
-    return f"CASE v.unit_kind {cases} END"
+    return f"CASE valid.unit_kind {cases} END"
 
 
 # ----------------------------------------------------------------------- the source queries ----
@@ -436,16 +462,16 @@ def build_queries(run, metrics_by_source, cohort_table):
 
 def build_source_query(run, source, metrics, cohort_table, unit):
     """Build the full query for one source: cohort, per-slug facts, rows, stages, rollup."""
-    spec = SOURCES[source]
+    source_definition = SOURCES[source]
     return textwrap.dedent(f"""
         WITH cohort AS (
         {_indent(cohort_source(cohort_table, unit))}
         ),
-        meta AS (
-        {_indent(run.meta_cte())}
+        experiment_meta AS (
+        {_indent(run.experiment_meta_cte())}
         ),
         source_rows AS (
-        {_indent(source_cte(spec, run, unit))}
+        {_indent(source_cte(source_definition, run, unit))}
         ),
         bucket_totals AS (
         {_indent(bucket_totals_cte(metrics, run))}
@@ -482,7 +508,7 @@ def cohort_source(cohort_table, unit):
     )
 
 
-def source_cte(spec, run, unit):
+def source_cte(source_definition, run, unit):
     """Select the source rows for one unit, over the union of its experiments' date ranges.
 
     One scan serving every experiment analysed at this unit. It starts `covariate_days` before the
@@ -498,14 +524,18 @@ def source_cte(spec, run, unit):
     differ: its `is_desktop` is a computed column, so filtering on it also reads the ISP,
     distribution and version columns behind it.
     """
-    columns = ",\n  ".join(spec["columns"])
-    restriction = f"\n  AND {spec['where']}" if spec.get("where") else ""
+    columns = ",\n  ".join(source_definition["columns"])
+    restriction = (
+        f"\n  AND {source_definition['where']}"
+        if source_definition.get("where")
+        else ""
+    )
     return textwrap.dedent(f"""
         SELECT
           {unit.source_column} AS unit_id,
           submission_date,
           {columns}
-        FROM `{spec['table']}`
+        FROM `{source_definition['table']}`
         WHERE submission_date
           BETWEEN DATE '{run.first_source_date()}'
               AND DATE '{run.as_of}'{restriction}{source_sample(run, unit)}
@@ -544,32 +574,34 @@ def bucket_totals_cte(metrics, run):
     window costs nothing beyond the rows it reads.
 
     LEFT JOIN, and the direction is load-bearing rather than stylistic. The predicate on
-    `s.submission_date` below already discards units with no matching row, so this returns exactly
-    what an inner join would; measured on one source, both forms produce identical output. But an
-    inner join lets BigQuery reorder the two sides, and it was measured choosing a plan that read
-    orders of magnitude more records than this one, at several times the slot cost. Writing it as an
-    outer join drove the planner to hash-join from the cohort instead. Treat that as an observation
-    rather than a guarantee: BigQuery can rewrite an outer join to an inner one when a predicate
-    rejects the null-extended rows, as this one does, so the plan is not pinned by the syntax.
+    `source_rows.submission_date` below already discards units with no matching row, so this returns
+    exactly what an inner join would; measured on one source, both forms produce identical output.
+    But an inner join lets BigQuery reorder the two sides, and it was measured choosing a plan that
+    read orders of magnitude more records than this one, at several times the slot cost. Writing it
+    as an outer join drove the planner to hash-join from the cohort instead. Treat that as an
+    observation rather than a guarantee: BigQuery can rewrite an outer join to an inner one when a
+    predicate rejects the null-extended rows, as this one does, so the plan is not pinned by the
+    syntax.
     """
     aggregates = ",\n  ".join(
-        f"{metric.reducer.bucket_agg} AS {metric.name}__raw" for metric in metrics
+        f"{metric.reducer.bucket_aggregate} AS {metric.name}__raw" for metric in metrics
     )
+    tenure_day = "DATE_DIFF(source_rows.submission_date, cohort.enrollment_date, DAY)"
     return textwrap.dedent(f"""
         SELECT
-          c.slug,
-          c.unit_id,
-          IF(d < 0, {PRE_BUCKET}, DIV(d, {run.length})) AS bucket,
+          cohort.slug,
+          cohort.unit_id,
+          IF(tenure_day < 0, {PRE_BUCKET}, DIV(tenure_day, {run.length})) AS bucket,
           {aggregates}
-        FROM cohort AS c
-        JOIN meta AS m
-          ON m.slug = c.slug
-        LEFT JOIN source_rows AS s
-          ON s.unit_id = c.unit_id
-        , UNNEST([DATE_DIFF(s.submission_date, c.enrollment_date, DAY)]) AS d
-        WHERE d BETWEEN -{run.covariate_days}
+        FROM cohort
+        JOIN experiment_meta
+          ON experiment_meta.slug = cohort.slug
+        LEFT JOIN source_rows
+          ON source_rows.unit_id = cohort.unit_id
+        , UNNEST([{tenure_day}]) AS tenure_day
+        WHERE tenure_day BETWEEN -{run.covariate_days}
                     AND {run.matured_buckets()} * {run.length} - 1
-        GROUP BY c.slug, c.unit_id, bucket
+        GROUP BY cohort.slug, cohort.unit_id, bucket
     """).strip()
 
 
@@ -587,13 +619,13 @@ def unit_buckets_cte(run):
     """
     return textwrap.dedent(f"""
         SELECT
-          c.slug,
-          c.unit_id,
-          c.branch,
+          cohort.slug,
+          cohort.unit_id,
+          cohort.branch,
           bucket
-        FROM cohort AS c
-        JOIN meta AS m
-          ON m.slug = c.slug
+        FROM cohort
+        JOIN experiment_meta
+          ON experiment_meta.slug = cohort.slug
         CROSS JOIN UNNEST(GENERATE_ARRAY({PRE_BUCKET}, {run.matured_buckets()} - 1)) AS bucket
     """).strip()
 
@@ -616,7 +648,7 @@ def unit_windows_cte(metrics):
     """
     kinds = sorted({rule["kind"] for metric in metrics for rule in metric.window_rules})
     labels = "".join(
-        f"  IF(g.bucket >= 0, CONCAT('{_PREFIX[kind]}:', g.bucket + 1), NULL)"
+        f"  IF(grid.bucket >= 0, CONCAT('{_PREFIX[kind]}:', grid.bucket + 1), NULL)"
         f" AS {kind}_window,\n"
         for kind in kinds
     )
@@ -632,17 +664,19 @@ def unit_windows_cte(metrics):
     )
     return textwrap.dedent(f"""
         SELECT
-          g.slug,
-          g.branch,
-          g.bucket,
+          grid.slug,
+          grid.branch,
+          grid.bucket,
         {labels}  {values}
-        FROM unit_buckets AS g
-        LEFT JOIN bucket_totals AS b
-          ON b.slug = g.slug AND b.unit_id = g.unit_id AND b.bucket = g.bucket
+        FROM unit_buckets AS grid
+        LEFT JOIN bucket_totals AS bucket_total
+          ON bucket_total.slug = grid.slug
+         AND bucket_total.unit_id = grid.unit_id
+         AND bucket_total.bucket = grid.bucket
         WINDOW
-          unit_to_date AS (PARTITION BY g.slug, g.unit_id ORDER BY g.bucket
+          unit_to_date AS (PARTITION BY grid.slug, grid.unit_id ORDER BY grid.bucket
                            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW),
-          unit_all AS (PARTITION BY g.slug, g.unit_id)
+          unit_all AS (PARTITION BY grid.slug, grid.unit_id)
     """).strip()
 
 
@@ -660,11 +694,12 @@ def window_value(metric, kind):
     reducer = metric.reducer
     if kind == "cumulative":
         combined = (
-            f"{reducer.combine}(IF(g.bucket >= 0, b.{metric.name}__raw, NULL))"
+            f"{reducer.combine}"
+            f"(IF(grid.bucket >= 0, bucket_total.{metric.name}__raw, NULL))"
             f" OVER unit_to_date"
         )
     else:
-        combined = f"b.{metric.name}__raw"
+        combined = f"bucket_total.{metric.name}__raw"
     return reducer.finalize(f"COALESCE({combined}, {reducer.no_rows})")
 
 
@@ -672,7 +707,8 @@ def covariate_value(metric):
     """One unit's pre-enrollment value, read off the covariate bucket across the partition."""
     reducer = metric.reducer
     combined = (
-        f"MAX(IF(g.bucket = {PRE_BUCKET}, b.{metric.name}__raw, NULL)) OVER unit_all"
+        f"MAX(IF(grid.bucket = {PRE_BUCKET}, bucket_total.{metric.name}__raw, NULL))"
+        f" OVER unit_all"
     )
     return reducer.finalize(f"COALESCE({combined}, {reducer.no_rows})")
 
@@ -699,19 +735,19 @@ def rollup_select(metrics):
         SELECT
           slug,
           branch,
-          m.window_label,
-          m.metric,
+          metric_row.window_label,
+          metric_row.metric,
           COUNT(*) AS n,
-          SUM(m.post) AS sum,
-          SUM(POW(m.post, 2)) AS sumsq,
-          SUM(m.pre) AS pre_sum,
-          SUM(POW(m.pre, 2)) AS pre_sumsq,
-          SUM(CAST(m.post AS FLOAT64) * m.pre) AS xp
+          SUM(metric_row.post) AS sum,
+          SUM(POW(metric_row.post, 2)) AS sum_squares,
+          SUM(metric_row.pre) AS pre_sum,
+          SUM(POW(metric_row.pre, 2)) AS pre_sum_squares,
+          SUM(CAST(metric_row.post AS FLOAT64) * metric_row.pre) AS sum_x_pre
         FROM unit_windows,
-             UNNEST([{structs}]) AS m
+             UNNEST([{structs}]) AS metric_row
         WHERE bucket >= 0
-          AND m.window_label IS NOT NULL
-        GROUP BY slug, branch, m.window_label, m.metric
+          AND metric_row.window_label IS NOT NULL
+        GROUP BY slug, branch, metric_row.window_label, metric_row.metric
     """).strip()
 
 

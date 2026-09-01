@@ -199,7 +199,7 @@ SUFFICIENT_STATS_SCHEMA = [
         ),
     ),
     bigquery.SchemaField(
-        "sumsq",
+        "sum_squares",
         "FLOAT64",
         description=(
             "Sum of squares of the same per-unit values, which supplies the variance."
@@ -214,12 +214,12 @@ SUFFICIENT_STATS_SCHEMA = [
         ),
     ),
     bigquery.SchemaField(
-        "pre_sumsq",
+        "pre_sum_squares",
         "FLOAT64",
         description="Sum of squares of the covariate, which supplies its variance.",
     ),
     bigquery.SchemaField(
-        "xp",
+        "sum_x_pre",
         "FLOAT64",
         description=(
             "Sum of products of the post-enrollment value and the covariate, which supplies "

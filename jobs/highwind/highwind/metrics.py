@@ -32,10 +32,10 @@ RETENTION_METRICS = {"retained", "retained_dau", "active_in_last_3_days_legacy"}
 # aggregation reduces a unit's rows once per disjoint bucket and then composes buckets into
 # windows:
 #
-#   bucket_agg   reduces the unit's rows inside ONE bucket to a raw number
-#   combine      how those raw numbers compose over the buckets a window spans, SUM or MIN
-#   no_rows      the raw value a unit with no rows in the window takes
-#   finalize     turns the combined raw number into the metric's value
+#   bucket_aggregate   reduces the unit's rows inside ONE bucket to a raw number
+#   combine            how those raw numbers compose over the buckets a window spans, SUM or MIN
+#   no_rows            the raw value a unit with no rows in the window takes
+#   finalize           turns the combined raw number into the metric's value
 #
 # The split exists to keep the 0/1 metrics correct. A threshold must be applied ONCE, to the
 # combined raw value, never per bucket: `retained` carries a SUM per bucket and tests `> 0` at the
@@ -55,7 +55,7 @@ def _above_zero(combined):
 class Reducer:
     """How one unit's rows in one window become one number, in bucket-composable parts."""
 
-    bucket_agg: str
+    bucket_aggregate: str
     combine: str = "SUM"
     no_rows: str = "0"
     finalize: Callable[[str], str] = _identity
@@ -68,12 +68,12 @@ def per_unit_distinct_days():
     exactly one bucket, so per-bucket distinct counts add up to the window's distinct count with no
     double counting. A combiner that summed overlapping ranges would be wrong here.
     """
-    return Reducer(bucket_agg="COUNT(DISTINCT submission_date)")
+    return Reducer(bucket_aggregate="COUNT(DISTINCT submission_date)")
 
 
 def per_unit_sum(column):
     """Sum of `column` across the unit's rows inside the window."""
-    return Reducer(bucket_agg=f"SUM({column})")
+    return Reducer(bucket_aggregate=f"SUM({column})")
 
 
 def per_unit_any(condition):
@@ -83,7 +83,7 @@ def per_unit_any(condition):
     threshold. This 0/1 reduction is what lets binary metrics travel the same sufficient-statistics
     path as the continuous ones, as a linear probability model.
     """
-    return Reducer(bucket_agg=f"COUNTIF({condition})", finalize=_above_zero)
+    return Reducer(bucket_aggregate=f"COUNTIF({condition})", finalize=_above_zero)
 
 
 def per_unit_countif(condition):
@@ -95,7 +95,7 @@ def per_unit_countif(condition):
     distinct-day form was measured instead and rejected: each exact COUNT(DISTINCT) is its own
     shuffle in the stage that carries essentially all of the cost, for no change in bytes scanned.
     """
-    return Reducer(bucket_agg=f"COUNTIF({condition})")
+    return Reducer(bucket_aggregate=f"COUNTIF({condition})")
 
 
 def per_unit_sum_positive(column):
@@ -109,7 +109,7 @@ def per_unit_sum_positive(column):
     and that NULL would otherwise make the unit's value NULL rather than 0, which the rollup drops
     from the numerator while still counting the unit in `n`.
     """
-    return Reducer(bucket_agg=f"SUM({column})", finalize=_above_zero)
+    return Reducer(bucket_aggregate=f"SUM({column})", finalize=_above_zero)
 
 
 def per_unit_min_below(expression, threshold, no_rows_value):
@@ -120,7 +120,7 @@ def per_unit_min_below(expression, threshold, no_rows_value):
     applied after the combination for the same reason the thresholds are.
     """
     return Reducer(
-        bucket_agg=f"MIN({expression})",
+        bucket_aggregate=f"MIN({expression})",
         combine="MIN",
         no_rows=str(no_rows_value),
         finalize=lambda combined: f"CAST({combined} < {threshold} AS INT64)",
@@ -137,7 +137,7 @@ def per_unit_scaled(reducer, factor):
     different statistic; under one uniform method that distinction disappears.
     """
     return Reducer(
-        bucket_agg=reducer.bucket_agg,
+        bucket_aggregate=reducer.bucket_aggregate,
         combine=reducer.combine,
         no_rows=reducer.no_rows,
         finalize=lambda combined: f"({reducer.finalize(combined)}) * {factor}",

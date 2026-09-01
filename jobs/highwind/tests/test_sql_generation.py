@@ -107,12 +107,12 @@ def test_an_experiment_with_no_matured_window_takes_no_part_in_the_shared_querie
     run = run_of({"mature": cumulative_windows(2), "too-young": []})
 
     assert run.slugs == ["mature"]
-    assert "too-young" not in run.meta_cte()
+    assert "too-young" not in run.experiment_meta_cte()
 
 
 def test_the_per_slug_facts_are_inlined_one_row_per_experiment():
     run = run_of({"b-slug": cumulative_windows(2), "a-slug": cumulative_windows(5)})
-    meta = run.meta_cte()
+    meta = run.experiment_meta_cte()
 
     assert "STRUCT('a-slug' AS slug, 5 AS matured_buckets)" in meta
     assert "STRUCT('b-slug' AS slug, 2 AS matured_buckets)" in meta
@@ -124,9 +124,9 @@ def test_matured_buckets_caps_elapsed_buckets_at_the_experiments_own_horizon():
     expression = run.matured_buckets()
 
     assert expression.startswith("LEAST(")
-    assert expression.endswith("m.matured_buckets)")
+    assert expression.endswith("experiment_meta.matured_buckets)")
     assert (
-        f"DIV(DATE_DIFF(DATE '{AS_OF}', c.enrollment_date, DAY), {run.length})"
+        f"DIV(DATE_DIFF(DATE '{AS_OF}', cohort.enrollment_date, DAY), {run.length})"
         in expression
     )
 
@@ -153,7 +153,10 @@ def test_a_binary_metric_is_thresholded_once_outside_its_running_total():
     value = sql_generation.window_value(named("retained"), "cumulative")
 
     assert value.count("AS INT64") == 1
-    assert "SUM(IF(g.bucket >= 0, b.retained__raw, NULL)) OVER unit_to_date" in value
+    assert (
+        "SUM(IF(grid.bucket >= 0, bucket_total.retained__raw, NULL)) OVER unit_to_date"
+        in value
+    )
     assert value.index("OVER unit_to_date") < value.index("> 0 AS INT64")
 
 
@@ -162,7 +165,7 @@ def test_a_disjoint_window_reads_one_bucket_and_thresholds_that():
 
     assert value.count("AS INT64") == 1
     assert "OVER" not in value
-    assert "b.retained_dau__raw" in value
+    assert "bucket_total.retained_dau__raw" in value
 
 
 def test_a_continuous_metric_is_summed_with_no_threshold_at_all():
@@ -170,7 +173,8 @@ def test_a_continuous_metric_is_summed_with_no_threshold_at_all():
 
     assert "AS INT64" not in value
     assert value == (
-        "COALESCE(SUM(IF(g.bucket >= 0, b.active_hours__raw, NULL)) OVER unit_to_date, 0)"
+        "COALESCE(SUM(IF(grid.bucket >= 0, bucket_total.active_hours__raw, NULL))"
+        " OVER unit_to_date, 0)"
     )
 
 
@@ -183,7 +187,10 @@ def test_a_metric_that_combines_with_min_takes_a_running_minimum():
     )
     value = sql_generation.window_value(metric, "cumulative")
 
-    assert "MIN(IF(g.bucket >= 0, b.a-metric__raw, NULL)) OVER unit_to_date" in value
+    assert (
+        "MIN(IF(grid.bucket >= 0, bucket_total.a-metric__raw, NULL)) OVER unit_to_date"
+        in value
+    )
     assert value.count("AS INT64") == 1
     assert value.endswith("< 3 AS INT64)")
 
@@ -191,7 +198,7 @@ def test_a_metric_that_combines_with_min_takes_a_running_minimum():
 def test_the_covariate_is_read_off_the_pre_bucket_and_thresholded_once():
     value = sql_generation.covariate_value(named("retained"))
 
-    assert f"g.bucket = {sql_generation.PRE_BUCKET}" in value
+    assert f"grid.bucket = {sql_generation.PRE_BUCKET}" in value
     assert "OVER unit_all" in value
     assert value.count("AS INT64") == 1
 
@@ -210,7 +217,7 @@ def test_the_rollup_keys_every_metric_by_name_so_the_schema_is_metric_independen
 
     assert "STRUCT('active_hours' AS metric" in sql
     assert "STRUCT('retained_dau' AS metric" in sql
-    for aggregate in ("n", "sum", "sumsq", "pre_sum", "pre_sumsq", "xp"):
+    for aggregate in ("n", "sum", "sum_squares", "pre_sum", "pre_sum_squares", "sum_x_pre"):
         assert f"AS {aggregate}" in sql
     assert "WHERE bucket >= 0" in sql
 
@@ -294,12 +301,14 @@ def test_the_sql_and_discovery_build_a_window_label_the_same_way():
 
 def test_a_source_query_reads_the_column_the_experiments_unit_names():
     run = run_of({"a-slug": cumulative_windows(2)})
-    spec = sql_generation.SOURCES["clients_daily"]
+    source_definition = sql_generation.SOURCES["clients_daily"]
 
     assert "profile_group_id AS unit_id" in sql_generation.source_cte(
-        spec, run, GROUP_UNIT
+        source_definition, run, GROUP_UNIT
     )
-    assert "client_id AS unit_id" in sql_generation.source_cte(spec, run, CLIENT_UNIT)
+    assert "client_id AS unit_id" in sql_generation.source_cte(
+        source_definition, run, CLIENT_UNIT
+    )
 
 
 def test_the_cohort_picks_each_slugs_own_id_out_of_the_enrollment_event():
@@ -317,15 +326,15 @@ def test_the_cohort_picks_each_slugs_own_id_out_of_the_enrollment_event():
         "STRUCT('by-client' AS slug, 'control' AS branch, 'client_id' AS unit_kind)"
         in cohort
     )
-    assert "WHEN 'profile_group_id' THEN e.profile_group_id" in cohort
-    assert "WHEN 'client_id' THEN e.legacy_telemetry_client_id" in cohort
+    assert "WHEN 'profile_group_id' THEN event.profile_group_id" in cohort
+    assert "WHEN 'client_id' THEN event.legacy_telemetry_client_id" in cohort
 
 
 def test_a_single_unit_run_resolves_the_id_without_a_branch_to_take():
     run = run_of({"a-slug": cumulative_windows(2)})
     cohort = sql_generation.cohort_query(run)
 
-    assert "e.legacy_telemetry_client_id AS unit_id" in cohort
+    assert "event.legacy_telemetry_client_id AS unit_id" in cohort
     assert "CASE" not in cohort
     assert "profile_group_id" not in cohort
 
@@ -341,7 +350,7 @@ def test_the_dedup_and_the_branch_cap_both_key_on_the_resolved_unit():
 
     assert "GROUP BY slug, unit_kind, unit_id" in cohort
     assert "HAVING COUNT(DISTINCT branch_slug) = 1" in cohort
-    assert "MOD(ABS(FARM_FINGERPRINT(a.unit_id))" in cohort
+    assert "MOD(ABS(FARM_FINGERPRINT(assignment.unit_id))" in cohort
 
 
 def test_a_group_randomized_run_drops_groups_that_fan_out_to_a_fleet():
@@ -352,7 +361,7 @@ def test_a_group_randomized_run_drops_groups_that_fan_out_to_a_fleet():
     )
     cohort = sql_generation.cohort_query(run)
 
-    assert f"e.{sql_generation.FLEET_CLIENT_COLUMN}" in cohort
+    assert f"event.{sql_generation.FLEET_CLIENT_COLUMN}" in cohort
     assert (
         f"OR COUNT(DISTINCT {sql_generation.FLEET_CLIENT_COLUMN}) "
         f"<= {sql_generation.MAX_CLIENTS_PER_GROUP})" in cohort
@@ -387,7 +396,7 @@ def test_a_mixed_run_applies_the_fleet_filter_to_the_group_slugs_only():
 def test_the_cohort_carries_the_unit_and_each_source_query_reads_only_its_own():
     run = run_of({"a-slug": cumulative_windows(2)})
 
-    assert "a.unit_kind" in sql_generation.cohort_query(run)
+    assert "assignment.unit_kind" in sql_generation.cohort_query(run)
     assert "WHERE unit_kind = 'profile_group_id'" in sql_generation.cohort_source(
         "a.cohort_table", GROUP_UNIT
     )

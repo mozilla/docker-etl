@@ -131,7 +131,15 @@ def test_a_failure_while_recording_a_failure_is_still_returned_not_raised():
 def test_the_run_report_counts_cells_and_errors_across_experiments(capsys):
     analysis.report_run(
         [summary("a", {CONFIDENT: 1, ERROR: 1}), summary("b", {FORMING: 2})],
-        [dict(source="clients_daily", wall_s=1.0, gb_scanned=1.0, slot_hours=1.0, rows=2)],
+        [
+            dict(
+                source="clients_daily",
+                wall_seconds=1.0,
+                gigabytes_scanned=1.0,
+                slot_hours=1.0,
+                rows=2,
+            )
+        ],
     )
     printed = capsys.readouterr().out
 

@@ -49,9 +49,13 @@ def test_disjoint_windows_are_labelled_week_and_partition_tenure():
 
 def test_a_window_is_generated_only_once_a_unit_could_have_completed_it():
     assert discovery.generate_windows(CUMULATIVE_WEEKLY, tenure_days=6) == []
-    assert [w.label for w in discovery.generate_windows(CUMULATIVE_WEEKLY, 7)] == ["cumu:1"]
-    assert [w.label for w in discovery.generate_windows(CUMULATIVE_WEEKLY, 13)] == ["cumu:1"]
-    assert [w.label for w in discovery.generate_windows(CUMULATIVE_WEEKLY, 14)] == [
+    assert [window.label for window in discovery.generate_windows(CUMULATIVE_WEEKLY, 7)] == [
+        "cumu:1"
+    ]
+    assert [window.label for window in discovery.generate_windows(CUMULATIVE_WEEKLY, 13)] == [
+        "cumu:1"
+    ]
+    assert [window.label for window in discovery.generate_windows(CUMULATIVE_WEEKLY, 14)] == [
         "cumu:1",
         "cumu:2",
     ]
@@ -135,7 +139,7 @@ def test_an_experiment_is_analysed_at_the_unit_its_own_recipe_randomized_on():
     )
 
     assert skipped == []
-    assert {e.slug: e.unit.kind for e in experiments} == {
+    assert {experiment.slug: experiment.unit.kind for experiment in experiments} == {
         "grouped": units.PROFILE_GROUP_ID,
         "by-client": units.CLIENT_ID,
     }
@@ -172,7 +176,7 @@ def test_a_slug_filter_reports_only_refusals_rather_than_every_recipe_it_passed_
         only_slugs=["wanted"],
     )
 
-    assert [e.slug for e in experiments] == ["wanted"]
+    assert [experiment.slug for experiment in experiments] == ["wanted"]
     assert skipped == []
 
 

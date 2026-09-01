@@ -48,7 +48,14 @@ ERROR_CELL = dict(
     error="RuntimeError: boom",
 )
 
-AGGREGATES = dict(n=400, sum=400.0, sumsq=800.0, pre_sum=400.0, pre_sumsq=800.0, xp=600.0)
+AGGREGATES = dict(
+    n=400,
+    sum=400.0,
+    sum_squares=800.0,
+    pre_sum=400.0,
+    pre_sum_squares=800.0,
+    sum_x_pre=600.0,
+)
 
 
 class FakeLoadJob:

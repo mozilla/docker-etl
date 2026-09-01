@@ -73,7 +73,8 @@ def run_daily_job(
 
     metrics_by_source = metric_definitions_module.metric_definitions()
     windows_by_slug = {
-        e.slug: run_windows(e, as_of, metrics_by_source) for e in experiments
+        experiment.slug: run_windows(experiment, as_of, metrics_by_source)
+        for experiment in experiments
     }
     run = sql_generation.Run(
         experiments, windows_by_slug, as_of, COVARIATE_DAYS, sample_percent
@@ -363,14 +364,14 @@ def report_run(summaries, timings):
     failed = sum(1 for summary in summaries if summary["error"])
     print(
         f"\n{len(summaries)} experiments ({failed} failed outright), {cells:,} cells, "
-        f"{sum(t['gb_scanned'] for t in timings) / 1000:.2f} TB scanned, "
-        f"{sum(t['slot_hours'] or 0 for t in timings):.1f} slot-hours "
+        f"{sum(timing['gigabytes_scanned'] for timing in timings) / 1000:.2f} TB scanned, "
+        f"{sum(timing['slot_hours'] or 0 for timing in timings):.1f} slot-hours "
         f"over {len(timings)} queries"
     )
     for timing in timings:
         print(
-            f"   {timing['source']:30s} {timing['wall_s']:8.1f}s "
-            f"{timing['gb_scanned'] / 1000:7.2f} TB "
+            f"   {timing['source']:30s} {timing['wall_seconds']:8.1f}s "
+            f"{timing['gigabytes_scanned'] / 1000:7.2f} TB "
             f"{timing['slot_hours'] if timing['slot_hours'] is not None else '-'} slot-h "
             f"{timing['rows']:,} rows"
         )

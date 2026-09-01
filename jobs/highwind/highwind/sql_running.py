@@ -20,7 +20,7 @@ COHORT_DATASET = "moz-fx-data-experiments.highwind_poc"
 # the source queries have finished, so it is expired rather than kept. An expiry rather than a
 # delete at the end of the run, because a run that fails between writing the table and deleting it
 # would otherwise leave a table nothing will ever clean up.
-COHORT_TABLE_TTL = datetime.timedelta(days=1)
+COHORT_TABLE_LIFETIME = datetime.timedelta(days=1)
 
 
 def cohort_table_name(as_of):
@@ -69,7 +69,7 @@ def materialize_cohort(client, sql, as_of, validate_only=False):
 def expire_cohort_table(client, table):
     """Give the cohort table an expiry, set after the write because a query job cannot carry one."""
     definition = client.get_table(table)
-    definition.expires = datetime.datetime.now(datetime.timezone.utc) + COHORT_TABLE_TTL
+    definition.expires = datetime.datetime.now(datetime.timezone.utc) + COHORT_TABLE_LIFETIME
     client.update_table(definition, ["expires"])
 
 
@@ -97,7 +97,7 @@ def run_queries(client, queries, validate_only=False):
                 cells_by_slug.setdefault(row["slug"], {})[
                     (row["metric"], row["window_label"], row["branch"])
                 ] = sufficient_stats(row)
-    return cells_by_slug, sorted(timings, key=lambda t: t["source"])
+    return cells_by_slug, sorted(timings, key=lambda timing: timing["source"])
 
 
 def run_one_query(client, source, sql, validate_only):
@@ -120,12 +120,14 @@ def query_timing(source, job, rows, wall_seconds):
     so slot-hours is what one query took from every other query rather than an amount of money, and
     wall time reflects how many slots happened to be free at the time.
     """
-    slot_millis = job.slot_millis
+    slot_milliseconds = job.slot_millis
     return dict(
         source=source,
-        wall_s=round(wall_seconds, 1),
-        gb_scanned=round((job.total_bytes_processed or 0) / 1e9, 1),
-        slot_hours=None if slot_millis is None else round(slot_millis / 3_600_000, 2),
+        wall_seconds=round(wall_seconds, 1),
+        gigabytes_scanned=round((job.total_bytes_processed or 0) / 1e9, 1),
+        slot_hours=(
+            None if slot_milliseconds is None else round(slot_milliseconds / 3_600_000, 2)
+        ),
         rows=len(rows),
     )
 
@@ -135,8 +137,8 @@ def sufficient_stats(row):
     return {
         "n": int(row["n"]),
         "sum": float(row["sum"] or 0.0),
-        "sumsq": float(row["sumsq"] or 0.0),
+        "sum_squares": float(row["sum_squares"] or 0.0),
         "pre_sum": float(row["pre_sum"] or 0.0),
-        "pre_sumsq": float(row["pre_sumsq"] or 0.0),
-        "xp": float(row["xp"] or 0.0),
+        "pre_sum_squares": float(row["pre_sum_squares"] or 0.0),
+        "sum_x_pre": float(row["sum_x_pre"] or 0.0),
     }

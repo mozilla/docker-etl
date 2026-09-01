@@ -41,10 +41,10 @@ def branch(units, mean, second_moment, cross_moment):
     return dict(
         n=units,
         sum=units * mean,
-        sumsq=units * second_moment,
+        sum_squares=units * second_moment,
         pre_sum=units * 1.0,
-        pre_sumsq=units * 2.0,
-        xp=units * cross_moment,
+        pre_sum_squares=units * 2.0,
+        sum_x_pre=units * cross_moment,
     )
 
 
@@ -135,7 +135,7 @@ def test_a_populated_pair_produces_a_relative_interval_around_the_difference():
 
 
 def test_theta_is_zero_when_the_covariate_never_moves():
-    flat = dict(n=40, sum=40.0, sumsq=80.0, pre_sum=0.0, pre_sumsq=0.0, xp=0.0)
+    flat = dict(n=40, sum=40.0, sum_squares=80.0, pre_sum=0.0, pre_sum_squares=0.0, sum_x_pre=0.0)
 
     assert gbstats_compute.pooled_theta([flat, flat]) == 0.0
 
@@ -143,8 +143,8 @@ def test_theta_is_zero_when_the_covariate_never_moves():
 def test_theta_is_the_slope_of_the_metric_on_the_covariate():
     # Two units per branch, each unit's value exactly twice its covariate, so the slope is 2.
     branches = [
-        dict(n=2, sum=6.0, sumsq=20.0, pre_sum=3.0, pre_sumsq=5.0, xp=10.0),
-        dict(n=2, sum=14.0, sumsq=100.0, pre_sum=7.0, pre_sumsq=25.0, xp=50.0),
+        dict(n=2, sum=6.0, sum_squares=20.0, pre_sum=3.0, pre_sum_squares=5.0, sum_x_pre=10.0),
+        dict(n=2, sum=14.0, sum_squares=100.0, pre_sum=7.0, pre_sum_squares=25.0, sum_x_pre=50.0),
     ]
 
     assert gbstats_compute.pooled_theta(branches) == pytest.approx(2.0)
@@ -211,10 +211,10 @@ def branch_moments(units, post_mean, post_variance, pre_mean, pre_variance, cova
     return dict(
         n=units,
         sum=units * post_mean,
-        sumsq=units * post_mean**2 + (units - 1) * post_variance,
+        sum_squares=units * post_mean**2 + (units - 1) * post_variance,
         pre_sum=units * pre_mean,
-        pre_sumsq=units * pre_mean**2 + (units - 1) * pre_variance,
-        xp=units * post_mean * pre_mean + (units - 1) * covariance,
+        pre_sum_squares=units * pre_mean**2 + (units - 1) * pre_variance,
+        sum_x_pre=units * post_mean * pre_mean + (units - 1) * covariance,
     )
 
 
@@ -270,7 +270,7 @@ def test_theta_pools_only_the_arms_that_reported_the_window():
     # A branch with no cell for this window contributes nothing rather than crashing the group.
     cells = three_branch_cells()
     del cells[("active_hours", "cumu:1", "treatment-b")]
-    window = next(w for w in WINDOWS if w.label == "cumu:1")
+    window = next(window for window in WINDOWS if window.label == "cumu:1")
 
     assert gbstats_compute.window_theta(
         EXPERIMENT, CONTINUOUS, window, cells

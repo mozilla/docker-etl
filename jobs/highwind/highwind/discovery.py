@@ -115,7 +115,9 @@ def discover(client, as_of, limit=None, only_slugs=None):
         # is out of scope rather than declined, and listing them all would bury the refusals below.
         if only_slugs and row.slug not in only_slugs:
             continue
-        others = tuple(b for b in row.branch_slugs if b != row.reference_branch)
+        others = tuple(
+            branch for branch in row.branch_slugs if branch != row.reference_branch
+        )
         if not row.reference_branch or not others:
             skipped.append(
                 (row.slug, f"reference={row.reference_branch!r} others={others}")

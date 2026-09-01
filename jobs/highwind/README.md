@@ -16,9 +16,10 @@ A proof of concept. What it does not cover is under [Proof-of-concept scope](#pr
    per analysis unit, each grouped by slug. Sharing the scan matters because every experiment's date
    range overlaps almost every other's, so scanning per experiment would read the same calendar day
    repeatedly.
-3. Each source query returns six aggregates per (slug, branch, window, metric): `n`, `sum`, `sumsq`,
-   `pre_sum`, `pre_sumsq` and `xp`. Those are everything a covariate-adjusted mean comparison needs,
-   so the per-unit stages stay inside the query that aggregates them away.
+3. Each source query returns six aggregates per (slug, branch, window, metric): `n`, `sum`,
+   `sum_squares`, `pre_sum`, `pre_sum_squares` and `sum_x_pre`. Those are everything a
+   covariate-adjusted mean comparison needs, so the per-unit stages stay inside the query that
+   aggregates them away.
 4. gbstats fits the CUPED coefficient over the branches being compared and computes an always-valid
    two-sided interval on the relative difference.
 5. Every declared cell is written, in one of five states: `not_started`, `insufficient_data`,
