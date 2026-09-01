@@ -1,0 +1,10 @@
+.ci_job.yaml
+.ci_workflow.yaml
+.DS_Store
+# Recursive, since a bare *.pyc / __pycache__/ only matches at the root and would
+# otherwise copy the host's bytecode (built by a different Python) into the image.
+**/*.pyc
+**/.pytest_cache/
+**/__pycache__/
+venv/
+test_output/

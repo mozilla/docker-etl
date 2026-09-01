@@ -177,11 +177,6 @@ ReproSummary = RootModel[
 ]
 
 
-# Whiteboard token that requests a diagnosis run. It's removed from the bug as
-# soon as the run is scheduled, so re-adding it requests another run.
-DIAGNOSE_REQUEST_TOKEN = "[autowebcompat:diagnose]"
-
-
 class AutowebcompatDiagnosisRequest(CreateRequest):
     bug_id: int
     model: Optional[str] = None
@@ -323,6 +318,14 @@ class BigQueryService:
     WHERE
       resolution = "" AND
       whiteboard NOT LIKE "%[autowebcompat:processed]%" AND
+      number NOT IN (
+        SELECT CAST(JSON_VALUE(extra_data, "$.bug_id") AS INT64)
+        FROM `{self.scheduled_table}`
+        WHERE
+          agent = @agent AND
+          source_key = "bugzilla:creation" AND
+          JSON_VALUE(extra_data, "$.bug_id") IS NOT NULL
+      ) AND
       (
         (@created_since IS NOT NULL AND CAST(creation_time AS DATETIME) > @created_since) OR
         (
@@ -334,23 +337,135 @@ class BigQueryService:
         bug_rows = self.bq_client.query(
             bugs_query,
             parameters=[
+                bigquery.ScalarQueryParameter("agent", "STRING", ReproTask.agent),
                 bigquery.ScalarQueryParameter(
                     "created_since", "DATETIME", created_since
-                )
+                ),
             ],
         )
-        new_bugs = {
-            row.number: NewBugInfo.model_validate(dict(row.items())) for row in bug_rows
-        }
-        bug_ids = list(new_bugs.keys())
+        return self.add_bugzilla_data(
+            {
+                row.number: NewBugInfo.model_validate(dict(row.items()))
+                for row in bug_rows
+            }
+        )
+
+    def get_backlog_bugs(
+        self,
+        latest_new_bugs_repro_run: Optional[datetime],
+    ) -> Mapping[int, NewBugInfo]:
+        """Bugs to reproduce from the backlog, highest impact score first."""
+
+        # Don't schedule anything while this many runs are still in flight,
+        # and add at most batch_size per run
+        max_queue_length = 2
+        batch_size = 3
+        # Runs in flight longer than this are assumed stuck and don't count
+        # towards in flight limit
+        queue_max_age_hours = 6
+        exclude_agents = [ReproTask.agent, DiagnosisTask.agent]
+
+        bugs_query = f"""
+    SELECT number, title, url, keywords, whiteboard, user_story_raw as user_story, creation_time
+    FROM `{self.project["webcompat_knowledge_base"]["scored_site_reports"]}` as bugs
+    WHERE
+      resolution = "" AND
+      whiteboard NOT LIKE "%[autowebcompat:processed]%" AND
+      "webcompat:platform-bug" NOT IN UNNEST(keywords) AND
+      "webcompat:sitepatch-applied" NOT IN UNNEST(keywords) AND
+      CAST(creation_time AS DATETIME) <= IFNULL(
+        @latest_new_bugs_repro_run, DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 WEEK)
+      ) AND
+      -- Bugs that agents have scheduled to reproduce or diagnose are excluded, 
+      -- whether the runs completed or are still in flight
+      number NOT IN (
+        SELECT CAST(JSON_VALUE(extra_data, "$.bug_id") AS INT64)
+        FROM `{self.scheduled_table}`
+        WHERE
+          agent IN UNNEST(@exclude_agents) AND
+          STARTS_WITH(source_key, "bugzilla:") AND
+          JSON_VALUE(extra_data, "$.bug_id") IS NOT NULL
+      ) AND
+      (
+        SELECT COUNT(*)
+        FROM `{self.scheduled_table}` AS scheduled
+        LEFT JOIN `{self.completed_table}` AS completed USING(run_id)
+        WHERE
+          completed.run_id IS NULL AND
+          scheduled.requested_at >
+            DATETIME_SUB(CURRENT_DATETIME(), INTERVAL @queue_max_age_hours HOUR)
+      ) < @max_queue_length
+    ORDER BY score DESC, number ASC
+    LIMIT @batch_size
+    """
+        bug_rows = self.bq_client.query(
+            bugs_query,
+            parameters=[
+                bigquery.ArrayQueryParameter(
+                    "exclude_agents", "STRING", exclude_agents
+                ),
+                bigquery.ScalarQueryParameter(
+                    "latest_new_bugs_repro_run", "DATETIME", latest_new_bugs_repro_run
+                ),
+                bigquery.ScalarQueryParameter(
+                    "max_queue_length", "INT64", max_queue_length
+                ),
+                bigquery.ScalarQueryParameter(
+                    "queue_max_age_hours", "INT64", queue_max_age_hours
+                ),
+                bigquery.ScalarQueryParameter("batch_size", "INT64", batch_size),
+            ],
+        )
+        return self.add_bugzilla_data(
+            {
+                row.number: NewBugInfo.model_validate(dict(row.items()))
+                for row in bug_rows
+            }
+        )
+
+    def add_bugzilla_data(
+        self, bugs: dict[int, NewBugInfo]
+    ) -> Mapping[int, NewBugInfo]:
+        """Fill in comments and attachments from live Bugzilla data, dropping
+        any moco-confidential bugs."""
+        bug_ids = list(bugs.keys())
+        if not bug_ids:
+            return bugs
         fields = ["id", "groups", "comments", "attachments", "cf_user_story"]
-        for result in self.bz_client.bugs(bug_ids, include_fields=fields):
+        try:
+            results = list(self.bz_client.bugs(bug_ids, include_fields=fields))
+        except Exception as e:
+            # Bugzilla fails the whole request if it can't load the content of
+            # deleted attachments. Fetch the bugs one at a time so we only lose
+            # the attachments of the bug that's actually broken.
+            logging.warning(f"Fetching bugs failed, trying one at a time: {e}")
+            without_attachments = [item for item in fields if item != "attachments"]
+            results = []
+            for bug_id in bug_ids:
+                try:
+                    results.extend(self.bz_client.bugs([bug_id], include_fields=fields))
+                except Exception:
+                    logging.warning(
+                        f"Fetching bug {bug_id} failed, trying without attachments"
+                    )
+                    try:
+                        results.extend(
+                            self.bz_client.bugs(
+                                [bug_id], include_fields=without_attachments
+                            )
+                        )
+                    except Exception as bug_error:
+                        logging.error(f"Skipping bug {bug_id}: {bug_error}")
+                        del bugs[bug_id]
+
+        for result in results:
+            assert result.id is not None
             # Do not include moco-confidential bugs
             if result.groups and "mozilla-employee-confidential" in result.groups:
-                del new_bugs[result.id]
+                del bugs[result.id]
                 continue
 
-            bug = new_bugs[result.id]
+            bug = bugs[result.id]
             if result.comments:
                 bug.comments = [
                     item.text for item in result.comments if item.text is not None
@@ -366,9 +481,11 @@ class BigQueryService:
                     if attachment.file_name is not None
                 ]
 
-        return new_bugs
+        return bugs
 
-    def get_diagnosis_requested_bugs(self) -> Mapping[int, DiagnosisBugInfo]:
+    def get_diagnosis_requested_bugs(
+        self, whiteboard_token: str
+    ) -> Mapping[int, DiagnosisBugInfo]:
         """Bugs currently carrying the diagnosis request token.
 
         This is level-triggered on the token being present rather than
@@ -388,7 +505,7 @@ class BigQueryService:
             query,
             parameters=[
                 bigquery.ScalarQueryParameter(
-                    "token_pattern", "STRING", f"%{DIAGNOSE_REQUEST_TOKEN}%"
+                    "token_pattern", "STRING", f"%{whiteboard_token}%"
                 )
             ],
         )
@@ -411,9 +528,9 @@ class BigQueryService:
             assert result.id is not None
             if result.groups and "mozilla-employee-confidential" in result.groups:
                 continue
-            if DIAGNOSE_REQUEST_TOKEN not in (result.whiteboard or ""):
+            if whiteboard_token not in (result.whiteboard or ""):
                 logging.info(
-                    f"Bug {result.id} no longer has {DIAGNOSE_REQUEST_TOKEN}, skipping"
+                    f"Bug {result.id} no longer has {whiteboard_token}, skipping"
                 )
                 continue
             diagnosis_bugs[result.id] = bugs[result.id]
@@ -557,6 +674,12 @@ def try_get_file(url: str, allowed_types: Optional[set[str]] = None) -> Optional
     return data
 
 
+def format_user_story_value(value: str | list[str]) -> str:
+    if isinstance(value, list):
+        return ",".join(value)
+    return value
+
+
 def update_whiteboard(
     bug: bugzilla.Bug, bug_update: BugUpdate, require_tokens: list[str]
 ) -> None:
@@ -588,7 +711,7 @@ def remove_whiteboard(
 
 
 def update_user_story(
-    bug: bugzilla.Bug, bug_update: BugUpdate, require_tokens: Mapping[str, str]
+    bug: bugzilla.Bug, bug_update: BugUpdate, require_tokens: Mapping[str, str | None]
 ) -> None:
     current_user_story = (
         bug_update.bug.cf_user_story
@@ -603,15 +726,22 @@ def update_user_story(
     for key, value in require_tokens.items():
         if key in current_fields:
             current_value = current_fields[key]
-            if isinstance(current_value, list):
+            if value is None:
+                if isinstance(current_value, str):
+                    changes.append(userstory.UserStoryChange.delete(key, current_value))
+                elif isinstance(current_value, list):
+                    for val in current_value:
+                        changes.append(userstory.UserStoryChange.delete(key, val))
+            elif isinstance(current_value, list):
                 if value not in current_value:
                     changes.append(userstory.UserStoryChange.append(key, value))
-            elif value != current_value:
+            else:
                 changes.append(
                     userstory.UserStoryChange.replace(key, current_value, value)
                 )
         else:
-            changes.append(userstory.UserStoryChange.append(key, value))
+            if value is not None:
+                changes.append(userstory.UserStoryChange.append(key, value))
 
     new_value = userstory.update(current_user_story or "", changes)
     if new_value is not None:
@@ -697,21 +827,21 @@ class HackbotTask(ABC):
                 f"Scheduling run with agent {self.agent}, task {self.task_name}, source {request.source_key}, run id {request.run_key}"
             )
             run_ref = self.hackbot_client.create_run(self.get_request_data(request))
-            self.scheduled[request.source_key].append(
-                ScheduledRun(
-                    run_id=run_ref.run_id,
-                    agent=self.agent,
-                    task_name=self.task_name,
-                    source_key=request.source_key,
-                    run_key=request.run_key,
-                    source_time=request.source_time,
-                    requested_at=requested_at,
-                    request_data=request.request_data.model_dump(mode="json"),
-                    extra_data=request.extra_data.model_dump(mode="json")
-                    if request.extra_data
-                    else {},
-                )
+            scheduled_run = ScheduledRun(
+                run_id=run_ref.run_id,
+                agent=self.agent,
+                task_name=self.task_name,
+                source_key=request.source_key,
+                run_key=request.run_key,
+                source_time=request.source_time,
+                requested_at=requested_at,
+                request_data=request.request_data.model_dump(mode="json"),
+                extra_data=request.extra_data.model_dump(mode="json")
+                if request.extra_data
+                else {},
             )
+
+            self.scheduled[request.source_key].append(scheduled_run)
 
         return self.scheduled
 
@@ -870,6 +1000,10 @@ class ReproTask(HackbotTask):
                     elif result.reproduced:
                         require_whiteboard.append("[autowebcompat:repro-success]")
                         require_user_story["autowebcompat-repro-status"] = "success"
+                        if not result.chrome_mask_fixed:
+                            require_whiteboard.append(
+                                DiagnosisTask.whiteboard_request_token
+                            )
                         if result.chrome_mask_fixed is not None:
                             if result.chrome_mask_fixed:
                                 require_whiteboard.append(
@@ -954,18 +1088,22 @@ class ReproTask(HackbotTask):
                         require_whiteboard.append("[autowebcompat:repro-failed]")
                         if result.failure_reason:
                             reason = result.failure_reason
-                        elif result.plan_result is not None and (
-                            "desktop" not in result.plan_result.affects_platforms
-                            or (
-                                result.plan_result.affects_os is not None
-                                and isinstance(result.plan_result.affects_os, list)
-                                and "linux" not in result.plan_result.affects_os
-                            )
-                        ):
-                            reason = "unsupported_platform"
                         else:
                             reason = "unknown"
                         require_user_story["autowebcompat-repro-reason"] = reason
+
+                    if (
+                        result is not None
+                        and result.plan_result is not None
+                        and result.plan_result.affects_os is not None
+                    ):
+                        report_os = format_user_story_value(
+                            result.plan_result.affects_os
+                        )
+                        if report_os:
+                            require_user_story["autowebcompat-repro-report-os"] = (
+                                report_os
+                            )
 
                 update_whiteboard(bug, bug_update, require_whiteboard)
                 update_user_story(bug, bug_update, require_user_story)
@@ -973,6 +1111,41 @@ class ReproTask(HackbotTask):
             raise TypeError(
                 f"Don't know how to update for task {self} and updater type {updater}"
             )
+
+
+class BacklogReproTask(ReproTask):
+    agent: str = "autowebcompat-repro"
+    task_name: str = "repro-backlog"
+
+    def create_new(self) -> Mapping[str, Sequence[ScheduledRun]]:
+        source_key = self.key("bugzilla", "backlog")
+        latest_new_bugs_repro_run = (
+            self.bq_service.get_source_times()
+            .get((ReproTask.agent, ReproTask.task_name), {})
+            .get(ReproTask.key("bugzilla", "creation"))
+        )
+        backlog_bugs = self.bq_service.get_backlog_bugs(latest_new_bugs_repro_run)
+        if not backlog_bugs:
+            logging.info("Not scheduling any backlog bugs for reproduction")
+            return {}
+
+        logging.info(
+            f"Found {len(backlog_bugs)} backlog bugs that require reproduction: "
+            f"{', '.join(str(number) for number in backlog_bugs)}"
+        )
+
+        requests = [
+            ScheduleRequest(
+                source_key=source_key,
+                run_key=self.key(str(bug_number)),
+                source_time=bug_info.creation_time,
+                request_data=bug_info,
+                extra_data=BugExtraData(bug_id=bug_number),
+            )
+            for bug_number, bug_info in backlog_bugs.items()
+        ]
+
+        return self.schedule(requests)
 
 
 class DiagnosisTask(HackbotTask):
@@ -985,6 +1158,8 @@ class DiagnosisTask(HackbotTask):
 
     agent: str = "autowebcompat-diagnosis"
     task_name: str = "diagnosis"
+    whiteboard_request_token = "[autowebcompat:diagnose]"
+    whiteboard_progress_token = "[autowebcompat:diagnosis-in-progress]"
 
     def get_request_data(
         self, request: ScheduleRequest
@@ -994,7 +1169,9 @@ class DiagnosisTask(HackbotTask):
 
     def create_new(self) -> Mapping[str, Sequence[ScheduledRun]]:
         source_key = self.key("bugzilla", "diagnose-flag")
-        requested_bugs = self.bq_service.get_diagnosis_requested_bugs()
+        requested_bugs = self.bq_service.get_diagnosis_requested_bugs(
+            self.whiteboard_request_token
+        )
         logging.info(f"Found {len(requested_bugs)} bugs that requested diagnosis")
 
         if not requested_bugs:
@@ -1038,7 +1215,8 @@ class DiagnosisTask(HackbotTask):
             # next tick. Re-adding it requests a fresh run.
             for bug_id in self.scheduled_bug_ids():
                 bug, bug_update = updater.bug_updates[bug_id]
-                remove_whiteboard(bug, bug_update, [DIAGNOSE_REQUEST_TOKEN])
+                remove_whiteboard(bug, bug_update, [self.whiteboard_request_token])
+                update_whiteboard(bug, bug_update, [self.whiteboard_progress_token])
 
             run_outputs = {
                 run_id: (
@@ -1057,7 +1235,8 @@ class DiagnosisTask(HackbotTask):
             for uuid, (bug_number, output) in run_outputs.items():
                 bug, bug_update = updater.bug_updates[bug_number]
 
-                require_user_story = {}
+                require_user_story: dict[str, str | None] = {}
+                remove_whiteboard(bug, bug_update, [self.whiteboard_progress_token])
                 if isinstance(output, ErrorSummary):
                     require_user_story.update(error_fields)
                 else:
@@ -1066,6 +1245,7 @@ class DiagnosisTask(HackbotTask):
                         require_user_story.update(error_fields)
                     elif result.reproduced and result.root_cause:
                         require_user_story["autowebcompat-diagnosis-status"] = "success"
+                        require_user_story["autowebcompat-diagnosis-reason"] = None
 
                         comment_parts = [
                             "Root cause analysis generated by autowebcompat bot:",
@@ -1239,5 +1419,5 @@ class AutowebcompatJob(EtlJob):
             hackbot_client,
             context.args.autowebcompat_check_pending,
             updaters=[BugzillaUpdater(bz_client)],
-            tasks=[ReproTask, DiagnosisTask],
+            tasks=[ReproTask, BacklogReproTask, DiagnosisTask],
         )

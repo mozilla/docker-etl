@@ -1,5 +1,5 @@
 WITH
-  hackbot_repro AS (
+hackbot_repro AS (
   SELECT
     PARSE_NUMERIC(JSON_VALUE(scheduled.extra_data, "$.bug_id")) AS number,
     DATETIME_DIFF(completed.completed_at, completed.created_at, SECOND) AS execution_time
@@ -8,7 +8,6 @@ WITH
   WHERE scheduled.task_name = 'repro'
     AND STARTS_WITH(scheduled.source_key, "bugzilla:")
 )
-
 SELECT
   reports.number AS number,
   DATE(reports.creation_time) AS creation_date,
@@ -31,6 +30,7 @@ SELECT
   JSON_VALUE(reports.user_story, "$.autowebcompat-repro-reason") AS repro_failure_cause,
   JSON_VALUE(reports.user_story, "$.autowebcompat-repro-chrome-mask-fixed") AS chrome_mask_fixed,
   JSON_VALUE(reports.user_story, "$.autowebcompat-repro-channels") AS repro_channels,
+  JSON_VALUE(reports.user_story, "$.autowebcompat-repro-report-os") AS report_os,
   CASE
     WHEN reports.whiteboard LIKE '%autowebcompat:interv-ua-override-proposed%'
       OR JSON_VALUE(reports.user_story, "$.autowebcompat-repro-chrome-mask-fixed") = "true"
