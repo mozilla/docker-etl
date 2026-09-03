@@ -1,0 +1,8 @@
+.DS_Store
+*.pyc
+__pycache__/
+venv/
+.pytest_cache/
+*.egg-info/
+# --dry-run output, see the README
+test_output/
