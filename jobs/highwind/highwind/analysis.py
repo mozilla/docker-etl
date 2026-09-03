@@ -17,7 +17,8 @@ Desktop experiments only, guardrail metrics only, full recompute every run. Each
 deliberate limit of the proof of concept and is noted where it bites.
 """
 
-import traceback
+import contextlib
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from google.cloud import storage  # type: ignore
@@ -26,6 +27,12 @@ from google.cloud import bigquery
 from . import discovery, gbstats_compute
 from . import metrics as metric_definitions_module
 from . import output_writing, sql_generation, sql_running
+
+logger = logging.getLogger(__name__)
+
+# The logger a run's log table collects from: this package's rather than the root logger, so the
+# table holds what this job said and not what the clients it calls said.
+PACKAGE_LOGGER = __name__.partition(".")[0]
 
 # The covariate window: days before a unit's enrollment used to predict its post-enrollment value.
 # Fixed rather than matched to each window's length, so one pre-period serves every window of a
@@ -60,86 +67,158 @@ def run_daily_job(
     query IS broken for everyone, and it is the case `systemic_failure` exists to catch. Isolation
     still holds for the per-experiment statistics below, which is where experiment-specific faults
     arise.
+
+    The whole run happens inside its log, which is written whether or not the run reaches the end of
+    this function. A run that dies partway is the one its log is worth most for, and under Airflow
+    the only other account of it is a stdout nobody queries.
     """
     outputs = outputs or output_writing.Outputs()
+    write_tables = writes_tables(validate_only, only_slugs, limit, sample_percent, outputs)
     client = bigquery.Client(project=billing_project)
     storage_client = storage.Client()
-    experiments, skipped = discovery.discover(
-        client, as_of, limit=limit, only_slugs=only_slugs
-    )
-    report_selection(experiments, skipped, as_of)
-    if not experiments:
-        return []
+    with collecting_run_log(as_of, client, outputs, write_tables):
+        experiments, skipped = discovery.discover(
+            client, as_of, limit=limit, only_slugs=only_slugs
+        )
+        report_selection(experiments, skipped, as_of)
+        if not experiments:
+            return []
 
-    metrics_by_source = metric_definitions_module.metric_definitions()
-    windows_by_slug = {
-        experiment.slug: run_windows(experiment, as_of, metrics_by_source)
-        for experiment in experiments
-    }
-    run = sql_generation.Run(
-        experiments, windows_by_slug, as_of, COVARIATE_DAYS, sample_percent
-    )
-
-    cells_by_slug, timings, failure = gather_sufficient_statistics(
-        client, run, metrics_by_source, as_of, validate_only
-    )
-    write_blobs = writes_blobs(validate_only, sample_percent, outputs)
-
-    # No lock: `as_completed` yields in this thread, so the accumulation below is single-threaded.
-    summaries, results_by_slug, done = [], {}, 0
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [
-            pool.submit(
-                analyze_experiment,
-                storage_client,
-                experiment,
-                as_of,
-                windows_by_slug[experiment.slug],
-                metrics_by_source,
-                cells_by_slug.get(experiment.slug, {}),
-                failure,
-                outputs,
-                write_blobs,
-            )
+        metrics_by_source = metric_definitions_module.metric_definitions()
+        windows_by_slug = {
+            experiment.slug: run_windows(experiment, as_of, metrics_by_source)
             for experiment in experiments
-        ]
-        for future in as_completed(futures):
-            summary, results = future.result()
-            summaries.append(summary)
-            results_by_slug[summary["slug"]] = results
-            done += 1
-            report_progress(summary, done, len(experiments))
+        }
+        run = sql_generation.Run(
+            experiments, windows_by_slug, as_of, COVARIATE_DAYS, sample_percent
+        )
 
-    if is_partial_run(only_slugs, limit, sample_percent):
-        # A partial run is not the day's complete output, and the write replaces the whole
-        # partition, so letting it through would overwrite the full run's rows. A filter drops
-        # experiments the partition should still hold; a sample keeps every experiment but computes
-        # each from a fraction of its cohort, which is the more dangerous of the two because the
-        # rows it writes look complete.
-        blobs = "blobs written" if write_blobs else "blobs skipped"
-        print(
-            f"\npartial run ({len(experiments)} experiments): {blobs}, tables skipped "
-            f"so the {as_of} partition keeps the full run's rows"
+        cells_by_slug, timings, failure = gather_sufficient_statistics(
+            client, run, metrics_by_source, as_of, validate_only
         )
-    elif outputs.local_blob_dir:
-        # Blobs went to a directory, so there is nowhere for the tables to be part of the same
-        # output. Writing them would put a local run's numbers in the production partition.
-        print(f"\nlocal run: blobs written to {outputs.local_blob_dir}, tables skipped")
-    elif not validate_only:
-        # After the loop, not inside it. Every experiment's rows share one daily partition, so a
-        # per-experiment write could only append, and appending makes a retried run double its own
-        # output. Writing the run together lets the load replace the partition instead.
-        written = output_writing.write_tables(
-            client, as_of, results_by_slug, cells_by_slug, outputs
-        )
-        print(
-            f"\nwrote {written[0]:,} statistics rows and {written[1]:,} "
-            f"sufficient-statistics rows for {as_of}"
-        )
-    report_run(summaries, timings)
-    if not validate_only:
-        report_anomalies(summaries)
-    return summaries
+        write_blobs = writes_blobs(validate_only, sample_percent, outputs)
+
+        # No lock: `as_completed` yields in this thread, so the accumulation below is
+        # single-threaded.
+        summaries, results_by_slug, done = [], {}, 0
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [
+                pool.submit(
+                    analyze_experiment,
+                    storage_client,
+                    experiment,
+                    as_of,
+                    windows_by_slug[experiment.slug],
+                    metrics_by_source,
+                    cells_by_slug.get(experiment.slug, {}),
+                    failure,
+                    outputs,
+                    write_blobs,
+                )
+                for experiment in experiments
+            ]
+            for future in as_completed(futures):
+                summary, results = future.result()
+                summaries.append(summary)
+                results_by_slug[summary["slug"]] = results
+                done += 1
+                report_progress(summary, done, len(experiments))
+
+        if is_partial_run(only_slugs, limit, sample_percent):
+            # A partial run is not the day's complete output, and the write replaces the whole
+            # partition, so letting it through would overwrite the full run's rows. A filter drops
+            # experiments the partition should still hold; a sample keeps every experiment but
+            # computes each from a fraction of its cohort, which is the more dangerous of the two
+            # because the rows it writes look complete.
+            blobs = "blobs written" if write_blobs else "blobs skipped"
+            logger.info(
+                f"partial run ({len(experiments)} experiments): {blobs}, tables skipped "
+                f"so the {as_of} partition keeps the full run's rows"
+            )
+        elif outputs.local_blob_dir:
+            # Blobs went to a directory, so there is nowhere for the tables to be part of the same
+            # output. Writing them would put a local run's numbers in the production partition.
+            logger.info(
+                f"local run: blobs written to {outputs.local_blob_dir}, tables skipped"
+            )
+        elif write_tables:
+            # After the loop, not inside it. Every experiment's rows share one daily partition, so a
+            # per-experiment write could only append, and appending makes a retried run double its
+            # own output. Writing the run together lets the load replace the partition instead.
+            written = output_writing.write_tables(
+                client, as_of, results_by_slug, cells_by_slug, outputs
+            )
+            logger.info(
+                f"wrote {written[0]:,} statistics rows and {written[1]:,} "
+                f"sufficient-statistics rows for {as_of}"
+            )
+        report_run(summaries, timings)
+        if not validate_only:
+            report_anomalies(summaries)
+        # Logged as well as returned, because the exit code it produces is not a thing anyone can
+        # query afterwards for the reason the run ended.
+        if systemic_failure(summaries):
+            logger.error("no experiment produced a result: the run failed as a whole")
+        return summaries
+
+
+@contextlib.contextmanager
+def collecting_run_log(as_of, client, outputs, write_tables):
+    """Collect everything the block logs, and write it whether or not the block finishes.
+
+    A context manager rather than a `try` in the caller, so that the behaviour this table exists
+    for, a run that died recording why, is a property of something exercisable without a run.
+    """
+    run_log = start_run_log(as_of)
+    try:
+        yield run_log
+    finally:
+        finish_run_log(run_log, client, as_of, outputs, write_tables)
+
+
+def start_run_log(as_of):
+    """Attach a handler collecting this run's log records, and return it.
+
+    The level is set here rather than inherited from whatever configured stdout, because what the
+    log table holds should not depend on how loud the terminal was asked to be.
+    """
+    package_logger = logging.getLogger(PACKAGE_LOGGER)
+    package_logger.setLevel(logging.INFO)
+    run_log = output_writing.RunLog(as_of)
+    package_logger.addHandler(run_log)
+    return run_log
+
+
+def finish_run_log(run_log, client, as_of, outputs, write_tables):
+    """Write the run's log, and detach it whether or not that write happens.
+
+    Detached before the write rather than after it, so that a write which fails and says so does
+    not append its own complaint to the records it is failing to write.
+    """
+    logging.getLogger(PACKAGE_LOGGER).removeHandler(run_log)
+    if not write_tables:
+        return 0
+    try:
+        return output_writing.write_log_table(client, as_of, run_log.rows, outputs)
+    # Raising would replace whatever ended the run with a failure to record it, which is the one
+    # error worth less than the error it would hide.
+    except Exception:
+        logger.exception(f"could not write the run log to {outputs.log_table}")
+        return 0
+
+
+def writes_tables(validate_only, only_slugs, limit, sample_percent, outputs):
+    """Whether this run may write the tables, its log among them.
+
+    One rule for all three, rather than a rule of the log's own. A partial run's rows do not belong
+    in a partition the full run's rows belong in, a local run has nowhere for the tables to be part
+    of the same output, and a validation run executes nothing to have results of; in each case a log
+    describing that run does not belong in the day's partition either, since it would replace the
+    log of the run whose rows are there.
+    """
+    if validate_only or outputs.local_blob_dir:
+        return False
+    return not is_partial_run(only_slugs, limit, sample_percent)
 
 
 def is_partial_run(only_slugs, limit, sample_percent):
@@ -189,7 +268,9 @@ def gather_sufficient_statistics(client, run, metrics_by_source, as_of, validate
     # Recorded against every experiment rather than raised, so a source failure becomes an error
     # grid instead of an exception that ends the run having written nothing.
     except Exception as error:
-        traceback.print_exc()
+        # Logged once here rather than once per experiment: every experiment's grid records it, and
+        # the reason it happened is a property of the run.
+        logger.exception("the shared scan failed, so every experiment records an error grid")
         return {}, [], error
 
 
@@ -202,9 +283,13 @@ def report_progress(summary, done, total):
     """
     flag = "ERROR" if (summary["states"].get("error") or summary["error"]) else "ok   "
     reason = f"  {summary['error']}" if summary["error"] else ""
-    print(
+    # Progress rather than a failure, at whatever the outcome, so that a query for this run's
+    # failures returns them and not a line per experiment analysed. The failures themselves are
+    # logged where they are caught, with the traceback this line has no room for.
+    logger.info(
         f"[{done:3d}/{total}] {flag} {summary['slug'][:52]:52s} "
-        f"{summary['cells']:5d} cells{reason}"
+        f"{summary['cells']:5d} cells{reason}",
+        extra={"experiment_slug": summary["slug"]},
     )
 
 
@@ -251,6 +336,11 @@ def analyze_experiment(
         return experiment_summary(experiment, results), results
     # The whole point is to record it, not to raise.
     except Exception as error:
+        # An experiment that failed here may produce no row at all, and a row is the only thing the
+        # results table can carry an error on, so this is the one place the failure is recorded.
+        logger.exception(
+            f"{experiment.slug} failed", extra={"experiment_slug": experiment.slug}
+        )
         try:
             return failed_summary(
                 storage_client,
@@ -266,7 +356,10 @@ def analyze_experiment(
             # A failure while recording a failure must not propagate: it would come back out of
             # future.result() and cost every other experiment its results, which is exactly the
             # isolation this design claims to have.
-            traceback.print_exc()
+            logger.exception(
+                f"{experiment.slug} failed while recording a failure",
+                extra={"experiment_slug": experiment.slug},
+            )
             return (
                 experiment_summary(
                     experiment,
@@ -305,7 +398,10 @@ def failed_summary(
             # Recording the error grid must not depend on the thing that just failed. The grid is
             # returned either way, so the failure stays visible in this run's accounting and in the
             # table written at the end, even when the blob could not be written.
-            traceback.print_exc()
+            logger.exception(
+                f"could not write {experiment.slug}'s blob",
+                extra={"experiment_slug": experiment.slug},
+            )
     return experiment_summary(experiment, results, error=error), results
 
 
@@ -344,16 +440,20 @@ def experiment_summary(experiment, results, error=None):
 
 
 def report_selection(experiments, skipped, as_of):
-    """Print which experiments the run will analyse, and why the others were skipped."""
-    print(
+    """Report which experiments the run will analyse, and why the others were skipped.
+
+    A skip is a warning rather than progress: it is the run declining to analyse a recipe that is
+    live, which someone reading the corpus later has to be able to find the reason for.
+    """
+    logger.info(
         f"as_of {as_of}: {len(experiments)} experiments to analyse, {len(skipped)} skipped"
     )
     for slug, why in skipped:
-        print(f"   skipped {slug}: {why}")
+        logger.warning(f"skipped {slug}: {why}", extra={"experiment_slug": slug})
 
 
 def report_run(summaries, timings):
-    """Print the per-run operational summary: what it consumed and how many cells failed.
+    """Report the per-run operational summary: what it consumed and how many cells failed.
 
     Bytes scanned and slot-hours are consumption rather than a price, since the slots are a shared
     reservation. Both are properties of the run and not of an experiment: one pass over each source
@@ -362,20 +462,20 @@ def report_run(summaries, timings):
     cells = sum(summary["cells"] for summary in summaries)
     errors = sum(summary["states"].get("error", 0) for summary in summaries)
     failed = sum(1 for summary in summaries if summary["error"])
-    print(
-        f"\n{len(summaries)} experiments ({failed} failed outright), {cells:,} cells, "
+    logger.info(
+        f"{len(summaries)} experiments ({failed} failed outright), {cells:,} cells, "
         f"{sum(timing['gigabytes_scanned'] for timing in timings) / 1000:.2f} TB scanned, "
         f"{sum(timing['slot_hours'] or 0 for timing in timings):.1f} slot-hours "
         f"over {len(timings)} queries"
     )
     for timing in timings:
-        print(
-            f"   {timing['source']:30s} {timing['wall_seconds']:8.1f}s "
+        logger.info(
+            f"{timing['source']:30s} {timing['wall_seconds']:8.1f}s "
             f"{timing['gigabytes_scanned'] / 1000:7.2f} TB "
             f"{timing['slot_hours'] if timing['slot_hours'] is not None else '-'} slot-h "
             f"{timing['rows']:,} rows"
         )
-    print(
+    logger.info(
         f"error rate {errors / cells:.2%} ({errors:,} of {cells:,} cells)"
         if cells
         else "no cells produced"
@@ -432,6 +532,6 @@ def report_anomalies(summaries):
         if summary["cells"] == 0:
             suspicious.append((summary["slug"], "no cells: no window has matured yet"))
     if suspicious:
-        print(f"\n{len(suspicious)} experiments to look at:")
+        logger.info(f"{len(suspicious)} experiments to look at:")
         for slug, why in suspicious:
-            print(f"   {slug[:56]:56s} {why}")
+            logger.warning(f"{slug}: {why}", extra={"experiment_slug": slug})
