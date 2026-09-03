@@ -1,8 +1,9 @@
 import argparse
 import logging
-from datetime import date, datetime, timedelta
-from typing import Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
+from datetime import UTC, date, datetime, timedelta
+from typing import Optional
 
 import pydantic
 
@@ -84,7 +85,10 @@ def update_chrome_use_counters(
     if recreate and client.write:
         client.delete_table(use_counters_table)
     last_import_table, last_updated_at = get_last_import(project, client)
-    if last_updated_at is not None and last_updated_at.date() == datetime.now().date():
+    if (
+        last_updated_at is not None
+        and last_updated_at.date() == datetime.now(tz=UTC).date()
+    ):
         logging.info("Already updated use counter data today")
         return
 
@@ -131,7 +135,7 @@ def update_chrome_use_counters(
         use_counters_table, use_counters_table.schema, updates_json, overwrite=recreate
     )
     logging.info("Updating last import time")
-    client.insert_rows(last_import_table, [{"run_at": datetime.now()}])
+    client.insert_rows(last_import_table, [{"run_at": datetime.now(tz=UTC)}])
 
 
 class ChromeUseCountersJob(EtlJob):

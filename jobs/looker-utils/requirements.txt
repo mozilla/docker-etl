@@ -2,5 +2,5 @@ click==8.0.4
 google-cloud-bigquery==3.22.0
 google-cloud-pubsub==2.34.0
 henry==0.4.4
-looker-sdk==25.16.0
+looker-sdk==26.12.0
 pandas==2.0.3

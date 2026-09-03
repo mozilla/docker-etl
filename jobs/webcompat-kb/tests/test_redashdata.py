@@ -2,6 +2,7 @@ import pathlib
 
 import pytest
 
+from webcompat_kb.commands.update_redash import ParameterResolver, ReferenceResolver
 from webcompat_kb.metrics.metrics import (
     CountMetricType,
     SiteReportsFieldMetric,
@@ -13,7 +14,6 @@ from webcompat_kb.redashdata import (
     RedashQueryTemplate,
     RedashTemplateRenderer,
 )
-from webcompat_kb.commands.update_redash import ReferenceResolver, ParameterResolver
 
 
 @pytest.fixture
