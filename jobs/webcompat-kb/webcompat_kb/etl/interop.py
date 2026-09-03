@@ -39,7 +39,10 @@ class InteropYear:
     proposals_open: datetime
 
 
-interop_years = [InteropYear(2026, datetime(2025, 9, 4, tzinfo=UTC))]
+interop_years = [
+    InteropYear(2026, datetime(2025, 9, 4, tzinfo=UTC)),
+    InteropYear(2026, datetime(2026, 9, 3, tzinfo=UTC)),
+]
 
 
 def get_last_import(
