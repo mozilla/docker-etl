@@ -1259,6 +1259,14 @@ class DiagnosisTask(HackbotTask):
                         ]
                         if result.evidence:
                             comment_parts += ["", "Evidence:", "", result.evidence]
+
+                        footer = (
+                            "If you'd like to provide feedback on this comment, "
+                            "please use the 👍 or 👎 reaction."
+                        )
+
+                        comment_parts += ["", "---", "", footer]
+
                         bug_update.bug.comment = bugzilla.Comment(
                             body="\n".join(comment_parts)
                         )
