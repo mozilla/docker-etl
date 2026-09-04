@@ -1,0 +1,2 @@
+name = "interop_bugs"
+description = "Interop proposals linked to bugzilla bugs via either explicit links or web-features ids on bugs"
