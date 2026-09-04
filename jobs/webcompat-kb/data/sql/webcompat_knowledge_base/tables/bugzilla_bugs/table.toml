@@ -98,3 +98,48 @@ mode = "REPEATED"
 type = "STRING"
 mode = "REPEATED"
 
+[attachments]
+type = "RECORD"
+mode = "REPEATED"
+
+[attachments.fields.id]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[attachments.fields.file_name]
+mode = "REQUIRED"
+type = "STRING"
+[attachments.fields.summary]
+mode = "REQUIRED"
+type = "STRING"
+[attachments.fields.content_type]
+mode = "REQUIRED"
+type = "STRING"
+
+[attachments.fields.creator]
+mode = "REQUIRED"
+type = "STRING"
+
+[attachments.fields.creation_time]
+mode = "REQUIRED"
+type = "TIMESTAMP"
+
+[attachments.fields.last_change_time]
+mode = "REQUIRED"
+type = "TIMESTAMP"
+
+[attachments.fields.size]
+mode = "REQUIRED"
+type = "INTEGER"
+
+[attachments.fields.is_private]
+mode = "REQUIRED"
+type = "BOOLEAN"
+
+[attachments.fields.is_obsolete]
+mode = "REQUIRED"
+type = "BOOLEAN"
+
+[attachments.fields.is_patch]
+mode = "REQUIRED"
+type = "BOOLEAN"
