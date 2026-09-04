@@ -4,11 +4,18 @@ Two destinations, for two different readers. BigQuery keeps the corpus queryable
 which is what makes cross-experiment context and meta-analysis possible and lets a result be
 inspected without opening a blob. GCS is the seam Experimenter reads, matching where the enrollment
 funnel already writes from this same Airflow.
+
+A third table holds what the run logged. A cell that failed is already queryable, because the
+results grid is written whole and carries a state and an error, but an experiment that failed before
+producing any cell has no row to carry one, and neither has a refused recipe or a run-level event.
+Those reach stdout, which under Airflow is the account nobody reads.
 """
 
 import datetime
 import json
+import logging
 import pathlib
+import traceback
 from dataclasses import dataclass
 
 from google.cloud import bigquery
@@ -19,13 +26,19 @@ RESULTS_TABLE = "moz-fx-data-experiments.highwind_poc.highwind_statistics_v1"
 SUFFICIENT_STATS_TABLE = (
     "moz-fx-data-experiments.highwind_poc.highwind_sufficient_stats_v1"
 )
+LOG_TABLE = "moz-fx-data-experiments.highwind_poc.highwind_logs_v1"
 BLOB_PREFIX = "gs://mozanalysis/highwind"
 PIPELINE_VERSION = "poc-1"
 
-# The column both tables are partitioned on, and the run date every row carries.
+# What every log row is attributed to. Jetstream's log handler carries the same column so one table
+# can hold several producers' logs, and it is kept here for the same reason the column names below
+# are: adopting that handler in place of this one should be a swap rather than a migration.
+LOG_SOURCE = "highwind"
+
+# The column every table is partitioned on, and the run date every row carries.
 PARTITION_FIELD = "as_of_date"
 
-# The column both tables are clustered on. Reading one experiment's results is the common query, so
+# The column every table is clustered on. Reading one experiment's results is the common query, so
 # clustering on the slug lets it prune blocks rather than scan the whole partition. It matters more
 # as the corpus grows, since a partition holds every experiment analysed that day.
 CLUSTERING_FIELDS = ["experiment_slug"]
@@ -233,10 +246,105 @@ SUFFICIENT_STATS_SCHEMA = [
     ),
 ]
 
+# One row per log record the run emitted. The columns after the first two are the ones Jetstream's
+# own BigQuery log handler writes, names included, so that adopting that handler here later is a
+# swap rather than a rewrite of everything reading this table.
+LOG_SCHEMA = [
+    bigquery.SchemaField(
+        "as_of_date",
+        "DATE",
+        description="Run date the record was logged for. Partition column.",
+    ),
+    bigquery.SchemaField(
+        "experiment_slug",
+        "STRING",
+        description=(
+            "Experiment the record is about, NULL for a record about the run as a whole. "
+            "Jetstream's column of this concept is named experiment; it is named for the slug "
+            "here to match the two tables beside it, which is also what lets it be the clustering "
+            "column they cluster on."
+        ),
+    ),
+    bigquery.SchemaField(
+        "timestamp", "TIMESTAMP", description="When the record was logged, in UTC."
+    ),
+    bigquery.SchemaField(
+        "log_level",
+        "STRING",
+        description=(
+            "INFO for progress and for what the run consumed, WARNING for a recipe the run "
+            "refused to analyse and for a result that ran but does not look like an analysis, "
+            "ERROR for a failure."
+        ),
+    ),
+    bigquery.SchemaField("message", "STRING", description="The record's message."),
+    bigquery.SchemaField(
+        "exception",
+        "STRING",
+        description=(
+            "Formatted traceback of the exception the record carries, NULL when it carries none. "
+            "The traceback rather than the exception's text, because the line that raised is the "
+            "diagnosis and the message does not carry it."
+        ),
+    ),
+    bigquery.SchemaField(
+        "exception_type",
+        "STRING",
+        description="Class name of that exception, which is what an error rate groups by.",
+    ),
+    bigquery.SchemaField(
+        "filename", "STRING", description="File the record was logged from."
+    ),
+    bigquery.SchemaField(
+        "func_name", "STRING", description="Function the record was logged from."
+    ),
+    bigquery.SchemaField(
+        "source",
+        "STRING",
+        description=(
+            "Which producer wrote the row, so one table can hold more than this job's logs."
+        ),
+    ),
+    bigquery.SchemaField(
+        "metric",
+        "STRING",
+        description="Metric the record is about, NULL when it is about none.",
+    ),
+    bigquery.SchemaField(
+        "statistic",
+        "STRING",
+        description="Statistic the record is about, NULL when it is about none.",
+    ),
+    bigquery.SchemaField(
+        "analysis_basis",
+        "STRING",
+        description=(
+            "Always NULL. Carried by the handler this schema follows and unimplemented here, "
+            "since this job analyses on enrollment alone; declared so that implementing it is a "
+            "value to fill rather than a column to add."
+        ),
+    ),
+    bigquery.SchemaField(
+        "segment",
+        "STRING",
+        description=(
+            "Always NULL, for the same reason as analysis_basis: this job analyses no segments."
+        ),
+    ),
+    bigquery.SchemaField(
+        "analysis_period",
+        "STRING",
+        description=(
+            "Always NULL, for the same reason again. The window is this job's equivalent, and it "
+            "is a property of a cell, which the results table already carries one of per row."
+        ),
+    ),
+]
+
 
 @dataclass(frozen=True)
 class Outputs:
-    """Where one run's three outputs go.
+    """Where one run's outputs go.
 
     An argument rather than module state, so a writer's behaviour is a function of what it was
     called with. A local run overrides the tables and sends blobs to a directory instead of GCS.
@@ -244,6 +352,7 @@ class Outputs:
 
     results_table: str = RESULTS_TABLE
     sufficient_stats_table: str = SUFFICIENT_STATS_TABLE
+    log_table: str = LOG_TABLE
     blob_prefix: str = BLOB_PREFIX
     # Set for a local run: blobs go to this directory instead of to GCS.
     local_blob_dir: str | None = None
@@ -331,6 +440,92 @@ def write_tables(client, as_of, results_by_slug, cells_by_slug, outputs):
         client, outputs.sufficient_stats_table, SUFFICIENT_STATS_SCHEMA, stats_rows, as_of
     )
     return len(results_rows), len(stats_rows)
+
+
+class RunLog(logging.Handler):
+    """Collect the records a run logs, so the run can write them as one load job at the end.
+
+    A handler rather than a collector passed down through the analysis, so that anything which logs
+    is recorded without having been handed somewhere to record it. That matters for the failures
+    this table exists for, which are caught in places that have no reason to know a table is being
+    written.
+
+    A record becomes a row on arrival rather than at the write, because it holds the live traceback
+    of whatever raised and the write can come long after that frame is gone. Nothing flushes on a
+    capacity, unlike the buffering handler this is otherwise shaped like: the write replaces the run
+    date's partition, so a second flush would leave the table holding only the records that arrived
+    after the first.
+    """
+
+    def __init__(self, as_of, source=LOG_SOURCE):
+        super().__init__(level=logging.INFO)
+        self.as_of = as_of
+        self.source = source
+        self.rows = []
+
+    def emit(self, record):
+        try:
+            self.rows.append(log_row(record, self.as_of, self.source))
+        # A handler that raises reports the fault at the site of the log rather than at the site of
+        # the fault, so a record this cannot represent would read as a bug in whatever logged it.
+        except Exception:
+            self.handleError(record)
+
+
+def log_row(record, as_of, source):
+    """One log record as a row of the log table.
+
+    What a record is about beyond its message, the experiment and the metric, arrives as logging's
+    `extra` and so lands in the record's own namespace, which is where these are read from. Most
+    records carry none of it, which is why each is optional rather than an argument.
+    """
+    fields = vars(record)
+    exception_type, formatted = exception_columns(record.exc_info)
+    return dict(
+        as_of_date=as_of.isoformat(),
+        experiment_slug=fields.get("experiment_slug"),
+        timestamp=datetime.datetime.fromtimestamp(
+            record.created, datetime.timezone.utc
+        ).isoformat(),
+        log_level=record.levelname,
+        message=record.getMessage(),
+        exception=formatted,
+        exception_type=exception_type,
+        filename=record.filename,
+        func_name=record.funcName,
+        source=source,
+        metric=fields.get("metric"),
+        statistic=fields.get("statistic"),
+        # Declared and unfilled, so that implementing either is a value to write rather than a
+        # column to add and a reader to change. See their descriptions in LOG_SCHEMA.
+        analysis_basis=None,
+        segment=None,
+        analysis_period=None,
+    )
+
+
+def exception_columns(exc_info):
+    """The exception a record carries, as its class name and its formatted traceback.
+
+    The absent case is tested on the exception rather than on the tuple, because logging leaves a
+    record's `exc_info` a tuple of Nones when it is asked to log an exception with nothing in
+    flight, and that tuple is as truthy as a real one.
+    """
+    if not exc_info or exc_info[0] is None:
+        return None, None
+    return exc_info[0].__name__, "".join(traceback.format_exception(*exc_info))
+
+
+def write_log_table(client, as_of, rows, outputs):
+    """Write what the run logged as the whole contents of its date's partition.
+
+    Replaced rather than appended for the reason the tables above are, and with the same
+    consequence: a retry's log replaces the log of the attempt it retried, so the partition
+    describes the run that produced the day's results rather than every attempt at them.
+    """
+    ensure_table(client, outputs.log_table, LOG_SCHEMA)
+    replace_partition(client, outputs.log_table, LOG_SCHEMA, rows, as_of)
+    return len(rows)
 
 
 def ensure_table(client, table, schema):
