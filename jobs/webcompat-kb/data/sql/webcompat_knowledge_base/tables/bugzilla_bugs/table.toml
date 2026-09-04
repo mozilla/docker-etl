@@ -143,3 +143,47 @@ type = "BOOLEAN"
 [attachments.fields.is_patch]
 mode = "REQUIRED"
 type = "BOOLEAN"
+
+[comments]
+type = "RECORD"
+mode = "REPEATED"
+
+[comments.fields.id]
+mode = "REQUIRED"
+type = "INTEGER"
+
+[comments.fields.count]
+mode = "REQUIRED"
+type = "INTEGER"
+
+[comments.fields.creator]
+mode = "REQUIRED"
+type = "STRING"
+
+[comments.fields.creation_time]
+mode = "REQUIRED"
+type = "TIMESTAMP"
+
+[comments.fields.is_private]
+mode = "REQUIRED"
+type = "BOOLEAN"
+
+[comments.fields.attachment_id]
+mode = "NULLABLE"
+type = "INTEGER"
+
+[comments.fields.tags]
+mode = "REPEATED"
+type = "STRING"
+
+[comments.fields.reactions]
+type = "RECORD"
+mode = "REPEATED"
+
+[comments.fields.reactions.fields.name]
+mode = "REQUIRED"
+type = "STRING"
+
+[comments.fields.reactions.fields.count]
+mode = "REQUIRED"
+type = "INTEGER"
