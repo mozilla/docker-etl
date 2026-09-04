@@ -41,7 +41,7 @@ class InteropYear:
 
 interop_years = [
     InteropYear(2026, datetime(2025, 9, 4, tzinfo=UTC)),
-    InteropYear(2026, datetime(2026, 9, 3, tzinfo=UTC)),
+    InteropYear(2027, datetime(2026, 9, 3, tzinfo=UTC)),
 ]
 
 
