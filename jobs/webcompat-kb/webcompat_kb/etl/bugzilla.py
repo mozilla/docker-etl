@@ -91,19 +91,6 @@ class Attachment(BaseModel):
     is_patch: bool
 
 
-def reactions_to_list(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return [{"name": name, "count": count} for name, count in value.items()]
-    return value
-
-
-class Reaction(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    name: str
-    count: int
-
-
 class Comment(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -114,7 +101,6 @@ class Comment(BaseModel):
     is_private: bool
     attachment_id: Optional[int] = None
     tags: list[str]
-    reactions: Annotated[list[Reaction], BeforeValidator(reactions_to_list)]
 
 
 class Bug(BaseModel):

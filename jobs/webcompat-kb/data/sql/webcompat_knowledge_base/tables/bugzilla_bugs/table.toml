@@ -175,15 +175,3 @@ type = "INTEGER"
 [comments.fields.tags]
 mode = "REPEATED"
 type = "STRING"
-
-[comments.fields.reactions]
-type = "RECORD"
-mode = "REPEATED"
-
-[comments.fields.reactions.fields.name]
-mode = "REQUIRED"
-type = "STRING"
-
-[comments.fields.reactions.fields.count]
-mode = "REQUIRED"
-type = "INTEGER"
