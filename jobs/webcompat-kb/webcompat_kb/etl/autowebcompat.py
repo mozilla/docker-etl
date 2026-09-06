@@ -559,7 +559,7 @@ class BigQueryService:
         rows = [CompleteRun.from_rundoc(item).to_json() for item in complete_runs]
         self.bq_client.insert_rows(self.completed_table, rows)
 
-    def insert_posted_comments(self, posted_comments: Iterable[PostedComment]) -> None:
+    def insert_comment_records(self, posted_comments: Iterable[PostedComment]) -> None:
         rows = [item.to_json() for item in posted_comments]
         self.bq_client.insert_rows(self.comment_table, rows)
 
@@ -1395,7 +1395,7 @@ def run(
                 task_runner.populate_updates(updater)
         updater.update()
         if isinstance(updater, BugzillaUpdater) and updater.posted_comments:
-            bq_service.insert_posted_comments(updater.posted_comments)
+            bq_service.insert_comment_records(updater.posted_comments)
 
     bq_service.insert_new_runs(itertools.chain.from_iterable(new_runs.values()))
     bq_service.insert_complete_runs(complete_runs.values())
