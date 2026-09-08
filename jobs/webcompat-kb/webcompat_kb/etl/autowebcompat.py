@@ -1298,7 +1298,7 @@ class DiagnosisTask(HackbotTask):
                             comment_parts += ["", "Evidence:", "", result.evidence]
 
                         footer = (
-                            "If you'd like to provide feedback on this comment, "
+                            "If you'd like to provide feedback on diagnosis, "
                             "please use the 👍 or 👎 reaction."
                         )
 
