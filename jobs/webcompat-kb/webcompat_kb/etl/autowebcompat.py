@@ -214,7 +214,7 @@ class DiagnosisBugInfo(BaseModel):
 
 
 class PostedComment(BaseModel):
-    """A comment posted to a bug by a hackbot run"""
+    """A comment posted to a bug by autowebcompat"""
 
     comment_id: int
     bug_number: int
@@ -235,7 +235,7 @@ class BigQueryService:
         self.scheduled_table = project["autowebcompat"]["hackbot_scheduled"].table()
         self.completed_table = project["autowebcompat"]["hackbot_completed"].table()
         self.comment_table = project["autowebcompat"][
-            "hackbot_bugzilla_comment"
+            "autowebcompat_bugzilla_comment"
         ].table()
 
     def get_source_times(

@@ -1,3 +1,0 @@
-name = "hackbot_bugzilla_comment"
-description = "Bugzilla comments posted by hackbot runs"
-etl=["autowebcompat"]
