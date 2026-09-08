@@ -31,6 +31,7 @@ from .etl import (
     user_reports_aggregate,  # noqa: F401
     interventions,  # noqa: F401
     autowebcompat,  # noqa: F401
+    autowebcompat_feedback,  # noqa: F401
     web_bugs,  # noqa: F401
 )
 

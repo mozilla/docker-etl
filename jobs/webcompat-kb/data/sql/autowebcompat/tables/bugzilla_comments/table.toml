@@ -9,3 +9,7 @@ mode = "REQUIRED"
 [run_id]
 type = "STRING"
 mode = "REQUIRED"
+
+[is_readable]
+type = "BOOLEAN"
+mode = "REQUIRED"
