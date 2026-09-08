@@ -91,12 +91,25 @@ class Attachment(BaseModel):
     is_patch: bool
 
 
+class Comment(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: int
+    count: int
+    creator: str
+    creation_time: datetime
+    is_private: bool
+    attachment_id: Optional[int] = None
+    tags: list[str]
+
+
 class Bug(BaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
 
     id: int = Field(serialization_alias="number")
     alias: Optional[str] = None
     attachments: list[Attachment]
+    comments: list[Comment]
     summary: str = Field(serialization_alias="title")
     status: str
     resolution: str
@@ -170,6 +183,7 @@ class Bug(BaseModel):
                 "attachments": [
                     Attachment.model_validate(item) for item in row.attachments
                 ],
+                "comments": [Comment.model_validate(item) for item in row.comments],
                 "summary": row.title,
                 "status": row.status,
                 "resolution": row.resolution,
@@ -499,17 +513,24 @@ class BugCache(Mapping):
 
         bugs_fetched = set()
 
+        exclude_fields = ["attachments.data", "comments.text", "comments.raw_text"]
+
         try:
             if params is not None:
                 bugs = self.bz_client.search_as(
                     query=params,
                     bug_type=Bug,
-                    exclude_fields=["attachments.data"],
+                    exclude_fields=exclude_fields,
                     page_size=100,
                 )
             else:
                 assert bug_ids is not None
-                bugs = self.bz_client.bugs_as(bug_ids, Bug, page_size=200)
+                bugs = self.bz_client.bugs_as(
+                    bug_ids,
+                    Bug,
+                    exclude_fields=exclude_fields,
+                    page_size=200,
+                )
             logging.info(f"Got {len(bugs)} bugs")
             for bug in bugs:
                 self.bugs[bug.id] = bug
