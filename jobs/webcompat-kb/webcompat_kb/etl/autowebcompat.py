@@ -1293,11 +1293,21 @@ class DiagnosisTask(HackbotTask):
                             "",
                             result.root_cause,
                         ]
+
                         if result.evidence:
                             comment_parts += ["", "Evidence:", "", result.evidence]
+
+                        footer = (
+                            "If you'd like to provide feedback on this comment, "
+                            "please use the 👍 or 👎 reaction."
+                        )
+
+                        comment_parts += ["", "---", "", footer]
+
                         bug_update.add_comment = bugzilla.CommentCreate(
                             comment="\n".join(comment_parts)
                         )
+
                         bug_update.run_id = uuid
 
                         if result.testcase_url:
