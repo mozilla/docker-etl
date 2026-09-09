@@ -23,7 +23,7 @@ all_bugs AS (
   GROUP BY issue
 )
 
-SELECT interop_proposals.issue, interop_proposals.title, interop_proposals.proposal_type, interop_proposals.features, interop_proposals.state, all_bugs.bugs as bugs
+SELECT interop_proposals.year, interop_proposals.issue, interop_proposals.title, interop_proposals.proposal_type, interop_proposals.features, interop_proposals.updated_at, interop_proposals.state, all_bugs.bugs as bugs
 FROM `{{ ref('interop_proposals') }}` AS interop_proposals
 LEFT JOIN all_bugs USING(issue)
 ORDER BY issue ASC
