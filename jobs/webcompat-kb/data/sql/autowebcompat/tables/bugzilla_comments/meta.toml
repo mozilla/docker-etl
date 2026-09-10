@@ -1,0 +1,3 @@
+name = "bugzilla_comments"
+description = "Bugzilla comments posted by autowebcompat"
+etl=["autowebcompat"]
