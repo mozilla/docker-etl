@@ -99,8 +99,8 @@ class FakeStorage:
         return FakeBucket(name)
 
 
-def log_rows_of(emit, as_of=AS_OF):
-    """The rows a run log makes of whatever `emit` logs through a logger of its own."""
+def run_log_of(emit, as_of=AS_OF):
+    """The run log, and its rows, for whatever `emit` logs through a logger of its own."""
     run_log = output_writing.RunLog(as_of)
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
@@ -109,7 +109,12 @@ def log_rows_of(emit, as_of=AS_OF):
         emit(logger)
     finally:
         logger.removeHandler(run_log)
-    return run_log.rows
+    return run_log, run_log.rows
+
+
+def log_rows_of(emit, as_of=AS_OF):
+    """The rows a run log makes of whatever `emit` logs through a logger of its own."""
+    return run_log_of(emit, as_of)[1]
 
 
 def write_one_run(client, outputs=None):
@@ -317,7 +322,9 @@ def test_the_columns_this_job_does_not_fill_yet_are_declared_and_left_empty():
     assert rows[0]["analysis_period"] is None
 
 
-def test_a_runs_whole_log_is_one_load_into_its_own_dates_partition():
+def test_a_runs_whole_log_is_one_appending_load_carrying_its_own_dates():
+    # Appended, and to the table rather than to a partition decorator, so the rows land in the
+    # partition their own as_of_date names.
     def emit(logger):
         logger.info("the run started")
         logger.warning("a recipe was skipped")
@@ -326,25 +333,61 @@ def test_a_runs_whole_log_is_one_load_into_its_own_dates_partition():
     client = RecordingClient()
     rows = log_rows_of(emit)
 
-    written = output_writing.write_log_table(
-        client, AS_OF, rows, output_writing.Outputs()
-    )
+    written = output_writing.write_log_table(client, rows, output_writing.Outputs())
 
     assert written == 3
-    assert [target for target, _, _ in client.loads] == [
-        f"{output_writing.LOG_TABLE}$20260801"
-    ]
+    assert [target for target, _, _ in client.loads] == [output_writing.LOG_TABLE]
     _, loaded, config = client.loads[0]
     assert len(loaded) == 3
-    assert config.write_disposition == "WRITE_TRUNCATE"
+    assert {row["as_of_date"] for row in loaded} == {AS_OF.isoformat()}
+    assert config.write_disposition == "WRITE_APPEND"
     assert config.autodetect is False
+
+
+def test_rerunning_a_date_keeps_the_earlier_attempts_log_rather_than_replacing_it():
+    # The failed attempt is usually why the rerun exists, so replacing the date's partition would
+    # delete the explanation on the way to producing the fix.
+    client = RecordingClient()
+    first = log_rows_of(lambda logger: logger.error("the first attempt died"))
+    second = log_rows_of(lambda logger: logger.info("the rerun succeeded"))
+
+    output_writing.write_log_table(client, first, output_writing.Outputs())
+    output_writing.write_log_table(client, second, output_writing.Outputs())
+
+    dispositions = {config.write_disposition for _, _, config in client.loads}
+    assert dispositions == {"WRITE_APPEND"}
+    assert all(target == output_writing.LOG_TABLE for target, _, _ in client.loads)
+    assert [row["message"] for _, loaded, _ in client.loads for row in loaded] == [
+        "the first attempt died",
+        "the rerun succeeded",
+    ]
+
+
+def test_every_row_a_run_logs_carries_that_runs_own_start_time():
+    # The only thing separating one attempt at a date from another, now that both are kept. Read
+    # off each handler rather than compared between two wall clock readings, so the test does not
+    # depend on two runs being constructed far enough apart to differ.
+    def emit(logger):
+        logger.info("the run started")
+        logger.info("the run finished")
+
+    first, first_rows = run_log_of(emit)
+    second, second_rows = run_log_of(emit)
+
+    assert {row["run_started_at"] for row in first_rows} == {
+        first.run_started_at.isoformat()
+    }
+    assert {row["run_started_at"] for row in second_rows} == {
+        second.run_started_at.isoformat()
+    }
+    assert first.run_started_at.tzinfo == datetime.timezone.utc
 
 
 def test_the_log_table_is_partitioned_and_clustered_like_the_tables_it_sits_beside():
     client = RecordingClient()
     rows = log_rows_of(lambda logger: logger.info("the run started"))
 
-    output_writing.write_log_table(client, AS_OF, rows, output_writing.Outputs())
+    output_writing.write_log_table(client, rows, output_writing.Outputs())
     table, exists_ok = client.created[0]
 
     assert table.time_partitioning.field == output_writing.PARTITION_FIELD

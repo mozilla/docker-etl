@@ -246,14 +246,24 @@ SUFFICIENT_STATS_SCHEMA = [
     ),
 ]
 
-# One row per log record the run emitted. The columns after the first two are the ones Jetstream's
-# own BigQuery log handler writes, names included, so that adopting that handler here later is a
-# swap rather than a rewrite of everything reading this table.
+# One row per log record the run emitted. The columns after the first three are the ones
+# Jetstream's own BigQuery log handler writes, names included, so that adopting that handler here
+# later is a swap rather than a rewrite of everything reading this table.
 LOG_SCHEMA = [
     bigquery.SchemaField(
         "as_of_date",
         "DATE",
         description="Run date the record was logged for. Partition column.",
+    ),
+    bigquery.SchemaField(
+        "run_started_at",
+        "TIMESTAMP",
+        description=(
+            "When the run that logged this record began, in UTC. Constant across every row one "
+            "run writes, and the only thing separating one attempt at a date from another, since "
+            "this table is appended to rather than replaced. Group by it to read a single "
+            "attempt, and take the greatest value in a date to read the most recent one."
+        ),
     ),
     bigquery.SchemaField(
         "experiment_slug",
@@ -452,27 +462,33 @@ class RunLog(logging.Handler):
 
     A record becomes a row on arrival rather than at the write, because it holds the live traceback
     of whatever raised and the write can come long after that frame is gone. Nothing flushes on a
-    capacity, unlike the buffering handler this is otherwise shaped like: the write replaces the run
-    date's partition, so a second flush would leave the table holding only the records that arrived
-    after the first.
+    capacity, unlike the buffering handler this is otherwise shaped like: one run's records are one
+    attempt, and a flush part way through would split that attempt across two loads with no way to
+    tell it was ever one.
+
+    The start time is taken here, once, rather than per record, because it identifies the attempt
+    rather than the record. Every row this handler makes carries the same value.
     """
 
     def __init__(self, as_of, source=LOG_SOURCE):
         super().__init__(level=logging.INFO)
         self.as_of = as_of
         self.source = source
+        self.run_started_at = datetime.datetime.now(datetime.timezone.utc)
         self.rows = []
 
     def emit(self, record):
         try:
-            self.rows.append(log_row(record, self.as_of, self.source))
+            self.rows.append(
+                log_row(record, self.as_of, self.run_started_at, self.source)
+            )
         # A handler that raises reports the fault at the site of the log rather than at the site of
         # the fault, so a record this cannot represent would read as a bug in whatever logged it.
         except Exception:
             self.handleError(record)
 
 
-def log_row(record, as_of, source):
+def log_row(record, as_of, run_started_at, source):
     """One log record as a row of the log table.
 
     What a record is about beyond its message, the experiment and the metric, arrives as logging's
@@ -483,6 +499,7 @@ def log_row(record, as_of, source):
     exception_type, formatted = exception_columns(record.exc_info)
     return dict(
         as_of_date=as_of.isoformat(),
+        run_started_at=run_started_at.isoformat(),
         experiment_slug=fields.get("experiment_slug"),
         timestamp=datetime.datetime.fromtimestamp(
             record.created, datetime.timezone.utc
@@ -516,15 +533,21 @@ def exception_columns(exc_info):
     return exc_info[0].__name__, "".join(traceback.format_exception(*exc_info))
 
 
-def write_log_table(client, as_of, rows, outputs):
-    """Write what the run logged as the whole contents of its date's partition.
+def write_log_table(client, rows, outputs):
+    """Append what the run logged to the log table.
 
-    Replaced rather than appended for the reason the tables above are, and with the same
-    consequence: a retry's log replaces the log of the attempt it retried, so the partition
-    describes the run that produced the day's results rather than every attempt at them.
+    Appended rather than replacing the date's partition, which is the one place this job differs
+    from the tables above. Those hold results, so a rerun's output supersedes the attempt it
+    retried and replacing is what makes the rerun idempotent. This holds the account of what
+    happened, and the attempt that failed is usually the reason a rerun exists at all, so replacing
+    would delete the explanation on the way to producing the fix. Every attempt at a date is kept
+    and `run_started_at` is what separates them.
+
+    The cost of keeping them is that a date accumulates rows across attempts, so anything reading
+    this table for the state of a date has to pick an attempt rather than assume there is one.
     """
     ensure_table(client, outputs.log_table, LOG_SCHEMA)
-    replace_partition(client, outputs.log_table, LOG_SCHEMA, rows, as_of)
+    append_rows(client, outputs.log_table, LOG_SCHEMA, rows)
     return len(rows)
 
 
@@ -540,6 +563,28 @@ def ensure_table(client, table, schema):
     definition.time_partitioning = bigquery.TimePartitioning(field=PARTITION_FIELD)
     definition.clustering_fields = CLUSTERING_FIELDS
     client.create_table(definition, exists_ok=True)
+
+
+def append_rows(client, table, schema, rows):
+    """Add `rows` to `table`, leaving what is already there alone.
+
+    No partition decorator on the target: the rows carry their own `as_of_date` and BigQuery files
+    each one into the partition that column names, where a decorator would instead assert that
+    every row belongs to one date.
+
+    The schema is passed explicitly and inference switched off for the same reason as below, and
+    with an added one: an appending load that inferred its schema would reconcile it against the
+    live table on every run, so a column absent from one attempt's records is a schema change
+    rather than an empty column.
+    """
+    if not rows:
+        return
+    config = bigquery.LoadJobConfig(
+        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        autodetect=False,
+        schema=schema,
+    )
+    client.load_table_from_json(rows, table, job_config=config).result()
 
 
 def replace_partition(client, table, schema, rows, as_of):

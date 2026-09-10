@@ -173,7 +173,7 @@ def collecting_run_log(as_of, client, outputs, write_tables):
     try:
         yield run_log
     finally:
-        finish_run_log(run_log, client, as_of, outputs, write_tables)
+        finish_run_log(run_log, client, outputs, write_tables)
 
 
 def start_run_log(as_of):
@@ -189,7 +189,7 @@ def start_run_log(as_of):
     return run_log
 
 
-def finish_run_log(run_log, client, as_of, outputs, write_tables):
+def finish_run_log(run_log, client, outputs, write_tables):
     """Write the run's log, and detach it whether or not that write happens.
 
     Detached before the write rather than after it, so that a write which fails and says so does
@@ -199,7 +199,7 @@ def finish_run_log(run_log, client, as_of, outputs, write_tables):
     if not write_tables:
         return 0
     try:
-        return output_writing.write_log_table(client, as_of, run_log.rows, outputs)
+        return output_writing.write_log_table(client, run_log.rows, outputs)
     # Raising would replace whatever ended the run with a failure to record it, which is the one
     # error worth less than the error it would hide.
     except Exception:
