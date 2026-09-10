@@ -2,6 +2,7 @@
 
 import datetime
 import json
+import logging
 import pathlib
 
 from highwind import output_writing, units
@@ -96,6 +97,24 @@ class FakeBucket:
 class FakeStorage:
     def bucket(self, name):
         return FakeBucket(name)
+
+
+def run_log_of(emit, as_of=AS_OF):
+    """The run log, and its rows, for whatever `emit` logs through a logger of its own."""
+    run_log = output_writing.RunLog(as_of)
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    logger.addHandler(run_log)
+    try:
+        emit(logger)
+    finally:
+        logger.removeHandler(run_log)
+    return run_log, run_log.rows
+
+
+def log_rows_of(emit, as_of=AS_OF):
+    """The rows a run log makes of whatever `emit` logs through a logger of its own."""
+    return run_log_of(emit, as_of)[1]
 
 
 def write_one_run(client, outputs=None):
@@ -243,6 +262,137 @@ def test_a_run_with_no_rows_leaves_the_partition_alone():
 
     assert written == (0, 0)
     assert client.loads == []
+
+
+def test_a_logged_record_becomes_a_row_of_exactly_the_columns_declared():
+    rows = log_rows_of(lambda logger: logger.info("the run started"))
+
+    assert len(rows) == 1
+    assert set(rows[0]) == {field.name for field in output_writing.LOG_SCHEMA}
+    assert rows[0]["as_of_date"] == "2026-08-01"
+    assert rows[0]["log_level"] == "INFO"
+    assert rows[0]["message"] == "the run started"
+    assert rows[0]["source"] == output_writing.LOG_SOURCE
+    assert rows[0]["exception"] is None
+    assert rows[0]["exception_type"] is None
+
+
+def test_a_failure_is_recorded_with_its_type_and_the_traceback_of_the_line_that_raised():
+    def emit(logger):
+        try:
+            raise RuntimeError("the query failed")
+        except RuntimeError:
+            logger.exception("an experiment failed")
+
+    rows = log_rows_of(emit)
+
+    assert rows[0]["log_level"] == "ERROR"
+    assert rows[0]["exception_type"] == "RuntimeError"
+    assert "the query failed" in rows[0]["exception"]
+    assert 'raise RuntimeError("the query failed")' in rows[0]["exception"]
+
+
+def test_a_record_asked_for_an_exception_with_none_in_flight_carries_none():
+    rows = log_rows_of(lambda logger: logger.error("nothing raised", exc_info=True))
+
+    assert rows[0]["exception"] is None
+    assert rows[0]["exception_type"] is None
+
+
+def test_what_a_record_is_about_becomes_the_columns_it_can_be_looked_up_by():
+    rows = log_rows_of(
+        lambda logger: logger.warning(
+            "worth a look",
+            extra={"experiment_slug": "an-experiment", "metric": "active_hours"},
+        )
+    )
+
+    assert rows[0]["experiment_slug"] == "an-experiment"
+    assert rows[0]["metric"] == "active_hours"
+    assert rows[0]["log_level"] == "WARNING"
+
+
+def test_the_columns_this_job_does_not_fill_yet_are_declared_and_left_empty():
+    # Declared so that analysing on another basis, or in segments, is a value to write rather than
+    # a column to add and every reader of the table to change.
+    rows = log_rows_of(lambda logger: logger.info("the run started"))
+
+    assert rows[0]["analysis_basis"] is None
+    assert rows[0]["segment"] is None
+    assert rows[0]["analysis_period"] is None
+
+
+def test_a_runs_whole_log_is_one_appending_load_carrying_its_own_dates():
+    # Appended, and to the table rather than to a partition decorator, so the rows land in the
+    # partition their own as_of_date names.
+    def emit(logger):
+        logger.info("the run started")
+        logger.warning("a recipe was skipped")
+        logger.error("an experiment failed")
+
+    client = RecordingClient()
+    rows = log_rows_of(emit)
+
+    written = output_writing.write_log_table(client, rows, output_writing.Outputs())
+
+    assert written == 3
+    assert [target for target, _, _ in client.loads] == [output_writing.LOG_TABLE]
+    _, loaded, config = client.loads[0]
+    assert len(loaded) == 3
+    assert {row["as_of_date"] for row in loaded} == {AS_OF.isoformat()}
+    assert config.write_disposition == "WRITE_APPEND"
+    assert config.autodetect is False
+
+
+def test_rerunning_a_date_keeps_the_earlier_attempts_log_rather_than_replacing_it():
+    # The failed attempt is usually why the rerun exists, so replacing the date's partition would
+    # delete the explanation on the way to producing the fix.
+    client = RecordingClient()
+    first = log_rows_of(lambda logger: logger.error("the first attempt died"))
+    second = log_rows_of(lambda logger: logger.info("the rerun succeeded"))
+
+    output_writing.write_log_table(client, first, output_writing.Outputs())
+    output_writing.write_log_table(client, second, output_writing.Outputs())
+
+    dispositions = {config.write_disposition for _, _, config in client.loads}
+    assert dispositions == {"WRITE_APPEND"}
+    assert all(target == output_writing.LOG_TABLE for target, _, _ in client.loads)
+    assert [row["message"] for _, loaded, _ in client.loads for row in loaded] == [
+        "the first attempt died",
+        "the rerun succeeded",
+    ]
+
+
+def test_every_row_a_run_logs_carries_that_runs_own_start_time():
+    # The only thing separating one attempt at a date from another, now that both are kept. Read
+    # off each handler rather than compared between two wall clock readings, so the test does not
+    # depend on two runs being constructed far enough apart to differ.
+    def emit(logger):
+        logger.info("the run started")
+        logger.info("the run finished")
+
+    first, first_rows = run_log_of(emit)
+    second, second_rows = run_log_of(emit)
+
+    assert {row["run_started_at"] for row in first_rows} == {
+        first.run_started_at.isoformat()
+    }
+    assert {row["run_started_at"] for row in second_rows} == {
+        second.run_started_at.isoformat()
+    }
+    assert first.run_started_at.tzinfo == datetime.timezone.utc
+
+
+def test_the_log_table_is_partitioned_and_clustered_like_the_tables_it_sits_beside():
+    client = RecordingClient()
+    rows = log_rows_of(lambda logger: logger.info("the run started"))
+
+    output_writing.write_log_table(client, rows, output_writing.Outputs())
+    table, exists_ok = client.created[0]
+
+    assert table.time_partitioning.field == output_writing.PARTITION_FIELD
+    assert table.clustering_fields == output_writing.CLUSTERING_FIELDS
+    assert exists_ok
 
 
 def test_a_local_run_writes_the_experiments_json_to_a_directory(tmp_path):
