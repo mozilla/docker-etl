@@ -1,4 +1,5 @@
 import base64
+import html
 import json
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
@@ -398,8 +399,12 @@ def test_diagnosis_bugzilla_update() -> None:
     assert updates.bug.whiteboard is None
 
     assert updates.bug.comment is not None
-    assert cast(str, result["root_cause"]) in updates.bug.comment.body
-    assert cast(str, result["evidence"]) in updates.bug.comment.body
+
+    def expected(value: str) -> str:
+        return html.escape(autowebcompat.sanitize_bugzilla_comment(value))
+
+    assert expected(cast(str, result["root_cause"])) in updates.bug.comment.body
+    assert expected(cast(str, result["evidence"])) in updates.bug.comment.body
 
     assert len(updates.add_attachments) == 1
     attachment = updates.add_attachments[0]

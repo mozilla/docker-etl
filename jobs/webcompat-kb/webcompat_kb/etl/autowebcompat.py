@@ -3,6 +3,7 @@ import html
 import itertools
 import logging
 import os
+import re
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, MutableMapping, Sequence
@@ -680,6 +681,11 @@ def format_user_story_value(value: str | list[str]) -> str:
     return value
 
 
+def sanitize_bugzilla_comment(text: str) -> str:
+    """Unwrap backtick-quoted curl commands in agent-generated comment text."""
+    return re.sub(r"`(curl\b[^`\n]*)`", r"\1", text)
+
+
 def update_whiteboard(
     bug: bugzilla.Bug, bug_update: BugUpdate, require_tokens: list[str]
 ) -> None:
@@ -1260,7 +1266,9 @@ class DiagnosisTask(HackbotTask):
                         if result.evidence:
                             comment_parts += ["", "Evidence:", "", result.evidence]
                         bug_update.bug.comment = bugzilla.Comment(
-                            body="\n".join(comment_parts)
+                            body=html.escape(
+                                sanitize_bugzilla_comment("\n".join(comment_parts))
+                            )
                         )
 
                         if result.testcase_url:
