@@ -213,6 +213,17 @@ class DiagnosisBugInfo(BaseModel):
     source_time: datetime
 
 
+class PostedComment(BaseModel):
+    """A comment posted to a bug by autowebcompat"""
+
+    comment_id: int
+    bug_number: int
+    run_id: UUID
+
+    def to_json(self) -> Mapping[str, Json]:
+        return self.model_dump(mode="json")
+
+
 class BigQueryService:
     def __init__(
         self, project: Project, bq_client: BigQuery, bz_client: bugzilla.Bugzilla
@@ -223,6 +234,7 @@ class BigQueryService:
         self.run_info_table = project["autowebcompat"]["import_runs"].table()
         self.scheduled_table = project["autowebcompat"]["hackbot_scheduled"].table()
         self.completed_table = project["autowebcompat"]["hackbot_completed"].table()
+        self.comment_table = project["autowebcompat"]["bugzilla_comments"].table()
 
     def get_source_times(
         self,
@@ -545,6 +557,10 @@ class BigQueryService:
         rows = [CompleteRun.from_rundoc(item).to_json() for item in complete_runs]
         self.bq_client.insert_rows(self.completed_table, rows)
 
+    def insert_comment_records(self, posted_comments: Iterable[PostedComment]) -> None:
+        rows = [item.to_json() for item in posted_comments]
+        self.bq_client.insert_rows(self.comment_table, rows)
+
     def record_update(self, run_infos: Iterable[RunInfo]) -> None:
         self.bq_client.insert_query(
             self.run_info_table,
@@ -598,6 +614,8 @@ def poll_pending(
 class BugUpdate:
     bug: bugzilla.BugUpdate
     add_attachments: list[bugzilla.AttachmentCreate] = field(default_factory=list)
+    add_comment: Optional[bugzilla.CommentCreate] = None
+    run_id: Optional[UUID] = None
 
     def has_updates(self) -> bool:
         if self.add_attachments:
@@ -627,6 +645,9 @@ class Updater(ABC):
         """Perform the update"""
         ...
 
+    def record_updates(self, bq_service: BigQueryService) -> None:
+        """Store a record of the updates that were performed"""
+
 
 class BugzillaUpdater(Updater):
     def __init__(self, client: bugzilla.Bugzilla):
@@ -634,6 +655,7 @@ class BugzillaUpdater(Updater):
         self.include_fields = {"id"}
         self.bug_ids: set[int] = set()
         self.bug_updates: dict[int, tuple[bugzilla.Bug, BugUpdate]] = {}
+        self.posted_comments: list[PostedComment] = []
 
     def add_include_fields(self, fields: Iterable[str]) -> None:
         self.include_fields |= set(fields)
@@ -652,11 +674,29 @@ class BugzillaUpdater(Updater):
             )
 
     def update(self) -> None:
-        for _, bug_update in self.bug_updates.values():
-            if bug_update.has_updates():
-                self.client.update_bugs(bug_update.bug)
-            for attachment in bug_update.add_attachments:
-                self.client.create_attachment(attachment)
+        for bug_id, (_, bug_update) in self.bug_updates.items():
+            try:
+                if bug_update.add_comment is not None:
+                    assert bug_update.run_id is not None
+                    comment_id = self.client.add_comment(bug_id, bug_update.add_comment)
+                    if comment_id is not None:
+                        self.posted_comments.append(
+                            PostedComment(
+                                comment_id=comment_id,
+                                bug_number=bug_id,
+                                run_id=bug_update.run_id,
+                            )
+                        )
+                if bug_update.has_updates():
+                    self.client.update_bugs(bug_update.bug)
+                for attachment in bug_update.add_attachments:
+                    self.client.create_attachment(attachment)
+            except Exception as e:
+                logging.error(f"Error posting hackbot result for {bug_id}: {e}")
+
+    def record_updates(self, bq_service: BigQueryService) -> None:
+        if self.posted_comments:
+            bq_service.insert_comment_records(self.posted_comments)
 
 
 def try_get_file(url: str, allowed_types: Optional[set[str]] = None) -> Optional[bytes]:
@@ -1257,11 +1297,23 @@ class DiagnosisTask(HackbotTask):
                             "",
                             result.root_cause,
                         ]
+
                         if result.evidence:
                             comment_parts += ["", "Evidence:", "", result.evidence]
-                        bug_update.bug.comment = bugzilla.Comment(
-                            body="\n".join(comment_parts)
+
+                        comment_parts += [
+                            "",
+                            "---",
+                            "",
+                            "If you'd like to provide feedback on diagnosis, "
+                            "please use the 👍 or 👎 reaction.",
+                        ]
+
+                        bug_update.add_comment = bugzilla.CommentCreate(
+                            comment="\n".join(comment_parts)
                         )
+
+                        bug_update.run_id = uuid
 
                         if result.testcase_url:
                             if not result.testcase_url.startswith("https://"):
@@ -1357,6 +1409,7 @@ def run(
             if task_runner.has_updates():
                 task_runner.populate_updates(updater)
         updater.update()
+        updater.record_updates(bq_service)
 
     bq_service.insert_new_runs(itertools.chain.from_iterable(new_runs.values()))
     bq_service.insert_complete_runs(complete_runs.values())

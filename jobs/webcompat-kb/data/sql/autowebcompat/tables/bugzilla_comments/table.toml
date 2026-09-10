@@ -1,0 +1,11 @@
+[comment_id]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[bug_number]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[run_id]
+type = "STRING"
+mode = "REQUIRED"
