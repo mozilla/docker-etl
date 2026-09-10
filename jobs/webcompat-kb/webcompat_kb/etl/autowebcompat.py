@@ -234,9 +234,7 @@ class BigQueryService:
         self.run_info_table = project["autowebcompat"]["import_runs"].table()
         self.scheduled_table = project["autowebcompat"]["hackbot_scheduled"].table()
         self.completed_table = project["autowebcompat"]["hackbot_completed"].table()
-        self.comment_table = project["autowebcompat"][
-            "autowebcompat_bugzilla_comment"
-        ].table()
+        self.comment_table = project["autowebcompat"]["bugzilla_comments"].table()
 
     def get_source_times(
         self,
@@ -647,6 +645,9 @@ class Updater(ABC):
         """Perform the update"""
         ...
 
+    def record_updates(self, bq_service: BigQueryService) -> None:
+        """Store a record of the updates that were performed"""
+
 
 class BugzillaUpdater(Updater):
     def __init__(self, client: bugzilla.Bugzilla):
@@ -675,10 +676,9 @@ class BugzillaUpdater(Updater):
     def update(self) -> None:
         for bug_id, (_, bug_update) in self.bug_updates.items():
             try:
-                if bug_update.add_comment is not None and bug_update.run_id is not None:
-                    comment_id = self.client.add_comment(
-                        bug_id, bug_update.add_comment
-                    )
+                if bug_update.add_comment is not None:
+                    assert bug_update.run_id is not None
+                    comment_id = self.client.add_comment(bug_id, bug_update.add_comment)
                     if comment_id is not None:
                         self.posted_comments.append(
                             PostedComment(
@@ -693,6 +693,10 @@ class BugzillaUpdater(Updater):
                     self.client.create_attachment(attachment)
             except Exception as e:
                 logging.error(f"Error posting hackbot result for {bug_id}: {e}")
+
+    def record_updates(self, bq_service: BigQueryService) -> None:
+        if self.posted_comments:
+            bq_service.insert_comment_records(self.posted_comments)
 
 
 def try_get_file(url: str, allowed_types: Optional[set[str]] = None) -> Optional[bytes]:
@@ -1297,12 +1301,13 @@ class DiagnosisTask(HackbotTask):
                         if result.evidence:
                             comment_parts += ["", "Evidence:", "", result.evidence]
 
-                        footer = (
+                        comment_parts += [
+                            "",
+                            "---",
+                            "",
                             "If you'd like to provide feedback on diagnosis, "
-                            "please use the 👍 or 👎 reaction."
-                        )
-
-                        comment_parts += ["", "---", "", footer]
+                            "please use the 👍 or 👎 reaction.",
+                        ]
 
                         bug_update.add_comment = bugzilla.CommentCreate(
                             comment="\n".join(comment_parts)
@@ -1404,8 +1409,7 @@ def run(
             if task_runner.has_updates():
                 task_runner.populate_updates(updater)
         updater.update()
-        if isinstance(updater, BugzillaUpdater) and updater.posted_comments:
-            bq_service.insert_comment_records(updater.posted_comments)
+        updater.record_updates(bq_service)
 
     bq_service.insert_new_runs(itertools.chain.from_iterable(new_runs.values()))
     bq_service.insert_complete_runs(complete_runs.values())
