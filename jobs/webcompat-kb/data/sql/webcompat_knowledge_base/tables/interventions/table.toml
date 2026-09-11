@@ -1,8 +1,0 @@
-[knowledge_base_bug]
-type = "INTEGER"
-mode = "REQUIRED"
-
-[code_url]
-type = "STRING"
-mode = "REQUIRED"
-

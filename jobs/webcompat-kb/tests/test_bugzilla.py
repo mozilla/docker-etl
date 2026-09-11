@@ -1309,14 +1309,6 @@ def test_get_etp_breakage_reports():
 def test_get_external_links():
     _, _, kb_bugs, _ = group_bugs(SAMPLE_ALL_BUGS)
 
-    assert EXTERNAL_LINK_CONFIGS["interventions"].get_links(
-        SAMPLE_ALL_BUGS, kb_bugs
-    ) == {
-        1835339: {
-            "https://github.com/mozilla-extensions/webcompat-addon/blob/5b391018e847a1eb30eba4784c86acd1c638ed26/src/injections/js/bug1739489-draftjs-beforeinput.js"
-        },
-    }
-
     assert EXTERNAL_LINK_CONFIGS["other_browser_issues"].get_links(
         SAMPLE_ALL_BUGS, kb_bugs
     ) == {111111: {"https://crbug.com/606208"}}

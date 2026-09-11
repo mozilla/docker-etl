@@ -405,11 +405,6 @@ EXTERNAL_LINK_CONFIGS = {
     config.table_name: config
     for config in [
         ExternalLinkConfig(
-            "interventions",
-            "code_url",
-            ["github.com/mozilla-extensions/webcompat-addon"],
-        ),
-        ExternalLinkConfig(
             "other_browser_issues",
             "issue_url",
             ["bugs.chromium.org", "bugs.webkit.org", "crbug.com"],
