@@ -385,6 +385,7 @@ class BigQueryService:
       whiteboard NOT LIKE "%[autowebcompat:processed]%" AND
       "webcompat:platform-bug" NOT IN UNNEST(keywords) AND
       "webcompat:sitepatch-applied" NOT IN UNNEST(keywords) AND
+      "mozilla-employee-confidential" NOT IN UNNEST(access_groups) AND
       CAST(creation_time AS DATETIME) <= IFNULL(
         @latest_new_bugs_repro_run, DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 WEEK)
       ) AND
