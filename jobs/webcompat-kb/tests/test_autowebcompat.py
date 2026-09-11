@@ -313,7 +313,7 @@ def test_repro_bugzilla_update_error() -> None:
     updates, result = run_repro_update(data_file="bug-1903487-repro-error.json")
 
     assert result is None
-    assert updates.bug.comment is None
+    assert updates.add_comment is None
     assert updates.add_attachments == []
 
 
@@ -397,9 +397,9 @@ def test_diagnosis_bugzilla_update() -> None:
     assert updates.bug.cf_user_story == bug_data.bug_update.cf_user_story
     assert updates.bug.whiteboard is None
 
-    assert updates.bug.comment is not None
-    assert cast(str, result["root_cause"]) in updates.bug.comment.body
-    assert cast(str, result["evidence"]) in updates.bug.comment.body
+    assert updates.add_comment is not None
+    assert cast(str, result["root_cause"]) in updates.add_comment.comment
+    assert cast(str, result["evidence"]) in updates.add_comment.comment
 
     assert len(updates.add_attachments) == 1
     attachment = updates.add_attachments[0]
@@ -414,7 +414,7 @@ def test_diagnosis_bugzilla_update_testcase_fetch_failed() -> None:
     updates, _ = run_diagnosis_update("bug-1903487-diagnosis.json", testcase_data=None)
 
     assert updates.add_attachments == []
-    assert updates.bug.comment is not None
+    assert updates.add_comment is not None
     assert updates.bug.cf_user_story is not None
     assert "autowebcompat-diagnosis-status:success" in updates.bug.cf_user_story
 
@@ -426,7 +426,7 @@ def test_diagnosis_bugzilla_update_no_testcase() -> None:
     )
 
     assert updates.add_attachments == []
-    assert updates.bug.comment is not None
+    assert updates.add_comment is not None
     assert updates.bug.cf_user_story is not None
     assert "autowebcompat-diagnosis-status:success" in updates.bug.cf_user_story
 
@@ -448,7 +448,7 @@ def test_diagnosis_bugzilla_update_not_reproduced() -> None:
     assert updates.bug.cf_user_story is not None
     assert "autowebcompat-diagnosis-status:failed" in updates.bug.cf_user_story
     assert "autowebcompat-diagnosis-reason:blocked_captcha" in updates.bug.cf_user_story
-    assert updates.bug.comment is None
+    assert updates.add_comment is None
     assert updates.add_attachments == []
 
 
@@ -462,7 +462,7 @@ def test_diagnosis_bugzilla_update_error() -> None:
     assert bug_data.bug_update is not None
     assert updates.bug.cf_user_story == bug_data.bug_update.cf_user_story
     assert updates.bug.whiteboard is None
-    assert updates.bug.comment is None
+    assert updates.add_comment is None
     assert updates.add_attachments == []
 
 
