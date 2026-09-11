@@ -98,7 +98,7 @@ def to_rows(
 def update_comment_reactions(
     project: Project, bq_client: BigQuery, bz_client: bugdantic.Bugzilla
 ) -> None:
-    comment_table = project["autowebcompat"]["autowebcompat_bugzilla_comment"].table()
+    comment_table = project["autowebcompat"]["bugzilla_comments"].table()
     reactions_table = project["autowebcompat_feedback"][
         "bugzilla_comment_reactions"
     ].table()
