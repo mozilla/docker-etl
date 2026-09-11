@@ -54,6 +54,10 @@ mode = "NULLABLE"
 type = "STRING"
 mode = "REPEATED"
 
+[access_groups]
+type = "STRING"
+mode = "REPEATED"
+
 [url]
 type = "STRING"
 mode = "NULLABLE"
