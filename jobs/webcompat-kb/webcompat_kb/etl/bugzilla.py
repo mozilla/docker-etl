@@ -139,6 +139,10 @@ class Bug(BaseModel):
     creation_time: datetime
     assigned_to: Annotated[Optional[str], unset_to_none("nobody@mozilla.org")]
     keywords: list[str]
+    # "groups" is a reserved word in BigQuery, so store it under another name
+    groups: list[str] = Field(
+        default_factory=list, serialization_alias="access_groups"
+    )
     url: Text
     user_story: Text = Field(
         validation_alias="cf_user_story", serialization_alias="user_story_raw"
@@ -198,6 +202,7 @@ class Bug(BaseModel):
                 "creation_time": row.creation_time,
                 "assigned_to": row.assigned_to,
                 "keywords": row.keywords,
+                "groups": row.access_groups,
                 "url": row.url,
                 "user_story": row.user_story_raw,
                 "last_resolved": row.resolved_time,
