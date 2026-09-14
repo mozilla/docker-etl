@@ -14,6 +14,12 @@ WITH
     site_reports.site_rank_score,
     site_reports.intervention_score,
     site_reports.triage_score,
+    site_reports.user_story,
+    site_reports.score,
+    {% for metric in metrics.values() if metric.site_reports_condition('host_categories') -%}
+      {{ metric.site_reports_condition('site_reports') }} AS is_{{ metric.name }}{{ ',' if not loop.last }}
+    {% endfor %}
+
   FROM
     `{{ ref('bugzilla_bugs') }}` AS bugs
   JOIN
@@ -42,7 +48,23 @@ WITH
     SUM(kb_reports.triage_score) AS user_story_score,
     SUM(IFNULL(kb_reports.triage_score, kb_reports.severity_score)) AS score,
     MIN(kb_reports.site_report_priority) AS priority,
-    ARRAY_AGG(JSON_OBJECT("bug", kb_reports.site_report_id, "url", kb_reports.site_report_url, "priority", kb_reports.site_report_priority, "platform_score", kb_reports.platform_score, "impact_score", kb_reports.impact_score, "affects_score", kb_reports.affects_score, "site_rank_score", kb_reports.site_rank_score, "intervention_score", kb_reports.intervention_score, "triage_score", kb_reports.triage_score)) AS reports
+    ARRAY_AGG(JSON_OBJECT(
+      "bug", kb_reports.site_report_id,
+      "url", kb_reports.site_report_url,
+      "priority", kb_reports.site_report_priority,
+      "platform_score", kb_reports.platform_score,
+      "impact_score", kb_reports.impact_score,
+      "affects_score", kb_reports.affects_score,
+      "site_rank_score", kb_reports.site_rank_score,
+      "intervention_score", kb_reports.intervention_score,
+      "triage_score", kb_reports.triage_score,
+      "diagnosis_team", lower(trim(json_value(kb_reports.user_story,'$.diagnosis-team')))
+      )) AS reports,
+      {% for metric_type in metric_types if metric_type.name == 'total_score' -%}
+        {% for metric in metrics.values() -%}
+          {{ metric_type.agg_function('kb_reports', metrics[metric.name], True) }} AS total_score_{{ metric.name }}{{ ',' if not loop.last }}
+        {% endfor %}
+      {% endfor %}
   FROM
     kb_reports
   GROUP BY
@@ -76,6 +98,11 @@ SELECT
   `{{ ref('WEBCOMPAT_BLOCKED_REASON') }}`(core_bugs.keywords, core_bugs.user_story) IS NOT NULL AS core_bug_blocked,
   `{{ ref('WEBCOMPAT_BLOCKED_REASON') }}`(core_bugs.keywords, core_bugs.user_story) AS core_bug_blocked_reason,
   core_bugs.user_story,
+  core_bugs.size_estimate,
+  {% for metric in metrics.values() -%}
+      kb_scores.total_score_{{ metric.name }} AS total_score_{{ metric.name }}{{ ',' if not loop.last }}
+  {% endfor %}
+
 FROM
   kb_scores
 JOIN
