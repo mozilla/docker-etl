@@ -84,7 +84,7 @@ SELECT DISTINCT
   feature_support_dates.safari IS NOT NULL OR "parity-safari" IN UNNEST(bugs.keywords) as safari_implemented,
   feature_support_dates.safari AS safari_supported_date,
   webcompat_bugs.bugs as webcompat_bugs,
-  CASE REGEXP_EXTRACT(bugs.whiteboard, r"webcompat:risk-(\w+)")
+  CASE LOWER(JSON_VALUE(user_story, "$.webcompat-risk"))
     WHEN "high" THEN "high"
     WHEN "moderate" THEN "moderate"
     WHEN "low" THEN "low"
