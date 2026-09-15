@@ -1,6 +1,9 @@
-"""Whether a run failed as a whole, which is what the process exit code turns on."""
+"""Whether a run failed as a whole, and what it records about the ways it can fail."""
 
 import datetime
+import logging
+
+import pytest
 
 from highwind import analysis, output_writing, units
 from highwind.discovery import Experiment
@@ -23,6 +26,31 @@ EXPERIMENT = Experiment(
     treatment_branches=("treatment-a",),
     unit=units.resolve("firefox_desktop", "normandy_id"),
 )
+
+
+class FakeLoadJob:
+    def result(self):
+        return None
+
+
+class RecordingClient:
+    """Stands in for a BigQuery client, recording what a run loaded."""
+
+    def __init__(self):
+        self.created = []
+        self.loads = []
+
+    def create_table(self, table, exists_ok=False):
+        self.created.append(table)
+        return table
+
+    def load_table_from_json(self, rows, target, job_config=None):
+        self.loads.append((target, rows))
+        return FakeLoadJob()
+
+    @property
+    def log_rows(self):
+        return [row for _, rows in self.loads for row in rows]
 
 
 class RecordingBlob:
@@ -128,7 +156,9 @@ def test_a_failure_while_recording_a_failure_is_still_returned_not_raised():
     assert "recording it also failed" in recorded["error"]
 
 
-def test_the_run_report_counts_cells_and_errors_across_experiments(capsys):
+def test_the_run_report_counts_cells_and_errors_across_experiments(caplog):
+    caplog.set_level(logging.INFO)
+
     analysis.report_run(
         [summary("a", {CONFIDENT: 1, ERROR: 1}), summary("b", {FORMING: 2})],
         [
@@ -141,20 +171,22 @@ def test_the_run_report_counts_cells_and_errors_across_experiments(capsys):
             )
         ],
     )
-    printed = capsys.readouterr().out
 
-    assert "2 experiments (0 failed outright)" in printed
-    assert "error rate 25.00%" in printed
+    assert "2 experiments (0 failed outright)" in caplog.text
+    assert "error rate 25.00%" in caplog.text
 
 
-def test_the_run_report_says_so_rather_than_dividing_by_zero_cells(capsys):
+def test_the_run_report_says_so_rather_than_dividing_by_zero_cells(caplog):
+    caplog.set_level(logging.INFO)
+
     analysis.report_run([summary("a", {})], [])
-    printed = capsys.readouterr().out
 
-    assert "no cells produced" in printed
+    assert "no cells produced" in caplog.text
 
 
-def test_an_experiment_whose_cells_are_all_immature_is_reported_as_worth_a_look(capsys):
+def test_an_experiment_whose_cells_are_all_immature_is_reported_as_worth_a_look(caplog):
+    caplog.set_level(logging.INFO)
+
     analysis.report_anomalies(
         [
             summary("a", {NOT_STARTED: 12}),
@@ -162,11 +194,110 @@ def test_an_experiment_whose_cells_are_all_immature_is_reported_as_worth_a_look(
             summary("c", {}),
         ]
     )
-    printed = capsys.readouterr().out
 
-    assert "cohort or join empty" in printed
-    assert "no cells: no window has matured yet" in printed
-    assert "\n   b " not in printed
+    assert "cohort or join empty" in caplog.text
+    assert "no cells: no window has matured yet" in caplog.text
+    # Each is attributed to the experiment it is about, so a reader looking one up finds the reason
+    # against its slug rather than in a line they have to parse. The healthy one is not flagged.
+    flagged = [
+        record.experiment_slug
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+    ]
+    assert flagged == ["a", "c"]
+
+
+def test_a_refused_recipe_is_recorded_against_its_slug_with_the_reason(caplog):
+    client = RecordingClient()
+
+    with analysis.collecting_run_log(AS_OF, client, output_writing.Outputs(), True):
+        analysis.report_selection(
+            [EXPERIMENT], [("a-refused-slug", "reference=None others=()")], AS_OF
+        )
+
+    refusals = [row for row in client.log_rows if row["log_level"] == "WARNING"]
+    assert len(refusals) == 1
+    assert refusals[0]["experiment_slug"] == "a-refused-slug"
+    assert "reference=None" in refusals[0]["message"]
+
+
+def test_an_experiment_that_fails_outright_is_recorded_against_its_slug():
+    # It produces no results row of its own to carry an error on, unlike a cell that failed, so the
+    # log is the only place its failure can be found.
+    client = RecordingClient()
+
+    with analysis.collecting_run_log(AS_OF, client, output_writing.Outputs(), True):
+        analysis.analyze_experiment(
+            None,
+            EXPERIMENT,
+            AS_OF,
+            [],
+            {"clients_daily": None},
+            {},
+            "the shared scan failed",
+            None,
+            write_blobs=False,
+        )
+
+    failures = [row for row in client.log_rows if row["log_level"] == "ERROR"]
+    assert failures
+    assert all(row["experiment_slug"] == "a-slug" for row in failures)
+    assert all(row["exception_type"] for row in failures)
+    assert all(row["exception"] for row in failures)
+
+
+def test_the_log_is_written_even_when_the_run_it_covers_raises():
+    # The run this table is worth most for is the one that died, so the write cannot be a step the
+    # run reaches only by finishing.
+    client = RecordingClient()
+
+    with pytest.raises(RuntimeError):
+        with analysis.collecting_run_log(AS_OF, client, output_writing.Outputs(), True):
+            analysis.report_selection([], [("a-slug", "a reason")], AS_OF)
+            raise RuntimeError("whatever ended the run")
+
+    assert [row["experiment_slug"] for row in client.log_rows] == [None, "a-slug"]
+
+
+def test_a_partial_run_writes_no_log_rows_any_more_than_it_writes_results():
+    client = RecordingClient()
+    write_tables = analysis.writes_tables(
+        False, ["a-slug"], None, None, output_writing.Outputs()
+    )
+
+    with analysis.collecting_run_log(
+        AS_OF, client, output_writing.Outputs(), write_tables
+    ):
+        analysis.report_selection([EXPERIMENT], [("a-slug", "a reason")], AS_OF)
+
+    assert write_tables is False
+    assert client.loads == []
+
+
+def test_the_log_table_is_written_by_exactly_the_runs_that_write_the_result_tables():
+    # One rule for all three tables: a log describing a run whose rows were withheld would replace
+    # the log of the run whose rows are in the partition.
+    published = output_writing.Outputs()
+    local = output_writing.Outputs(local_blob_dir="test_output")
+
+    assert analysis.writes_tables(False, None, None, None, published) is True
+    assert analysis.writes_tables(True, None, None, None, published) is False
+    assert analysis.writes_tables(False, ["a"], None, None, published) is False
+    assert analysis.writes_tables(False, None, 5, None, published) is False
+    assert analysis.writes_tables(False, None, None, 1, published) is False
+    assert analysis.writes_tables(False, None, None, None, local) is False
+
+
+def test_a_log_that_cannot_be_written_does_not_replace_whatever_ended_the_run():
+    class FailingClient:
+        def create_table(self, table, exists_ok=False):
+            raise RuntimeError("the log table could not be created")
+
+    with pytest.raises(RuntimeError, match="whatever ended the run"):
+        with analysis.collecting_run_log(
+            AS_OF, FailingClient(), output_writing.Outputs(), True
+        ):
+            raise RuntimeError("whatever ended the run")
 
 
 def test_a_sampled_run_is_treated_as_partial_so_it_cannot_overwrite_the_partition():
