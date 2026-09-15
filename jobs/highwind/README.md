@@ -43,13 +43,21 @@ than defaulted.
 | --- | --- |
 | `moz-fx-data-experiments.highwind_poc.highwind_statistics_v1` | (slug, metric, window, comparison) |
 | `moz-fx-data-experiments.highwind_poc.highwind_sufficient_stats_v1` | (slug, metric, window, branch) |
+| `moz-fx-data-experiments.highwind_poc.highwind_logs_v1` | log record |
 | `gs://mozanalysis/highwind/<slug>.json` | experiment, the seam Experimenter reads |
 
-All three come from one computation, which is why they are one job rather than three. Both tables are
+All four come from one computation, which is why they are one job rather than four. Every table is
 partitioned on `as_of_date` and clustered on `slug`, and a run replaces its own date's partition
 rather than appending to it, so a retry produces the same table as the first run instead of doubling
 it. An object is named for its experiment with the slug's hyphens as underscores, so
 `new-tab-example-151` is written to `new_tab_example_151.json`.
+
+A cell that failed is already queryable, since the results grid is written whole and every cell
+carries a state and an error. The log table is for the failures that have no cell to carry them: an
+experiment that failed before producing any, a recipe the run refused to analyse, and the run-level
+account of what it consumed and what looked wrong. It is written in a `finally`, so a run that died
+partway records why, and its columns are the ones Jetstream's own BigQuery log handler writes, so
+that adopting that handler here later is a swap rather than a rewrite of whatever reads this.
 
 The cohort of enrolled units each run materializes is an intermediate rather than an output. It goes
 to a table of its own in `moz-fx-data-experiments.highwind_poc`, named per run so two runs of one
@@ -126,7 +134,7 @@ PyPI package of the same version pins a pandas that conflicts with the one this 
 Python package is copied out of that image; scipy, the one dependency it lacks, is declared in
 `requirements.txt`. The base image is `python:3.11-slim` to match the frozen tree.
 
-The job declares both table schemas itself, in `output_writing.py`, and passes them explicitly on
+The job declares its table schemas itself, in `output_writing.py`, and passes them explicitly on
 every load. Schema inference is off deliberately: a cell in the `error` or `not_started` state
 carries no interval, so an inferred schema would vary with the day's mix of states.
 
