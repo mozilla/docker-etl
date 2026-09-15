@@ -1,2 +1,0 @@
-name = "interventions"
-etl = ["bugzilla"]
