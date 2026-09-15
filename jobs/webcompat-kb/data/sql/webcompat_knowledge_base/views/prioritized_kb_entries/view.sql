@@ -16,7 +16,7 @@ WITH
     site_reports.triage_score,
     site_reports.user_story,
     site_reports.score,
-    {% for metric in metrics.values() if metric.site_reports_condition('host_categories') -%}
+    {% for metric in metrics.values() if metric.site_reports_condition('site_reports') -%}
       {{ metric.site_reports_condition('site_reports') }} AS is_{{ metric.name }}{{ ',' if not loop.last }}
     {% endfor %}
 
@@ -58,11 +58,14 @@ WITH
       "site_rank_score", kb_reports.site_rank_score,
       "intervention_score", kb_reports.intervention_score,
       "triage_score", kb_reports.triage_score,
-      "diagnosis_team", lower(trim(json_value(kb_reports.user_story,'$.diagnosis-team')))
+      "diagnosis_team", LOWER(TRIM(JSON_VALUE(kb_reports.user_story,'$.diagnosis-team'))),
+      {% for metric in metrics.values() if metric.site_reports_condition('site_reports') -%}
+        "is_{{ metric.name }}", kb_reports.is_{{ metric.name }}{{ ',' if not loop.last }}
+      {% endfor %}
       )) AS reports,
       {% for metric_type in metric_types if metric_type.name == 'total_score' -%}
-        {% for metric in metrics.values() -%}
-          {{ metric_type.agg_function('kb_reports', metrics[metric.name], True) }} AS total_score_{{ metric.name }}{{ ',' if not loop.last }}
+        {% for metric_name, metric in metrics.items() -%}
+          {{ metric_type.agg_function('kb_reports', metric, True) }} AS total_score_{{ metric_name }}{{ ',' if not loop.last }}
         {% endfor %}
       {% endfor %}
   FROM
