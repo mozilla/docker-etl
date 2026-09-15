@@ -219,7 +219,6 @@ class PostedComment(BaseModel):
     comment_id: int
     bug_number: int
     run_id: UUID
-    is_readable: bool = True
 
     def to_json(self) -> Mapping[str, Json]:
         return self.model_dump(mode="json")

@@ -66,6 +66,11 @@ webcompat-site-rank-update = "webcompat_kb.commands.site_rank_update:main"
 webcompat-validate = "webcompat_kb.commands.validate:main"
 
 
+# TODO: REVERT BEFORE PUSHING. Local-only override for testing the unreleased
+# BugzillaError.code change; replace with a bugdantic version bump above.
+[tool.uv.sources]
+bugdantic = { path = "/Users/ksenia/Documents/projects/bugdantic" }
+
 [tool.pytest]
 testpaths = ["tests"]
 

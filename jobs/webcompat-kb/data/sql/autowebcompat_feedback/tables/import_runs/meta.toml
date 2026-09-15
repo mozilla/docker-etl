@@ -1,3 +1,0 @@
-name = "import_runs"
-description = "Times at which feedback data was updated"
-etl=["autowebcompat-feedback"]

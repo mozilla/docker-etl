@@ -1,3 +1,0 @@
-name = "bugzilla_comment_reactions"
-description = "Reactions on Bugzilla comments posted by autowebcompat"
-etl=["autowebcompat-feedback"]
