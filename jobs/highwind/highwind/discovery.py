@@ -53,10 +53,13 @@ WHERE app_name = @app_name
   AND normandy_slug IS NOT NULL
   AND start_date IS NOT NULL
   AND start_date <= @as_of
-  -- Live recipes only. An ended recipe gets no final analysis, so its last result is whatever the
-  -- last run before it ended produced. Running once after an experiment ends is worth doing and is
-  -- not done here.
-  AND end_date IS NULL
+  -- Selected for as long as the run date has not passed the end date, which gives an experiment one
+  -- last run on the end date itself and drops it from every run after that. The last run is the one
+  -- that matters: a window matures against the run date, so it is only there that the final window
+  -- its units completed becomes reportable, and that window is the last one every unit in it spent
+  -- entirely under treatment. Anything reaching past the end date is not a contrast, which is why
+  -- the bound is the end date and not a tail beyond it.
+  AND (end_date IS NULL OR end_date >= @as_of)
 -- Shortest first, which is what makes `limit` select the cheapest experiments to analyse rather
 -- than an arbitrary set. Duration is the cost proxy: it sets how far back the shared scan reaches.
 ORDER BY DATE_DIFF(@as_of, start_date, DAY) ASC
