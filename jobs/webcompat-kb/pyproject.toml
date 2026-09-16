@@ -19,7 +19,7 @@ classifiers = [
 ]
 license = "MPL-2.0"
 dependencies = [
-  "bugdantic==0.5.2",
+  "bugdantic==0.6.0",
   "filetype==1.2.0",
   "google-cloud-bigquery==3.43.0",
   "html5lib==1.1",
@@ -65,11 +65,6 @@ webcompat-update-staging-data = "webcompat_kb.commands.update_staging_data:main"
 webcompat-site-rank-update = "webcompat_kb.commands.site_rank_update:main"
 webcompat-validate = "webcompat_kb.commands.validate:main"
 
-
-# TODO: REVERT BEFORE PUSHING. Local-only override for testing the unreleased
-# BugzillaError.code change; replace with a bugdantic version bump above.
-[tool.uv.sources]
-bugdantic = { path = "/Users/ksenia/Documents/projects/bugdantic" }
 
 [tool.pytest]
 testpaths = ["tests"]

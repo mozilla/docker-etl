@@ -109,7 +109,7 @@ def fetch_comments_individually(
             result.comments.extend(
                 bz_client.comments_as([comment_id], CommentWithReactions)
             )
-        except bugdantic.BugzillaError as e:
+        except bugdantic.BugzillaResponseError as e:
             if e.code in unreadable_codes:
                 logging.warning(f"Comment {comment_id} is unreadable: {e}")
                 result.unreadable_ids[comment_id] = e.code
