@@ -1,6 +1,7 @@
 """Window generation and the age refusal, which are pure functions of a run date."""
 
 import datetime
+import sqlite3
 import types
 
 import pytest
@@ -160,11 +161,56 @@ def test_a_randomization_unit_with_no_analysis_unit_is_skipped_not_defaulted():
     assert "nimbus_id" in why
 
 
-def test_an_ended_recipe_is_excluded_by_the_query_rather_than_fetched_and_discarded():
-    # Asserted on the SQL because that is where the exclusion now lives. Filtering in Python instead
-    # would fetch every recently-ended recipe only to drop it, and reporting each one as skipped
-    # would bury the refusals the skipped list exists to surface.
-    assert "end_date IS NULL" in discovery.DISCOVERY_SQL
+def end_date_clause():
+    """The one clause of the discovery query that decides a recipe by its end date."""
+    clauses = [
+        line.strip().removeprefix("AND ").strip()
+        for line in discovery.DISCOVERY_SQL.splitlines()
+        if line.strip().startswith("AND ") and "end_date" in line
+    ]
+    assert len(clauses) == 1, f"expected one end_date clause, found {clauses}"
+    return clauses[0]
+
+
+def selected(end_date, as_of=AS_OF):
+    """Whether the query selects a recipe with this end date on `as_of`.
+
+    The decision belongs to the query rather than to `discover`, because filtering in Python would
+    fetch every recipe the mirror holds only to drop it. So the clause is read back out of the query
+    and evaluated, rather than restated here: a restatement can agree with itself while the query
+    says something else. ISO dates order lexicographically, so the comparison means the same thing
+    in sqlite as it does in BigQuery.
+    """
+    clause = end_date_clause().replace("@as_of", f"'{as_of.isoformat()}'")
+    with sqlite3.connect(":memory:") as connection:
+        rows = connection.execute(
+            f"SELECT 1 FROM (SELECT ? AS end_date) WHERE {clause}",
+            (end_date.isoformat() if end_date else None,),
+        ).fetchall()
+    return rows != []
+
+
+def test_a_live_recipe_is_selected():
+    assert selected(None) is True
+
+
+def test_a_recipe_whose_end_date_is_still_ahead_is_selected():
+    assert selected(AS_OF + datetime.timedelta(days=1)) is True
+    assert selected(AS_OF + datetime.timedelta(days=30)) is True
+
+
+def test_a_recipe_is_selected_on_the_run_date_it_ends_on():
+    # The run this exists for. Windows mature against the run date, so the tier a recipe's units
+    # completed on their last day under treatment is reportable only on a run whose as_of reached
+    # the end date, and without this run the frozen result stops a tier short of it.
+    assert selected(AS_OF) is True
+
+
+def test_a_recipe_is_dropped_once_the_run_date_is_past_its_end_date():
+    # A window here would reach past the treatment period for some of its units, so it is not a
+    # contrast. One day past is enough to drop it, and it stays dropped.
+    assert selected(AS_OF - datetime.timedelta(days=1)) is False
+    assert selected(AS_OF - datetime.timedelta(days=30)) is False
 
 
 def test_a_slug_filter_reports_only_refusals_rather_than_every_recipe_it_passed_over():
