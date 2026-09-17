@@ -1,0 +1,3 @@
+name = "bugzilla_comments_unreadable"
+description = "Comments posted by autowebcompat that Bugzilla won't return to us"
+etl=["autowebcompat-feedback"]
