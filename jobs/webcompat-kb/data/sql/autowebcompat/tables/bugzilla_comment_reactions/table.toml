@@ -1,0 +1,15 @@
+[comment_id]
+type = "INTEGER"
+mode = "REQUIRED"
+
+[reactions]
+type = "RECORD"
+mode = "REPEATED"
+
+[reactions.fields.name]
+type = "STRING"
+mode = "REQUIRED"
+
+[reactions.fields.count]
+type = "INTEGER"
+mode = "REQUIRED"
