@@ -126,6 +126,9 @@ def mark_unreadable(
     unreadable_ids: Mapping[int, int],
 ) -> None:
     """Record that we should stop requesting these comments"""
+    if not unreadable_ids:
+        return
+
     now = datetime.now(tz=UTC)
     bq_client.insert_rows(
         unreadable_table,
