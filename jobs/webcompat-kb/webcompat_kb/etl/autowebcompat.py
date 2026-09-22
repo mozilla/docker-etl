@@ -1306,8 +1306,7 @@ class DiagnosisTask(HackbotTask):
                             "",
                             "---",
                             "",
-                            "If you'd like to provide feedback on diagnosis, "
-                            "please use the 👍 or 👎 reaction.",
+                            "If you'd like to provide feedback on diagnosis, please use the 👍 or 👎 reaction.",
                         ]
 
                         bug_update.add_comment = bugzilla.CommentCreate(
