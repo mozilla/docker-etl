@@ -84,7 +84,7 @@ class Command(ABC):
 
         parser.add_argument(
             "--github-token",
-            default=(os.environ.get("GH_TOKEN") or "").strip() or None,
+            default=os.environ.get("GH_TOKEN"),
             help="GitHub token",
         )
 

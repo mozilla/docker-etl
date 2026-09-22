@@ -102,7 +102,7 @@ class GitHubIssuesPage:
 
 class GitHub:
     def __init__(self, token: Optional[str]):
-        self.token = token
+        self.token = token.strip() if token is not None else None
 
     def headers(self) -> Mapping[str, str]:
         headers = {"X-GitHub-Api-Version": "2022-11-28"}
