@@ -1,6 +1,7 @@
 WITH
 hackbot_repro AS (
   SELECT
+    scheduled.run_id AS run_id,
     PARSE_NUMERIC(JSON_VALUE(scheduled.extra_data, "$.bug_id")) AS number,
     DATETIME_DIFF(completed.completed_at, completed.created_at, SECOND) AS execution_time
   FROM `{{ ref('hackbot_scheduled') }}` scheduled
@@ -10,6 +11,7 @@ hackbot_repro AS (
 )
 SELECT
   reports.number AS number,
+  hackbot_repro.run_id as run_id,
   DATE(reports.creation_time) AS creation_date,
   CASE
     WHEN reports.whiteboard LIKE '%[webcompat-source:product]%' THEN 'product'

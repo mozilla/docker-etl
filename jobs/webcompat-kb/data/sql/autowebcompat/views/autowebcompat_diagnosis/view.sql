@@ -17,6 +17,7 @@ requesters_list as (
 ),
 hackbot_diagnosis AS (
   SELECT
+    scheduled.run_id AS run_id,
     PARSE_NUMERIC(JSON_VALUE(scheduled.extra_data, "$.bug_id")) as number,
     DATE(completed.completed_at) as processing_completion_date,
     DATE(completed.created_at) as processing_start_date,
@@ -28,6 +29,7 @@ hackbot_diagnosis AS (
 )
 SELECT
   reports.number AS number,
+  hackbot_diagnosis.run_id,
   CASE
     WHEN reports.whiteboard LIKE '%[webcompat-source:product]%' THEN 'product'
     WHEN reports.whiteboard LIKE '%[webcompat-source:web-bugs]%' THEN 'web-bugs'
@@ -52,4 +54,4 @@ LEFT JOIN `{{ ref('webcompat_knowledge_base.scored_site_reports') }}` scored USI
 JOIN hackbot_diagnosis USING (number)
 JOIN `{{ ref('webcompat_knowledge_base.site_reports_next_action') }}` next_action USING(number)
 LEFT JOIN requesters_list USING(number)
-ORDER BY impact_score DESC;
+ORDER BY impact_score DESC
