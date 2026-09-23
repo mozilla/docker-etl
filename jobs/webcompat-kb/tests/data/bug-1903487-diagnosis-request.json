@@ -1,0 +1,21 @@
+{
+  "bug": {
+    "id": 1903487,
+    "whiteboard": "[autowebcompat:processed][autowebcompat:diagnose]",
+    "cf_user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100"
+  },
+  "bug_update": {
+    "id": 1903487,
+    "whiteboard": "[autowebcompat:processed][autowebcompat:diagnosis-in-progress]"
+  },
+  "site_report": {
+    "number": 1903487,
+    "title": "www.kapwing.com - Unsupported browser warning",
+    "url": "https://www.kapwing.com/studio/editor",
+    "keywords": ["webcompat:needs-contact"],
+    "whiteboard": "[autowebcompat:processed][autowebcompat:diagnose]",
+    "user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100",
+    "creation_time": "2024-06-19T06:44:01Z",
+    "source_time": "2026-08-10T12:00:00"
+  }
+}

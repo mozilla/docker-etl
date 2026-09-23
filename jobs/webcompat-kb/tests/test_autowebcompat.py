@@ -22,6 +22,7 @@ DATA_PATH = Path(__file__).parent / "data"
 class BugAPIData(BaseModel):
     bug: Optional[bugzilla.Bug] = None
     bug_update: Optional[bugzilla.BugUpdate] = None
+    site_report: Optional[autowebcompat.NewBugInfo] = None
     hackbot_scheduled: Optional[autowebcompat.ScheduledRun] = None
     hackbot_completed: Optional[autowebcompat.CompleteRun] = None
 
@@ -98,7 +99,8 @@ class MockBigQueryService(autowebcompat.BigQueryService):
         self.pending = []
         self.scheduled = []
         self.new_bugs = []
-        self.diagnosis_bugs: list[Json] = []
+        self.diagnosis_bugs: list[autowebcompat.NewBugInfo] = []
+        self.reproduce_bugs: list[autowebcompat.NewBugInfo] = []
 
     def get_source_times(
         self,
@@ -146,14 +148,16 @@ class MockBigQueryService(autowebcompat.BigQueryService):
                 rv[new_bug.number] = new_bug
         return rv
 
-    def get_diagnosis_requested_bugs(
-        self, whiteboard_token: str
-    ) -> Mapping[int, autowebcompat.DiagnosisBugInfo]:
-        rv = {}
-        for item in self.diagnosis_bugs:
-            bug = autowebcompat.DiagnosisBugInfo.model_validate(item)
-            rv[bug.number] = bug
-        return rv
+    def get_bugs_with_whiteboard_token(
+        self, whiteboard_token: str, include_extra_data: bool = True
+    ) -> Mapping[int, autowebcompat.NewBugInfo]:
+        if whiteboard_token == autowebcompat.DiagnosisTask.whiteboard_request_token:
+            items = self.diagnosis_bugs
+        elif whiteboard_token == autowebcompat.ReproTask.whiteboard_request_token:
+            items = self.reproduce_bugs
+        else:
+            raise ValueError(f"Unexpected whiteboard token {whiteboard_token}")
+        return {bug.number: bug for bug in items if whiteboard_token in bug.whiteboard}
 
 
 class MockBugzillaUpdater(autowebcompat.BugzillaUpdater):
@@ -468,20 +472,17 @@ def test_diagnosis_bugzilla_update_error() -> None:
 
 def test_diagnosis_schedule_updates_flag() -> None:
     """Scheduling a run consumes the request token from the whiteboard."""
+    bug_data = load_data("bug-1903487-diagnosis-request.json")
+    assert bug_data.bug is not None
+    assert bug_data.bug_update is not None
+    assert bug_data.site_report is not None
+
     hackbot_client = MockHackbot()
     bq_service = MockBigQueryService()
-    bq_service.diagnosis_bugs.append(
-        {"number": 1903487, "source_time": "2026-08-10T12:00:00"}
-    )
+    bq_service.diagnosis_bugs.append(bug_data.site_report)
     task = autowebcompat.DiagnosisTask(hackbot_client, bq_service, {})
     updater = MockBugzillaUpdater()
-    updater.bug_data.append(
-        {
-            "id": 1903487,
-            "whiteboard": "[autowebcompat:processed][autowebcompat:diagnose]",
-            "cf_user_story": "",
-        }
-    )
+    updater.bug_data.append(bug_data.bug.model_dump())
 
     scheduled = task.create_new()
     assert list(scheduled.keys()) == ["bugzilla:diagnose-flag"]
@@ -497,20 +498,18 @@ def test_diagnosis_schedule_updates_flag() -> None:
     task.populate_updates(updater)
 
     updates = updater.bug_updates[1903487][1]
-    assert (
-        updates.bug.whiteboard
-        == "[autowebcompat:processed][autowebcompat:diagnosis-in-progress]"
-    )
+    assert updates.bug.whiteboard == bug_data.bug_update.whiteboard
     assert updates.has_updates()
 
 
 def test_diagnosis_schedule_skips_in_flight() -> None:
     """A bug with an incomplete run isn't dispatched again."""
+    bug_data = load_data("bug-1903487-diagnosis-request.json")
+    assert bug_data.site_report is not None
+
     hackbot_client = MockHackbot()
     bq_service = MockBigQueryService()
-    bq_service.diagnosis_bugs.append(
-        {"number": 1903487, "source_time": "2026-08-10T12:00:00"}
-    )
+    bq_service.diagnosis_bugs.append(bug_data.site_report)
     bq_service.scheduled.append(
         {
             "agent": "autowebcompat-diagnosis",
@@ -520,6 +519,60 @@ def test_diagnosis_schedule_skips_in_flight() -> None:
         }
     )
     task = autowebcompat.DiagnosisTask(hackbot_client, bq_service, {})
+
+    assert task.create_new() == {}
+    assert hackbot_client.created == []
+
+
+def test_repro_schedule_whiteboard_request() -> None:
+    """The reproduce token schedules a run on a bug that's already processed."""
+    bug_data = load_data("bug-1903487-repro-request.json")
+    assert bug_data.bug is not None
+    assert bug_data.bug_update is not None
+    assert bug_data.site_report is not None
+
+    hackbot_client = MockHackbot()
+    bq_service = MockBigQueryService()
+    bq_service.reproduce_bugs.append(bug_data.site_report)
+    task = autowebcompat.ReproTask(hackbot_client, bq_service, {})
+    updater = MockBugzillaUpdater()
+    updater.bug_data.append(bug_data.bug.model_dump())
+
+    scheduled = task.create_new()
+    assert list(scheduled.keys()) == ["bugzilla:reproduce-flag"]
+    assert len(hackbot_client.created) == 1
+    request = hackbot_client.created[0]
+    assert isinstance(request, autowebcompat.AutowebcompatReproRequest)
+    assert request.agent == "autowebcompat-repro"
+    assert json.loads(request.bug_data)["number"] == 1903487
+
+    task.configure_updater(updater)
+    assert updater.bug_ids == {1903487}
+    updater.fetch_data()
+    task.populate_updates(updater)
+
+    updates = updater.bug_updates[1903487][1]
+    assert updates.bug.whiteboard == bug_data.bug_update.whiteboard
+    assert updates.has_updates()
+
+
+def test_repro_schedule_skips_in_flight() -> None:
+    """A bug with an incomplete repro run isn't dispatched again."""
+    bug_data = load_data("bug-1903487-repro-request.json")
+    assert bug_data.site_report is not None
+
+    hackbot_client = MockHackbot()
+    bq_service = MockBigQueryService()
+    bq_service.reproduce_bugs.append(bug_data.site_report)
+    bq_service.scheduled.append(
+        {
+            "agent": "autowebcompat-repro",
+            "task_name": "repro",
+            "source_key": "bugzilla:reproduce-flag",
+            "run_key": "1903487",
+        }
+    )
+    task = autowebcompat.ReproTask(hackbot_client, bq_service, {})
 
     assert task.create_new() == {}
     assert hackbot_client.created == []

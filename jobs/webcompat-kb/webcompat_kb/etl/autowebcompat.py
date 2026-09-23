@@ -69,8 +69,16 @@ class NewBugInfo(BaseModel):
     whiteboard: str
     user_story: str
     creation_time: datetime
+    # Runs scheduled before this field existed don't have it in request_data
+    source_time: Optional[datetime] = None
     comments: list[str] = []
     attachments: list[AttachmentData] = []
+
+
+class BugWhiteboard(BaseModel):
+    id: int
+    groups: list[str] = []
+    whiteboard: str
 
 
 class ScheduledRun(BaseModel):
@@ -325,7 +333,9 @@ class BigQueryService:
         created_since: Optional[datetime],
     ) -> Mapping[int, NewBugInfo]:
         bugs_query = f"""
-    SELECT number, title, url, keywords, whiteboard, user_story_raw as user_story, creation_time
+    SELECT
+      number, title, url, keywords, whiteboard, user_story_raw as user_story, creation_time,
+      CAST(IFNULL(last_change_time, creation_time) AS DATETIME) AS source_time
     FROM `{self.project["webcompat_knowledge_base"]["site_reports"]}` as bugs
     WHERE
       resolution = "" AND
@@ -378,7 +388,9 @@ class BigQueryService:
         exclude_agents = [ReproTask.agent, DiagnosisTask.agent]
 
         bugs_query = f"""
-    SELECT number, title, url, keywords, whiteboard, user_story_raw as user_story, creation_time
+    SELECT
+      number, title, url, keywords, whiteboard, user_story_raw as user_story, creation_time,
+      CAST(IFNULL(last_change_time, creation_time) AS DATETIME) AS source_time
     FROM `{self.project["webcompat_knowledge_base"]["scored_site_reports"]}` as bugs
     WHERE
       resolution = "" AND
@@ -389,7 +401,7 @@ class BigQueryService:
       CAST(creation_time AS DATETIME) <= IFNULL(
         @latest_new_bugs_repro_run, DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 WEEK)
       ) AND
-      -- Bugs that agents have scheduled to reproduce or diagnose are excluded, 
+      -- Bugs that agents have scheduled to reproduce or diagnose are excluded,
       -- whether the runs completed or are still in flight
       number NOT IN (
         SELECT CAST(JSON_VALUE(extra_data, "$.bug_id") AS INT64)
@@ -496,18 +508,13 @@ class BigQueryService:
 
         return bugs
 
-    def get_diagnosis_requested_bugs(
-        self, whiteboard_token: str
-    ) -> Mapping[int, DiagnosisBugInfo]:
-        """Bugs currently carrying the diagnosis request token.
-
-        This is level-triggered on the token being present rather than
-        watermarked on a timestamp: the token is removed when a run is
-        scheduled, and that removal is what stops the bug being picked up
-        again on the next tick."""
+    def get_bugs_with_whiteboard_token(
+        self, whiteboard_token: str, include_extra_data: bool = True
+    ) -> Mapping[int, NewBugInfo]:
+        """Bugs with a specific token on the whiteboard"""
         query = f"""
     SELECT
-      number,
+      number, title, url, keywords, whiteboard, user_story_raw as user_story, creation_time,
       CAST(IFNULL(last_change_time, creation_time) AS DATETIME) AS source_time
     FROM `{self.project["webcompat_knowledge_base"]["site_reports"]}`
     WHERE
@@ -523,32 +530,31 @@ class BigQueryService:
             ],
         )
         bugs = {
-            row.number: DiagnosisBugInfo.model_validate(dict(row.items()))
-            for row in rows
+            row.number: NewBugInfo.model_validate(dict(row.items())) for row in rows
         }
         if not bugs:
             return {}
+
+        if include_extra_data:
+            self.add_bugzilla_data(bugs)
 
         # site_reports is only as fresh as the last Bugzilla import, so confirm
         # against live data that the token is still there before dispatching:
         # a previous run may already have consumed it. Also drop bugs Bugzilla
         # doesn't return, or that are moco-confidential.
-
-        diagnosis_bugs: dict[int, DiagnosisBugInfo] = {}
-        for result in self.bz_client.bugs(
-            list(bugs.keys()), include_fields=["id", "groups", "whiteboard"]
-        ):
+        filtered_bugs: dict[int, NewBugInfo] = {}
+        for result in self.bz_client.bugs_as(list(bugs.keys()), BugWhiteboard):
             assert result.id is not None
-            if result.groups and "mozilla-employee-confidential" in result.groups:
+            if "mozilla-employee-confidential" in result.groups:
                 continue
-            if whiteboard_token not in (result.whiteboard or ""):
+            if whiteboard_token not in result.whiteboard:
                 logging.info(
                     f"Bug {result.id} no longer has {whiteboard_token}, skipping"
                 )
                 continue
-            diagnosis_bugs[result.id] = bugs[result.id]
+            filtered_bugs[result.id] = bugs[result.id]
 
-        return diagnosis_bugs
+        return filtered_bugs
 
     def insert_new_runs(self, new_runs: Iterable[ScheduledRun]) -> None:
         rows = [item.to_json() for item in new_runs]
@@ -940,6 +946,8 @@ class BugExtraData(BaseModel):
 class ReproTask(HackbotTask):
     agent: str = "autowebcompat-repro"
     task_name: str = "repro"
+    whiteboard_request_token = "[autowebcompat:reproduce]"
+    whiteboard_progress_token = "[autowebcompat:reproduction-in-progress]"
 
     def requests_diagnosis(self, keywords: list[str]) -> bool:
         """Whether a successful reproduction should also request a diagnosis."""
@@ -953,25 +961,43 @@ class ReproTask(HackbotTask):
     def create_new(
         self,
     ) -> Mapping[str, Sequence[ScheduledRun]]:
-        source_key = self.key("bugzilla", "creation")
-        created_since = self.source_times.get(source_key)
-        new_bugs = self.bq_service.get_new_bugs(created_since)
-        logging.info(f"Found {len(new_bugs)} bugs that require reproduction")
+        all_bugs: dict[str, Mapping[int, NewBugInfo]] = {}
 
-        if not new_bugs:
+        source_key_new = self.key("bugzilla", "creation")
+        created_since = self.source_times.get(source_key_new)
+        all_bugs[source_key_new] = self.bq_service.get_new_bugs(created_since)
+        logging.info(
+            f"Found {len(all_bugs[source_key_new])} new bugs that require reproduction"
+        )
+
+        # Bugs with the explicit flag set that we aren't already scheduling
+        source_key_triggered = self.key("bugzilla", "reproduce-flag")
+        all_bugs[source_key_triggered] = {
+            number: bug
+            for number, bug in self.bq_service.get_bugs_with_whiteboard_token(
+                self.whiteboard_request_token
+            ).items()
+            if number not in all_bugs[source_key_new]
+        }
+        logging.info(
+            f"Found {len(all_bugs[source_key_triggered])} bugs that request additional reproduction"
+        )
+
+        if not any(all_bugs.values()):
             return {}
 
         requests = []
-        for bug_number, bug_info in new_bugs.items():
-            requests.append(
-                ScheduleRequest(
-                    source_key=source_key,
-                    run_key=self.key(str(bug_number)),
-                    source_time=bug_info.creation_time,
-                    request_data=bug_info,
-                    extra_data=BugExtraData(bug_id=bug_number),
+        for source_key, bugs in all_bugs.items():
+            for bug_number, bug_info in bugs.items():
+                requests.append(
+                    ScheduleRequest(
+                        source_key=source_key,
+                        run_key=self.key(str(bug_number)),
+                        source_time=bug_info.creation_time,
+                        request_data=bug_info,
+                        extra_data=BugExtraData(bug_id=bug_number),
+                    )
                 )
-            )
 
         return self.schedule(requests)
 
@@ -1003,14 +1029,10 @@ class ReproTask(HackbotTask):
                 assert isinstance(bug_id, int)
                 processed_token = "[autowebcompat:processed]"
                 bug, bug_update = updater.bug_updates[bug_id]
-                current_whiteboard = (
-                    bug_update.bug.whiteboard
-                    if bug_update.bug.whiteboard is not None
-                    else bug.whiteboard
+                remove_whiteboard(bug, bug_update, [self.whiteboard_request_token])
+                update_whiteboard(
+                    bug, bug_update, [processed_token, self.whiteboard_progress_token]
                 )
-                assert current_whiteboard is not None
-                if processed_token not in current_whiteboard:
-                    bug_update.bug.whiteboard = current_whiteboard + processed_token
 
             run_inputs = {
                 run_id: NewBugInfo.model_validate(scheduled_run.request_data)
@@ -1033,6 +1055,8 @@ class ReproTask(HackbotTask):
 
                 require_whiteboard = []
                 require_user_story = {}
+
+                remove_whiteboard(bug, bug_update, [self.whiteboard_progress_token])
 
                 if isinstance(output, ErrorSummary):
                     require_whiteboard.append("[autowebcompat:repro-failed]")
@@ -1215,13 +1239,21 @@ class DiagnosisTask(HackbotTask):
 
     def create_new(self) -> Mapping[str, Sequence[ScheduledRun]]:
         source_key = self.key("bugzilla", "diagnose-flag")
-        requested_bugs = self.bq_service.get_diagnosis_requested_bugs(
-            self.whiteboard_request_token
+        requested_bugs = self.bq_service.get_bugs_with_whiteboard_token(
+            self.whiteboard_request_token, include_extra_data=False
         )
         logging.info(f"Found {len(requested_bugs)} bugs that requested diagnosis")
 
         if not requested_bugs:
             return {}
+
+        requested_info = {
+            id: DiagnosisBugInfo(
+                number=bug_info.number,
+                source_time=bug_info.source_time or bug_info.creation_time,
+            )
+            for id, bug_info in requested_bugs.items()
+        }
 
         requests = [
             ScheduleRequest(
@@ -1231,7 +1263,7 @@ class DiagnosisTask(HackbotTask):
                 request_data=bug_info,
                 extra_data=BugExtraData(bug_id=bug_number),
             )
-            for bug_number, bug_info in requested_bugs.items()
+            for bug_number, bug_info in requested_info.items()
         ]
 
         return self.schedule(requests)
