@@ -4,6 +4,7 @@ import datetime
 import logging
 
 import pytest
+from mozilla_nimbus_schemas.highwind import HighwindAnalysis
 
 from highwind import analysis, output_writing, units
 from highwind.discovery import Experiment
@@ -54,21 +55,24 @@ class RecordingClient:
 
 
 class RecordingBlob:
-    def __init__(self, uploaded, key):
+    def __init__(self, uploaded, payloads, key):
         self.uploaded = uploaded
+        self.payloads = payloads
         self.key = key
         self.metadata = None
 
     def upload_from_string(self, data, content_type=None):
         self.uploaded.append(self.key)
+        self.payloads[self.key] = HighwindAnalysis.model_validate_json(data)
 
 
 class RecordingBucket:
-    def __init__(self, uploaded):
+    def __init__(self, uploaded, payloads):
         self.uploaded = uploaded
+        self.payloads = payloads
 
     def blob(self, key):
-        return RecordingBlob(self.uploaded, key)
+        return RecordingBlob(self.uploaded, self.payloads, key)
 
 
 class RecordingStorage:
@@ -76,9 +80,10 @@ class RecordingStorage:
 
     def __init__(self):
         self.uploaded = []
+        self.payloads = {}
 
     def bucket(self, name):
-        return RecordingBucket(self.uploaded)
+        return RecordingBucket(self.uploaded, self.payloads)
 
 
 def summary(slug, states, error=None):
@@ -139,15 +144,7 @@ def test_a_failure_while_recording_a_failure_is_still_returned_not_raised():
     # has to come back as a summary, because raising here escapes through future.result() and costs
     # every other experiment its results.
     recorded, results = analysis.analyze_experiment(
-        None,
-        EXPERIMENT,
-        datetime.date(2026, 8, 20),
-        [],
-        {"clients_daily": None},
-        {},
-        "the shared scan failed",
-        None,
-        write_blobs=False,
+        EXPERIMENT, [], {"clients_daily": None}, {}, "the shared scan failed"
     )
 
     assert results == []
@@ -184,7 +181,7 @@ def test_the_run_report_says_so_rather_than_dividing_by_zero_cells(caplog):
     assert "no cells produced" in caplog.text
 
 
-def test_an_experiment_whose_cells_are_all_immature_is_reported_as_worth_a_look(caplog):
+def test_an_experiment_whose_cells_are_all_not_started_is_reported_as_worth_a_look(caplog):
     caplog.set_level(logging.INFO)
 
     analysis.report_anomalies(
@@ -196,7 +193,7 @@ def test_an_experiment_whose_cells_are_all_immature_is_reported_as_worth_a_look(
     )
 
     assert "cohort or join empty" in caplog.text
-    assert "no cells: no window has matured yet" in caplog.text
+    assert "no window has matured" not in caplog.text
     # Each is attributed to the experiment it is about, so a reader looking one up finds the reason
     # against its slug rather than in a line they have to parse. The healthy one is not flagged.
     flagged = [
@@ -204,7 +201,7 @@ def test_an_experiment_whose_cells_are_all_immature_is_reported_as_worth_a_look(
         for record in caplog.records
         if record.levelno == logging.WARNING
     ]
-    assert flagged == ["a", "c"]
+    assert flagged == ["a"]
 
 
 def test_a_refused_recipe_is_recorded_against_its_slug_with_the_reason(caplog):
@@ -212,7 +209,7 @@ def test_a_refused_recipe_is_recorded_against_its_slug_with_the_reason(caplog):
 
     with analysis.collecting_run_log(AS_OF, client, output_writing.Outputs(), True):
         analysis.report_selection(
-            [EXPERIMENT], [("a-refused-slug", "reference=None others=()")], AS_OF
+            [EXPERIMENT], [("a-refused-slug", "reference=None others=()", None)], AS_OF
         )
 
     refusals = [row for row in client.log_rows if row["log_level"] == "WARNING"]
@@ -228,15 +225,7 @@ def test_an_experiment_that_fails_outright_is_recorded_against_its_slug():
 
     with analysis.collecting_run_log(AS_OF, client, output_writing.Outputs(), True):
         analysis.analyze_experiment(
-            None,
-            EXPERIMENT,
-            AS_OF,
-            [],
-            {"clients_daily": None},
-            {},
-            "the shared scan failed",
-            None,
-            write_blobs=False,
+            EXPERIMENT, [], {"clients_daily": None}, {}, "the shared scan failed"
         )
 
     failures = [row for row in client.log_rows if row["log_level"] == "ERROR"]
@@ -253,7 +242,7 @@ def test_the_log_is_written_even_when_the_run_it_covers_raises():
 
     with pytest.raises(RuntimeError):
         with analysis.collecting_run_log(AS_OF, client, output_writing.Outputs(), True):
-            analysis.report_selection([], [("a-slug", "a reason")], AS_OF)
+            analysis.report_selection([], [("a-slug", "a reason", None)], AS_OF)
             raise RuntimeError("whatever ended the run")
 
     assert [row["experiment_slug"] for row in client.log_rows] == [None, "a-slug"]
@@ -268,7 +257,7 @@ def test_a_partial_run_writes_no_log_rows_any_more_than_it_writes_results():
     with analysis.collecting_run_log(
         AS_OF, client, output_writing.Outputs(), write_tables
     ):
-        analysis.report_selection([EXPERIMENT], [("a-slug", "a reason")], AS_OF)
+        analysis.report_selection([EXPERIMENT], [("a-slug", "a reason", None)], AS_OF)
 
     assert write_tables is False
     assert client.loads == []
@@ -333,26 +322,103 @@ def test_a_run_that_only_validates_its_sql_writes_no_blobs_at_all():
     assert analysis.writes_blobs(True, None, output_writing.Outputs()) is False
 
 
-def test_an_experiments_blob_is_written_only_when_the_run_may_publish_one():
-    # The gate has to bite where the blob is actually written, which is inside the per-experiment
-    # work rather than beside the table write at the end of the run.
+def publish(storage, experiments, refused, results_by_slug, run_log):
+    outputs = output_writing.Outputs()
+    analysis.publish_refusals(
+        storage,
+        AS_OF,
+        [(experiment.slug, "a reason", experiment) for experiment in refused],
+        run_log,
+        outputs,
+        2,
+    )
+    analysis.publish_analyses(
+        storage,
+        AS_OF,
+        experiments,
+        analysis.all_metrics(metric_definitions()),
+        results_by_slug,
+        {},
+        {},
+        run_log,
+        outputs,
+        2,
+    )
+
+
+def test_analysed_and_refused_experiments_each_get_a_blob_carrying_their_own_log():
+    refused = Experiment(
+        slug="an-old-slug",
+        start_date=datetime.date(2025, 7, 1),
+        end_date=None,
+        reference_branch="control",
+        treatment_branches=("treatment-a",),
+        unit=units.resolve("firefox_desktop", "normandy_id"),
+    )
+    storage, client = RecordingStorage(), RecordingClient()
     metrics_by_source = metric_definitions()
     windows = analysis.run_windows(EXPERIMENT, AS_OF, metrics_by_source)
-    outputs = output_writing.Outputs()
-    published, withheld = RecordingStorage(), RecordingStorage()
 
-    for storage, write_blobs in ((published, True), (withheld, False)):
-        analysis.analyze_experiment(
-            storage,
-            EXPERIMENT,
-            AS_OF,
-            windows,
-            metrics_by_source,
-            {},
-            "the shared scan failed",
-            outputs,
-            write_blobs=write_blobs,
+    with analysis.collecting_run_log(
+        AS_OF, client, output_writing.Outputs(), False
+    ) as run_log:
+        analysis.report_selection(
+            [EXPERIMENT], [("an-old-slug", "416d old", refused)], AS_OF
         )
+        _, results = analysis.analyze_experiment(
+            EXPERIMENT, windows, metrics_by_source, {}, None
+        )
+        publish(storage, [EXPERIMENT], [refused], {"a-slug": results}, run_log)
 
-    assert published.uploaded == ["highwind/a_slug.json"]
-    assert withheld.uploaded == []
+    assert sorted(storage.uploaded) == ["highwind/a_slug.json", "highwind/an_old_slug.json"]
+    analysed = storage.payloads["highwind/a_slug.json"]
+    refusal = storage.payloads["highwind/an_old_slug.json"]
+    assert [metric.slug for metric in analysed.metrics] == [
+        metric.name for metric in analysis.all_metrics(metrics_by_source)
+    ]
+    assert analysed.errors == []
+    assert refusal.metrics == []
+    assert refusal.segments == []
+    assert [error.message for error in refusal.errors] == ["skipped an-old-slug: 416d old"]
+
+
+def test_a_run_level_failure_reaches_every_experiments_blob():
+    storage, client = RecordingStorage(), RecordingClient()
+
+    with analysis.collecting_run_log(
+        AS_OF, client, output_writing.Outputs(), False
+    ) as run_log:
+        logging.getLogger("highwind.analysis").error("the shared scan failed")
+        publish(storage, [EXPERIMENT], [], {}, run_log)
+
+    errors = storage.payloads["highwind/a_slug.json"].errors
+    assert [(error.message, error.log_level.value) for error in errors] == [
+        ("the shared scan failed", "ERROR")
+    ]
+
+
+def test_a_blob_that_cannot_be_built_is_logged_rather_than_raised():
+    broken = Experiment(
+        slug="a-broken-slug",
+        start_date=datetime.date(2026, 7, 1),
+        end_date=None,
+        reference_branch="control",
+        treatment_branches=("treatment-a",),
+        unit=units.AnalysisUnit(
+            kind="nimbus_id",
+            enrollment_column="nimbus_id",
+            source_column="nimbus_id",
+            clustered_sample_id=False,
+        ),
+    )
+    storage, client = RecordingStorage(), RecordingClient()
+
+    with analysis.collecting_run_log(
+        AS_OF, client, output_writing.Outputs(), False
+    ) as run_log:
+        publish(storage, [broken, EXPERIMENT], [], {}, run_log)
+
+    assert storage.uploaded == ["highwind/a_slug.json"]
+    failures = [row for row in run_log.rows if row["log_level"] == "ERROR"]
+    assert [row["experiment_slug"] for row in failures] == ["a-broken-slug"]
+    assert failures[0]["exception_type"] == "ValueError"
