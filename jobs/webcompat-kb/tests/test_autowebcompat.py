@@ -320,8 +320,22 @@ def test_repro_bugzilla_update_error() -> None:
     )
 
     assert result is None
-    assert updates.add_comment is None
-    assert updates.add_attachments == []
+    assert comment is None
+    assert attachments == []
+
+
+@pytest.mark.parametrize(
+    "data_file",
+    ["bug-1903487-repro-rerun-error.json", "bug-1903487-repro-rerun-success.json"],
+)
+def test_repro_bugzilla_update_rerun(data_file: str) -> None:
+    """A new result replaces the whiteboard and user story from an earlier run.
+
+    The fixture bugs have data from a previous run with the opposite outcome;
+    the expected whiteboard and user story contain only the new result, and are
+    checked by run_repro_update.
+    """
+    run_repro_update(data_file)
 
 
 def run_diagnosis_update(
