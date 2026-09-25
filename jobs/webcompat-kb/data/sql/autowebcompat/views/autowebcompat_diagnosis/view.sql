@@ -25,7 +25,7 @@ hackbot_diagnosis AS (
     IFNULL(repro.repro_type, 'no repro') as repro_type
     FROM `{{ ref('hackbot_scheduled') }}` scheduled
     JOIN `{{ ref('hackbot_completed') }}` completed USING (run_id)
-    LEFT JOIN `{{ ref('reproduction') }}` repro on PARSE_NUMERIC(JSON_VALUE(scheduled.extra_data, "$.bug_id")) = repro.number
+    LEFT JOIN `{{ ref('autowebcompat_reproduction') }}` repro on PARSE_NUMERIC(JSON_VALUE(scheduled.extra_data, "$.bug_id")) = repro.number
     WHERE scheduled.task_name = 'diagnosis'
       AND STARTS_WITH(scheduled.source_key, "bugzilla:")
 )
