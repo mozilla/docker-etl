@@ -8,10 +8,19 @@ load-bearing rather than tidy: without it, an experiment whose queries failed wr
 therefore reports a zero error rate, so the worst failure would be the most invisible.
 """
 
+import logging
 import math
 
-from gbstats.frequentist.tests import SequentialConfig, SequentialTwoSidedTTest
+from gbstats.frequentist.tests import (
+    SequentialConfig,
+    SequentialTwoSidedTTest,
+    sequential_interval_halfwidth,
+)
 from gbstats.models.statistics import RegressionAdjustedStatistic, SampleMeanStatistic
+
+from . import discovery
+
+logger = logging.getLogger(__name__)
 
 # A window's estimator needs at least this many matured units per branch to be attempted. Purely
 # mechanical: a variance wants more than one observation, and below that the estimator divides by
@@ -96,6 +105,15 @@ def compute_cell(experiment, metric, window, treatment, cells, theta, failure):
     try:
         interval = sequential_interval(reference, candidate, theta)
     except Exception as error:  # the state IS the error classification
+        logger.exception(
+            f"{experiment.slug} {metric.name} {window.label} {treatment} failed",
+            extra={
+                "experiment_slug": experiment.slug,
+                "metric": metric.name,
+                "segment": discovery.ALL_ENROLLED,
+                "window": window,
+            },
+        )
         return dict(
             identity, state=ERROR, error=f"{type(error).__name__}: {error}"[:500]
         )
@@ -122,15 +140,44 @@ def sequential_interval(reference, treatment, theta):
     The group's one theta is applied to both branches, so the covariate adjustment is identical on
     each side of the contrast and cannot move the difference it is meant to sharpen.
     """
-    test = build_t_test(adjusted(reference, theta), adjusted(treatment, theta))
-    result = test.compute_result()
+    reference_statistic = adjusted(reference, theta)
+    treatment_statistic = adjusted(treatment, theta)
+    result = build_t_test(reference_statistic, treatment_statistic).compute_result()
     if result.expected is None or result.ci is None:
-        return dict(point=None, lower=None, upper=None, theta=theta)
+        return dict(
+            point=None,
+            lower=None,
+            upper=None,
+            theta=theta,
+            absolute=dict(point=None, lower=None, upper=None),
+        )
+    denominator = relative_denominator(reference_statistic)
     return dict(
         point=result.expected * 100,
         lower=result.ci[0] * 100,
         upper=result.ci[1] * 100,
         theta=theta,
+        absolute=dict(
+            point=result.expected * denominator,
+            lower=result.ci[0] * denominator,
+            upper=result.ci[1] * denominator,
+        ),
+    )
+
+
+def relative_denominator(reference_statistic):
+    return abs(reference_statistic.unadjusted_mean)
+
+
+def mean_halfwidth(cell, theta):
+    statistic = adjusted(cell, theta)
+    if statistic.variance < 0:
+        return math.nan
+    return sequential_interval_halfwidth(
+        statistic.variance,
+        statistic.n,
+        tuning_parameter(statistic.n),
+        SequentialConfig().alpha,
     )
 
 

@@ -74,13 +74,16 @@ def run_daily_job(
     """
     outputs = outputs or output_writing.Outputs()
     write_tables = writes_tables(validate_only, only_slugs, limit, sample_percent, outputs)
+    write_blobs = writes_blobs(validate_only, sample_percent, outputs)
     client = bigquery.Client(project=billing_project)
     storage_client = storage.Client()
-    with collecting_run_log(as_of, client, outputs, write_tables):
+    with collecting_run_log(as_of, client, outputs, write_tables) as run_log:
         experiments, skipped = discovery.discover(
             client, as_of, limit=limit, only_slugs=only_slugs
         )
         report_selection(experiments, skipped, as_of)
+        if write_blobs:
+            publish_refusals(storage_client, as_of, skipped, run_log, outputs, workers)
         if not experiments:
             return []
 
@@ -93,10 +96,9 @@ def run_daily_job(
             experiments, windows_by_slug, as_of, COVARIATE_DAYS, sample_percent
         )
 
-        cells_by_slug, timings, failure = gather_sufficient_statistics(
+        cells_by_slug, units_by_slug, timings, failure = gather_sufficient_statistics(
             client, run, metrics_by_source, as_of, validate_only
         )
-        write_blobs = writes_blobs(validate_only, sample_percent, outputs)
 
         # No lock: `as_completed` yields in this thread, so the accumulation below is
         # single-threaded.
@@ -105,15 +107,11 @@ def run_daily_job(
             futures = [
                 pool.submit(
                     analyze_experiment,
-                    storage_client,
                     experiment,
-                    as_of,
                     windows_by_slug[experiment.slug],
                     metrics_by_source,
                     cells_by_slug.get(experiment.slug, {}),
                     failure,
-                    outputs,
-                    write_blobs,
                 )
                 for experiment in experiments
             ]
@@ -159,7 +157,76 @@ def run_daily_job(
         # query afterwards for the reason the run ended.
         if systemic_failure(summaries):
             logger.error("no experiment produced a result: the run failed as a whole")
+        if write_blobs:
+            publish_analyses(
+                storage_client,
+                as_of,
+                experiments,
+                all_metrics(metrics_by_source),
+                results_by_slug,
+                cells_by_slug,
+                units_by_slug,
+                run_log,
+                outputs,
+                workers,
+            )
         return summaries
+
+
+def publish_analyses(
+    storage_client,
+    as_of,
+    experiments,
+    metrics,
+    results_by_slug,
+    cells_by_slug,
+    units_by_slug,
+    run_log,
+    outputs,
+    workers,
+):
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for experiment in experiments:
+            pool.submit(
+                publish_blob,
+                storage_client,
+                experiment,
+                outputs,
+                output_writing.build_analysis,
+                experiment,
+                as_of,
+                metrics,
+                results_by_slug.get(experiment.slug, []),
+                cells_by_slug.get(experiment.slug, {}),
+                units_by_slug.get(experiment.slug, {}),
+                run_log.problems_for(experiment.slug),
+            )
+
+
+def publish_refusals(storage_client, as_of, skipped, run_log, outputs, workers):
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for _, _, experiment in skipped:
+            if experiment is not None:
+                pool.submit(
+                    publish_blob,
+                    storage_client,
+                    experiment,
+                    outputs,
+                    output_writing.build_refusal,
+                    experiment,
+                    as_of,
+                    run_log.problems_for(experiment.slug),
+                )
+
+
+def publish_blob(storage_client, experiment, outputs, build, *arguments):
+    try:
+        output_writing.write_blob(storage_client, build(*arguments), outputs)
+    except Exception:
+        logger.exception(
+            f"could not write {experiment.slug}'s blob",
+            extra={"experiment_slug": experiment.slug},
+        )
 
 
 @contextlib.contextmanager
@@ -255,7 +322,7 @@ def gather_sufficient_statistics(client, run, metrics_by_source, as_of, validate
     having written nothing.
     """
     if not run.experiments:
-        return {}, [], None
+        return {}, {}, [], None
     try:
         cohort_table, cohort_timing = sql_running.materialize_cohort(
             client, sql_generation.cohort_query(run), as_of, validate_only
@@ -264,14 +331,21 @@ def gather_sufficient_statistics(client, run, metrics_by_source, as_of, validate
         cells_by_slug, timings = sql_running.run_queries(
             client, queries, validate_only=validate_only
         )
-        return cells_by_slug, [cohort_timing, *timings], None
+        units_by_slug = (
+            {}
+            if cohort_table is None
+            else sql_running.count_branch_units(
+                client, sql_generation.branch_units_query(cohort_table)
+            )
+        )
+        return cells_by_slug, units_by_slug, [cohort_timing, *timings], None
     # Recorded against every experiment rather than raised, so a source failure becomes an error
     # grid instead of an exception that ends the run having written nothing.
     except Exception as error:
         # Logged once here rather than once per experiment: every experiment's grid records it, and
         # the reason it happened is a property of the run.
         logger.exception("the shared scan failed, so every experiment records an error grid")
-        return {}, [], error
+        return {}, {}, [], error
 
 
 def report_progress(summary, done, total):
@@ -293,18 +367,8 @@ def report_progress(summary, done, total):
     )
 
 
-def analyze_experiment(
-    storage_client,
-    experiment,
-    as_of,
-    windows,
-    metrics_by_source,
-    cells,
-    shared_failure,
-    outputs,
-    write_blobs=False,
-):
-    """One experiment's statistics and outputs, from cells the shared scan already produced.
+def analyze_experiment(experiment, windows, metrics_by_source, cells, shared_failure):
+    """One experiment's statistics, from cells the shared scan already produced.
 
     Wrapped so a failure is recorded against this experiment's cells and the loop continues. The
     unit of isolation is the experiment because that is the unit a user reads: one experiment whose
@@ -312,16 +376,7 @@ def analyze_experiment(
     """
     try:
         if shared_failure is not None:
-            return failed_summary(
-                storage_client,
-                experiment,
-                as_of,
-                windows,
-                metrics_by_source,
-                shared_failure,
-                outputs,
-                write_blobs,
-            )
+            return failed_summary(experiment, windows, metrics_by_source, shared_failure)
         if not windows:
             # Younger than the shortest window, so no unit has completed one and there is nothing
             # to compute. Its cells are all `not_started` by construction.
@@ -329,10 +384,6 @@ def analyze_experiment(
         results = gbstats_compute.compute_statistics(
             experiment, all_metrics(metrics_by_source), windows, cells
         )
-        if write_blobs:
-            output_writing.write_blob(
-                storage_client, experiment, as_of, results, outputs
-            )
         return experiment_summary(experiment, results), results
     # The whole point is to record it, not to raise.
     except Exception as error:
@@ -342,16 +393,7 @@ def analyze_experiment(
             f"{experiment.slug} failed", extra={"experiment_slug": experiment.slug}
         )
         try:
-            return failed_summary(
-                storage_client,
-                experiment,
-                as_of,
-                windows,
-                metrics_by_source,
-                error,
-                outputs,
-                write_blobs,
-            )
+            return failed_summary(experiment, windows, metrics_by_source, error)
         except Exception as while_recording:
             # A failure while recording a failure must not propagate: it would come back out of
             # future.result() and cost every other experiment its results, which is exactly the
@@ -370,16 +412,7 @@ def analyze_experiment(
             )
 
 
-def failed_summary(
-    storage_client,
-    experiment,
-    as_of,
-    windows,
-    metrics_by_source,
-    error,
-    outputs,
-    write_blobs,
-):
+def failed_summary(experiment, windows, metrics_by_source, error):
     """Record a query-level failure across every cell this experiment expected to produce.
 
     Without this the error rate cannot see an outage: an experiment that produced nothing would
@@ -389,19 +422,6 @@ def failed_summary(
     results = gbstats_compute.compute_statistics(
         experiment, all_metrics(metrics_by_source), windows, cells={}, failure=error
     )
-    if write_blobs:
-        try:
-            output_writing.write_blob(
-                storage_client, experiment, as_of, results, outputs
-            )
-        except Exception:
-            # Recording the error grid must not depend on the thing that just failed. The grid is
-            # returned either way, so the failure stays visible in this run's accounting and in the
-            # table written at the end, even when the blob could not be written.
-            logger.exception(
-                f"could not write {experiment.slug}'s blob",
-                extra={"experiment_slug": experiment.slug},
-            )
     return experiment_summary(experiment, results, error=error), results
 
 
@@ -448,7 +468,7 @@ def report_selection(experiments, skipped, as_of):
     logger.info(
         f"as_of {as_of}: {len(experiments)} experiments to analyse, {len(skipped)} skipped"
     )
-    for slug, why in skipped:
+    for slug, why, _ in skipped:
         logger.warning(f"skipped {slug}: {why}", extra={"experiment_slug": slug})
 
 
@@ -529,8 +549,6 @@ def report_anomalies(summaries):
                 )
             elif states.get("insufficient_data", 0) == summary["cells"]:
                 suspicious.append((summary["slug"], "every cell insufficient_data"))
-        if summary["cells"] == 0:
-            suspicious.append((summary["slug"], "no cells: no window has matured yet"))
     if suspicious:
         logger.info(f"{len(suspicious)} experiments to look at:")
         for slug, why in suspicious:

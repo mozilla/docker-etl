@@ -155,11 +155,131 @@ class Metric:
     source: str
     reducer: Reducer
     window_rules: tuple = (CUMULATIVE_WEEKLY,)
+    friendly_name: str | None = None
+    description: str | None = None
+
+
+SEARCH_DOCS = "https://docs.telemetry.mozilla.org/datasets/search.html"
+DAU_DOCS = (
+    "https://mozilla-hub.atlassian.net/wiki/spaces/DATA/pages/314704478/"
+    "Daily+Active+Users+DAU+Metric"
+)
+
+DISPLAY = {
+    "days_of_use": (
+        "Days of use",
+        "The number of days in the interval that each client sent a main ping.",
+    ),
+    "qualified_cumulative_days_of_use": (
+        "QCDOU",
+        "The number of days in the interval that each client sent a main ping, given that the "
+        "client had >0 active hours and >0 URIs loaded.",
+    ),
+    "active_hours": (
+        "Active hours",
+        "Measures the amount of time (in 5-second increments) during which Firefox received user "
+        "input from a keyboard or mouse. The Firefox window does not need to be focused.",
+    ),
+    "uri_count": (
+        "URIs visited",
+        "Counts the total number of URIs visited. Includes within-page navigation events (e.g. to "
+        "anchors).",
+    ),
+    "is_pinned": (
+        "Is Pinned (Windows Taskbar)",
+        "Was Firefox pinned to the Windows Taskbar at any point during the interval?",
+    ),
+    "is_default_browser": (
+        "Is Default Browser",
+        "Was Firefox the default browser at any point during the interval?",
+    ),
+    "retained": (
+        "Retained",
+        "Records whether a client submitted any pings (i.e. used Firefox). Note: As of June 2026, "
+        'this metric is being deprecated in favor of "Retained (DAU)", which better matches the '
+        'conventional definition of Retention based on "active" instead of "seen" now recommended '
+        "by Data Science team and used for reporting in other contexts.",
+    ),
+    "search_count": (
+        "SAP searches",
+        "Counts the number of searches a user performed through Firefox's Search Access Points. "
+        f"Learn more in the [search data documentation]({SEARCH_DOCS}).",
+    ),
+    "ad_clicks": (
+        "Ad clicks",
+        "Counts clicks on ads on search engine result pages with a Mozilla partner tag.",
+    ),
+    "searches_with_ads": (
+        "Search result pages with ads",
+        "Counts search result pages served with advertising. Users may not actually see these ads "
+        "thanks to e.g. ad-blockers. Learn more in the [search analysis documentation]"
+        "(https://mozilla-private.report/search-analysis-docs/book/in_content_searches.html).",
+    ),
+    "organic_search_count": (
+        "Organic searches",
+        "Counts organic searches, which are searches that are _not_ performed through a Firefox "
+        "SAP and which are not monetizable. Learn more in the [search data documentation]"
+        f"({SEARCH_DOCS}).",
+    ),
+    "tagged_search_count": (
+        "Tagged SAP searches",
+        "Counts the number of searches a user performed through Firefox's Search Access Points "
+        "that were submitted with a partner code and were potentially revenue-generating. Learn "
+        f"more in the [search data documentation]({SEARCH_DOCS}).",
+    ),
+    "tagged_follow_on_search_count": (
+        "Tagged follow-on searches",
+        "Counts the number of follow-on searches with a Mozilla partner tag. These are additional "
+        "searches that users performed from a search engine results page after executing a tagged "
+        f"search through a SAP. Learn more in the [search data documentation]({SEARCH_DOCS}).",
+    ),
+    "retained_dau": (
+        "Retained (DAU)",
+        "Whether the client had at least one DAU-qualifying day in the analysis window (is_dau = "
+        "TRUE on any day). Conventionally expressed as a percentage rate: The percentage of "
+        "clients from the originating cohort that were then active in the later period. Most "
+        "typically, this is measured as Week 2 Retention in order to balance timeliness and "
+        "accuracy. But when time permits, Data Science recommends using Week 4 Retention as more "
+        "representative of long-term effects.",
+    ),
+    "active_in_last_3_days_legacy": (
+        "3 Days Retention",
+        "Records whether a client submitted any pings (i.e. used Firefox) on any of the last 3 "
+        "days. Uses legacy telemetry.",
+    ),
+    "client_level_daily_active_users_v2": (
+        "Firefox Desktop Client-Level DAU",
+        f"Client-level DAU. The logic is [detailed on the Confluence DAU page]({DAU_DOCS}) and is "
+        "automatically cross-checked, actively monitored, and change controlled. This metric "
+        "needs to be aggregated by `submission_date`. If it is not aggregated by "
+        '`submission_date`, it is similar to a "days of use" metric, and not DAU.',
+    ),
+    "daily_active_users_per_1000_clients_legacy": (
+        "DAU per 1,000 clients",
+        f"This metric uses our [canonical, supported definition of Daily Active Users (DAU)]"
+        f"({DAU_DOCS}), expressed in a format suited for use in experiments. In an experimental "
+        "comparison, it describes the *additional (incremental) DAU* seen on each day from a "
+        "treatment. The units are expressed in terms of thousands of clients enrolled or exposed, "
+        "so the effect can be scaled to either the observed or expected rollout population as "
+        "needed to estimate absolute DAU impact. Effects are averaged to a per-day basis over "
+        'each analysis period. Since feature changes often show a strong "novelty effect", this '
+        "metric is best interpreted over Week 4 or later, in order to better estimate what the "
+        "lasting steady-state effects are.",
+    ),
+}
 
 
 def _metric(name, source, reducer):
     rules = (DISJOINT_WEEKLY,) if name in RETENTION_METRICS else (CUMULATIVE_WEEKLY,)
-    return Metric(name=name, source=source, reducer=reducer, window_rules=rules)
+    friendly_name, description = DISPLAY[name]
+    return Metric(
+        name=name,
+        source=source,
+        reducer=reducer,
+        window_rules=rules,
+        friendly_name=friendly_name,
+        description=description,
+    )
 
 
 CLIENTS_DAILY = "clients_daily"

@@ -38,6 +38,9 @@ MAX_EXPERIMENT_AGE_DAYS = 365
 # including them would be new analysis rather than a port.
 APP_NAME = "firefox_desktop"
 
+ALL_ENROLLED = "all_enrolled"
+ALL_ENROLLED_NAME = "All enrolled"
+
 DISCOVERY_SQL = f"""
 SELECT
   normandy_slug AS slug,
@@ -82,6 +85,9 @@ class Experiment:
         """Return every branch, reference first."""
         return (self.reference_branch, *self.treatment_branches)
 
+    def ended(self, as_of):
+        return self.end_date is not None and self.end_date <= as_of
+
     def too_old(self, as_of):
         """Whether this recipe is past the age at which it is worth analysing at all."""
         return self.tenure_days(as_of) >= MAX_EXPERIMENT_AGE_DAYS
@@ -123,7 +129,7 @@ def discover(client, as_of, limit=None, only_slugs=None):
         )
         if not row.reference_branch or not others:
             skipped.append(
-                (row.slug, f"reference={row.reference_branch!r} others={others}")
+                (row.slug, f"reference={row.reference_branch!r} others={others}", None)
             )
             continue
         unit = units.resolve(row.app_name, row.randomization_unit)
@@ -133,6 +139,7 @@ def discover(client, as_of, limit=None, only_slugs=None):
                     row.slug,
                     f"{row.app_name} randomizes on {row.randomization_unit!r}, which has no "
                     f"analysis unit here",
+                    None,
                 )
             )
             continue
@@ -150,6 +157,7 @@ def discover(client, as_of, limit=None, only_slugs=None):
                     row.slug,
                     f"{experiment.tenure_days(as_of)}d old, past the "
                     f"{MAX_EXPERIMENT_AGE_DAYS}d limit",
+                    experiment,
                 )
             )
             continue
@@ -190,26 +198,29 @@ def generate_windows(rule, tenure_days):
     Only windows some unit could have completed are generated, so there is no window here that could
     not be computed. A window needs `end + 1` days of tenure to be complete.
     """
-    length, kind = rule["length"], rule["kind"]
     windows, index = [], 1
     while True:
-        if kind == "disjoint":
-            start, end = (index - 1) * length, index * length - 1
-        elif kind == "cumulative":
-            start, end = 0, index * length - 1
-        else:
-            raise ValueError(
-                f"unknown window kind {kind!r}; expected disjoint or cumulative"
-            )
-        if end + 1 > tenure_days:
+        window = window_at(rule, index)
+        if window.end + 1 > tenure_days:
             return windows
-        prefix = "week" if kind == "disjoint" else "cumu"
-        windows.append(
-            Window(label=f"{prefix}:{index}", start=start, end=end, kind=kind)
-        )
+        windows.append(window)
         index += 1
         if index > 1000:  # a runaway guard, not a real limit
             raise RuntimeError(f"window generation did not terminate for rule {rule}")
+
+
+def window_at(rule, index):
+    length, kind = rule["length"], rule["kind"]
+    if kind == "disjoint":
+        start, end = (index - 1) * length, index * length - 1
+    elif kind == "cumulative":
+        start, end = 0, index * length - 1
+    else:
+        raise ValueError(
+            f"unknown window kind {kind!r}; expected disjoint or cumulative"
+        )
+    prefix = "week" if kind == "disjoint" else "cumu"
+    return Window(label=f"{prefix}:{index}", start=start, end=end, kind=kind)
 
 
 def windows_for(metric, tenure_days):
@@ -220,3 +231,26 @@ def windows_for(metric, tenure_days):
         for rule in metric.window_rules
         for window in generate_windows(rule, reach)
     ]
+
+
+def reported_windows(metric, experiment, as_of):
+    tenure = experiment.tenure_days(as_of)
+    windows = []
+    for rule in metric.window_rules:
+        matured = generate_windows(rule, min(tenure, MAX_WINDOW_DAYS))
+        upcoming = window_at(rule, len(matured) + 1)
+        windows.extend(matured)
+        if not experiment.ended(as_of) and upcoming.end + 1 <= MAX_WINDOW_DAYS:
+            windows.append(upcoming)
+    return sorted(
+        windows,
+        key=lambda window: (window.kind != "cumulative", window.start, window.end),
+    )
+
+
+def matures_on(experiment, window):
+    return experiment.start_date + datetime.timedelta(days=window.end + 1)
+
+
+def has_matured(experiment, window, as_of):
+    return window.end + 1 <= experiment.tenure_days(as_of)
