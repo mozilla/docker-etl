@@ -6,7 +6,7 @@ import os
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, MutableMapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import (
     Annotated,
@@ -69,8 +69,16 @@ class NewBugInfo(BaseModel):
     whiteboard: str
     user_story: str
     creation_time: datetime
+    # Runs scheduled before this field existed don't have it in request_data
+    source_time: Optional[datetime] = None
     comments: list[str] = []
     attachments: list[AttachmentData] = []
+
+
+class BugWhiteboard(BaseModel):
+    id: int
+    groups: list[str] = []
+    whiteboard: str
 
 
 class ScheduledRun(BaseModel):
@@ -325,7 +333,9 @@ class BigQueryService:
         created_since: Optional[datetime],
     ) -> Mapping[int, NewBugInfo]:
         bugs_query = f"""
-    SELECT number, title, url, keywords, whiteboard, user_story_raw as user_story, creation_time
+    SELECT
+      number, title, url, keywords, whiteboard, user_story_raw as user_story, creation_time,
+      CAST(IFNULL(last_change_time, creation_time) AS DATETIME) AS source_time
     FROM `{self.project["webcompat_knowledge_base"]["site_reports"]}` as bugs
     WHERE
       resolution = "" AND
@@ -378,7 +388,9 @@ class BigQueryService:
         exclude_agents = [ReproTask.agent, DiagnosisTask.agent]
 
         bugs_query = f"""
-    SELECT number, title, url, keywords, whiteboard, user_story_raw as user_story, creation_time
+    SELECT
+      number, title, url, keywords, whiteboard, user_story_raw as user_story, creation_time,
+      CAST(IFNULL(last_change_time, creation_time) AS DATETIME) AS source_time
     FROM `{self.project["webcompat_knowledge_base"]["scored_site_reports"]}` as bugs
     WHERE
       resolution = "" AND
@@ -389,7 +401,7 @@ class BigQueryService:
       CAST(creation_time AS DATETIME) <= IFNULL(
         @latest_new_bugs_repro_run, DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 WEEK)
       ) AND
-      -- Bugs that agents have scheduled to reproduce or diagnose are excluded, 
+      -- Bugs that agents have scheduled to reproduce or diagnose are excluded,
       -- whether the runs completed or are still in flight
       number NOT IN (
         SELECT CAST(JSON_VALUE(extra_data, "$.bug_id") AS INT64)
@@ -496,18 +508,13 @@ class BigQueryService:
 
         return bugs
 
-    def get_diagnosis_requested_bugs(
-        self, whiteboard_token: str
-    ) -> Mapping[int, DiagnosisBugInfo]:
-        """Bugs currently carrying the diagnosis request token.
-
-        This is level-triggered on the token being present rather than
-        watermarked on a timestamp: the token is removed when a run is
-        scheduled, and that removal is what stops the bug being picked up
-        again on the next tick."""
+    def get_bugs_with_whiteboard_token(
+        self, whiteboard_token: str, include_extra_data: bool = True
+    ) -> Mapping[int, NewBugInfo]:
+        """Bugs with a specific token on the whiteboard"""
         query = f"""
     SELECT
-      number,
+      number, title, url, keywords, whiteboard, user_story_raw as user_story, creation_time,
       CAST(IFNULL(last_change_time, creation_time) AS DATETIME) AS source_time
     FROM `{self.project["webcompat_knowledge_base"]["site_reports"]}`
     WHERE
@@ -523,32 +530,31 @@ class BigQueryService:
             ],
         )
         bugs = {
-            row.number: DiagnosisBugInfo.model_validate(dict(row.items()))
-            for row in rows
+            row.number: NewBugInfo.model_validate(dict(row.items())) for row in rows
         }
         if not bugs:
             return {}
+
+        if include_extra_data:
+            self.add_bugzilla_data(bugs)
 
         # site_reports is only as fresh as the last Bugzilla import, so confirm
         # against live data that the token is still there before dispatching:
         # a previous run may already have consumed it. Also drop bugs Bugzilla
         # doesn't return, or that are moco-confidential.
-
-        diagnosis_bugs: dict[int, DiagnosisBugInfo] = {}
-        for result in self.bz_client.bugs(
-            list(bugs.keys()), include_fields=["id", "groups", "whiteboard"]
-        ):
+        filtered_bugs: dict[int, NewBugInfo] = {}
+        for result in self.bz_client.bugs_as(list(bugs.keys()), BugWhiteboard):
             assert result.id is not None
-            if result.groups and "mozilla-employee-confidential" in result.groups:
+            if "mozilla-employee-confidential" in result.groups:
                 continue
-            if whiteboard_token not in (result.whiteboard or ""):
+            if whiteboard_token not in result.whiteboard:
                 logging.info(
                     f"Bug {result.id} no longer has {whiteboard_token}, skipping"
                 )
                 continue
-            diagnosis_bugs[result.id] = bugs[result.id]
+            filtered_bugs[result.id] = bugs[result.id]
 
-        return diagnosis_bugs
+        return filtered_bugs
 
     def insert_new_runs(self, new_runs: Iterable[ScheduledRun]) -> None:
         rows = [item.to_json() for item in new_runs]
@@ -611,22 +617,120 @@ def poll_pending(
     return complete_runs, failed
 
 
-@dataclass
 class BugUpdate:
-    bug: bugzilla.BugUpdate
-    add_attachments: list[bugzilla.AttachmentCreate] = field(default_factory=list)
-    add_comment: Optional[bugzilla.CommentCreate] = None
-    run_id: Optional[UUID] = None
+    def __init__(self, bug: bugzilla.Bug):
+        assert bug.id is not None
+        self.bug = bug
+        self.bug_id: int = bug.id
+        self._whiteboard_tokens: dict[str, bool] = {}
+        self._user_story: dict[str, Optional[str]] = {}
+        self._attachments: list[bugzilla.AttachmentCreate] = []
+        self._comment: Optional[bugzilla.CommentCreate] = None
+        self.run_id: Optional[UUID] = None
 
-    def has_updates(self) -> bool:
-        if self.add_attachments:
-            return True
-
-        update_fields = self.bug.model_dump(exclude_none=True).keys() - {
+    def get_updates(
+        self,
+    ) -> tuple[
+        Optional[bugzilla.BugUpdate],
+        Optional[bugzilla.CommentCreate],
+        list[bugzilla.AttachmentCreate],
+    ]:
+        update: bugzilla.BugUpdate | None = bugzilla.BugUpdate(ids=[self.bug_id])
+        assert update is not None
+        self._update_whiteboard(update)
+        self._update_user_story(update)
+        update_fields = update.model_dump(exclude_none=True).keys() - {
             "ids",
             "id_or_alias",
         }
-        return bool(update_fields)
+        if not update_fields:
+            update = None
+        return update, self._comment, self._attachments
+
+    def add_whiteboard(self, tokens: list[str]) -> None:
+        for token in tokens:
+            self._whiteboard_tokens[token] = True
+
+    def remove_whiteboard(self, tokens: list[str]) -> None:
+        for token in tokens:
+            self._whiteboard_tokens[token] = False
+
+    def set_user_story(self, key_values: Mapping[str, Optional[str]]) -> None:
+        self._user_story.update(key_values)
+
+    def set_comment(self, comment: str) -> None:
+        if self._comment is not None:
+            raise ValueError("Tried to add multiple comments to a bug")
+        self._comment = bugzilla.CommentCreate(comment=comment)
+
+    def add_attachment(
+        self,
+        data: bytes | str,
+        file_name: str,
+        summary: str,
+        comment: Optional[str],
+        content_type: str,
+    ) -> None:
+        self._attachments.append(
+            bugzilla.AttachmentCreate.from_raw_data(
+                ids=[self.bug_id],
+                data=data,
+                file_name=file_name,
+                summary=summary,
+                comment=comment,
+                content_type=content_type,
+            )
+        )
+
+    def _update_whiteboard(self, update: bugzilla.BugUpdate) -> None:
+        for token, add in self._whiteboard_tokens.items():
+            current_whiteboard = (
+                update.whiteboard
+                if update.whiteboard is not None
+                else self.bug.whiteboard
+            )
+            assert current_whiteboard is not None
+            if add and token not in current_whiteboard:
+                update.whiteboard = current_whiteboard + token
+            elif not add and token in current_whiteboard:
+                update.whiteboard = current_whiteboard.replace(token, "")
+
+    def _update_user_story(self, update: bugzilla.BugUpdate) -> None:
+        current_user_story = (
+            update.cf_user_story
+            if update.cf_user_story is not None
+            else self.bug.cf_user_story
+        )
+        if current_user_story is not None:
+            current_fields = userstory.parse_as_dict(current_user_story)
+        else:
+            current_fields = {}
+        changes = []
+        for key, value in self._user_story.items():
+            if key in current_fields:
+                current_value = current_fields[key]
+                if value is None:
+                    if isinstance(current_value, str):
+                        changes.append(
+                            userstory.UserStoryChange.delete(key, current_value)
+                        )
+                    elif isinstance(current_value, list):
+                        for val in current_value:
+                            changes.append(userstory.UserStoryChange.delete(key, val))
+                elif isinstance(current_value, list):
+                    if value not in current_value:
+                        changes.append(userstory.UserStoryChange.append(key, value))
+                else:
+                    changes.append(
+                        userstory.UserStoryChange.replace(key, current_value, value)
+                    )
+            else:
+                if value is not None:
+                    changes.append(userstory.UserStoryChange.append(key, value))
+
+        new_value = userstory.update(current_user_story or "", changes)
+        if new_value is not None:
+            update.cf_user_story = new_value
 
 
 class Updater(ABC):
@@ -655,7 +759,7 @@ class BugzillaUpdater(Updater):
         self.client = client
         self.include_fields = {"id"}
         self.bug_ids: set[int] = set()
-        self.bug_updates: dict[int, tuple[bugzilla.Bug, BugUpdate]] = {}
+        self.bug_updates: dict[int, BugUpdate] = {}
         self.posted_comments: list[PostedComment] = []
 
     def add_include_fields(self, fields: Iterable[str]) -> None:
@@ -669,17 +773,15 @@ class BugzillaUpdater(Updater):
             bug_ids=list(self.bug_ids), include_fields=list(self.include_fields)
         ):
             assert bug.id is not None
-            self.bug_updates[bug.id] = (
-                bug,
-                BugUpdate(bug=bugzilla.BugUpdate(ids=[bug.id])),
-            )
+            self.bug_updates[bug.id] = BugUpdate(bug)
 
     def update(self) -> None:
-        for bug_id, (_, bug_update) in self.bug_updates.items():
+        for bug_id, bug_update in self.bug_updates.items():
             try:
-                if bug_update.add_comment is not None:
+                update, comment, attachments = bug_update.get_updates()
+                if comment is not None:
                     assert bug_update.run_id is not None
-                    comment_id = self.client.add_comment(bug_id, bug_update.add_comment)
+                    comment_id = self.client.add_comment(bug_id, comment)
                     if comment_id is not None:
                         self.posted_comments.append(
                             PostedComment(
@@ -688,9 +790,9 @@ class BugzillaUpdater(Updater):
                                 run_id=bug_update.run_id,
                             )
                         )
-                if bug_update.has_updates():
-                    self.client.update_bugs(bug_update.bug)
-                for attachment in bug_update.add_attachments:
+                if update:
+                    self.client.update_bugs(update)
+                for attachment in attachments:
                     self.client.create_attachment(attachment)
             except Exception as e:
                 logging.error(f"Error posting hackbot result for {bug_id}: {e}")
@@ -719,74 +821,6 @@ def format_user_story_value(value: str | list[str]) -> str:
     if isinstance(value, list):
         return ",".join(value)
     return value
-
-
-def update_whiteboard(
-    bug: bugzilla.Bug, bug_update: BugUpdate, require_tokens: list[str]
-) -> None:
-    for token in require_tokens:
-        current_whiteboard = (
-            bug_update.bug.whiteboard
-            if bug_update.bug.whiteboard is not None
-            else bug.whiteboard
-        )
-        assert current_whiteboard is not None
-        if token not in current_whiteboard:
-            bug_update.bug.whiteboard = current_whiteboard + token
-
-
-def remove_whiteboard(
-    bug: bugzilla.Bug, bug_update: BugUpdate, remove_tokens: list[str]
-) -> None:
-    current_whiteboard = (
-        bug_update.bug.whiteboard
-        if bug_update.bug.whiteboard is not None
-        else bug.whiteboard
-    )
-    assert current_whiteboard is not None
-    new_whiteboard = current_whiteboard
-    for token in remove_tokens:
-        new_whiteboard = new_whiteboard.replace(token, "")
-    if new_whiteboard != current_whiteboard:
-        bug_update.bug.whiteboard = new_whiteboard
-
-
-def update_user_story(
-    bug: bugzilla.Bug, bug_update: BugUpdate, require_tokens: Mapping[str, str | None]
-) -> None:
-    current_user_story = (
-        bug_update.bug.cf_user_story
-        if bug_update.bug.cf_user_story is not None
-        else bug.cf_user_story
-    )
-    if current_user_story is not None:
-        current_fields = userstory.parse_as_dict(current_user_story)
-    else:
-        current_fields = {}
-    changes = []
-    for key, value in require_tokens.items():
-        if key in current_fields:
-            current_value = current_fields[key]
-            if value is None:
-                if isinstance(current_value, str):
-                    changes.append(userstory.UserStoryChange.delete(key, current_value))
-                elif isinstance(current_value, list):
-                    for val in current_value:
-                        changes.append(userstory.UserStoryChange.delete(key, val))
-            elif isinstance(current_value, list):
-                if value not in current_value:
-                    changes.append(userstory.UserStoryChange.append(key, value))
-            else:
-                changes.append(
-                    userstory.UserStoryChange.replace(key, current_value, value)
-                )
-        else:
-            if value is not None:
-                changes.append(userstory.UserStoryChange.append(key, value))
-
-    new_value = userstory.update(current_user_story or "", changes)
-    if new_value is not None:
-        bug_update.bug.cf_user_story = new_value
 
 
 @dataclass
@@ -940,6 +974,15 @@ class BugExtraData(BaseModel):
 class ReproTask(HackbotTask):
     agent: str = "autowebcompat-repro"
     task_name: str = "repro"
+    whiteboard_request_token = "[autowebcompat:reproduce]"
+    whiteboard_progress_token = "[autowebcompat:reproduction-in-progress]"
+    user_story_fields = (
+        "autowebcompat-repro-status",
+        "autowebcompat-repro-reason",
+        "autowebcompat-repro-chrome-mask-fixed",
+        "autowebcompat-repro-channels",
+        "autowebcompat-repro-report-os",
+    )
 
     def requests_diagnosis(self, keywords: list[str]) -> bool:
         """Whether a successful reproduction should also request a diagnosis."""
@@ -953,25 +996,43 @@ class ReproTask(HackbotTask):
     def create_new(
         self,
     ) -> Mapping[str, Sequence[ScheduledRun]]:
-        source_key = self.key("bugzilla", "creation")
-        created_since = self.source_times.get(source_key)
-        new_bugs = self.bq_service.get_new_bugs(created_since)
-        logging.info(f"Found {len(new_bugs)} bugs that require reproduction")
+        all_bugs: dict[str, Mapping[int, NewBugInfo]] = {}
 
-        if not new_bugs:
+        source_key_new = self.key("bugzilla", "creation")
+        created_since = self.source_times.get(source_key_new)
+        all_bugs[source_key_new] = self.bq_service.get_new_bugs(created_since)
+        logging.info(
+            f"Found {len(all_bugs[source_key_new])} new bugs that require reproduction"
+        )
+
+        # Bugs with the explicit flag set that we aren't already scheduling
+        source_key_triggered = self.key("bugzilla", "reproduce-flag")
+        all_bugs[source_key_triggered] = {
+            number: bug
+            for number, bug in self.bq_service.get_bugs_with_whiteboard_token(
+                self.whiteboard_request_token
+            ).items()
+            if number not in all_bugs[source_key_new]
+        }
+        logging.info(
+            f"Found {len(all_bugs[source_key_triggered])} bugs that request additional reproduction"
+        )
+
+        if not any(all_bugs.values()):
             return {}
 
         requests = []
-        for bug_number, bug_info in new_bugs.items():
-            requests.append(
-                ScheduleRequest(
-                    source_key=source_key,
-                    run_key=self.key(str(bug_number)),
-                    source_time=bug_info.creation_time,
-                    request_data=bug_info,
-                    extra_data=BugExtraData(bug_id=bug_number),
+        for source_key, bugs in all_bugs.items():
+            for bug_number, bug_info in bugs.items():
+                requests.append(
+                    ScheduleRequest(
+                        source_key=source_key,
+                        run_key=self.key(str(bug_number)),
+                        source_time=bug_info.creation_time,
+                        request_data=bug_info,
+                        extra_data=BugExtraData(bug_id=bug_number),
+                    )
                 )
-            )
 
         return self.schedule(requests)
 
@@ -1002,15 +1063,11 @@ class ReproTask(HackbotTask):
                 bug_id = BugExtraData.model_validate(scheduled.extra_data).bug_id
                 assert isinstance(bug_id, int)
                 processed_token = "[autowebcompat:processed]"
-                bug, bug_update = updater.bug_updates[bug_id]
-                current_whiteboard = (
-                    bug_update.bug.whiteboard
-                    if bug_update.bug.whiteboard is not None
-                    else bug.whiteboard
+                bug_update = updater.bug_updates[bug_id]
+                bug_update.remove_whiteboard([self.whiteboard_request_token])
+                bug_update.add_whiteboard(
+                    [processed_token, self.whiteboard_progress_token]
                 )
-                assert current_whiteboard is not None
-                if processed_token not in current_whiteboard:
-                    bug_update.bug.whiteboard = current_whiteboard + processed_token
 
             run_inputs = {
                 run_id: NewBugInfo.model_validate(scheduled_run.request_data)
@@ -1029,10 +1086,20 @@ class ReproTask(HackbotTask):
 
             for uuid, output in run_outputs.items():
                 bug_info = run_inputs[uuid]
-                bug, bug_update = updater.bug_updates[bug_info.number]
+                bug_update = updater.bug_updates[bug_info.number]
 
                 require_whiteboard = []
-                require_user_story = {}
+                require_user_story: dict[str, Optional[str]] = {
+                    item: None for item in self.user_story_fields
+                }
+
+                bug_update.remove_whiteboard(
+                    [
+                        self.whiteboard_progress_token,
+                        "[autowebcompat:repro-failed]",
+                        "[autowebcompat:repro-success]",
+                    ],
+                )
 
                 if isinstance(output, ErrorSummary):
                     require_whiteboard.append("[autowebcompat:repro-failed]")
@@ -1075,15 +1142,12 @@ class ReproTask(HackbotTask):
                                 script_url = result.script_url
                             data = try_get_file(script_url)
                             if data:
-                                bug_update.add_attachments.append(
-                                    bugzilla.AttachmentCreate.from_raw_data(
-                                        ids=[bug_info.number],
-                                        data=data,
-                                        file_name="autowebcompat-repro-script.mjs",
-                                        summary="Reproduction script generated by autowebcompat bot",
-                                        comment=html.escape(result.summary),
-                                        content_type="text/javascript",
-                                    )
+                                bug_update.add_attachment(
+                                    data=data,
+                                    file_name="autowebcompat-repro-script.mjs",
+                                    summary="Reproduction script generated by autowebcompat bot",
+                                    comment=html.escape(result.summary),
+                                    content_type="text/javascript",
                                 )
                                 script_attached = True
                             else:
@@ -1092,15 +1156,12 @@ class ReproTask(HackbotTask):
                                     result.script_url,
                                 )
                         if not script_attached and result.steps:
-                            bug_update.add_attachments.append(
-                                bugzilla.AttachmentCreate.from_raw_data(
-                                    ids=[bug_info.number],
-                                    data=result.steps,
-                                    file_name="autowebcompat-repro-steps.txt",
-                                    summary="Reproduction steps generated by autowebcompat bot",
-                                    comment=html.escape(result.summary),
-                                    content_type="text/markdown",
-                                )
+                            bug_update.add_attachment(
+                                data=result.steps,
+                                file_name="autowebcompat-repro-steps.txt",
+                                summary="Reproduction steps generated by autowebcompat bot",
+                                comment=html.escape(result.summary),
+                                content_type="text/markdown",
                             )
                         if result.screenshot_url:
                             if not result.screenshot_url.startswith("https://"):
@@ -1112,14 +1173,12 @@ class ReproTask(HackbotTask):
                                 screenshot_url = result.screenshot_url
                             data = try_get_file(screenshot_url, {"image/png"})
                             if data is not None:
-                                bug_update.add_attachments.append(
-                                    bugzilla.AttachmentCreate.from_raw_data(
-                                        ids=[bug_info.number],
-                                        data=data,
-                                        file_name="autowebcompat-repro-screenshot.png",
-                                        summary="Screenshot generated by autowebcompat bot",
-                                        content_type="image/png",
-                                    )
+                                bug_update.add_attachment(
+                                    data=data,
+                                    file_name="autowebcompat-repro-screenshot.png",
+                                    summary="Screenshot generated by autowebcompat bot",
+                                    comment=None,
+                                    content_type="image/png",
                                 )
                             else:
                                 logging.warning(
@@ -1148,8 +1207,8 @@ class ReproTask(HackbotTask):
                                 report_os
                             )
 
-                update_whiteboard(bug, bug_update, require_whiteboard)
-                update_user_story(bug, bug_update, require_user_story)
+                bug_update.add_whiteboard(require_whiteboard)
+                bug_update.set_user_story(require_user_story)
         else:
             raise TypeError(
                 f"Don't know how to update for task {self} and updater type {updater}"
@@ -1204,8 +1263,14 @@ class DiagnosisTask(HackbotTask):
 
     agent: str = "autowebcompat-diagnosis"
     task_name: str = "diagnosis"
+
     whiteboard_request_token = "[autowebcompat:diagnose]"
     whiteboard_progress_token = "[autowebcompat:diagnosis-in-progress]"
+
+    user_story_fields = (
+        "autowebcompat-diagnosis-status",
+        "autowebcompat-diagnosis-reason",
+    )
 
     def get_request_data(
         self, request: ScheduleRequest
@@ -1215,13 +1280,21 @@ class DiagnosisTask(HackbotTask):
 
     def create_new(self) -> Mapping[str, Sequence[ScheduledRun]]:
         source_key = self.key("bugzilla", "diagnose-flag")
-        requested_bugs = self.bq_service.get_diagnosis_requested_bugs(
-            self.whiteboard_request_token
+        requested_bugs = self.bq_service.get_bugs_with_whiteboard_token(
+            self.whiteboard_request_token, include_extra_data=False
         )
         logging.info(f"Found {len(requested_bugs)} bugs that requested diagnosis")
 
         if not requested_bugs:
             return {}
+
+        requested_info = {
+            id: DiagnosisBugInfo(
+                number=bug_info.number,
+                source_time=bug_info.source_time or bug_info.creation_time,
+            )
+            for id, bug_info in requested_bugs.items()
+        }
 
         requests = [
             ScheduleRequest(
@@ -1231,7 +1304,7 @@ class DiagnosisTask(HackbotTask):
                 request_data=bug_info,
                 extra_data=BugExtraData(bug_id=bug_number),
             )
-            for bug_number, bug_info in requested_bugs.items()
+            for bug_number, bug_info in requested_info.items()
         ]
 
         return self.schedule(requests)
@@ -1260,9 +1333,9 @@ class DiagnosisTask(HackbotTask):
             # Consume the request token so the bug isn't picked up again on the
             # next tick. Re-adding it requests a fresh run.
             for bug_id in self.scheduled_bug_ids():
-                bug, bug_update = updater.bug_updates[bug_id]
-                remove_whiteboard(bug, bug_update, [self.whiteboard_request_token])
-                update_whiteboard(bug, bug_update, [self.whiteboard_progress_token])
+                bug_update = updater.bug_updates[bug_id]
+                bug_update.remove_whiteboard([self.whiteboard_request_token])
+                bug_update.add_whiteboard([self.whiteboard_progress_token])
 
             run_outputs = {
                 run_id: (
@@ -1279,10 +1352,12 @@ class DiagnosisTask(HackbotTask):
             }
 
             for uuid, (bug_number, output) in run_outputs.items():
-                bug, bug_update = updater.bug_updates[bug_number]
+                bug_update = updater.bug_updates[bug_number]
 
-                require_user_story: dict[str, str | None] = {}
-                remove_whiteboard(bug, bug_update, [self.whiteboard_progress_token])
+                require_user_story: dict[str, str | None] = {
+                    item: None for item in self.user_story_fields
+                }
+                bug_update.remove_whiteboard([self.whiteboard_progress_token])
                 if isinstance(output, ErrorSummary):
                     require_user_story.update(error_fields)
                 else:
@@ -1291,7 +1366,6 @@ class DiagnosisTask(HackbotTask):
                         require_user_story.update(error_fields)
                     elif result.reproduced and result.root_cause:
                         require_user_story["autowebcompat-diagnosis-status"] = "success"
-                        require_user_story["autowebcompat-diagnosis-reason"] = None
 
                         comment_parts = [
                             "Root cause analysis generated by autowebcompat bot:",
@@ -1309,9 +1383,7 @@ class DiagnosisTask(HackbotTask):
                             "If you'd like to provide feedback on diagnosis, please use the 👍 or 👎 reaction.",
                         ]
 
-                        bug_update.add_comment = bugzilla.CommentCreate(
-                            comment="\n".join(comment_parts)
-                        )
+                        bug_update.set_comment("\n".join(comment_parts))
 
                         bug_update.run_id = uuid
 
@@ -1325,14 +1397,12 @@ class DiagnosisTask(HackbotTask):
                                 testcase_url = result.testcase_url
                             data = try_get_file(testcase_url)
                             if data is not None:
-                                bug_update.add_attachments.append(
-                                    bugzilla.AttachmentCreate.from_raw_data(
-                                        ids=[bug_number],
-                                        data=data,
-                                        file_name="autowebcompat-diagnosis-testcase.html",
-                                        summary="Reduced testcase generated by autowebcompat bot",
-                                        content_type="text/html",
-                                    )
+                                bug_update.add_attachment(
+                                    data=data,
+                                    file_name="autowebcompat-diagnosis-testcase.html",
+                                    summary="Reduced testcase generated by autowebcompat bot",
+                                    comment=None,
+                                    content_type="text/html",
                                 )
                             else:
                                 logging.warning(
@@ -1349,7 +1419,7 @@ class DiagnosisTask(HackbotTask):
                             else "no_repro"
                         )
 
-                update_user_story(bug, bug_update, require_user_story)
+                bug_update.set_user_story(require_user_story)
         else:
             raise TypeError(
                 f"Don't know how to update for task {self} and updater type {updater}"

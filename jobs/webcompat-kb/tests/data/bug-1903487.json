@@ -58,7 +58,7 @@
       }
     ],
     "groups": [],
-    "whiteboard": "[autowebcompat:processed]",
+    "whiteboard": "[autowebcompat:processed][autowebcompat:reproduction-in-progress]",
     "cf_user_story": "platform:windows,mac,linux\nimpact:unsupported-warning\nconfiguration:general\naffects:all\ndiagnosis-team:webcompat\nuser-impact-score:100\n",
     "id": 1903487
   },
