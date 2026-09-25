@@ -3,15 +3,21 @@ hackbot_repro AS (
   SELECT
     scheduled.run_id AS run_id,
     PARSE_NUMERIC(JSON_VALUE(scheduled.extra_data, "$.bug_id")) AS number,
-    DATETIME_DIFF(completed.completed_at, completed.created_at, SECOND) AS execution_time
+    DATE(completed.created_at) as created_at,
+    DATETIME_DIFF(completed.completed_at, completed.created_at, SECOND) AS execution_time,
+    CASE
+        WHEN scheduled.task_name =  'repro' THEN 'incoming'
+        WHEN scheduled.task_name =  'repro-backlog' THEN 'backlog'
+    END AS repro_type
   FROM `{{ ref('hackbot_scheduled') }}` scheduled
   JOIN `{{ ref('hackbot_completed') }}` completed USING (run_id)
-  WHERE scheduled.task_name = 'repro'
-    AND STARTS_WITH(scheduled.source_key, "bugzilla:")
+  WHERE scheduled.task_name in ('repro', 'repro-backlog')
+  AND STARTS_WITH(scheduled.source_key, "bugzilla:")
 )
 SELECT
   reports.number AS number,
   hackbot_repro.run_id as run_id,
+  hackbot_repro.created_at as run_date,
   DATE(reports.creation_time) AS creation_date,
   CASE
     WHEN reports.whiteboard LIKE '%[webcompat-source:product]%' THEN 'product'
@@ -39,7 +45,8 @@ SELECT
     THEN TRUE
     ELSE FALSE
   END AS ua_override_proposed,
-  hackbot_repro.execution_time AS repro_time
+  hackbot_repro.execution_time AS repro_time,
+  hackbot_repro.repro_type
 FROM `{{ ref('webcompat_knowledge_base.site_reports') }}` reports
 LEFT JOIN `{{ ref('webcompat_knowledge_base.scored_site_reports') }}` scored USING (number)
 INNER JOIN hackbot_repro USING (number)
