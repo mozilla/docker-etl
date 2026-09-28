@@ -12,13 +12,34 @@ Those reach stdout, which under Airflow is the account nobody reads.
 """
 
 import datetime
-import json
 import logging
+import math
 import pathlib
 import traceback
 from dataclasses import dataclass
 
 from google.cloud import bigquery
+from mozilla_nimbus_schemas.highwind import (
+    HighwindAnalysis,
+    HighwindAnalysisUnit,
+    HighwindBranchValue,
+    HighwindCellState,
+    HighwindComparison,
+    HighwindDirection,
+    HighwindError,
+    HighwindInterval,
+    HighwindLogLevel,
+    HighwindMetadata,
+    HighwindMetricResult,
+    HighwindSegment,
+    HighwindSegmentBranch,
+    HighwindSegmentResult,
+    HighwindWindow,
+    HighwindWindowKind,
+    HighwindWindowResult,
+)
+
+from . import discovery, gbstats_compute
 
 # Production targets, the defaults an `Outputs` takes when nothing overrides them. Their own
 # dataset, so this job's artifacts are separable from the production analysis tables around them.
@@ -29,6 +50,9 @@ SUFFICIENT_STATS_TABLE = (
 LOG_TABLE = "moz-fx-data-experiments.highwind_poc.highwind_logs_v1"
 BLOB_PREFIX = "gs://mozanalysis/highwind"
 PIPELINE_VERSION = "poc-1"
+SCHEMA_VERSION = 1
+
+SETTLED_STATES = {HighwindCellState.FORMING, HighwindCellState.CONFIDENT}
 
 # What every log row is attributed to. Jetstream's log handler carries the same column so one table
 # can hold several producers' logs, and it is kept here for the same reason the column names below
@@ -368,46 +392,286 @@ class Outputs:
     local_blob_dir: str | None = None
 
 
-def write_blob(storage, experiment, as_of, results, outputs):
-    """Write the per-experiment JSON Experimenter ingests.
-
-    Written per experiment, unlike the tables below, because the blob IS per experiment and its name
-    is the key: rewriting one experiment's object replaces the previous run's answer, so this leg is
-    idempotent without any extra machinery. That is also why only a run computed from whole cohorts
-    may write one, which `analysis.writes_blobs` decides.
-
-    Carries `generated_at` and `pipeline_version` in the header and as object metadata, so the
-    ingest can tell a new run from an old one without downloading the blob.
-    """
-    # When this ran, not the date it analysed: two runs of the same date, a retry or a backfill,
-    # have to be distinguishable, which is the whole purpose of the field.
-    generated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    payload = {
-        "metrics_metadata": {
-            "experiment_slug": experiment.slug,
-            "as_of_date": as_of.isoformat(),
-            "generated_at": generated_at,
-            "pipeline_version": PIPELINE_VERSION,
-            "reference_branch": experiment.reference_branch,
-            "branches": list(experiment.branches),
-        },
-        "statistics": results,
-        "errors": [result for result in results if result["state"] == "error"],
-    }
-    name = blob_name(experiment.slug)
+def write_blob(storage, analysis, outputs):
+    metadata = analysis.metadata
+    name = blob_name(metadata.experiment_slug)
     if outputs.local_blob_dir:
         path = pathlib.Path(outputs.local_blob_dir) / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, indent=2))
+        path.write_text(analysis.model_dump_json(indent=2))
         return str(path)
-    blob = blob_for(storage, experiment.slug, outputs.blob_prefix)
+    blob = blob_for(storage, metadata.experiment_slug, outputs.blob_prefix)
     blob.metadata = {
-        "as_of_date": as_of.isoformat(),
-        "generated_at": generated_at,
-        "pipeline_version": PIPELINE_VERSION,
+        "as_of_date": metadata.as_of_date.isoformat(),
+        "generated_at": metadata.generated_at.isoformat(),
+        "pipeline_version": metadata.pipeline_version,
     }
-    blob.upload_from_string(json.dumps(payload), content_type="application/json")
+    blob.upload_from_string(analysis.model_dump_json(), content_type="application/json")
     return f"{outputs.blob_prefix}/{name}"
+
+
+def build_analysis(experiment, as_of, metrics, results, cells, units, problems):
+    results_by_cell = {
+        (result["metric"], result["window"], result["branch"]): result
+        for result in results
+    }
+    return HighwindAnalysis(
+        metadata=build_metadata(experiment, as_of),
+        segments=[build_segment(experiment, units)],
+        metrics=[
+            build_metric(experiment, as_of, metric, results_by_cell, cells)
+            for metric in metrics
+        ],
+        errors=[build_error(experiment, problem) for problem in problems],
+    )
+
+
+def build_refusal(experiment, as_of, problems):
+    return HighwindAnalysis(
+        metadata=build_metadata(experiment, as_of),
+        segments=[],
+        metrics=[],
+        errors=[build_error(experiment, problem) for problem in problems],
+    )
+
+
+def build_metadata(experiment, as_of):
+    return HighwindMetadata(
+        schema_version=SCHEMA_VERSION,
+        experiment_slug=experiment.slug,
+        as_of_date=as_of,
+        generated_at=datetime.datetime.now(datetime.timezone.utc),
+        pipeline_version=PIPELINE_VERSION,
+        start_date=experiment.start_date,
+        end_date=experiment.end_date,
+        analysis_unit=HighwindAnalysisUnit(experiment.unit.kind),
+        reference_branch=experiment.reference_branch,
+        branches=list(experiment.branches),
+    )
+
+
+def build_segment(experiment, units):
+    return HighwindSegment(
+        slug=discovery.ALL_ENROLLED,
+        friendly_name=discovery.ALL_ENROLLED_NAME,
+        branches=[
+            HighwindSegmentBranch(branch=branch, units=units.get(branch, 0))
+            for branch in experiment.branches
+        ],
+    )
+
+
+def build_metric(experiment, as_of, metric, results_by_cell, cells):
+    return HighwindMetricResult(
+        slug=metric.name,
+        friendly_name=metric.friendly_name or metric.name,
+        description=metric.description,
+        segments=[
+            build_segment_result(experiment, as_of, metric, results_by_cell, cells)
+        ],
+    )
+
+
+def build_segment_result(experiment, as_of, metric, results_by_cell, cells):
+    rows = []
+    for window in discovery.reported_windows(metric, experiment, as_of):
+        comparisons = build_comparisons(
+            experiment, as_of, metric, window, results_by_cell, cells
+        )
+        branches = build_branches(experiment, metric, window, cells, comparisons)
+        rows.append((window, branches, comparisons))
+    summary = summary_position(metric, rows)
+    return HighwindSegmentResult(
+        segment=discovery.ALL_ENROLLED,
+        windows=[
+            HighwindWindowResult(
+                window=schema_window(experiment, window),
+                is_summary=position == summary,
+                branches=branches,
+                comparisons=comparisons,
+            )
+            for position, (window, branches, comparisons) in enumerate(rows)
+        ],
+    )
+
+
+def summary_position(metric, rows):
+    settled = [
+        position
+        for position, (_, _, comparisons) in enumerate(rows)
+        if any(comparison.state in SETTLED_STATES for comparison in comparisons)
+    ]
+    cumulative = [position for position in settled if rows[position][0].kind == "cumulative"]
+    only_disjoint = all(rule["kind"] == "disjoint" for rule in metric.window_rules)
+    candidates = cumulative or (settled if only_disjoint else [])
+    if candidates:
+        return max(candidates, key=lambda position: rows[position][0].end)
+    return min(range(len(rows)), key=lambda position: rows[position][0].end, default=None)
+
+
+def build_branches(experiment, metric, window, cells, comparisons):
+    means = branch_means(experiment, metric, window, cells)
+    return [
+        HighwindBranchValue(
+            branch=branch,
+            n=cell_units(cells, metric, window, branch),
+            value=empty_interval() if errored(experiment, branch, comparisons) else means[branch],
+        )
+        for branch in experiment.branches
+    ]
+
+
+def branch_means(experiment, metric, window, cells):
+    reported = [
+        cells[(metric.name, window.label, branch)]
+        for branch in experiment.branches
+        if (metric.name, window.label, branch) in cells
+    ]
+    try:
+        theta = gbstats_compute.window_theta(experiment, metric, window, cells)
+        pooled_pre_mean = sum(cell["pre_sum"] for cell in reported) / sum(
+            cell["n"] for cell in reported
+        )
+    except Exception:
+        return {branch: empty_interval() for branch in experiment.branches}
+    return {
+        branch: branch_mean(
+            cells.get((metric.name, window.label, branch)), theta, pooled_pre_mean
+        )
+        for branch in experiment.branches
+    }
+
+
+def branch_mean(cell, theta, pooled_pre_mean):
+    if cell is None or cell["n"] < gbstats_compute.MIN_UNITS:
+        return empty_interval()
+    try:
+        mean = cell["sum"] / cell["n"] - theta * (cell["pre_sum"] / cell["n"] - pooled_pre_mean)
+        halfwidth = gbstats_compute.mean_halfwidth(cell, theta)
+    except Exception:
+        return empty_interval()
+    if not (math.isfinite(mean) and math.isfinite(halfwidth)):
+        return empty_interval()
+    return HighwindInterval(point=mean, lower=mean - halfwidth, upper=mean + halfwidth)
+
+
+def empty_interval():
+    return HighwindInterval(point=None, lower=None, upper=None)
+
+
+def interval_of(values):
+    return HighwindInterval(
+        point=values.get("point"), lower=values.get("lower"), upper=values.get("upper")
+    )
+
+
+def errored(experiment, branch, comparisons):
+    involved = [
+        comparison
+        for comparison in comparisons
+        if branch in (comparison.branch, experiment.reference_branch)
+    ]
+    return all(comparison.state == HighwindCellState.ERROR for comparison in involved)
+
+
+def cell_units(cells, metric, window, branch):
+    return cells.get((metric.name, window.label, branch), {}).get("n", 0)
+
+
+def build_comparisons(experiment, as_of, metric, window, results_by_cell, cells):
+    if not discovery.has_matured(experiment, window, as_of):
+        return [
+            HighwindComparison(
+                branch=treatment,
+                reference_branch=experiment.reference_branch,
+                state=HighwindCellState.NOT_STARTED,
+                direction=HighwindDirection.NEUTRAL,
+                relative=empty_interval(),
+                absolute=empty_interval(),
+                n_reference=0,
+                n_treatment=0,
+                error=None,
+            )
+            for treatment in experiment.treatment_branches
+        ]
+    return [
+        build_comparison(
+            experiment,
+            metric,
+            window,
+            treatment,
+            results_by_cell.get((metric.name, window.label, treatment)),
+            cells,
+        )
+        for treatment in experiment.treatment_branches
+    ]
+
+
+def build_comparison(experiment, metric, window, treatment, result, cells):
+    if result is None:
+        return HighwindComparison(
+            branch=treatment,
+            reference_branch=experiment.reference_branch,
+            state=HighwindCellState.ERROR,
+            direction=HighwindDirection.NEUTRAL,
+            relative=empty_interval(),
+            absolute=empty_interval(),
+            n_reference=None,
+            n_treatment=None,
+            error="no result was recorded for this cell",
+        )
+    state = HighwindCellState(result["state"])
+    n_reference, n_treatment = result.get("n_reference"), result.get("n_treatment")
+    if state == HighwindCellState.NOT_STARTED:
+        state = HighwindCellState.INSUFFICIENT_DATA
+        n_reference = cell_units(cells, metric, window, experiment.reference_branch)
+        n_treatment = cell_units(cells, metric, window, treatment)
+    return HighwindComparison(
+        branch=treatment,
+        reference_branch=experiment.reference_branch,
+        state=state,
+        direction=direction_of(state, result.get("point")),
+        relative=interval_of(result),
+        absolute=interval_of(result.get("absolute") or {}),
+        n_reference=n_reference,
+        n_treatment=n_treatment,
+        error=result.get("error"),
+    )
+
+
+def direction_of(state, relative_shift):
+    if state != HighwindCellState.CONFIDENT or relative_shift is None:
+        return HighwindDirection.NEUTRAL
+    if relative_shift > 0:
+        return HighwindDirection.POSITIVE
+    if relative_shift < 0:
+        return HighwindDirection.NEGATIVE
+    return HighwindDirection.NEUTRAL
+
+
+def schema_window(experiment, window):
+    return HighwindWindow(
+        kind=HighwindWindowKind(window.kind),
+        start_day=window.start,
+        end_day=window.end,
+        matures_on=discovery.matures_on(experiment, window),
+    )
+
+
+def build_error(experiment, problem):
+    window = problem["window"]
+    return HighwindError(
+        timestamp=problem["timestamp"],
+        log_level=HighwindLogLevel(problem["log_level"]),
+        message=problem["message"],
+        exception_type=problem["exception_type"],
+        exception=problem["exception"],
+        filename=problem["filename"],
+        func_name=problem["func_name"],
+        metric=problem["metric"],
+        segment=problem["segment"],
+        window=None if window is None else schema_window(experiment, window),
+    )
 
 
 def write_tables(client, as_of, results_by_slug, cells_by_slug, outputs):
@@ -425,7 +689,7 @@ def write_tables(client, as_of, results_by_slug, cells_by_slug, outputs):
     ensure_table(client, outputs.sufficient_stats_table, SUFFICIENT_STATS_SCHEMA)
     results_rows = [
         dict(
-            result,
+            table_columns(result),
             experiment_slug=slug,
             as_of_date=as_of.isoformat(),
             pipeline_version=PIPELINE_VERSION,
@@ -452,6 +716,10 @@ def write_tables(client, as_of, results_by_slug, cells_by_slug, outputs):
     return len(results_rows), len(stats_rows)
 
 
+def table_columns(result):
+    return {key: value for key, value in result.items() if key != "absolute"}
+
+
 class RunLog(logging.Handler):
     """Collect the records a run logs, so the run can write them as one load job at the end.
 
@@ -476,16 +744,46 @@ class RunLog(logging.Handler):
         self.source = source
         self.run_started_at = datetime.datetime.now(datetime.timezone.utc)
         self.rows = []
+        self.problems = []
 
     def emit(self, record):
         try:
-            self.rows.append(
-                log_row(record, self.as_of, self.run_started_at, self.source)
-            )
+            row = log_row(record, self.as_of, self.run_started_at, self.source)
+            self.rows.append(row)
+            if record.levelno >= logging.WARNING:
+                self.problems.append(problem_of(record, row))
         # A handler that raises reports the fault at the site of the log rather than at the site of
         # the fault, so a record this cannot represent would read as a bug in whatever logged it.
         except Exception:
             self.handleError(record)
+
+    def problems_for(self, slug):
+        return [
+            problem
+            for problem in self.problems
+            if problem["experiment_slug"] in (slug, None)
+        ]
+
+
+def problem_of(record, row):
+    fields = vars(record)
+    return dict(
+        experiment_slug=row["experiment_slug"],
+        timestamp=datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc),
+        log_level=(
+            HighwindLogLevel.ERROR
+            if record.levelno >= logging.ERROR
+            else HighwindLogLevel.WARNING
+        ),
+        message=row["message"],
+        exception_type=row["exception_type"],
+        exception=row["exception"],
+        filename=row["filename"],
+        func_name=row["func_name"],
+        metric=row["metric"],
+        segment=fields.get("segment"),
+        window=fields.get("window"),
+    )
 
 
 def log_row(record, as_of, run_started_at, source):

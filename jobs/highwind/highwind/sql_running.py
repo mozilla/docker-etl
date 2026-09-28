@@ -66,6 +66,13 @@ def materialize_cohort(client, sql, as_of, validate_only=False):
     return table, query_timing("cohort", job, [], time.time() - started)
 
 
+def count_branch_units(client, sql):
+    units_by_slug = {}
+    for row in client.query(sql).result():
+        units_by_slug.setdefault(row["slug"], {})[row["branch"]] = int(row["units"])
+    return units_by_slug
+
+
 def expire_cohort_table(client, table):
     """Give the cohort table an expiry, set after the write because a query job cannot carry one."""
     definition = client.get_table(table)

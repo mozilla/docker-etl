@@ -1,6 +1,7 @@
 """The cell grid, which has to be complete in every state for the run report to mean anything."""
 
 import datetime
+import logging
 
 import pytest
 
@@ -132,6 +133,77 @@ def test_a_populated_pair_produces_a_relative_interval_around_the_difference():
     assert treatment["point"] == pytest.approx(10.0, abs=1.0)
     assert treatment["lower"] < treatment["point"] < treatment["upper"]
     assert treatment["theta"] > 0
+
+
+def test_the_absolute_interval_is_the_relative_one_rescaled_by_the_reference_mean():
+    cells = {
+        ("active_hours", "cumu:1", "control"): branch(1000, 1.0, 2.0, 1.5),
+        ("active_hours", "cumu:1", "treatment-a"): branch(1000, 1.1, 2.42, 1.65),
+    }
+    results = {
+        result["branch"]: result
+        for result in gbstats_compute.compute_statistics(
+            EXPERIMENT, [CONTINUOUS], WINDOWS, cells
+        )
+    }
+    treatment = results["treatment-a"]
+    absolute = treatment["absolute"]
+
+    assert absolute["point"] == pytest.approx(0.1)
+    for bound in ("point", "lower", "upper"):
+        assert absolute[bound] == pytest.approx(treatment[bound] / 100 * 1.0)
+
+
+@pytest.mark.parametrize(
+    "reference_mean, treatment_mean, units",
+    [
+        (1.0, 1.1, 1000),
+        (2.0, 1.7, 1000),
+        (-2.0, -2.3, 1000),
+        (5.0, 5.0, 400),
+        (1.0, 1.0823, 3000),
+        (1.0, 1.0824, 3000),
+        (1.0, 1.1, 20),
+    ],
+)
+def test_the_absolute_and_relative_intervals_exclude_zero_identically(
+    reference_mean, treatment_mean, units
+):
+    reference = branch(units, reference_mean, reference_mean**2 + 1.0, reference_mean)
+    candidate = branch(units, treatment_mean, treatment_mean**2 + 1.0, treatment_mean)
+
+    interval = gbstats_compute.sequential_interval(reference, candidate, 0.0)
+    absolute = interval["absolute"]
+
+    for bound in ("point", "lower", "upper"):
+        assert absolute[bound] == pytest.approx(interval[bound] / 100 * abs(reference_mean))
+    assert (absolute["lower"] > 0) == (interval["lower"] > 0)
+    assert (absolute["upper"] < 0) == (interval["upper"] < 0)
+    assert absolute["lower"] <= absolute["point"] <= absolute["upper"]
+
+
+def test_the_marginal_cases_straddle_zero_the_same_way_on_both_scales():
+    verdicts = []
+    for treatment_mean in (1.0823, 1.0824):
+        interval = gbstats_compute.sequential_interval(
+            branch(3000, 1.0, 2.0, 1.0),
+            branch(3000, treatment_mean, treatment_mean**2 + 1.0, treatment_mean),
+            0.0,
+        )
+        verdicts.append((interval["lower"] > 0, interval["absolute"]["lower"] > 0))
+
+    assert all(relative == absolute for relative, absolute in verdicts)
+    assert {relative for relative, _ in verdicts} == {False, True}
+
+
+def test_cells_with_no_interval_carry_no_absolute_interval_either():
+    cells = {
+        ("active_hours", "cumu:1", "control"): branch(400, 1.0, 2.0, 1.5),
+        ("active_hours", "cumu:1", "treatment-a"): branch(1, 1.0, 2.0, 1.5),
+    }
+    results = gbstats_compute.compute_statistics(EXPERIMENT, [CONTINUOUS], WINDOWS, cells)
+
+    assert not any("absolute" in result for result in results)
 
 
 def test_theta_is_zero_when_the_covariate_never_moves():
@@ -283,3 +355,28 @@ def test_theta_pools_only_the_arms_that_reported_the_window():
         )
     )
     assert gbstats_compute.window_theta(EXPERIMENT, CONTINUOUS, window, {}) == 0.0
+
+
+def test_a_cell_whose_statistics_raise_is_an_error_with_a_log_record_naming_it(caplog):
+    caplog.set_level(logging.ERROR)
+    unusable = dict(branch(400, 1.0, 2.0, 1.5), sum_squares=None)
+    cells = {
+        ("active_hours", "cumu:1", "control"): branch(400, 1.0, 2.0, 1.5),
+        ("active_hours", "cumu:1", "treatment-a"): unusable,
+    }
+
+    results = {
+        result["branch"]: result
+        for result in gbstats_compute.compute_statistics(
+            EXPERIMENT, [CONTINUOUS], WINDOWS, cells
+        )
+    }
+
+    assert results["treatment-a"]["state"] == gbstats_compute.ERROR
+    assert results["treatment-a"]["error"].startswith("ValidationError")
+    [record] = caplog.records
+    assert record.experiment_slug == "a-slug"
+    assert record.metric == "active_hours"
+    assert record.segment == "all_enrolled"
+    assert record.window == WINDOWS[0]
+    assert record.exc_info[0].__name__ == "ValidationError"
