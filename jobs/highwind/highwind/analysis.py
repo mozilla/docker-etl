@@ -331,13 +331,7 @@ def gather_sufficient_statistics(client, run, metrics_by_source, as_of, validate
         cells_by_slug, timings = sql_running.run_queries(
             client, queries, validate_only=validate_only
         )
-        units_by_slug = (
-            {}
-            if cohort_table is None
-            else sql_running.count_branch_units(
-                client, sql_generation.branch_units_query(cohort_table)
-            )
-        )
+        units_by_slug = branch_units(client, cohort_table)
         return cells_by_slug, units_by_slug, [cohort_timing, *timings], None
     # Recorded against every experiment rather than raised, so a source failure becomes an error
     # grid instead of an exception that ends the run having written nothing.
@@ -346,6 +340,25 @@ def gather_sufficient_statistics(client, run, metrics_by_source, as_of, validate
         # the reason it happened is a property of the run.
         logger.exception("the shared scan failed, so every experiment records an error grid")
         return {}, {}, [], error
+
+
+def branch_units(client, cohort_table):
+    """Count the units each branch enrolled, or none at all if the count fails.
+
+    Caught on its own rather than by the shared scan's handler. The counts are display-only
+    metadata, so their failure must not cost every experiment the statistics already computed.
+    """
+    if cohort_table is None:
+        return {}
+    try:
+        return sql_running.count_branch_units(
+            client, sql_generation.branch_units_query(cohort_table)
+        )
+    except Exception:
+        logger.exception(
+            "the branch unit count failed, so branch units are reported as zero for this run"
+        )
+        return {}
 
 
 def report_progress(summary, done, total):

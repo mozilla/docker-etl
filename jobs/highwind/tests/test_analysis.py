@@ -2,11 +2,12 @@
 
 import datetime
 import logging
+import types
 
 import pytest
 from mozilla_nimbus_schemas.highwind import HighwindAnalysis
 
-from highwind import analysis, output_writing, units
+from highwind import analysis, output_writing, sql_generation, units
 from highwind.discovery import Experiment
 from highwind.gbstats_compute import (
     CONFIDENT,
@@ -422,3 +423,74 @@ def test_a_blob_that_cannot_be_built_is_logged_rather_than_raised():
     failures = [row for row in run_log.rows if row["log_level"] == "ERROR"]
     assert [row["experiment_slug"] for row in failures] == ["a-broken-slug"]
     assert failures[0]["exception_type"] == "ValueError"
+
+
+class FakeQueryJob:
+    def __init__(self, rows):
+        self.rows = rows
+        self.slot_millis = 0
+        self.total_bytes_processed = 0
+
+    def result(self):
+        return self.rows
+
+
+class UnitCountFailingClient:
+    """Stands in for a BigQuery client whose metric queries succeed and whose unit count fails."""
+
+    ROW = dict(
+        slug="a-slug",
+        metric="a-metric",
+        window_label="week:1",
+        branch="control",
+        n=10,
+        sum=5.0,
+        sum_squares=5.0,
+        pre_sum=4.0,
+        pre_sum_squares=4.0,
+        sum_x_pre=3.0,
+    )
+
+    def __init__(self):
+        self.cohort_table = None
+
+    def query(self, sql, job_config=None):
+        if job_config is not None and job_config.destination is not None:
+            self.cohort_table = job_config.destination
+            return FakeQueryJob([])
+        if self.cohort_table and sql == sql_generation.branch_units_query(
+            self.cohort_table
+        ):
+            raise RuntimeError("the unit count failed")
+        return FakeQueryJob([self.ROW])
+
+    def get_table(self, table):
+        return types.SimpleNamespace(expires=None)
+
+    def update_table(self, table, fields):
+        return table
+
+
+def test_a_failed_unit_count_keeps_the_cells_the_shared_scan_computed(caplog):
+    # The unit counts are display-only, so losing them must not turn every experiment's computed
+    # statistics into an error grid.
+    metrics_by_source = metric_definitions()
+    run = sql_generation.Run(
+        [EXPERIMENT],
+        {"a-slug": analysis.run_windows(EXPERIMENT, AS_OF, metrics_by_source)},
+        AS_OF,
+        analysis.COVARIATE_DAYS,
+    )
+
+    cells_by_slug, units_by_slug, timings, failure = (
+        analysis.gather_sufficient_statistics(
+            UnitCountFailingClient(), run, metrics_by_source, AS_OF, False
+        )
+    )
+
+    assert failure is None
+    assert units_by_slug == {}
+    assert list(cells_by_slug) == ["a-slug"]
+    assert cells_by_slug["a-slug"][("a-metric", "week:1", "control")]["n"] == 10
+    assert timings
+    assert "the branch unit count failed" in caplog.text
