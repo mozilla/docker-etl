@@ -120,3 +120,14 @@ def test_big_query_handler_task_defined(run_bigquery, task_defined_event):
     assert len(bq.task_records) == 0
     assert len(bq.run_records) == 0
     assert bq.task_ids == {"abc"}
+
+
+def test_event_round_trip_keeps_exchange():
+    event = Event(
+        data={"foo": "bar"},
+        message=None,
+        exchange="exchange/taskcluster-worker-manager/v1/worker-requested",
+    )
+    round_tripped = Event.from_dict(event.to_dict())
+    assert round_tripped.exchange == event.exchange
+    assert round_tripped.data == event.data

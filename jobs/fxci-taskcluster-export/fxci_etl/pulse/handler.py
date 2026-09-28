@@ -23,13 +23,14 @@ from fxci_etl.schemas import Record, Runs, Tasks, Tags, TaskDefinitions
 class Event:
     data: dict[str, Any]
     message: Optional[Message]
+    exchange: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Event":
         return dacite.from_dict(data_class=cls, data=data)
 
     def to_dict(self):
-        return {"data": self.data}
+        return {"data": self.data, "exchange": self.exchange}
 
 
 class PulseHandler(ABC):
@@ -54,7 +55,7 @@ class PulseHandler(ABC):
     def __call__(self, data: dict[str, Any], message: Message) -> None:
         self._count += 1
         message.ack()
-        event = Event(data, message)
+        event = Event(data, message, message.delivery_info.get("exchange"))
         self._buffer.append(event)
 
     def process_buffer(self):
