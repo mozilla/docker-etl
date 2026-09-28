@@ -1,6 +1,7 @@
 """How a run names and disposes of the cohort table every source query reads."""
 
 import datetime
+import types
 
 from highwind import sql_running
 
@@ -21,6 +22,31 @@ def test_the_table_name_says_which_dataset_and_which_run_date_it_belongs_to():
     name = sql_running.cohort_table_name(AS_OF)
 
     assert name.startswith(f"{sql_running.COHORT_DATASET}.highwind_cohort_2026_08_20_")
+
+
+class UnitCountClient:
+    def __init__(self, rows):
+        self.rows = rows
+        self.queries = []
+
+    def query(self, sql, job_config=None):
+        self.queries.append(sql)
+        return types.SimpleNamespace(result=lambda: self.rows)
+
+
+def test_branch_unit_counts_are_keyed_by_slug_then_branch():
+    client = UnitCountClient(
+        [
+            {"slug": "a-slug", "branch": "control", "units": 40},
+            {"slug": "a-slug", "branch": "treatment", "units": 41},
+            {"slug": "b-slug", "branch": "control", "units": 7},
+        ]
+    )
+
+    units = sql_running.count_branch_units(client, "SELECT 1")
+
+    assert client.queries == ["SELECT 1"]
+    assert units == {"a-slug": {"control": 40, "treatment": 41}, "b-slug": {"control": 7}}
 
 
 class RecordingClient:

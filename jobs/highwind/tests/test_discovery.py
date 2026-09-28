@@ -155,8 +155,9 @@ def test_a_randomization_unit_with_no_analysis_unit_is_skipped_not_defaulted():
 
     assert experiments == []
     assert len(skipped) == 1
-    slug, why = skipped[0]
+    slug, why, refused = skipped[0]
     assert slug == "a-slug"
+    assert refused is None
     assert "firefox_desktop" in why
     assert "nimbus_id" in why
 
@@ -232,4 +233,77 @@ def test_a_unit_this_app_does_not_declare_is_skipped_even_where_another_app_decl
     )
 
     assert experiments == []
-    assert [why for _, why in skipped if "fenix" in why and "group_id" in why]
+    assert [why for _, why, _ in skipped if "fenix" in why and "group_id" in why]
+
+
+def test_a_recipe_refused_for_its_age_carries_the_experiment_its_blob_is_built_from():
+    start = AS_OF - datetime.timedelta(days=discovery.MAX_EXPERIMENT_AGE_DAYS)
+    experiments, skipped = discovery.discover(
+        FakeClient([mirror_row(start_date=start)]), AS_OF
+    )
+
+    assert experiments == []
+    slug, why, refused = skipped[0]
+    assert slug == "a-slug"
+    assert "limit" in why
+    assert refused.slug == "a-slug"
+    assert refused.start_date == start
+
+
+def test_a_day_one_experiment_reports_the_first_window_of_each_rule_as_upcoming():
+    windows = discovery.reported_windows(
+        metric(DISJOINT_WEEKLY, CUMULATIVE_WEEKLY), experiment(AS_OF), AS_OF
+    )
+
+    assert [(window.kind, window.start, window.end) for window in windows] == [
+        ("cumulative", 0, 6),
+        ("disjoint", 0, 6),
+    ]
+    assert not any(
+        discovery.has_matured(experiment(AS_OF), window, AS_OF) for window in windows
+    )
+
+
+def test_a_running_experiment_reports_its_matured_windows_and_the_next_one():
+    running = experiment(AS_OF - datetime.timedelta(days=15))
+
+    windows = discovery.reported_windows(metric(CUMULATIVE_WEEKLY), running, AS_OF)
+
+    assert [window.end for window in windows] == [6, 13, 20]
+    assert [discovery.has_matured(running, window, AS_OF) for window in windows] == [
+        True,
+        True,
+        False,
+    ]
+
+
+def test_an_ended_experiment_reports_no_upcoming_window():
+    ended = experiment(AS_OF - datetime.timedelta(days=15), end_date=AS_OF)
+
+    windows = discovery.reported_windows(metric(CUMULATIVE_WEEKLY), ended, AS_OF)
+
+    assert ended.ended(AS_OF) is True
+    assert [window.end for window in windows] == [6, 13]
+
+
+def test_an_end_date_still_ahead_is_not_an_ended_experiment():
+    running = experiment(AS_OF - datetime.timedelta(days=15), end_date=AS_OF.replace(day=2))
+
+    assert running.ended(AS_OF) is False
+
+
+def test_no_upcoming_window_is_reported_past_the_horizon():
+    old = experiment(AS_OF - datetime.timedelta(days=300))
+
+    windows = discovery.reported_windows(metric(CUMULATIVE_WEEKLY), old, AS_OF)
+
+    assert len(windows) == discovery.MAX_WINDOW_DAYS // 7
+    assert all(discovery.has_matured(old, window, AS_OF) for window in windows)
+
+
+def test_a_window_matures_the_day_after_its_last_day_since_the_start():
+    started = experiment(datetime.date(2026, 7, 1))
+    first, second = discovery.generate_windows(CUMULATIVE_WEEKLY, tenure_days=14)
+
+    assert discovery.matures_on(started, first) == datetime.date(2026, 7, 8)
+    assert discovery.matures_on(started, second) == datetime.date(2026, 7, 15)
