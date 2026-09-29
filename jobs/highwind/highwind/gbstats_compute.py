@@ -16,6 +16,10 @@ from gbstats.frequentist.tests import (
     SequentialTwoSidedTTest,
     sequential_interval_halfwidth,
 )
+from gbstats.messages import (
+    BASELINE_VARIATION_ZERO_MESSAGE,
+    ZERO_NEGATIVE_VARIANCE_MESSAGE,
+)
 from gbstats.models.statistics import RegressionAdjustedStatistic, SampleMeanStatistic
 
 from . import discovery
@@ -36,6 +40,22 @@ NOT_STARTED = "not_started"
 INSUFFICIENT_DATA = "insufficient_data"
 FORMING = "forming"
 CONFIDENT = "confident"
+
+# The messages gbstats attaches when the data cannot yet support an estimate: a metric with no
+# variance, or a reference branch whose mean is zero. Both are conditions of the data rather than
+# failures, and more matured units may clear them, so these cells are insufficient_data. Every
+# other gbstats message is a failure and the cell is an error.
+UNESTIMABLE_MESSAGES = frozenset(
+    {ZERO_NEGATIVE_VARIANCE_MESSAGE, BASELINE_VARIATION_ZERO_MESSAGE}
+)
+
+
+class GbstatsError(Exception):
+    """gbstats declined a comparison with a message that no later run will clear.
+
+    gbstats reports these by returning a zero interval with a message rather than by raising, so
+    the message is raised here to reach the same error path as any other failure.
+    """
 
 
 def compute_statistics(experiment, metrics, windows, cells, failure=None):
@@ -139,11 +159,16 @@ def sequential_interval(reference, treatment, theta):
 
     The group's one theta is applied to both branches, so the covariate adjustment is identical on
     each side of the contrast and cannot move the difference it is meant to sharpen.
+
+    Every bound is None when the data cannot yet support an estimate, and a gbstats message outside
+    `UNESTIMABLE_MESSAGES` raises `GbstatsError`.
     """
     reference_statistic = adjusted(reference, theta)
     treatment_statistic = adjusted(treatment, theta)
     result = build_t_test(reference_statistic, treatment_statistic).compute_result()
-    if result.expected is None or result.ci is None:
+    if result.errorMessage and result.errorMessage not in UNESTIMABLE_MESSAGES:
+        raise GbstatsError(result.errorMessage)
+    if result.errorMessage or result.expected is None or result.ci is None:
         return dict(
             point=None,
             lower=None,

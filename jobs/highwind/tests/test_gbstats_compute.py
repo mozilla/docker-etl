@@ -380,3 +380,70 @@ def test_a_cell_whose_statistics_raise_is_an_error_with_a_log_record_naming_it(c
     assert record.segment == "all_enrolled"
     assert record.window == WINDOWS[0]
     assert record.exc_info[0].__name__ == "ValidationError"
+
+
+# ------------------------------------------------ comparisons gbstats cannot estimate ----
+
+
+def compute_pair(reference, candidate):
+    """The treatment-a result for one (metric, window) holding only the given pair."""
+    cells = {
+        ("active_hours", "cumu:1", "control"): reference,
+        ("active_hours", "cumu:1", "treatment-a"): candidate,
+    }
+    results = gbstats_compute.compute_statistics(EXPERIMENT, [CONTINUOUS], WINDOWS, cells)
+    return next(result for result in results if result["branch"] == "treatment-a")
+
+
+def assert_insufficient_without_an_interval(result, n_reference, n_treatment):
+    assert result["state"] == gbstats_compute.INSUFFICIENT_DATA
+    assert result["n_reference"] == n_reference
+    assert result["n_treatment"] == n_treatment
+    assert result.get("error") is None
+    for bound in ("point", "lower", "upper", "absolute"):
+        assert result.get(bound) is None
+
+
+def test_a_metric_constant_across_every_unit_is_insufficient_data_not_a_zero_interval():
+    # Every unit reports the same value, so there is no variance to form an interval from. gbstats
+    # answers with a zero interval rather than failing, which must not read as a measured null.
+    reference = branch_moments(800, 1.0, 0.0, 1.0, 1.0, 0.0)
+    candidate = branch_moments(600, 1.0, 0.0, 1.0, 1.0, 0.0)
+
+    assert_insufficient_without_an_interval(compute_pair(reference, candidate), 800, 600)
+
+
+def test_a_reference_branch_of_all_zeros_is_insufficient_data_not_a_zero_interval():
+    reference = branch_moments(800, 0.0, 0.0, 1.0, 1.0, 0.0)
+    candidate = branch_moments(600, 0.2, 0.5, 1.0, 1.0, 0.3)
+
+    assert_insufficient_without_an_interval(compute_pair(reference, candidate), 800, 600)
+
+
+def test_a_zero_adjusted_reference_mean_has_no_interval():
+    # A theta of one against a covariate mean equal to the metric mean adjusts the reference mean
+    # to exactly zero while leaving its variance positive, which is gbstats' zero-baseline case.
+    interval = gbstats_compute.sequential_interval(
+        branch(1000, 1.0, 2.0, 1.5), branch(1000, 1.1, 2.42, 1.65), 1.0
+    )
+
+    assert interval["point"] is None
+    assert interval["lower"] is None
+    assert interval["upper"] is None
+    assert interval["absolute"] == dict(point=None, lower=None, upper=None)
+
+
+def test_any_other_gbstats_message_is_an_error_carrying_that_message(monkeypatch):
+    # No input the job produces reaches gbstats' other stand-in results, so the library's own
+    # test object is made to return one.
+    monkeypatch.setattr(
+        gbstats_compute.SequentialTwoSidedTTest,
+        "compute_result",
+        lambda test: test._default_output(error_message="SOME_OTHER_GBSTATS_MESSAGE"),
+    )
+
+    result = compute_pair(branch(1000, 1.0, 2.0, 1.5), branch(1000, 1.1, 2.42, 1.65))
+
+    assert result["state"] == gbstats_compute.ERROR
+    assert "SOME_OTHER_GBSTATS_MESSAGE" in result["error"]
+    assert "point" not in result
