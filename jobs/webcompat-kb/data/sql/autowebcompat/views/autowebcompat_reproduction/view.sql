@@ -8,7 +8,8 @@ hackbot_repro AS (
     CASE
         WHEN scheduled.task_name =  'repro' THEN 'incoming'
         WHEN scheduled.task_name =  'repro-backlog' THEN 'backlog'
-    END AS repro_type
+    END AS repro_type,
+    scheduled.source_key as source_key
   FROM `{{ ref('hackbot_scheduled') }}` scheduled
   JOIN `{{ ref('hackbot_completed') }}` completed USING (run_id)
   WHERE scheduled.task_name in ('repro', 'repro-backlog')
@@ -46,7 +47,8 @@ SELECT
     ELSE FALSE
   END AS ua_override_proposed,
   hackbot_repro.execution_time AS repro_time,
-  hackbot_repro.repro_type
+  hackbot_repro.repro_type,
+  hackbot_repro.source_key
 FROM `{{ ref('webcompat_knowledge_base.site_reports') }}` reports
 LEFT JOIN `{{ ref('webcompat_knowledge_base.scored_site_reports') }}` scored USING (number)
 INNER JOIN hackbot_repro USING (number)
