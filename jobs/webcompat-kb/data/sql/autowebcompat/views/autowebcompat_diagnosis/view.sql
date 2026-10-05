@@ -21,9 +21,11 @@ hackbot_diagnosis AS (
     PARSE_NUMERIC(JSON_VALUE(scheduled.extra_data, "$.bug_id")) as number,
     DATE(completed.completed_at) as processing_completion_date,
     DATE(completed.created_at) as processing_start_date,
-    DATETIME_DIFF(completed.completed_at, completed.created_at, SECOND) as execution_time
+    DATETIME_DIFF(completed.completed_at, completed.created_at, SECOND) as execution_time,
+    IFNULL(repro.repro_type, 'no repro') as repro_type
     FROM `{{ ref('hackbot_scheduled') }}` scheduled
     JOIN `{{ ref('hackbot_completed') }}` completed USING (run_id)
+    LEFT JOIN `{{ ref('autowebcompat_reproduction') }}` repro on PARSE_NUMERIC(JSON_VALUE(scheduled.extra_data, "$.bug_id")) = repro.number
     WHERE scheduled.task_name = 'diagnosis'
       AND STARTS_WITH(scheduled.source_key, "bugzilla:")
 )
@@ -48,7 +50,8 @@ SELECT
   JSON_VALUE(reports.user_story, "$.autowebcompat-diagnosis-reason") AS diagnosis_failure_reason,
   JSON_VALUE(reports.user_story, '$.diagnosis-team') as diagnosis_team,
   COALESCE(next_action.next_action,'unknown') AS next_action,
-  hackbot_diagnosis.execution_time AS diagnosis_time
+  hackbot_diagnosis.execution_time AS diagnosis_time,
+  hackbot_diagnosis.repro_type
 FROM `{{ ref('webcompat_knowledge_base.site_reports') }}` reports
 LEFT JOIN `{{ ref('webcompat_knowledge_base.scored_site_reports') }}` scored USING (number)
 JOIN hackbot_diagnosis USING (number)
