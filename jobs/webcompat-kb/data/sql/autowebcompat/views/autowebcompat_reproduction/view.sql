@@ -6,8 +6,9 @@ hackbot_repro AS (
     DATE(completed.created_at) as created_at,
     DATETIME_DIFF(completed.completed_at, completed.created_at, SECOND) AS execution_time,
     CASE
-        WHEN scheduled.task_name =  'repro' THEN 'incoming'
-        WHEN scheduled.task_name =  'repro-backlog' THEN 'backlog'
+        WHEN scheduled.task_name =  'repro' AND scheduled.source_key = 'bugzilla:creation' THEN 'incoming'
+        WHEN scheduled.task_name =  'repro' AND scheduled.source_key = 'bugzilla:reproduce_flag' THEN 'triggered'
+        WHEN scheduled.task_name =  'repro-backlog' AND scheduled.source_key = 'bugzilla:creation' THEN 'backlog'
     END AS repro_type,
     scheduled.source_key as source_key
   FROM `{{ ref('hackbot_scheduled') }}` scheduled
