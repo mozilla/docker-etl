@@ -1,6 +1,7 @@
 """Window generation and the age refusal, which are pure functions of a run date."""
 
 import datetime
+import re
 import sqlite3
 import types
 
@@ -212,6 +213,84 @@ def test_a_recipe_is_dropped_once_the_run_date_is_past_its_end_date():
     # contrast. One day past is enough to drop it, and it stays dropped.
     assert selected(AS_OF - datetime.timedelta(days=1)) is False
     assert selected(AS_OF - datetime.timedelta(days=30)) is False
+
+
+NO_STATS_ROW = object()
+
+
+def discovered(mirror_end_date, stats_end_date=NO_STATS_ROW, as_of=AS_OF):
+    """Whether the query selects a recipe on `as_of`, and the end date it reads for it.
+
+    `stats_end_date` is the v6 copy's end date for the recipe, or `NO_STATS_ROW` where the copy has
+    no row for it. As with `selected`, the end date expression, the join that feeds it and the
+    selection clause are read back out of the query and run against one-row tables named as the
+    query names them, rather than restated here.
+    """
+    derived = re.search(
+        r"(CASE\b.*?\bEND AS end_date)\s+(FROM `[^`]+` AS mirror\s+LEFT JOIN [^\n]+)",
+        discovery.DISCOVERY_SQL,
+        re.DOTALL,
+    )
+    assert derived, "expected the end date to be derived from a join on the mirror"
+    expression, source = derived.groups()
+    clause = end_date_clause().replace("@as_of", f"'{as_of.isoformat()}'")
+    with sqlite3.connect(":memory:") as connection:
+        connection.execute(f"CREATE TABLE `{discovery.MIRROR}` (normandy_slug, end_date)")
+        connection.execute(f"CREATE TABLE `{discovery.EXPERIMENTS_STATS}` (slug, end_date)")
+        connection.execute(
+            f"INSERT INTO `{discovery.MIRROR}` VALUES ('a-slug', ?)",
+            (mirror_end_date.isoformat() if mirror_end_date else None,),
+        )
+        if stats_end_date is not NO_STATS_ROW:
+            connection.execute(
+                f"INSERT INTO `{discovery.EXPERIMENTS_STATS}` VALUES ('a-slug', ?)",
+                (stats_end_date.isoformat() if stats_end_date else None,),
+            )
+        rows = connection.execute(
+            f"SELECT end_date FROM (SELECT {expression} {source}) WHERE {clause}"
+        ).fetchall()
+        (end_date,) = connection.execute(f"SELECT {expression} {source}").fetchone()
+    return rows != [], datetime.date.fromisoformat(end_date) if end_date else None
+
+
+def test_a_live_holdback_is_selected_when_the_mirror_reports_a_past_rerun_as_its_end_date():
+    # v8, and so the mirror, reports a holdback with weekly reruns as ending on its latest rerun.
+    # The v6 copy has no end date for it, so it is live: selected, and read with no end date, which
+    # is what keeps it out of the ended experiment's final-run handling.
+    last_rerun = AS_OF - datetime.timedelta(days=2)
+
+    is_selected, end_date = discovered(last_rerun, stats_end_date=None)
+
+    assert is_selected is True
+    assert end_date is None
+    experiments, skipped = discovery.discover(
+        FakeClient([mirror_row(end_date=end_date)]), AS_OF
+    )
+    assert skipped == []
+    assert experiments[0].end_date is None
+    assert experiments[0].ended(AS_OF) is False
+
+
+def test_an_experiment_that_has_ended_is_still_dropped_after_its_end_date():
+    ended_on = AS_OF - datetime.timedelta(days=1)
+
+    assert discovered(ended_on, stats_end_date=ended_on) == (False, ended_on)
+
+
+def test_the_mirror_end_date_stands_where_the_v6_copy_has_one_of_its_own():
+    # The v6 copy only ever cancels an end date. Where it has one, the mirror is authoritative.
+    ended_on = AS_OF - datetime.timedelta(days=1)
+    ending = AS_OF + datetime.timedelta(days=7)
+
+    assert discovered(ended_on, stats_end_date=ending) == (False, ended_on)
+    assert discovered(ending, stats_end_date=ended_on) == (True, ending)
+
+
+def test_the_mirror_end_date_stands_for_a_recipe_the_v6_copy_has_no_row_for():
+    ended_on = AS_OF - datetime.timedelta(days=1)
+
+    assert discovered(ended_on) == (False, ended_on)
+    assert discovered(None) == (True, None)
 
 
 def test_a_slug_filter_reports_only_refusals_rather_than_every_recipe_it_passed_over():
