@@ -1,8 +1,8 @@
 """Which experiments to analyse, and which windows each metric gets, on a given run date.
 
-Both are pure functions of the v8 mirror plus the run date, so neither needs the Experimenter API
-and neither depends on anything the aggregation does. That is what lets the rest of the job be
-tested against a fixed list of slugs.
+Both are pure functions of the v8 mirror, with its end dates corrected from a copy of v6, plus the
+run date, so neither needs the Experimenter API and neither depends on anything the aggregation
+does. That is what lets the rest of the job be tested against a fixed list of slugs.
 """
 
 import datetime
@@ -13,6 +13,14 @@ from google.cloud import bigquery
 from . import units
 
 MIRROR = "moz-fx-data-experiments.monitoring.experimenter_experiments_v1"
+
+# A daily copy of the Experimenter v6 API, which carries an experiment's real end date. The mirror
+# is built from v8, and v8 reports a holdback with weekly reruns as ending on its latest rerun while
+# the experiment is still live, so on its own the mirror would drop a live holdback from every run
+# between one rerun and the next. This table is read only to cancel such an end date: where it has
+# the experiment and no end date, the experiment is live, and in every other case the mirror's end
+# date stands.
+EXPERIMENTS_STATS = "moz-fx-data-shared-prod.telemetry_dev_cycle_external.experiments_stats_v1"
 
 # The furthest into a unit's own tenure any window reaches. Windows are declared as a rule rather
 # than as bounds so the series never terminates, but "never terminates" and "runs for two years" are
@@ -50,7 +58,16 @@ SELECT
   end_date,
   reference_branch,
   ARRAY(SELECT branch.slug FROM UNNEST(branches) AS branch) AS branch_slugs
-FROM `{MIRROR}`
+FROM (
+  SELECT
+    mirror.* EXCEPT (end_date),
+    CASE
+      WHEN stats.slug IS NOT NULL AND stats.end_date IS NULL THEN NULL
+      ELSE mirror.end_date
+    END AS end_date
+  FROM `{MIRROR}` AS mirror
+  LEFT JOIN `{EXPERIMENTS_STATS}` AS stats ON stats.slug = mirror.normandy_slug
+)
 WHERE app_name = @app_name
   AND NOT is_rollout
   AND normandy_slug IS NOT NULL
