@@ -164,6 +164,21 @@ class TaskDefinitions(Record):
         return self.taskId
 
 
+@dataclass
+class Perfherder(Record):
+    task_id: BigQueryTypes.STRING
+    run_id: BigQueryTypes.INTEGER
+    artifact: BigQueryTypes.STRING
+    framework: Optional[BigQueryTypes.STRING]
+    data: BigQueryTypes.JSON
+
+    def natural_key(self):
+        return (self.task_id, self.run_id, self.artifact)
+
+    def __str__(self):
+        return f"{self.task_id} run {self.run_id} artifact {self.artifact}"
+
+
 def get_record_cls(table_type: str) -> Type[Record]:
     """Return the record class corresponding to the given table type.
 
@@ -173,7 +188,7 @@ def get_record_cls(table_type: str) -> Type[Record]:
     Returns:
         Type[Record]: The record class for the corresponding table.
     """
-    assert table_type in ("tasks", "runs", "metrics", "taskdefinitions")
+    assert table_type in ("tasks", "runs", "metrics", "taskdefinitions", "perfherder")
     for name, obj in globals().items():
         if name.lower() == table_type and issubclass(obj, Record):
             return obj

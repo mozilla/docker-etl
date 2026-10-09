@@ -3,7 +3,10 @@ from typing import Any
 from google.cloud.exceptions import NotFound
 import pytest
 
-from fxci_etl.pulse.handler import BigQueryHandler, Event, storage
+import requests
+
+from fxci_etl.pulse import handler as handler_module
+from fxci_etl.pulse.handler import BigQueryHandler, Event, PerfherderHandler, storage
 
 
 @pytest.fixture(autouse=True)
@@ -120,3 +123,131 @@ def test_big_query_handler_task_defined(run_bigquery, task_defined_event):
     assert len(bq.task_records) == 0
     assert len(bq.run_records) == 0
     assert bq.task_ids == {"abc"}
+
+
+ROOT_URL = "https://firefox-ci-tc.services.mozilla.com/api/queue/v1"
+
+
+@pytest.fixture
+def perfherder_handler(make_config):
+    return PerfherderHandler(make_config())
+
+
+@pytest.fixture
+def mock_taskcluster(mocker):
+    """Serve canned responses from a dict mapping URL to JSON payload.
+
+    A payload may be an int, in which case it is used as an error status code.
+    """
+    responses = {}
+
+    def get(self, url, params=None, timeout=None):
+        if params and "continuationToken" in params:
+            url = f"{url}?continuationToken={params['continuationToken']}"
+        payload = responses.get(url, 404)
+        response = mocker.MagicMock()
+        if isinstance(payload, int):
+            response.status_code = payload
+            response.raise_for_status.side_effect = requests.HTTPError(
+                response=response
+            )
+        else:
+            response.json.return_value = payload
+        return response
+
+    mocker.patch.object(requests.Session, "get", get)
+    return responses
+
+
+@pytest.fixture
+def mock_loader(mocker):
+    return mocker.patch.object(handler_module, "BigQueryLoader")
+
+
+def test_perfherder_handler_filters_runs(perfherder_handler, event, task_defined_event):
+    perfherder_handler.process_event(Event.from_dict({"data": task_defined_event}))
+    perfherder_handler.process_event(Event.from_dict({"data": {}}))
+    assert perfherder_handler.runs == set()
+
+    event["status"]["runs"][0]["state"] = "exception"
+    perfherder_handler.process_event(Event.from_dict({"data": event}))
+    assert perfherder_handler.runs == set()
+
+    for state in ("completed", "failed"):
+        event["status"]["runs"][0]["state"] = state
+        perfherder_handler.process_event(Event.from_dict({"data": event}))
+    assert perfherder_handler.runs == {("abc", 0)}
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("public/test_info/perfherder-data.json", True),
+        ("public/build/perfherder-data-building.json", True),
+        ("public/test_info/perfherder-data.txt", False),
+        ("public/logs/live_backing.log", False),
+        ("private/perfherder-data.json", False),
+    ],
+)
+def test_perfherder_is_perfherder_artifact(name, expected):
+    assert PerfherderHandler.is_perfherder_artifact(name) == expected
+
+
+def test_perfherder_handler_fetches_artifacts(
+    perfherder_handler, mock_taskcluster, mock_loader
+):
+    build = {"framework": {"name": "build_metrics"}, "suites": []}
+    talos = {"framework": {"name": "talos"}, "suites": [{"name": "ts_paint"}]}
+    mock_taskcluster.update(
+        {
+            f"{ROOT_URL}/task/abc/runs/0/artifacts": {
+                "artifacts": [
+                    {"name": "public/logs/live_backing.log"},
+                    {"name": "public/build/perfherder-data-building.json"},
+                ],
+                "continuationToken": "next",
+            },
+            f"{ROOT_URL}/task/abc/runs/0/artifacts?continuationToken=next": {
+                "artifacts": [
+                    {"name": "public/test_info/perfherder-data.json"},
+                    {"name": "public/test_info/perfherder-data-bad.json"},
+                ],
+            },
+            f"{ROOT_URL}/task/abc/runs/0/artifacts/public%2Fbuild%2Fperfherder-data-building.json": build,
+            f"{ROOT_URL}/task/abc/runs/0/artifacts/public%2Ftest_info%2Fperfherder-data.json": talos,
+            f"{ROOT_URL}/task/abc/runs/0/artifacts/public%2Ftest_info%2Fperfherder-data-bad.json": [],
+            f"{ROOT_URL}/task/def/runs/1/artifacts": {"artifacts": []},
+        }
+    )
+    perfherder_handler.runs = {("abc", 0), ("def", 1)}
+    perfherder_handler.on_processing_complete()
+
+    mock_loader.assert_called_once()
+    records = mock_loader.return_value.insert.call_args[0][0]
+    assert sorted(
+        (r.task_id, r.run_id, r.artifact, r.framework, r.data) for r in records
+    ) == [
+        ("abc", 0, "public/build/perfherder-data-building.json", "build_metrics", build),
+        ("abc", 0, "public/test_info/perfherder-data.json", "talos", talos),
+    ]
+    assert perfherder_handler.runs == set()
+    perfherder_handler._runs_backup.upload_from_string.assert_called_with("[]")
+
+
+def test_perfherder_handler_retries_server_errors(
+    perfherder_handler, mock_taskcluster, mock_loader
+):
+    mock_taskcluster.update(
+        {
+            f"{ROOT_URL}/task/abc/runs/0/artifacts": 503,
+            f"{ROOT_URL}/task/def/runs/0/artifacts": 404,
+        }
+    )
+    perfherder_handler.runs = {("abc", 0), ("def", 0)}
+    perfherder_handler.on_processing_complete()
+
+    mock_loader.assert_not_called()
+    assert perfherder_handler.runs == {("abc", 0)}
+    perfherder_handler._runs_backup.upload_from_string.assert_called_with(
+        '[["abc", 0]]'
+    )
