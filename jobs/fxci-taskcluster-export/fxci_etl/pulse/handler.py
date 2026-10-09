@@ -1,8 +1,10 @@
 import base64
 import json
 import re
+import threading
 import traceback
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pprint import pprint
 from typing import Any, Optional
@@ -12,11 +14,12 @@ from google.cloud import storage
 from google.cloud.exceptions import NotFound
 from kombu import Message
 from loguru import logger
+import requests
 import taskcluster
 
 from fxci_etl.config import Config
 from fxci_etl.loaders.bigquery import BigQueryLoader
-from fxci_etl.schemas import Record, Runs, Tasks, Tags, TaskDefinitions
+from fxci_etl.schemas import Perfherder, Record, Runs, Tasks, Tags, TaskDefinitions
 
 
 @dataclass
@@ -53,7 +56,9 @@ class PulseHandler(ABC):
 
     def __call__(self, data: dict[str, Any], message: Message) -> None:
         self._count += 1
-        message.ack()
+        # Several handlers can receive the same message, only ack it once.
+        if not message.acknowledged:
+            message.ack()
         event = Event(data, message)
         self._buffer.append(event)
 
@@ -209,3 +214,138 @@ class BigQueryHandler(PulseHandler):
                 self.task_ids.clear()
             finally:
                 self._taskids_backup.upload_from_string(json.dumps(list(self.task_ids)))
+
+
+class PerfherderHandler(PulseHandler):
+    """Ingest the perfherder-data artifacts of completed and failed task runs."""
+
+    name = "perfherder"
+    max_workers = 32
+    timeout = 60
+
+    def __init__(self, config: Config, **kwargs: Any):
+        super().__init__(config, **kwargs)
+        self._runs_backup = self._bucket.blob(f"failed-pulse-runs-{self.name}.json")
+        self.runs: set[tuple[str, int]] = set()
+        try:
+            self.runs = {
+                (task_id, run_id)
+                for task_id, run_id in json.loads(self._runs_backup.download_as_string())
+            }
+        except NotFound:
+            pass
+        self._local = threading.local()
+
+    @staticmethod
+    def is_perfherder_artifact(name: str) -> bool:
+        # Same filter as treeherder, restricted to artifacts we can fetch
+        # without credentials.
+        return (
+            name.startswith("public/")
+            and name.endswith(".json")
+            and "perfherder-data" in name
+        )
+
+    def process_event(self, event):
+        data = event.data
+
+        status = data.get("status")
+        run_id = data.get("runId")
+        if status is None or run_id is None:
+            return
+
+        if status["runs"][run_id]["state"] not in ("completed", "failed"):
+            return
+
+        self.runs.add((status["taskId"], run_id))
+
+    @property
+    def _session(self) -> requests.Session:
+        # requests sessions aren't guaranteed to be thread safe.
+        if not hasattr(self._local, "session"):
+            self._local.session = requests.Session()
+        return self._local.session
+
+    def _get(self, url: str, **kwargs: Any) -> requests.Response:
+        response = self._session.get(url, timeout=self.timeout, **kwargs)
+        response.raise_for_status()
+        return response
+
+    def _list_artifacts(self, task_id: str, run_id: int) -> list[str]:
+        url = self._queue.buildUrl("listArtifacts", task_id, run_id)
+        names = []
+        query = {}
+        while True:
+            response = self._get(url, params=query).json()
+            names.extend(a["name"] for a in response["artifacts"])
+            if not (token := response.get("continuationToken")):
+                return names
+            query["continuationToken"] = token
+
+    def _fetch_run(self, task_id: str, run_id: int) -> list[Record]:
+        records = []
+        for name in self._list_artifacts(task_id, run_id):
+            if not self.is_perfherder_artifact(name):
+                continue
+
+            url = self._queue.buildUrl("getArtifact", task_id, run_id, name)
+            try:
+                data = self._get(url).json()
+            except ValueError:
+                logger.warning(f"Skipping {name} of {task_id} run {run_id}: invalid JSON")
+                continue
+
+            if not isinstance(data, dict):
+                logger.warning(f"Skipping {name} of {task_id} run {run_id}: not an object")
+                continue
+
+            framework = data.get("framework")
+            records.append(
+                Perfherder.from_dict(
+                    {
+                        "task_id": task_id,
+                        "run_id": run_id,
+                        "artifact": name,
+                        "framework": framework.get("name")
+                        if isinstance(framework, dict)
+                        else None,
+                        "data": data,
+                    }
+                )
+            )
+        return records
+
+    def on_processing_complete(self):
+        if not self.runs:
+            return
+
+        logger.info(f"Fetching perfherder artifacts for {len(self.runs)} task runs")
+        records: list[Record] = []
+        failed: set[tuple[str, int]] = set()
+        try:
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                futures = {
+                    executor.submit(self._fetch_run, *run): run for run in self.runs
+                }
+                for future in as_completed(futures):
+                    run = futures[future]
+                    try:
+                        records.extend(future.result())
+                    except requests.HTTPError as e:
+                        status_code = e.response.status_code
+                        if 400 <= status_code < 500 and status_code != 429:
+                            # Retrying won't help (e.g. expired artifacts).
+                            logger.warning(f"Skipping {run[0]} run {run[1]}: {e}")
+                        else:
+                            logger.error(f"Error fetching {run[0]} run {run[1]}: {e}")
+                            failed.add(run)
+                    except Exception as e:
+                        logger.error(f"Error fetching {run[0]} run {run[1]}: {e}")
+                        failed.add(run)
+
+            if records:
+                loader = BigQueryLoader(self.config, "perfherder", chunk_size=500)
+                loader.insert(records)
+            self.runs = failed
+        finally:
+            self._runs_backup.upload_from_string(json.dumps(sorted(self.runs)))

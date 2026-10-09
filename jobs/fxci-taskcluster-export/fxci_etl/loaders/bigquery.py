@@ -87,7 +87,7 @@ class BigQueryLoader:
                 batch_size = 0
 
             if record_size > self.max_row_bytes:
-                task_id = record.get("taskId", "<unknown>")
+                task_id = record.get("taskId", record.get("task_id", "<unknown>"))
                 logger.warning(
                     f"Skipping BigQuery row for task {task_id}: "
                     f"serialized size {record_size} bytes exceeds per-row limit of "
