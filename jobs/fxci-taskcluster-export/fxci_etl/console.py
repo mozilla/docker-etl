@@ -9,7 +9,7 @@ from cleo.helpers import option
 from fxci_etl.config import Config
 from fxci_etl.metric.export import export_metrics
 from fxci_etl.pulse.consume import drain
-from fxci_etl.pulse.handler import BigQueryHandler
+from fxci_etl.pulse.handler import BigQueryHandler, PerfherderHandler
 
 APP_NAME = "fxci-etl"
 
@@ -32,7 +32,7 @@ class PulseDrainCommand(ConfigCommand):
     def handle(self):
         config = self.parse_config(self.option("config"))
 
-        callbacks = [BigQueryHandler(config)]
+        callbacks = [BigQueryHandler(config), PerfherderHandler(config)]
         for queue in config.pulse.queues:
             drain(config, queue, callbacks)
         return 0
