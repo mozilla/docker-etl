@@ -9,6 +9,7 @@ hackbot_repro AS (
         WHEN scheduled.task_name =  'repro' AND scheduled.source_key = 'bugzilla:creation' THEN 'incoming'
         WHEN scheduled.task_name =  'repro' AND scheduled.source_key = 'bugzilla:reproduce_flag' THEN 'triggered'
         WHEN scheduled.task_name =  'repro-backlog' AND scheduled.source_key = 'bugzilla:creation' THEN 'backlog'
+        ELSE 'unknown' 
     END AS repro_type,
     scheduled.source_key as source_key
   FROM `{{ ref('hackbot_scheduled') }}` scheduled
