@@ -1374,7 +1374,13 @@ class DiagnosisTask(HackbotTask):
                         ]
 
                         if result.evidence:
-                            comment_parts += ["", "Evidence:", "", result.evidence]
+                            comment_parts += [
+                                "",
+                                "<details><summary>Evidence:</summary>",
+                                "",
+                                result.evidence,
+                                "</details>",
+                            ]
 
                         comment_parts += [
                             "",
