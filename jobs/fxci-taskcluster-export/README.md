@@ -13,7 +13,9 @@ There are two main commands that can be run within this image:
 2. `fxci-etl pulse drain`
 
    This command connects to a [Taskcluster pulse queue], receives all pending messages,
-   then exports the data to BigQuery.
+   then exports the data to BigQuery. For every completed or failed task run, it
+   also downloads the run's `perfherder-data*.json` artifacts and exports their
+   contents to the `perfherder_v1` table.
 
 [Firefox-CI Taskcluster instance]: https://firefox-ci-tc.services.mozilla.com/
 [Taskcluster pulse queue]: https://docs.taskcluster.net/docs/manual/design/apis/pulse#pulse

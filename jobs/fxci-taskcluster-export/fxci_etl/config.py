@@ -51,6 +51,7 @@ class BigQueryTableConfig:
     tasks: str = "tasks_v2"
     runs: str = "task_runs_v1"
     taskdefinitions: str = "task_definitions_v1"
+    perfherder: str = "perfherder_v1"
 
 
 @dataclass(frozen=True)

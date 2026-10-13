@@ -56,5 +56,14 @@ def drain(config: Config, name: str, callbacks: list[PulseHandler]):
                     if count < 100:
                         break
 
+    # Messages have already been acked, so make sure every handler gets a
+    # chance to process (or back up) its buffer even if another one fails.
+    errors = []
     for callback in callbacks:
-        callback.process_buffer()
+        try:
+            callback.process_buffer()
+        except Exception as e:
+            logger.exception(f"Error processing buffer in {callback.name} handler")
+            errors.append(e)
+    if errors:
+        raise errors[0]
