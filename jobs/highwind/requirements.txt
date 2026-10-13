@@ -1,6 +1,7 @@
 click==8.3.1
 google-cloud-bigquery==3.40.0
 google-cloud-storage==3.8.0
+mozilla-nimbus-schemas==3005.2.0
 numpy==1.24.2
 pandas==2.3.3
 pydantic==2.9.1

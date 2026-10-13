@@ -332,6 +332,14 @@ def cohort_query(run):
     """).strip()
 
 
+def branch_units_query(cohort_table):
+    return textwrap.dedent(f"""
+        SELECT slug, branch, COUNT(*) AS units
+        FROM `{cohort_table}`
+        GROUP BY slug, branch
+    """).strip()
+
+
 def branch_lookup(run):
     """List the (slug, branch, unit kind) triples this run recognises.
 

@@ -52,6 +52,12 @@ rather than appending to it, so a retry produces the same table as the first run
 it. An object is named for its experiment with the slug's hyphens as underscores, so
 `new-tab-example-151` is written to `new_tab_example_151.json`.
 
+Each object is a `HighwindAnalysis` from `mozilla_nimbus_schemas.highwind`, built as that model and
+serialized from it, so a shape error fails before the upload. Every metric is reported for every
+segment from an experiment's first day, with each window rule's matured windows plus the next one as
+`not_started`, and the object carries the run's warnings and errors about that experiment. A recipe
+refused for its age still gets an object with its metadata and the reason.
+
 A cell that failed is already queryable, since the results grid is written whole and every cell
 carries a state and an error. The log table is for the failures that have no cell to carry them: an
 experiment that failed before producing any, a recipe the run refused to analyse, and the run-level

@@ -454,3 +454,11 @@ def test_each_units_source_scan_reaches_back_only_as_far_as_its_own_experiments(
     assert by_unit[GROUP_UNIT].earliest_start() == AS_OF - datetime.timedelta(days=200)
     assert by_unit[CLIENT_UNIT].earliest_start() == AS_OF - datetime.timedelta(days=10)
     assert run.earliest_start() == AS_OF - datetime.timedelta(days=200)
+
+
+def test_branch_units_are_counted_off_the_runs_cohort_table():
+    sql = sql_generation.branch_units_query("a-project.a_dataset.a_cohort")
+
+    assert "FROM `a-project.a_dataset.a_cohort`" in sql
+    assert "COUNT(*) AS units" in sql
+    assert "GROUP BY slug, branch" in sql

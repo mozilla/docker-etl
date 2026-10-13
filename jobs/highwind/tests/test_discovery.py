@@ -1,6 +1,7 @@
 """Window generation and the age refusal, which are pure functions of a run date."""
 
 import datetime
+import re
 import sqlite3
 import types
 
@@ -155,8 +156,9 @@ def test_a_randomization_unit_with_no_analysis_unit_is_skipped_not_defaulted():
 
     assert experiments == []
     assert len(skipped) == 1
-    slug, why = skipped[0]
+    slug, why, refused = skipped[0]
     assert slug == "a-slug"
+    assert refused is None
     assert "firefox_desktop" in why
     assert "nimbus_id" in why
 
@@ -213,6 +215,84 @@ def test_a_recipe_is_dropped_once_the_run_date_is_past_its_end_date():
     assert selected(AS_OF - datetime.timedelta(days=30)) is False
 
 
+NO_STATS_ROW = object()
+
+
+def discovered(mirror_end_date, stats_end_date=NO_STATS_ROW, as_of=AS_OF):
+    """Whether the query selects a recipe on `as_of`, and the end date it reads for it.
+
+    `stats_end_date` is the v6 copy's end date for the recipe, or `NO_STATS_ROW` where the copy has
+    no row for it. As with `selected`, the end date expression, the join that feeds it and the
+    selection clause are read back out of the query and run against one-row tables named as the
+    query names them, rather than restated here.
+    """
+    derived = re.search(
+        r"(CASE\b.*?\bEND AS end_date)\s+(FROM `[^`]+` AS mirror\s+LEFT JOIN [^\n]+)",
+        discovery.DISCOVERY_SQL,
+        re.DOTALL,
+    )
+    assert derived, "expected the end date to be derived from a join on the mirror"
+    expression, source = derived.groups()
+    clause = end_date_clause().replace("@as_of", f"'{as_of.isoformat()}'")
+    with sqlite3.connect(":memory:") as connection:
+        connection.execute(f"CREATE TABLE `{discovery.MIRROR}` (normandy_slug, end_date)")
+        connection.execute(f"CREATE TABLE `{discovery.EXPERIMENTS_STATS}` (slug, end_date)")
+        connection.execute(
+            f"INSERT INTO `{discovery.MIRROR}` VALUES ('a-slug', ?)",
+            (mirror_end_date.isoformat() if mirror_end_date else None,),
+        )
+        if stats_end_date is not NO_STATS_ROW:
+            connection.execute(
+                f"INSERT INTO `{discovery.EXPERIMENTS_STATS}` VALUES ('a-slug', ?)",
+                (stats_end_date.isoformat() if stats_end_date else None,),
+            )
+        rows = connection.execute(
+            f"SELECT end_date FROM (SELECT {expression} {source}) WHERE {clause}"
+        ).fetchall()
+        (end_date,) = connection.execute(f"SELECT {expression} {source}").fetchone()
+    return rows != [], datetime.date.fromisoformat(end_date) if end_date else None
+
+
+def test_a_live_holdback_is_selected_when_the_mirror_reports_a_past_rerun_as_its_end_date():
+    # v8, and so the mirror, reports a holdback with weekly reruns as ending on its latest rerun.
+    # The v6 copy has no end date for it, so it is live: selected, and read with no end date, which
+    # is what keeps it out of the ended experiment's final-run handling.
+    last_rerun = AS_OF - datetime.timedelta(days=2)
+
+    is_selected, end_date = discovered(last_rerun, stats_end_date=None)
+
+    assert is_selected is True
+    assert end_date is None
+    experiments, skipped = discovery.discover(
+        FakeClient([mirror_row(end_date=end_date)]), AS_OF
+    )
+    assert skipped == []
+    assert experiments[0].end_date is None
+    assert experiments[0].ended(AS_OF) is False
+
+
+def test_an_experiment_that_has_ended_is_still_dropped_after_its_end_date():
+    ended_on = AS_OF - datetime.timedelta(days=1)
+
+    assert discovered(ended_on, stats_end_date=ended_on) == (False, ended_on)
+
+
+def test_the_mirror_end_date_stands_where_the_v6_copy_has_one_of_its_own():
+    # The v6 copy only ever cancels an end date. Where it has one, the mirror is authoritative.
+    ended_on = AS_OF - datetime.timedelta(days=1)
+    ending = AS_OF + datetime.timedelta(days=7)
+
+    assert discovered(ended_on, stats_end_date=ending) == (False, ended_on)
+    assert discovered(ending, stats_end_date=ended_on) == (True, ending)
+
+
+def test_the_mirror_end_date_stands_for_a_recipe_the_v6_copy_has_no_row_for():
+    ended_on = AS_OF - datetime.timedelta(days=1)
+
+    assert discovered(ended_on) == (False, ended_on)
+    assert discovered(None) == (True, None)
+
+
 def test_a_slug_filter_reports_only_refusals_rather_than_every_recipe_it_passed_over():
     # The slugs were named by the caller, so the rest of the mirror is out of scope rather than
     # declined, and listing it would bury the refusals the list exists to surface.
@@ -232,4 +312,77 @@ def test_a_unit_this_app_does_not_declare_is_skipped_even_where_another_app_decl
     )
 
     assert experiments == []
-    assert [why for _, why in skipped if "fenix" in why and "group_id" in why]
+    assert [why for _, why, _ in skipped if "fenix" in why and "group_id" in why]
+
+
+def test_a_recipe_refused_for_its_age_carries_the_experiment_its_blob_is_built_from():
+    start = AS_OF - datetime.timedelta(days=discovery.MAX_EXPERIMENT_AGE_DAYS)
+    experiments, skipped = discovery.discover(
+        FakeClient([mirror_row(start_date=start)]), AS_OF
+    )
+
+    assert experiments == []
+    slug, why, refused = skipped[0]
+    assert slug == "a-slug"
+    assert "limit" in why
+    assert refused.slug == "a-slug"
+    assert refused.start_date == start
+
+
+def test_a_day_one_experiment_reports_the_first_window_of_each_rule_as_upcoming():
+    windows = discovery.reported_windows(
+        metric(DISJOINT_WEEKLY, CUMULATIVE_WEEKLY), experiment(AS_OF), AS_OF
+    )
+
+    assert [(window.kind, window.start, window.end) for window in windows] == [
+        ("cumulative", 0, 6),
+        ("disjoint", 0, 6),
+    ]
+    assert not any(
+        discovery.has_matured(experiment(AS_OF), window, AS_OF) for window in windows
+    )
+
+
+def test_a_running_experiment_reports_its_matured_windows_and_the_next_one():
+    running = experiment(AS_OF - datetime.timedelta(days=15))
+
+    windows = discovery.reported_windows(metric(CUMULATIVE_WEEKLY), running, AS_OF)
+
+    assert [window.end for window in windows] == [6, 13, 20]
+    assert [discovery.has_matured(running, window, AS_OF) for window in windows] == [
+        True,
+        True,
+        False,
+    ]
+
+
+def test_an_ended_experiment_reports_no_upcoming_window():
+    ended = experiment(AS_OF - datetime.timedelta(days=15), end_date=AS_OF)
+
+    windows = discovery.reported_windows(metric(CUMULATIVE_WEEKLY), ended, AS_OF)
+
+    assert ended.ended(AS_OF) is True
+    assert [window.end for window in windows] == [6, 13]
+
+
+def test_an_end_date_still_ahead_is_not_an_ended_experiment():
+    running = experiment(AS_OF - datetime.timedelta(days=15), end_date=AS_OF.replace(day=2))
+
+    assert running.ended(AS_OF) is False
+
+
+def test_no_upcoming_window_is_reported_past_the_horizon():
+    old = experiment(AS_OF - datetime.timedelta(days=300))
+
+    windows = discovery.reported_windows(metric(CUMULATIVE_WEEKLY), old, AS_OF)
+
+    assert len(windows) == discovery.MAX_WINDOW_DAYS // 7
+    assert all(discovery.has_matured(old, window, AS_OF) for window in windows)
+
+
+def test_a_window_matures_the_day_after_its_last_day_since_the_start():
+    started = experiment(datetime.date(2026, 7, 1))
+    first, second = discovery.generate_windows(CUMULATIVE_WEEKLY, tenure_days=14)
+
+    assert discovery.matures_on(started, first) == datetime.date(2026, 7, 8)
+    assert discovery.matures_on(started, second) == datetime.date(2026, 7, 15)
