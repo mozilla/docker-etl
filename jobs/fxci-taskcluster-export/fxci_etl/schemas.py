@@ -119,6 +119,39 @@ class Tasks(Record):
 
 
 @dataclass
+class WorkerEvents(Record):
+    event: BigQueryTypes.STRING
+    worker_pool_id: BigQueryTypes.STRING
+    provider_id: BigQueryTypes.STRING
+    worker_group: Optional[BigQueryTypes.STRING]
+    worker_id: Optional[BigQueryTypes.STRING]
+    launch_config_id: Optional[BigQueryTypes.STRING]
+    capacity: Optional[BigQueryTypes.INTEGER]
+    reason: Optional[BigQueryTypes.STRING]
+    error_id: Optional[BigQueryTypes.STRING]
+    error_kind: Optional[BigQueryTypes.STRING]
+    error_title: Optional[BigQueryTypes.STRING]
+    error_code: Optional[BigQueryTypes.STRING]
+    timestamp: BigQueryTypes.TIMESTAMP
+
+    def natural_key(self):
+        return (
+            self.event,
+            self.worker_pool_id,
+            self.provider_id,
+            self.worker_group,
+            self.worker_id,
+            self.timestamp,
+        )
+
+    def __str__(self):
+        target = self.worker_pool_id
+        if self.worker_id:
+            target = f"{target}/{self.worker_id}"
+        return f"{self.event} for {target}"
+
+
+@dataclass
 class Metrics(Record):
     instance_id: BigQueryTypes.STRING
     project: BigQueryTypes.STRING
@@ -173,7 +206,7 @@ def get_record_cls(table_type: str) -> Type[Record]:
     Returns:
         Type[Record]: The record class for the corresponding table.
     """
-    assert table_type in ("tasks", "runs", "metrics", "taskdefinitions")
+    assert table_type in ("tasks", "runs", "metrics", "taskdefinitions", "workerevents")
     for name, obj in globals().items():
         if name.lower() == table_type and issubclass(obj, Record):
             return obj
