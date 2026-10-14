@@ -163,12 +163,17 @@ class ReproResult(BaseModel):
     chrome_mask_fixed: Optional[bool] = None
 
 
-class AutowebcompatReproRequest(CreateRequest):
-    bug_data: str
-    bug_id: Optional[int] = None
+class AutowebcompatRequest(CreateRequest):
+    """hackbot parameters shared by all agents."""
+
     model: Optional[str] = None
     max_turns: Optional[int] = None
     effort: Optional[str] = None
+
+
+class AutowebcompatReproRequest(AutowebcompatRequest):
+    bug_data: str
+    bug_id: Optional[int] = None
     agent: str = "autowebcompat-repro"
 
 
@@ -185,11 +190,8 @@ ReproSummary = RootModel[
 ]
 
 
-class AutowebcompatDiagnosisRequest(CreateRequest):
+class AutowebcompatDiagnosisRequest(AutowebcompatRequest):
     bug_id: int
-    model: Optional[str] = None
-    max_turns: Optional[int] = None
-    effort: Optional[str] = None
     agent: str = "autowebcompat-diagnosis"
 
 
@@ -216,9 +218,47 @@ DiagnosisSummary = RootModel[
 ]
 
 
-class DiagnosisBugInfo(BaseModel):
+class BugRef(BaseModel):
+    """Request data for agents that only need the bug number."""
+
     number: int
     source_time: datetime
+
+
+class DiagnosisBugInfo(BugRef):
+    pass
+
+
+class InterventionBugInfo(BugRef):
+    pass
+
+
+class AutowebcompatInterventionRequest(AutowebcompatRequest):
+    bug_id: int
+    agent: str = "autowebcompat-intervention"
+
+
+class InterventionResult(BaseModel):
+    wrote_intervention: bool
+    fixed_with_intervention: bool
+    build_succeeded: bool
+    failure_reason: Optional[str] = None
+    summary: str
+
+
+class WebcompatInterventionResult(HackbotAgentResult):
+    result: Optional[InterventionResult] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+
+
+class InterventionResultSummary(BaseSummary):
+    findings: WebcompatInterventionResult
+
+
+InterventionSummary = RootModel[
+    Annotated[InterventionResultSummary | ErrorSummary, Field(discriminator="status")]
+]
 
 
 class PostedComment(BaseModel):
@@ -1432,6 +1472,106 @@ class DiagnosisTask(HackbotTask):
             )
 
 
+class InterventionTask(HackbotTask):
+    agent: str = "autowebcompat-intervention"
+    task_name: str = "intervention"
+
+    whiteboard_request_token = "[autowebcompat:intervention]"
+    whiteboard_progress_token = "[autowebcompat:intervention-in-progress]"
+
+    def get_request_data(
+        self, request: ScheduleRequest
+    ) -> AutowebcompatInterventionRequest:
+        bug_info = InterventionBugInfo.model_validate(request.request_data.model_dump())
+        return AutowebcompatInterventionRequest(
+            agent=self.agent, bug_id=bug_info.number
+        )
+
+    def create_new(self) -> Mapping[str, Sequence[ScheduledRun]]:
+        source_key = self.key("bugzilla", "intervention-flag")
+        requested_bugs = self.bq_service.get_bugs_with_whiteboard_token(
+            self.whiteboard_request_token, include_extra_data=False
+        )
+        logging.info(f"Found {len(requested_bugs)} bugs that requested intervention")
+
+        if not requested_bugs:
+            return {}
+
+        requests = [
+            ScheduleRequest(
+                source_key=source_key,
+                run_key=self.key(str(bug_number)),
+                source_time=bug_info.source_time or bug_info.creation_time,
+                request_data=InterventionBugInfo(
+                    number=bug_number,
+                    source_time=bug_info.source_time or bug_info.creation_time,
+                ),
+                extra_data=BugExtraData(bug_id=bug_number),
+            )
+            for bug_number, bug_info in requested_bugs.items()
+        ]
+
+        return self.schedule(requests)
+
+    def scheduled_bug_ids(self) -> Iterable[int]:
+        bugzilla_scheduled = itertools.chain.from_iterable(
+            value
+            for key, value in self.scheduled.items()
+            if key.startswith("bugzilla:")
+        )
+        return [
+            BugExtraData.model_validate(item.extra_data).bug_id
+            for item in bugzilla_scheduled
+        ]
+
+    def configure_updater(self, updater: Updater) -> None:
+        if isinstance(updater, BugzillaUpdater):
+            updater.add_include_fields(["whiteboard", "cf_user_story"])
+            updater.add_bug_ids(self.scheduled_bug_ids())
+            updater.add_bug_ids(
+                int(item.run_key) for item, _ in self.completed_runs.values()
+            )
+
+    def populate_updates(self, updater: Updater) -> None:
+        if not isinstance(updater, BugzillaUpdater):
+            raise TypeError(
+                f"Don't know how to update for task {self} and updater type {updater}"
+            )
+
+        for bug_id in self.scheduled_bug_ids():
+            bug_update = updater.bug_updates[bug_id]
+            bug_update.remove_whiteboard([self.whiteboard_request_token])
+            bug_update.add_whiteboard([self.whiteboard_progress_token])
+
+        for scheduled_run, run_doc in self.completed_runs.values():
+            if run_doc.summary is None:
+                continue
+            output = InterventionSummary.model_validate(
+                run_doc.summary.model_dump()
+            ).root
+            bug_update = updater.bug_updates[int(scheduled_run.run_key)]
+            bug_update.remove_whiteboard([self.whiteboard_progress_token])
+
+            status = "failed"
+            reason: Optional[str] = "error"
+            if (
+                isinstance(output, InterventionResultSummary)
+                and output.findings.result is not None
+            ):
+                result = output.findings.result
+                if result.fixed_with_intervention and result.failure_reason is None:
+                    status, reason = "success", None
+                else:
+                    reason = result.failure_reason or "other"
+
+            bug_update.set_user_story(
+                {
+                    "autowebcompat-intervention-status": status,
+                    "autowebcompat-intervention-reason": reason,
+                }
+            )
+
+
 def run(
     project: Project,
     bq_client: BigQuery,
@@ -1553,5 +1693,5 @@ class AutowebcompatJob(EtlJob):
             hackbot_client,
             context.args.autowebcompat_check_pending,
             updaters=[BugzillaUpdater(bz_client)],
-            tasks=[ReproTask, BacklogReproTask, DiagnosisTask],
+            tasks=[ReproTask, BacklogReproTask, DiagnosisTask, InterventionTask],
         )
