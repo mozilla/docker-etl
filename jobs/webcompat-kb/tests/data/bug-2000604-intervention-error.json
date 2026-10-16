@@ -1,0 +1,52 @@
+{
+  "bug": {
+    "id": 2000604,
+    "whiteboard": "[autowebcompat:processed][autowebcompat:intervention-in-progress]",
+    "cf_user_story": "platform:windows,mac,linux,android\nimpact:site-broken\nconfiguration:general\naffects:all\n"
+  },
+  "bug_update": {
+    "id": 2000604,
+    "whiteboard": "[autowebcompat:processed]",
+    "cf_user_story": "platform:windows,mac,linux,android\nimpact:site-broken\nconfiguration:general\naffects:all\nautowebcompat-intervention-status:failed\nautowebcompat-intervention-reason:error\n"
+  },
+  "hackbot_scheduled": {
+    "run_id": "8d2f4c6e-1a3b-4c5d-9e7f-0b1c2d3e4f50",
+    "agent": "autowebcompat-intervention",
+    "task_name": "intervention",
+    "source_key": "bugzilla:intervention-flag",
+    "run_key": "2000604",
+    "source_time": "2026-10-14T14:00:00",
+    "requested_at": "2026-10-14T14:46:12.512031",
+    "request_data": {
+      "number": 2000604,
+      "source_time": "2026-10-14T14:00:00"
+    },
+    "extra_data": {
+      "bug_id": 2000604
+    }
+  },
+  "hackbot_completed": {
+    "run_id": "8d2f4c6e-1a3b-4c5d-9e7f-0b1c2d3e4f50",
+    "status": "succeeded",
+    "created_at": "2026-10-14T14:46:13.004211",
+    "completed_at": "2026-10-14T14:58:40.318265",
+    "execution_name": null,
+    "results_prefix": "runs/8d2f4c6e-1a3b-4c5d-9e7f-0b1c2d3e4f50/",
+    "summary": {
+      "status": "error",
+      "error": "AgentError: https://bam.barrister.com/techportal/: agent finished without submitting a result via submit_result",
+      "findings": {
+        "traceback": "NoneType: None\n"
+      },
+      "actions": []
+    },
+    "artifacts": [
+      {
+        "name": "summary.json",
+        "size": 231,
+        "content_type": "application/json"
+      }
+    ],
+    "error": null
+  }
+}

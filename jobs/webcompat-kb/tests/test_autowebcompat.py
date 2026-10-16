@@ -2,7 +2,7 @@ import base64
 import json
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Optional, cast
 from unittest.mock import Mock, patch
@@ -66,6 +66,7 @@ class MockHackbot(hackbot.Hackbot):
         self.runs: dict[UUID, tuple[hackbot.RunDoc, bool]] = {}
         self.artifact_urls: dict[UUID, dict[str, str]] = defaultdict(dict)
         self.created: list[hackbot.CreateRequest] = []
+        self.actions: dict[UUID, list[hackbot.RunAction]] = {}
 
     def create_run(self, request: hackbot.CreateRequest) -> hackbot.RunRef:
         self.created.append(request)
@@ -81,6 +82,9 @@ class MockHackbot(hackbot.Hackbot):
         # TODO this should really be a HTTPStatusError but we don't have a
         # request or response object
         raise httpx.HTTPError()
+
+    def get_run_actions(self, run_uuid: UUID) -> list[hackbot.RunAction]:
+        return self.actions.get(run_uuid, [])
 
     def get_artifact_url(self, run_uuid: UUID, artifact_path: str) -> str:
         if (
@@ -102,6 +106,7 @@ class MockBigQueryService(autowebcompat.BigQueryService):
         self.new_bugs = []
         self.diagnosis_bugs: list[autowebcompat.NewBugInfo] = []
         self.reproduce_bugs: list[autowebcompat.NewBugInfo] = []
+        self.intervention_bugs: list[autowebcompat.NewBugInfo] = []
 
     def get_source_times(
         self,
@@ -156,6 +161,10 @@ class MockBigQueryService(autowebcompat.BigQueryService):
             items = self.diagnosis_bugs
         elif whiteboard_token == autowebcompat.ReproTask.whiteboard_request_token:
             items = self.reproduce_bugs
+        elif (
+            whiteboard_token == autowebcompat.InterventionTask.whiteboard_request_token
+        ):
+            items = self.intervention_bugs
         else:
             raise ValueError(f"Unexpected whiteboard token {whiteboard_token}")
         return {bug.number: bug for bug in items if whiteboard_token in bug.whiteboard}
@@ -608,3 +617,269 @@ def test_repro_schedule_skips_in_flight() -> None:
 
     assert task.create_new() == {}
     assert hackbot_client.created == []
+
+
+def test_intervention_schedule_updates_flag() -> None:
+    """Scheduling a run consumes the request token from the whiteboard."""
+    bug_data = load_data("bug-2000604-intervention-request.json")
+    assert bug_data.bug is not None
+    assert bug_data.bug_update is not None
+    assert bug_data.site_report is not None
+
+    hackbot_client = MockHackbot()
+    bq_service = MockBigQueryService()
+    bq_service.intervention_bugs.append(bug_data.site_report)
+    task = autowebcompat.InterventionTask(hackbot_client, bq_service, {})
+    updater = MockBugzillaUpdater()
+    updater.bug_data.append(bug_data.bug.model_dump())
+
+    scheduled = task.create_new()
+    assert list(scheduled.keys()) == ["bugzilla:intervention-flag"]
+    assert len(hackbot_client.created) == 1
+    request = hackbot_client.created[0]
+    assert isinstance(request, autowebcompat.AutowebcompatInterventionRequest)
+    assert request.agent == "autowebcompat-intervention"
+    assert request.bug_id == 2000604
+
+    task.configure_updater(updater)
+    assert updater.bug_ids == {2000604}
+    updater.fetch_data()
+    task.populate_updates(updater)
+
+    update, _, _ = updater.bug_updates[2000604].get_updates()
+    assert update is not None
+    assert update.whiteboard == bug_data.bug_update.whiteboard
+
+
+def test_intervention_schedule_skips_in_flight() -> None:
+    """A bug with an incomplete intervention run isn't dispatched again."""
+    bug_data = load_data("bug-2000604-intervention-request.json")
+    assert bug_data.site_report is not None
+
+    hackbot_client = MockHackbot()
+    bq_service = MockBigQueryService()
+    bq_service.intervention_bugs.append(bug_data.site_report)
+    bq_service.scheduled.append(
+        {
+            "agent": "autowebcompat-intervention",
+            "task_name": "intervention",
+            "source_key": "bugzilla:intervention-flag",
+            "run_key": "2000604",
+        }
+    )
+    task = autowebcompat.InterventionTask(hackbot_client, bq_service, {})
+
+    assert task.create_new() == {}
+    assert hackbot_client.created == []
+
+
+def run_intervention_update(
+    data_file: str,
+    result_overrides: Optional[dict[str, Json]] = None,
+) -> tuple[
+    tuple[
+        Optional[bugzilla.BugUpdate],
+        Optional[bugzilla.CommentCreate],
+        list[bugzilla.AttachmentCreate],
+    ],
+    Optional[dict[str, Json]],
+]:
+
+    bug_data = load_data(data_file)
+    assert bug_data.bug is not None
+    assert bug_data.hackbot_scheduled is not None
+    assert bug_data.hackbot_completed is not None
+    summary = bug_data.hackbot_completed.summary
+    result = (
+        cast(Optional[dict[str, Json]], summary.findings.get("result"))
+        if summary is not None
+        else None
+    )
+    if result is not None and result_overrides:
+        result.update(result_overrides)
+
+    task = autowebcompat.InterventionTask(MockHackbot(), MockBigQueryService(), {})
+    updater = MockBugzillaUpdater()
+    updater.bug_data.append(bug_data.bug.model_dump())
+
+    run_doc = rundoc_from_bug_api(bug_data)
+    complete_runs = {run_doc.run_id: (bug_data.hackbot_scheduled, run_doc)}
+    task.take_completed_runs(complete_runs)
+    assert complete_runs == {}
+
+    task.configure_updater(updater)
+    assert updater.include_fields == {"id", "whiteboard", "cf_user_story"}
+    assert updater.bug_ids == {2000604}
+
+    updater.fetch_data()
+    task.populate_updates(updater)
+
+    updates = updater.bug_updates[2000604].get_updates()
+    update = updates[0]
+    assert update is not None
+    assert bug_data.bug_update is not None
+    assert update.whiteboard == bug_data.bug_update.whiteboard
+    if not result_overrides:
+        assert update.cf_user_story == bug_data.bug_update.cf_user_story
+
+    return updates, result
+
+
+def test_intervention_bugzilla_update() -> None:
+    """A verified intervention records success and clears the in-progress token.
+
+    The expected whiteboard and user story are in the fixture, and checked by
+    run_intervention_update.
+    """
+    (_, comment, attachments), result = run_intervention_update(
+        "bug-2000604-intervention.json"
+    )
+    assert result is not None
+    assert comment is None
+    assert attachments == []
+
+
+def test_intervention_bugzilla_update_failed() -> None:
+    """A run that didn't deliver an intervention records the failure reason."""
+    (update, comment, attachments), _ = run_intervention_update(
+        "bug-2000604-intervention.json",
+        result_overrides={
+            "wrote_intervention": False,
+            "fixed_with_intervention": False,
+            "build_succeeded": False,
+            "failure_reason": "no_puppeteer_script",
+        },
+    )
+    assert update is not None
+    assert update.cf_user_story is not None
+    assert "autowebcompat-intervention-status:failed" in update.cf_user_story
+    assert (
+        "autowebcompat-intervention-reason:no_puppeteer_script" in update.cf_user_story
+    )
+    assert comment is None
+    assert attachments == []
+
+
+def test_intervention_bugzilla_update_error() -> None:
+    """A run that errored out is recorded as a failed intervention.
+
+    The expected whiteboard and user story are in the fixture, and checked by
+    run_intervention_update.
+    """
+    (_, comment, attachments), result = run_intervention_update(
+        "bug-2000604-intervention-error.json"
+    )
+    assert result is None
+    assert comment is None
+    assert attachments == []
+
+
+def test_intervention_bugzilla_update_no_summary() -> None:
+    """A run that failed without writing a summary is recorded as a failed
+    intervention, rather than leaving the bug in progress.
+
+    The expected whiteboard and user story are in the fixture, and checked by
+    run_intervention_update.
+    """
+    (_, comment, attachments), result = run_intervention_update(
+        "bug-2000604-intervention-no-summary.json"
+    )
+    assert result is None
+    assert comment is None
+    assert attachments == []
+
+
+def submit_patch_action(status: str) -> hackbot.RunAction:
+    return hackbot.RunAction(
+        idx=0,
+        type="phabricator.submit_patch",
+        params={"bug_id": 2000604},
+        status=status,
+        result={"revision_id": 271234, "url": "https://phabricator.test/D271234"}
+        if status == "applied"
+        else None,
+    )
+
+
+def test_complete_run_stores_actions() -> None:
+    """Hackbot's action records are stored in full, not inside the summary."""
+    bug_data = load_data("bug-2000604-intervention.json")
+    applied_action = submit_patch_action("applied").model_copy(
+        update={"applied_at": datetime(2026, 10, 14, 15, 4, 31, tzinfo=UTC)}
+    )
+    run_doc = rundoc_from_bug_api(bug_data)
+    run_doc.applied_actions = [applied_action]
+    row = autowebcompat.CompleteRun.from_rundoc(run_doc).to_json()
+
+    assert "actions" not in cast(dict[str, Json], row["summary"])
+    assert row["actions"] == [
+        {
+            "idx": 0,
+            "type": "phabricator.submit_patch",
+            "params": {"bug_id": 2000604},
+            "ref": None,
+            "status": "applied",
+            "result": {
+                "revision_id": 271234,
+                "url": "https://phabricator.test/D271234",
+            },
+            "error": None,
+            "applied_at": "2026-10-14T15:04:31",
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "action_status,minutes_ago,expect_complete",
+    [
+        ("applied", 1, True),
+        ("pending", 1, False),
+        (None, 1, False),
+        ("pending", 61, True),
+    ],
+)
+def test_poll_pending_waits_for_actions(
+    action_status: Optional[str], minutes_ago: int, expect_complete: bool
+) -> None:
+    """A succeeded run isn't complete until hackbot has applied its actions,
+    unless it's been waiting too long."""
+    bug_data = load_data("bug-2000604-intervention.json")
+    run_doc = rundoc_from_bug_api(bug_data)
+    run_doc.updated_at = datetime.now(tz=UTC) - timedelta(minutes=minutes_ago)
+
+    hackbot_client = MockHackbot()
+    hackbot_client.runs[run_doc.run_id] = (run_doc, True)
+    if action_status is not None:
+        hackbot_client.actions[run_doc.run_id] = [submit_patch_action(action_status)]
+
+    complete_runs, failed = autowebcompat.poll_pending(hackbot_client, [run_doc.run_id])
+    assert failed == []
+    assert (run_doc.run_id in complete_runs) == expect_complete
+    if expect_complete and action_status is not None:
+        applied = complete_runs[run_doc.run_id].applied_actions
+        assert applied[0].status == action_status
+
+
+@pytest.mark.parametrize("minutes_ago,expect_complete", [(1, False), (61, True)])
+def test_poll_pending_actions_fetch_failed(
+    minutes_ago: int, expect_complete: bool
+) -> None:
+    """A failed actions fetch is retried on the next run, until we've waited too
+    long and store the run without them."""
+    bug_data = load_data("bug-2000604-intervention.json")
+    run_doc = rundoc_from_bug_api(bug_data)
+    run_doc.updated_at = datetime.now(tz=UTC) - timedelta(minutes=minutes_ago)
+
+    hackbot_client = MockHackbot()
+    hackbot_client.runs[run_doc.run_id] = (run_doc, True)
+
+    with patch.object(
+        hackbot_client, "get_run_actions", side_effect=httpx.HTTPError("gone")
+    ):
+        complete_runs, failed = autowebcompat.poll_pending(
+            hackbot_client, [run_doc.run_id]
+        )
+    assert failed == []
+    assert (run_doc.run_id in complete_runs) == expect_complete
+    if expect_complete:
+        assert complete_runs[run_doc.run_id].applied_actions == []

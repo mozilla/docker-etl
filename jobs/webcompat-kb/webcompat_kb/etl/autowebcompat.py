@@ -653,6 +653,13 @@ class BigQueryService:
 ACTIONS_MAX_WAIT = timedelta(hours=1)
 
 
+def actions_wait_expired(run_data: RunDoc) -> bool:
+    updated_at = run_data.updated_at
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=UTC)
+    return datetime.now(tz=UTC) - updated_at > ACTIONS_MAX_WAIT
+
+
 def actions_settled(run_data: RunDoc, actions: Sequence[RunAction]) -> bool:
     """Whether hackbot has finished applying the actions recorded by a run."""
     assert run_data.summary is not None
@@ -660,10 +667,7 @@ def actions_settled(run_data: RunDoc, actions: Sequence[RunAction]) -> bool:
         action.status != "pending" for action in actions
     ):
         return True
-    updated_at = run_data.updated_at
-    if updated_at.tzinfo is None:
-        updated_at = updated_at.replace(tzinfo=UTC)
-    return datetime.now(tz=UTC) - updated_at > ACTIONS_MAX_WAIT
+    return actions_wait_expired(run_data)
 
 
 def poll_pending(
@@ -685,7 +689,15 @@ def poll_pending(
                 try:
                     actions = hackbot_client.get_run_actions(run_uuid)
                 except Exception as e:
-                    logging.warning(f"Fetching actions of run {run_uuid} failed: {e}")
+                    # Retry on the next run, until we've waited too long
+                    if not actions_wait_expired(run_data):
+                        logging.warning(
+                            f"Fetching actions of run {run_uuid} failed, will retry: {e}"
+                        )
+                        continue
+                    logging.warning(
+                        f"Fetching actions of run {run_uuid} failed, storing without them: {e}"
+                    )
                 else:
                     if not actions_settled(run_data, actions):
                         logging.info(f"Waiting for actions of run {run_uuid} to apply")
@@ -1586,14 +1598,14 @@ class InterventionTask(HackbotTask):
             bug_update.add_whiteboard([self.whiteboard_progress_token])
 
         for scheduled_run, run_doc in self.completed_runs.values():
-            if run_doc.summary is None:
-                continue
-            output = InterventionSummary.model_validate(
-                run_doc.summary.model_dump()
-            ).root
             bug_update = updater.bug_updates[int(scheduled_run.run_key)]
             bug_update.remove_whiteboard([self.whiteboard_progress_token])
 
+            output = (
+                InterventionSummary.model_validate(run_doc.summary.model_dump()).root
+                if run_doc.summary is not None
+                else None
+            )
             status = "failed"
             reason: Optional[str] = "error"
             if (
