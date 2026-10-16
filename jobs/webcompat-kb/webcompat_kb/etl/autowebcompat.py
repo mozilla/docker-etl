@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import (
     Annotated,
     Literal,
@@ -33,7 +33,9 @@ from ..hackbot import (
     HackbotAgentResult,
     HackbotConfig,
     Json,
+    RunAction,
     RunDoc,
+    RunStatus,
     RunSummary,
 )
 from ..projectdata import Project
@@ -117,6 +119,7 @@ class CompleteRun(BaseModel):
     summary: Optional[RunSummary]
     artifacts: list[ArtifactRef]
     error: Optional[str]
+    actions: list[RunAction] = []
 
     @classmethod
     def from_rundoc(cls, src: RunDoc) -> Self:
@@ -130,12 +133,18 @@ class CompleteRun(BaseModel):
             summary=src.summary,
             artifacts=src.artifacts[:],
             error=src.error,
+            actions=src.applied_actions[:],
         )
 
     def to_json(self) -> Mapping[str, Json]:
-        rv = self.model_dump(mode="json")
+        rv = self.model_dump(mode="json", exclude={"summary": {"actions"}})
         rv["created_at"] = self.created_at.replace(tzinfo=None).isoformat()
         rv["completed_at"] = self.completed_at.replace(tzinfo=None).isoformat()
+        for action, action_json in zip(self.actions, rv["actions"]):
+            if action.applied_at is not None:
+                action_json["applied_at"] = action.applied_at.replace(
+                    tzinfo=None
+                ).isoformat()
         return rv
 
 
@@ -640,6 +649,23 @@ class BigQueryService:
         )
 
 
+# How long to wait for hackbot to apply a run's actions before storing the run anyway
+ACTIONS_MAX_WAIT = timedelta(hours=1)
+
+
+def actions_settled(run_data: RunDoc, actions: Sequence[RunAction]) -> bool:
+    """Whether hackbot has finished applying the actions recorded by a run."""
+    assert run_data.summary is not None
+    if len(actions) >= len(run_data.summary.actions) and all(
+        action.status != "pending" for action in actions
+    ):
+        return True
+    updated_at = run_data.updated_at
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=UTC)
+    return datetime.now(tz=UTC) - updated_at > ACTIONS_MAX_WAIT
+
+
 def poll_pending(
     hackbot_client: Hackbot, run_uuids: list[UUID]
 ) -> tuple[Mapping[UUID, RunDoc], list[UUID]]:
@@ -648,12 +674,28 @@ def poll_pending(
     for run_uuid in run_uuids:
         try:
             run_data, complete = hackbot_client.poll_run(run_uuid)
+            if not complete:
+                continue
+
+            if (
+                run_data.status == RunStatus.succeeded
+                and run_data.summary is not None
+                and run_data.summary.actions
+            ):
+                try:
+                    actions = hackbot_client.get_run_actions(run_uuid)
+                except Exception as e:
+                    logging.warning(f"Fetching actions of run {run_uuid} failed: {e}")
+                else:
+                    if not actions_settled(run_data, actions):
+                        logging.info(f"Waiting for actions of run {run_uuid} to apply")
+                        continue
+                    run_data.applied_actions = actions
         except Exception as e:
             logging.error(f"Checking pending run failed: {e}")
             failed.append(run_uuid)
         else:
-            if complete:
-                complete_runs[run_data.run_id] = run_data
+            complete_runs[run_data.run_id] = run_data
     return complete_runs, failed
 
 
