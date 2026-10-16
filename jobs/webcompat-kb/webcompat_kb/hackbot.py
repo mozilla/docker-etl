@@ -84,9 +84,6 @@ class RunDoc(BaseModel):
     summary: RunSummary | None = None
     artifacts: list[ArtifactRef] = Field(default_factory=list)
     error: str | None = None
-    # Not part of the API response: filled in from get_run_actions once the run
-    # has completed
-    applied_actions: list[RunAction] = Field(default_factory=list)
 
 
 class CreateRequest(BaseModel):

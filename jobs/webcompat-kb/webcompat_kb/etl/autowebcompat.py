@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import (
     Annotated,
     Literal,
@@ -35,7 +35,6 @@ from ..hackbot import (
     Json,
     RunAction,
     RunDoc,
-    RunStatus,
     RunSummary,
 )
 from ..projectdata import Project
@@ -119,7 +118,7 @@ class CompleteRun(BaseModel):
     summary: Optional[RunSummary]
     artifacts: list[ArtifactRef]
     error: Optional[str]
-    actions: list[RunAction] = []
+    action_count: int = 0
 
     @classmethod
     def from_rundoc(cls, src: RunDoc) -> Self:
@@ -133,13 +132,28 @@ class CompleteRun(BaseModel):
             summary=src.summary,
             artifacts=src.artifacts[:],
             error=src.error,
-            actions=src.applied_actions[:],
+            # Only store count here as actions are fetched separately
+            action_count=len(src.summary.actions) if src.summary else 0,
         )
 
     def to_json(self) -> Mapping[str, Json]:
         rv = self.model_dump(mode="json", exclude={"summary": {"actions"}})
         rv["created_at"] = self.created_at.replace(tzinfo=None).isoformat()
         rv["completed_at"] = self.completed_at.replace(tzinfo=None).isoformat()
+        return rv
+
+
+class RunNeedingActions(BaseModel):
+    run_id: UUID
+    action_count: int
+
+
+class RunActions(BaseModel):
+    run_id: UUID
+    actions: list[RunAction]
+
+    def to_json(self) -> Mapping[str, Json]:
+        rv = self.model_dump(mode="json")
         for action, action_json in zip(self.actions, rv["actions"]):
             if action.applied_at is not None:
                 action_json["applied_at"] = action.applied_at.replace(
@@ -186,6 +200,16 @@ class AutowebcompatReproRequest(AutowebcompatRequest):
     agent: str = "autowebcompat-repro"
 
 
+class AutowebcompatDiagnosisRequest(AutowebcompatRequest):
+    bug_id: int
+    agent: str = "autowebcompat-diagnosis"
+
+
+class AutowebcompatInterventionRequest(AutowebcompatRequest):
+    bug_id: int
+    agent: str = "autowebcompat-intervention"
+
+
 class WebcompatReproResult(HackbotAgentResult):
     result: Optional[ReproResult] = None
 
@@ -197,11 +221,6 @@ class ReproResultSummary(BaseSummary):
 ReproSummary = RootModel[
     Annotated[ReproResultSummary | ErrorSummary, Field(discriminator="status")]
 ]
-
-
-class AutowebcompatDiagnosisRequest(AutowebcompatRequest):
-    bug_id: int
-    agent: str = "autowebcompat-diagnosis"
 
 
 class DiagnosisResult(BaseModel):
@@ -240,11 +259,6 @@ class DiagnosisBugInfo(BugRef):
 
 class InterventionBugInfo(BugRef):
     pass
-
-
-class AutowebcompatInterventionRequest(AutowebcompatRequest):
-    bug_id: int
-    agent: str = "autowebcompat-intervention"
 
 
 class InterventionResult(BaseModel):
@@ -292,6 +306,7 @@ class BigQueryService:
         self.scheduled_table = project["autowebcompat"]["hackbot_scheduled"].table()
         self.completed_table = project["autowebcompat"]["hackbot_completed"].table()
         self.comment_table = project["autowebcompat"]["bugzilla_comments"].table()
+        self.actions_table = project["autowebcompat"]["hackbot_actions"].table()
 
     def get_source_times(
         self,
@@ -613,6 +628,30 @@ class BigQueryService:
         rows = [CompleteRun.from_rundoc(item).to_json() for item in complete_runs]
         self.bq_client.insert_rows(self.completed_table, rows)
 
+    def get_runs_needing_actions(self) -> list[RunNeedingActions]:
+        """Recent runs that recorded actions, which haven't been stored yet.
+
+        Hackbot applies a run's actions after the run completes, so we fetch them
+        separately, and only store them once they've all been recorded and applied
+        (or failed), so stored actions are final. Runs that aren't done yet, or whose
+        fetch failed, are fetched again on the next job run, until a day after the
+        run completed; after that we give up and nothing is stored.
+        """
+        rows = self.bq_client.query(f"""
+    SELECT run_id, action_count
+    FROM `{self.completed_table}`
+    WHERE
+      status = "succeeded" AND
+      action_count > 0 AND
+      completed_at >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 DAY) AND
+      run_id NOT IN (SELECT run_id FROM `{self.actions_table}`)
+    """)
+        return [RunNeedingActions.model_validate(dict(row.items())) for row in rows]
+
+    def insert_run_actions(self, run_actions: Iterable[RunActions]) -> None:
+        rows = [item.to_json() for item in run_actions]
+        self.bq_client.insert_rows(self.actions_table, rows)
+
     def insert_comment_records(self, posted_comments: Iterable[PostedComment]) -> None:
         rows = [item.to_json() for item in posted_comments]
         self.bq_client.insert_rows(self.comment_table, rows)
@@ -649,27 +688,6 @@ class BigQueryService:
         )
 
 
-# How long to wait for hackbot to apply a run's actions before storing the run anyway
-ACTIONS_MAX_WAIT = timedelta(hours=1)
-
-
-def actions_wait_expired(run_data: RunDoc) -> bool:
-    updated_at = run_data.updated_at
-    if updated_at.tzinfo is None:
-        updated_at = updated_at.replace(tzinfo=UTC)
-    return datetime.now(tz=UTC) - updated_at > ACTIONS_MAX_WAIT
-
-
-def actions_settled(run_data: RunDoc, actions: Sequence[RunAction]) -> bool:
-    """Whether hackbot has finished applying the actions recorded by a run."""
-    assert run_data.summary is not None
-    if len(actions) >= len(run_data.summary.actions) and all(
-        action.status != "pending" for action in actions
-    ):
-        return True
-    return actions_wait_expired(run_data)
-
-
 def poll_pending(
     hackbot_client: Hackbot, run_uuids: list[UUID]
 ) -> tuple[Mapping[UUID, RunDoc], list[UUID]]:
@@ -678,37 +696,34 @@ def poll_pending(
     for run_uuid in run_uuids:
         try:
             run_data, complete = hackbot_client.poll_run(run_uuid)
-            if not complete:
-                continue
-
-            if (
-                run_data.status == RunStatus.succeeded
-                and run_data.summary is not None
-                and run_data.summary.actions
-            ):
-                try:
-                    actions = hackbot_client.get_run_actions(run_uuid)
-                except Exception as e:
-                    # Retry on the next run, until we've waited too long
-                    if not actions_wait_expired(run_data):
-                        logging.warning(
-                            f"Fetching actions of run {run_uuid} failed, will retry: {e}"
-                        )
-                        continue
-                    logging.warning(
-                        f"Fetching actions of run {run_uuid} failed, storing without them: {e}"
-                    )
-                else:
-                    if not actions_settled(run_data, actions):
-                        logging.info(f"Waiting for actions of run {run_uuid} to apply")
-                        continue
-                    run_data.applied_actions = actions
         except Exception as e:
             logging.error(f"Checking pending run failed: {e}")
             failed.append(run_uuid)
         else:
-            complete_runs[run_data.run_id] = run_data
+            if complete:
+                complete_runs[run_data.run_id] = run_data
     return complete_runs, failed
+
+
+def fetch_actions(
+    hackbot_client: Hackbot, runs: Iterable[RunNeedingActions]
+) -> list[RunActions]:
+    rv = []
+    for run in runs:
+        try:
+            actions = hackbot_client.get_run_actions(run.run_id)
+        except Exception as e:
+            # Nothing is stored, so it's retried on the next run
+            logging.warning(f"Fetching actions of run {run.run_id} failed: {e}")
+            continue
+        done = len(actions) == run.action_count and all(
+            action.status != "pending" for action in actions
+        )
+        if not done:
+            logging.info(f"Actions of run {run.run_id} not applied yet")
+            continue
+        rv.append(RunActions(run_id=run.run_id, actions=actions))
+    return rv
 
 
 class BugUpdate:
@@ -1683,6 +1698,10 @@ def run(
 
     bq_service.insert_new_runs(itertools.chain.from_iterable(new_runs.values()))
     bq_service.insert_complete_runs(complete_runs.values())
+    if check_pending:
+        bq_service.insert_run_actions(
+            fetch_actions(hackbot_client, bq_service.get_runs_needing_actions())
+        )
     if new_runs or complete_runs:
         bq_service.record_update(
             itertools.chain.from_iterable(

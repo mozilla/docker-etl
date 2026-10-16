@@ -2,7 +2,7 @@ import base64
 import json
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Optional, cast
 from unittest.mock import Mock, patch
@@ -801,85 +801,92 @@ def submit_patch_action(status: str) -> hackbot.RunAction:
     )
 
 
-def test_complete_run_stores_actions() -> None:
-    """Hackbot's action records are stored in full, not inside the summary."""
-    bug_data = load_data("bug-2000604-intervention.json")
+@pytest.mark.parametrize(
+    "data_file,action_count",
+    [
+        ("bug-2000604-intervention.json", 1),
+        ("bug-2000604-intervention-error.json", 0),
+        ("bug-2000604-intervention-no-summary.json", 0),
+    ],
+)
+def test_complete_run_action_count(data_file: str, action_count: int) -> None:
+    """Completed runs record how many actions the agent recorded, which aren't
+    stored in the summary."""
+    row = autowebcompat.CompleteRun.from_rundoc(
+        rundoc_from_bug_api(load_data(data_file))
+    ).to_json()
+
+    assert row["action_count"] == action_count
+    if row["summary"] is not None:
+        assert "actions" not in cast(dict[str, Json], row["summary"])
+
+
+def test_run_actions_to_json() -> None:
+    """Actions are stored as hackbot reports them, with timezone-free datetimes."""
     applied_action = submit_patch_action("applied").model_copy(
         update={"applied_at": datetime(2026, 10, 14, 15, 4, 31, tzinfo=UTC)}
     )
-    run_doc = rundoc_from_bug_api(bug_data)
-    run_doc.applied_actions = [applied_action]
-    row = autowebcompat.CompleteRun.from_rundoc(run_doc).to_json()
+    row = autowebcompat.RunActions(
+        run_id=UUID(int=1),
+        actions=[applied_action],
+    ).to_json()
 
-    assert "actions" not in cast(dict[str, Json], row["summary"])
-    assert row["actions"] == [
-        {
-            "idx": 0,
-            "type": "phabricator.submit_patch",
-            "params": {"bug_id": 2000604},
-            "ref": None,
-            "status": "applied",
-            "result": {
-                "revision_id": 271234,
-                "url": "https://phabricator.test/D271234",
-            },
-            "error": None,
-            "applied_at": "2026-10-14T15:04:31",
-        }
-    ]
+    assert row == {
+        "run_id": str(UUID(int=1)),
+        "actions": [
+            {
+                "idx": 0,
+                "type": "phabricator.submit_patch",
+                "params": {"bug_id": 2000604},
+                "ref": None,
+                "status": "applied",
+                "result": {
+                    "revision_id": 271234,
+                    "url": "https://phabricator.test/D271234",
+                },
+                "error": None,
+                "applied_at": "2026-10-14T15:04:31",
+            }
+        ],
+    }
 
 
 @pytest.mark.parametrize(
-    "action_status,minutes_ago,expect_complete",
+    "statuses,action_count,stored",
     [
-        ("applied", 1, True),
-        ("pending", 1, False),
-        (None, 1, False),
-        ("pending", 61, True),
+        (["applied", "failed"], 2, True),
+        (["applied", "pending"], 2, False),
+        (["applied"], 2, False),
+        ([], 1, False),
     ],
 )
-def test_poll_pending_waits_for_actions(
-    action_status: Optional[str], minutes_ago: int, expect_complete: bool
-) -> None:
-    """A succeeded run isn't complete until hackbot has applied its actions,
-    unless it's been waiting too long."""
-    bug_data = load_data("bug-2000604-intervention.json")
-    run_doc = rundoc_from_bug_api(bug_data)
-    run_doc.updated_at = datetime.now(tz=UTC) - timedelta(minutes=minutes_ago)
-
+def test_fetch_actions(statuses: list[str], action_count: int, stored: bool) -> None:
+    """Actions are only stored once all of them are recorded and applied (or failed)."""
+    run = autowebcompat.RunNeedingActions(
+        run_id=UUID(int=1),
+        action_count=action_count,
+    )
     hackbot_client = MockHackbot()
-    hackbot_client.runs[run_doc.run_id] = (run_doc, True)
-    if action_status is not None:
-        hackbot_client.actions[run_doc.run_id] = [submit_patch_action(action_status)]
+    hackbot_client.actions[run.run_id] = [
+        submit_patch_action(status).model_copy(update={"idx": idx})
+        for idx, status in enumerate(statuses)
+    ]
 
-    complete_runs, failed = autowebcompat.poll_pending(hackbot_client, [run_doc.run_id])
-    assert failed == []
-    assert (run_doc.run_id in complete_runs) == expect_complete
-    if expect_complete and action_status is not None:
-        applied = complete_runs[run_doc.run_id].applied_actions
-        assert applied[0].status == action_status
+    rows = autowebcompat.fetch_actions(hackbot_client, [run])
+
+    assert bool(rows) == stored
+    if stored:
+        assert [action.status for action in rows[0].actions] == statuses
 
 
-@pytest.mark.parametrize("minutes_ago,expect_complete", [(1, False), (61, True)])
-def test_poll_pending_actions_fetch_failed(
-    minutes_ago: int, expect_complete: bool
-) -> None:
-    """A failed actions fetch is retried on the next run, until we've waited too
-    long and store the run without them."""
-    bug_data = load_data("bug-2000604-intervention.json")
-    run_doc = rundoc_from_bug_api(bug_data)
-    run_doc.updated_at = datetime.now(tz=UTC) - timedelta(minutes=minutes_ago)
-
+def test_fetch_actions_failed() -> None:
+    """A failed fetch stores nothing, so it's retried on the next run."""
+    run = autowebcompat.RunNeedingActions(
+        run_id=UUID(int=1),
+        action_count=1,
+    )
     hackbot_client = MockHackbot()
-    hackbot_client.runs[run_doc.run_id] = (run_doc, True)
-
     with patch.object(
         hackbot_client, "get_run_actions", side_effect=httpx.HTTPError("gone")
     ):
-        complete_runs, failed = autowebcompat.poll_pending(
-            hackbot_client, [run_doc.run_id]
-        )
-    assert failed == []
-    assert (run_doc.run_id in complete_runs) == expect_complete
-    if expect_complete:
-        assert complete_runs[run_doc.run_id].applied_actions == []
+        assert autowebcompat.fetch_actions(hackbot_client, [run]) == []

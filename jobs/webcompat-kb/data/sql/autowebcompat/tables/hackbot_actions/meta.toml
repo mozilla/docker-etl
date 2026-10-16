@@ -1,0 +1,3 @@
+name = "hackbot_actions"
+description = "Actions of completed hackbot runs, once hackbot has applied them"
+etl=["autowebcompat"]
