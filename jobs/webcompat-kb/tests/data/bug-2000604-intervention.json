@@ -1,0 +1,94 @@
+{
+  "bug": {
+    "id": 2000604,
+    "whiteboard": "[autowebcompat:processed][autowebcompat:intervention-in-progress]",
+    "cf_user_story": "platform:windows,mac,linux,android\nimpact:site-broken\nconfiguration:general\naffects:all\n"
+  },
+  "bug_update": {
+    "id": 2000604,
+    "whiteboard": "[autowebcompat:processed]",
+    "cf_user_story": "platform:windows,mac,linux,android\nimpact:site-broken\nconfiguration:general\naffects:all\nautowebcompat-intervention-status:success\n"
+  },
+  "hackbot_scheduled": {
+    "run_id": "3b6e8f1a-2c4d-4e5f-9a0b-1c2d3e4f5a6b",
+    "agent": "autowebcompat-intervention",
+    "task_name": "intervention",
+    "source_key": "bugzilla:intervention-flag",
+    "run_key": "2000604",
+    "source_time": "2026-10-14T14:00:00",
+    "requested_at": "2026-10-14T14:46:12.512031",
+    "request_data": {
+      "number": 2000604,
+      "source_time": "2026-10-14T14:00:00"
+    },
+    "extra_data": {
+      "bug_id": 2000604
+    }
+  },
+  "hackbot_completed": {
+    "run_id": "3b6e8f1a-2c4d-4e5f-9a0b-1c2d3e4f5a6b",
+    "status": "succeeded",
+    "created_at": "2026-10-14T14:46:13.004211",
+    "completed_at": "2026-10-14T15:04:02.118734",
+    "execution_name": null,
+    "results_prefix": "runs/3b6e8f1a-2c4d-4e5f-9a0b-1c2d3e4f5a6b/",
+    "summary": {
+      "status": "ok",
+      "error": null,
+      "findings": {
+        "num_turns": 49,
+        "total_cost_usd": 1.4778065000000005,
+        "result": {
+          "wrote_intervention": true,
+          "fixed_with_intervention": true,
+          "build_succeeded": true,
+          "failure_reason": null,
+          "summary": "bam.barrister.com/techportal showed a blank page because the site's FlutterFire code only treats the \"Firebase SDK not loaded yet\" TypeError as expected if its text or stack contains V8's \"of undefined\" wording, and SpiderMonkey's text doesn't, so the error escapes and the app never starts. The new content script (`bug2000604-bam.barrister.com-fix-firebase-init.js`, platforms `all`, manifest version bumped to 160.2.0) wraps `Error.prototype.stack` so that only TypeErrors about `self.firebase_*` being undefined get a V8-style \"Cannot read properties of undefined\" line in front of the stack. With it, the reproduction script exited 0 (3/3 runs), the sign-in page looks right at desktop and phone sizes, the new test passes with interventions both disabled and enabled, and lint is clean; signing in and real Android devices weren't checked.",
+          "plan_result": {
+            "url": "https://bam.barrister.com/techportal/",
+            "affected_platforms": [
+              "windows",
+              "mac",
+              "linux",
+              "android"
+            ],
+            "script_path": "/app/autowebcompat-intervention/reproduction.mjs"
+          },
+          "files_changed": [
+            "browser/extensions/webcompat/data/interventions/2000604-bam.barrister.com.json",
+            "browser/extensions/webcompat/injections/js/bug2000604-bam.barrister.com-fix-firebase-init.js",
+            "browser/extensions/webcompat/manifest.json",
+            "testing/webcompat/interventions/tests/test_2000604_bam_barrister_com.py"
+          ]
+        },
+        "start_time": "2026-10-14 14:47:00.545639",
+        "end_time": "2026-10-14 15:03:58.833500"
+      },
+      "actions": [
+        {
+          "type": "phabricator.submit_patch",
+          "params": {
+            "bug_id": 2000604,
+            "title": "Bug 2000604 - Add webcompat intervention for bam.barrister.com",
+            "summary": "The site's Flutter app (FlutterFire firebase_core_web) calls self.firebase_core.getApps() before the Firebase JS SDK is loaded and only recovers if the TypeError text or its stack contains V8's \"of undefined\" wording. SpiderMonkey's message differs and its stack has no message line, so the error is rethrown and the app never boots (blank page).\n\nThis adds a content script for bam.barrister.com/techportal/ that wraps the Error.prototype.stack getter. For TypeErrors whose message matches `can't access property \"X\", self.firebase_* is undefined`, it puts a V8-style \"TypeError: Cannot read properties of undefined (reading 'X')\" line in front of the stack. All other errors are left alone.",
+            "test_plan": "- Reproduction script (reproduction.mjs) against the artifact build with the intervention: exit 0, 3/3 runs render the \"Technician Portal\" sign-in UI, self.firebase_core is loaded.\n- Checked manually with DevTools at 1280x900 and 390x844 (phone): the sign-in form, logo, Register link and store badges all render as in Chrome. The only console errors are ones the site already throws (_flutter is not defined, a wasm streaming fallback).\n- ./mach test-interventions --bugs 2000604: test_enabled and test_disabled both pass.\n- ./mach lint on the new and changed files: clean.\n- Not checked: signing in or anything past the login screen, because that needs credentials. Android was only checked with a phone-sized desktop viewport, not on a real device."
+          },
+          "reasoning": "The bug is diagnosed as site code that sniffs V8-specific error text, which Firefox can't match without changing its engine. A content script limited to this site, which only changes the stack text of the matching firebase TypeError, is the narrowest fix. I confirmed it with the reproduction script (3/3 runs), checked the page visually on desktop and phone viewports, and the intervention test passes with interventions both enabled and disabled."
+        }
+      ]
+    },
+    "artifacts": [
+      {
+        "name": "changes/changes.patch",
+        "size": 6120,
+        "content_type": "text/x-diff"
+      },
+      {
+        "name": "summary.json",
+        "size": 4073,
+        "content_type": "application/json"
+      }
+    ],
+    "error": null
+  }
+}

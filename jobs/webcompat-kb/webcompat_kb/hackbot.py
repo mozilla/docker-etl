@@ -41,6 +41,19 @@ class RunSummary(BaseModel):
     status: str
     error: str | None = None
     findings: dict[str, Json] = Field(default_factory=dict)
+    # Actions the agent recorded; hackbot applies them after the run completes
+    actions: list[dict[str, Json]] = Field(default_factory=list)
+
+
+class RunAction(BaseModel):
+    idx: int
+    type: str
+    params: dict[str, Json]
+    ref: str | None = None
+    status: str
+    result: dict[str, Json] | None = None
+    error: str | None = None
+    applied_at: datetime | None = None
 
 
 class AgentDescriptor(BaseModel):
@@ -182,6 +195,12 @@ class Hackbot:
         run_data = RunDoc.model_validate(self._request("GET", f"/runs/{run_uuid.hex}"))
         complete = run_data.status in TERMINAL_STATUSES
         return run_data, complete
+
+    def get_run_actions(self, run_uuid: UUID) -> list[RunAction]:
+        resp = self._request("GET", f"/runs/{run_uuid.hex}/actions")
+        if not isinstance(resp, list):
+            raise TypeError(f"Expected a list of actions, got {type(resp).__name__}")
+        return [RunAction.model_validate(item) for item in resp]
 
     def get_artifact_url(self, run_uuid: UUID, artifact_path: str) -> str:
         return ArtifactUrl.model_validate(

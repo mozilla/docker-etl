@@ -1,0 +1,31 @@
+[run_id]
+type = "STRING"
+mode = "REQUIRED"
+
+[actions]
+type = "RECORD"
+mode = "REPEATED"
+
+[actions.fields.idx]
+type = "INTEGER"
+
+[actions.fields.type]
+type = "STRING"
+
+[actions.fields.params]
+type = "JSON"
+
+[actions.fields.ref]
+type = "STRING"
+
+[actions.fields.status]
+type = "STRING"
+
+[actions.fields.result]
+type = "JSON"
+
+[actions.fields.error]
+type = "STRING"
+
+[actions.fields.applied_at]
+type = "DATETIME"
