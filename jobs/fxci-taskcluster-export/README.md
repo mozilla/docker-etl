@@ -15,6 +15,12 @@ There are two main commands that can be run within this image:
    This command connects to a [Taskcluster pulse queue], receives all pending messages,
    then exports the data to BigQuery.
 
+   It drains the Taskcluster queue's task exchanges (`task-completed`, `task-failed`,
+   `task-exception`, `task-defined`) into the `tasks_v2`, `task_runs_v1` and
+   `task_definitions_v1` tables, and the worker-manager exchanges (`worker-requested`,
+   `worker-running`, `worker-stopped`, `worker-removed`, `worker-pool-error`) into the
+   `worker_events_v1` table.
+
 [Firefox-CI Taskcluster instance]: https://firefox-ci-tc.services.mozilla.com/
 [Taskcluster pulse queue]: https://docs.taskcluster.net/docs/manual/design/apis/pulse#pulse
 
@@ -32,7 +38,7 @@ podman build -t fxci-taskcluster-export .
 To run locally, install dependencies with (in jobs/fxci-taskcluster-export):
 
 ```sh
-pip install -r requirements.txt
+pip install -r requirements/base.txt
 pip install --no-deps .
 ```
 
@@ -89,6 +95,26 @@ This configuraiton is required for the `fxci-etl pulse` command.
 * `pulse.password` (str): Password of the pulse user which owns the queues (required).
 * `pulse.host` (str): Host name for the pulse instance (default: "pulse.mozilla.org").
 * `pulse.port` (int): Port for the pulse instance (default: 5671)
+* `pulse.durable` (bool): Whether the queues are durable. Set to `false` for local
+    development so the queues are automatically deleted when the connection closes
+    (default: `true`).
+
+For local development, pass a config file with `--config`, e.g.
+`fxci-etl pulse drain --config ~/.cache/fxci-etl-dev/config.toml`, with a TOML file
+like:
+
+```toml
+[bigquery]
+project = "unused"
+dataset = "unused"
+[storage]
+project = "unused"
+bucket = "unused"
+[pulse]
+user = "your-pulse-user"
+password = "..."
+durable = false
+```
 
 #### monitoring
 

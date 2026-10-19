@@ -37,6 +37,26 @@ class PulseConfig:
             exchange="exchange/taskcluster-queue/v1/task-defined",
             routing_key="#",
         ),
+        "worker-requested": PulseExchangeConfig(
+            exchange="exchange/taskcluster-worker-manager/v1/worker-requested",
+            routing_key="#",
+        ),
+        "worker-running": PulseExchangeConfig(
+            exchange="exchange/taskcluster-worker-manager/v1/worker-running",
+            routing_key="#",
+        ),
+        "worker-stopped": PulseExchangeConfig(
+            exchange="exchange/taskcluster-worker-manager/v1/worker-stopped",
+            routing_key="#",
+        ),
+        "worker-removed": PulseExchangeConfig(
+            exchange="exchange/taskcluster-worker-manager/v1/worker-removed",
+            routing_key="#",
+        ),
+        "worker-pool-error": PulseExchangeConfig(
+            exchange="exchange/taskcluster-worker-manager/v1/worker-pool-error",
+            routing_key="#",
+        ),
     }
 
 
@@ -51,6 +71,7 @@ class BigQueryTableConfig:
     tasks: str = "tasks_v2"
     runs: str = "task_runs_v1"
     taskdefinitions: str = "task_definitions_v1"
+    workerevents: str = "worker_events_v1"
 
 
 @dataclass(frozen=True)
