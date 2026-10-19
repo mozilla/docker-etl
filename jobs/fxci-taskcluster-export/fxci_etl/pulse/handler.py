@@ -16,20 +16,31 @@ import taskcluster
 
 from fxci_etl.config import Config
 from fxci_etl.loaders.bigquery import BigQueryLoader
-from fxci_etl.schemas import Record, Runs, Tasks, Tags, TaskDefinitions
+from fxci_etl.schemas import Record, Runs, Tasks, Tags, TaskDefinitions, WorkerEvents
+
+WORKER_MANAGER_EXCHANGE_PREFIX = "exchange/taskcluster-worker-manager/v1/"
+
+WORKER_MANAGER_EVENT_NAMES = {
+    "worker-requested": "requested",
+    "worker-running": "running",
+    "worker-stopped": "stopped",
+    "worker-removed": "removed",
+    "worker-pool-error": "pool-error",
+}
 
 
 @dataclass
 class Event:
     data: dict[str, Any]
     message: Optional[Message]
+    exchange: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Event":
         return dacite.from_dict(data_class=cls, data=data)
 
     def to_dict(self):
-        return {"data": self.data}
+        return {"data": self.data, "exchange": self.exchange}
 
 
 class PulseHandler(ABC):
@@ -54,7 +65,7 @@ class PulseHandler(ABC):
     def __call__(self, data: dict[str, Any], message: Message) -> None:
         self._count += 1
         message.ack()
-        event = Event(data, message)
+        event = Event(data, message, message.delivery_info.get("exchange"))
         self._buffer.append(event)
 
     def process_buffer(self):
@@ -100,6 +111,7 @@ class BigQueryHandler(PulseHandler):
         except NotFound:
             pass
         self.run_records: list[Record] = []
+        self.worker_records: list[Record] = []
 
         self._convert_camel_case_re = re.compile(r"(?<!^)(?=[A-Z])")
         self._known_tags = set(Tags.__annotations__.keys())
@@ -118,6 +130,10 @@ class BigQueryHandler(PulseHandler):
             return tag
 
     def process_event(self, event):
+        if event.exchange and event.exchange.startswith(WORKER_MANAGER_EXCHANGE_PREFIX):
+            self._process_worker_event(event)
+            return
+
         data = event.data
 
         status = data.get("status")
@@ -181,6 +197,26 @@ class BigQueryHandler(PulseHandler):
                 self.run_records.pop()
                 raise
 
+    def _process_worker_event(self, event):
+        data = event.data
+        exchange_name = event.exchange[len(WORKER_MANAGER_EXCHANGE_PREFIX):]
+        worker_record = {
+            "event": WORKER_MANAGER_EVENT_NAMES[exchange_name],
+            "worker_pool_id": data["workerPoolId"],
+            "provider_id": data["providerId"],
+            "worker_group": data.get("workerGroup"),
+            "worker_id": data.get("workerId"),
+            "launch_config_id": data.get("launchConfigId"),
+            "capacity": data.get("capacity"),
+            "reason": data.get("reason"),
+            "error_id": data.get("errorId"),
+            "error_kind": data.get("kind"),
+            "error_title": data.get("title"),
+            "error_code": data.get("errorCode"),
+            "timestamp": data["timestamp"],
+        }
+        self.worker_records.append(WorkerEvents.from_dict(worker_record))
+
     def on_processing_complete(self):
         logger.info(f"Processed {self._count} pulse events")
         if self.task_records:
@@ -192,6 +228,11 @@ class BigQueryHandler(PulseHandler):
             run_loader = BigQueryLoader(self.config, "runs")
             run_loader.insert(self.run_records)
             self.run_records = []
+
+        if self.worker_records:
+            worker_loader = BigQueryLoader(self.config, "workerevents")
+            worker_loader.insert(self.worker_records)
+            self.worker_records = []
 
         if self.task_ids:
             taskdef_loader = BigQueryLoader(self.config, "taskdefinitions", chunk_size=100)
