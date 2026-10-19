@@ -629,13 +629,12 @@ class BigQueryService:
         self.bq_client.insert_rows(self.completed_table, rows)
 
     def get_runs_needing_actions(self) -> list[RunNeedingActions]:
-        """Recent runs that recorded actions, which haven't been stored yet.
+        """Runs that recorded actions, which haven't been stored yet.
 
         Hackbot applies a run's actions after the run completes, so we fetch them
         separately, and only store them once they've all been recorded and applied
         (or failed), so stored actions are final. Runs that aren't done yet, or whose
-        fetch failed, are fetched again on the next job run, until a day after the
-        run completed; after that we give up and nothing is stored.
+        fetch failed, are fetched again on the next job run, until they're done.
         """
         rows = self.bq_client.query(f"""
     SELECT run_id, action_count
@@ -643,7 +642,6 @@ class BigQueryService:
     WHERE
       status = "succeeded" AND
       action_count > 0 AND
-      completed_at >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 DAY) AND
       run_id NOT IN (SELECT run_id FROM `{self.actions_table}`)
     """)
         return [RunNeedingActions.model_validate(dict(row.items())) for row in rows]
