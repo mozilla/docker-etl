@@ -1,0 +1,21 @@
+{
+  "bug": {
+    "id": 2000604,
+    "whiteboard": "[autowebcompat:processed][autowebcompat:intervention]",
+    "cf_user_story": "platform:windows,mac,linux,android\nimpact:site-broken\nconfiguration:general\naffects:all\n"
+  },
+  "bug_update": {
+    "id": 2000604,
+    "whiteboard": "[autowebcompat:processed][autowebcompat:intervention-in-progress]"
+  },
+  "site_report": {
+    "number": 2000604,
+    "title": "bam.barrister.com - Blank page is displayed",
+    "url": "https://bam.barrister.com/techportal/",
+    "keywords": [],
+    "whiteboard": "[autowebcompat:processed][autowebcompat:intervention]",
+    "user_story": "platform:windows,mac,linux,android\nimpact:site-broken\nconfiguration:general\naffects:all",
+    "creation_time": "2026-10-10T12:00:00Z",
+    "source_time": "2026-10-14T14:00:00"
+  }
+}
