@@ -1,0 +1,26 @@
+[run_id]
+type = "STRING"
+
+[idx]
+type = "INTEGER"
+
+[type]
+type = "STRING"
+
+[params]
+type = "JSON"
+
+[ref]
+type = "STRING"
+
+[status]
+type = "STRING"
+
+[result]
+type = "JSON"
+
+[error]
+type = "STRING"
+
+[applied_at]
+type = "DATETIME"

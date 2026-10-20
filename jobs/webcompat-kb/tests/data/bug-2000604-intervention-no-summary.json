@@ -1,0 +1,39 @@
+{
+  "bug": {
+    "id": 2000604,
+    "whiteboard": "[autowebcompat:processed][autowebcompat:intervention-in-progress]",
+    "cf_user_story": "platform:windows,mac,linux,android\nimpact:site-broken\nconfiguration:general\naffects:all\n"
+  },
+  "bug_update": {
+    "id": 2000604,
+    "whiteboard": "[autowebcompat:processed]",
+    "cf_user_story": "platform:windows,mac,linux,android\nimpact:site-broken\nconfiguration:general\naffects:all\nautowebcompat-intervention-status:failed\nautowebcompat-intervention-reason:error\n"
+  },
+  "hackbot_scheduled": {
+    "run_id": "5e7a9c1b-3d5f-4a6b-8c9d-1e2f3a4b5c60",
+    "agent": "autowebcompat-intervention",
+    "task_name": "intervention",
+    "source_key": "bugzilla:intervention-flag",
+    "run_key": "2000604",
+    "source_time": "2026-10-14T14:00:00",
+    "requested_at": "2026-10-14T14:46:12.512031",
+    "request_data": {
+      "number": 2000604,
+      "source_time": "2026-10-14T14:00:00"
+    },
+    "extra_data": {
+      "bug_id": 2000604
+    }
+  },
+  "hackbot_completed": {
+    "run_id": "5e7a9c1b-3d5f-4a6b-8c9d-1e2f3a4b5c60",
+    "status": "failed",
+    "created_at": "2026-10-14T14:46:13.004211",
+    "completed_at": "2026-10-14T16:46:13.004211",
+    "execution_name": null,
+    "results_prefix": "runs/5e7a9c1b-3d5f-4a6b-8c9d-1e2f3a4b5c60/",
+    "summary": null,
+    "artifacts": [],
+    "error": "Execution finished without writing summary.json"
+  }
+}

@@ -57,3 +57,6 @@ mode = "NULLABLE"
 [error]
 type = "STRING"
 mode = "NULLABLE"
+
+[action_count]
+type = "INTEGER"
