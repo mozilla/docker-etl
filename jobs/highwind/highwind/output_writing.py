@@ -12,6 +12,7 @@ Those reach stdout, which under Airflow is the account nobody reads.
 """
 
 import datetime
+import importlib.metadata
 import logging
 import math
 import pathlib
@@ -50,7 +51,9 @@ SUFFICIENT_STATS_TABLE = (
 LOG_TABLE = "moz-fx-data-experiments.highwind_poc.highwind_logs_v1"
 BLOB_PREFIX = "gs://mozanalysis/highwind"
 PIPELINE_VERSION = "poc-1"
-SCHEMA_VERSION = 1
+# The schemas package version a blob was written against, so Experimenter can tell which release's
+# shapes to expect.
+SCHEMA_VERSION = importlib.metadata.version("mozilla-nimbus-schemas")
 
 SETTLED_STATES = {HighwindCellState.FORMING, HighwindCellState.CONFIDENT}
 
