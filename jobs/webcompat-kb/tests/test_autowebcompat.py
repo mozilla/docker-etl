@@ -821,33 +821,28 @@ def test_complete_run_action_count(data_file: str, action_count: int) -> None:
         assert "actions" not in cast(dict[str, Json], row["summary"])
 
 
-def test_run_actions_to_json() -> None:
+def test_action_record_to_json() -> None:
     """Actions are stored as hackbot reports them, with timezone-free datetimes."""
     applied_action = submit_patch_action("applied").model_copy(
         update={"applied_at": datetime(2026, 10, 14, 15, 4, 31, tzinfo=UTC)}
     )
-    row = autowebcompat.RunActions(
-        run_id=UUID(int=1),
-        actions=[applied_action],
+    row = autowebcompat.ActionRecord(
+        run_id=UUID(int=1), **applied_action.model_dump()
     ).to_json()
 
     assert row == {
         "run_id": str(UUID(int=1)),
-        "actions": [
-            {
-                "idx": 0,
-                "type": "phabricator.submit_patch",
-                "params": {"bug_id": 2000604},
-                "ref": None,
-                "status": "applied",
-                "result": {
-                    "revision_id": 271234,
-                    "url": "https://phabricator.test/D271234",
-                },
-                "error": None,
-                "applied_at": "2026-10-14T15:04:31",
-            }
-        ],
+        "idx": 0,
+        "type": "phabricator.submit_patch",
+        "params": {"bug_id": 2000604},
+        "ref": None,
+        "status": "applied",
+        "result": {
+            "revision_id": 271234,
+            "url": "https://phabricator.test/D271234",
+        },
+        "error": None,
+        "applied_at": "2026-10-14T15:04:31",
     }
 
 
@@ -876,7 +871,8 @@ def test_fetch_actions(statuses: list[str], action_count: int, stored: bool) -> 
 
     assert bool(rows) == stored
     if stored:
-        assert [action.status for action in rows[0].actions] == statuses
+        assert [row.status for row in rows] == statuses
+        assert {row.run_id for row in rows} == {run.run_id}
 
 
 def test_fetch_actions_failed() -> None:

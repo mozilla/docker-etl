@@ -148,17 +148,13 @@ class RunNeedingActions(BaseModel):
     action_count: int
 
 
-class RunActions(BaseModel):
+class ActionRecord(RunAction):
     run_id: UUID
-    actions: list[RunAction]
 
     def to_json(self) -> Mapping[str, Json]:
         rv = self.model_dump(mode="json")
-        for action, action_json in zip(self.actions, rv["actions"]):
-            if action.applied_at is not None:
-                action_json["applied_at"] = action.applied_at.replace(
-                    tzinfo=None
-                ).isoformat()
+        if self.applied_at is not None:
+            rv["applied_at"] = self.applied_at.replace(tzinfo=None).isoformat()
         return rv
 
 
@@ -637,16 +633,17 @@ class BigQueryService:
         fetch failed, are fetched again on the next job run, until they're done.
         """
         rows = self.bq_client.query(f"""
-    SELECT run_id, action_count
-    FROM `{self.completed_table}`
+    SELECT completed.run_id, completed.action_count
+    FROM `{self.completed_table}` AS completed
+    LEFT JOIN `{self.actions_table}` AS actions USING(run_id)
     WHERE
-      status = "succeeded" AND
-      action_count > 0 AND
-      run_id NOT IN (SELECT run_id FROM `{self.actions_table}`)
+      completed.status = "succeeded" AND
+      completed.action_count > 0 AND
+      actions.run_id IS NULL
     """)
         return [RunNeedingActions.model_validate(dict(row.items())) for row in rows]
 
-    def insert_run_actions(self, run_actions: Iterable[RunActions]) -> None:
+    def insert_run_actions(self, run_actions: Iterable[ActionRecord]) -> None:
         rows = [item.to_json() for item in run_actions]
         self.bq_client.insert_rows(self.actions_table, rows)
 
@@ -705,8 +702,8 @@ def poll_pending(
 
 def fetch_actions(
     hackbot_client: Hackbot, runs: Iterable[RunNeedingActions]
-) -> list[RunActions]:
-    rv = []
+) -> list[ActionRecord]:
+    rv: list[ActionRecord] = []
     for run in runs:
         try:
             actions = hackbot_client.get_run_actions(run.run_id)
@@ -720,7 +717,9 @@ def fetch_actions(
         if not done:
             logging.info(f"Actions of run {run.run_id} not applied yet")
             continue
-        rv.append(RunActions(run_id=run.run_id, actions=actions))
+        rv.extend(
+            ActionRecord(run_id=run.run_id, **action.model_dump()) for action in actions
+        )
     return rv
 
 
