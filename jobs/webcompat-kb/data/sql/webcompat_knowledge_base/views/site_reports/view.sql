@@ -30,7 +30,7 @@ SELECT
 FROM
   {{ ref('bugzilla_bugs') }} AS bugs
 LEFT JOIN
-  `{{ ref('bugzilla_components_ownership') }}` as component_owners ON (component_owners.bugzilla_product = product AND component_owners.bugzilla_component = component)
+  `{{ ref('bugzilla_component_ownership') }}` as component_owners ON (component_owners.bugzilla_product = product AND component_owners.bugzilla_component = component)
 LEFT JOIN
   platforms USING(number)
 WHERE

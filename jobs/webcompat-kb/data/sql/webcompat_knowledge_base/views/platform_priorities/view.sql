@@ -158,5 +158,5 @@ LEFT JOIN feature_support_dates USING(feature)
 LEFT JOIN mozilla_standards_positions AS sp_mozilla ON sp_mozilla.number = bugs_features.bug
 LEFT JOIN webkit_standards_positions AS sp_webkit ON sp_mozilla.number = sp_webkit.mozilla_sp
 LEFT JOIN webcompat_bugs ON webcompat_bugs.number = bugs_features.bug
-LEFT JOIN `{{ ref('bugzilla_components_ownership') }}` as component_owners ON component_owners.bugzilla_product = bugs.product AND component_owners.bugzilla_component = bugs.component
+LEFT JOIN `{{ ref('bugzilla_component_ownership') }}` as component_owners ON component_owners.bugzilla_product = bugs.product AND component_owners.bugzilla_component = bugs.component
 ORDER BY bug ASC
