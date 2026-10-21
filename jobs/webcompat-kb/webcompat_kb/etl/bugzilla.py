@@ -279,6 +279,23 @@ class PropertyHistory:
         return len(self.data) == 0 or self.data[0].change == PropertyChange.removed
 
 
+class BugzillaComponent(BaseModel):
+    name: str
+    team_name: str
+
+
+class BugzillaProduct(BaseModel):
+    name: str
+    components: list[BugzillaComponent]
+
+
+class ComponentOwner(BaseModel):
+    bugzilla_product: str
+    bugzilla_component: str
+    manager: Optional[str] = None
+    team: Optional[str] = None
+
+
 BugId = int
 BugsById = Mapping[BugId, Bug]
 MutBugsById = MutableMapping[BugId, Bug]
@@ -1179,6 +1196,15 @@ WHERE is_history_fetch_completed = TRUE"""
         ]
         self.write_table(table, rows, overwrite=True)
 
+    def insert_component_owners(
+        self, component_owners: Iterable[ComponentOwner]
+    ) -> None:
+        table = self.project["webcompat_knowledge_base"][
+            "bugzilla_component_ownership"
+        ].table()
+        rows = [item.model_dump(mode="json") for item in component_owners]
+        self.write_table(table, rows, overwrite=True)
+
     def record_import_run(
         self,
         start_time: float,
@@ -1310,6 +1336,33 @@ def load_bugs(
             ) from e
 
 
+def load_component_owners(bz_client: bugdantic.Bugzilla) -> Sequence[ComponentOwner]:
+    rv = []
+    for product in bz_client.products_as(
+        BugzillaProduct,
+        exclude_fields=[
+            "components.description",
+            "components.default_assigned_to",
+            "components.default_qa_contact",
+            "components.triage_owner",
+            "components.sort_key",
+            "components.is_active",
+            "components.default_bug_type",
+            "components.flag_types",
+        ],
+    ):
+        for component in product.components:
+            rv.append(
+                ComponentOwner(
+                    bugzilla_product=product.name,
+                    bugzilla_component=component.name,
+                    manager=None,
+                    team=component.team_name,
+                )
+            )
+    return rv
+
+
 def run(
     project: Project,
     bq_client: BigQuery,
@@ -1350,6 +1403,8 @@ def run(
             raise
     else:
         logging.info("Not updating bug history")
+
+    component_owners = load_component_owners(bz_client)
 
     site_reports, etp_reports, kb_bugs, platform_bugs = group_bugs(all_bugs)
 
@@ -1401,6 +1456,8 @@ def run(
 
     for external_link_config, links_by_bug in external_links:
         importer.insert_external_links(external_link_config, links_by_bug)
+
+    importer.insert_component_owners(component_owners)
 
     importer.record_import_run(
         start_time,
