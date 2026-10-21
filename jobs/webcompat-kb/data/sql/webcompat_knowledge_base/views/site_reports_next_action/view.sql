@@ -7,7 +7,7 @@ core_bug_teams AS (
   FROM `{{ ref('breakage_reports_core_bugs') }}` as breakage_reports
   JOIN `{{ ref('core_bug_states') }}` as core_bug_states on breakage_reports.core_bug = core_bug_states.core_bug
   JOIN `{{ ref('bugzilla_bugs') }}` as core_bugs ON core_bug_states.core_bug = core_bugs.number
-  JOIN `{{ ref('bugzilla_components_ownership') }}` as owners ON (owners.bugzilla_product = core_bugs.product AND owners.bugzilla_component = core_bugs.component)
+  JOIN `{{ ref('bugzilla_component_ownership') }}` as owners ON (owners.bugzilla_product = core_bugs.product AND owners.bugzilla_component = core_bugs.component)
   GROUP BY breakage_reports.breakage_bug
 ),
 
