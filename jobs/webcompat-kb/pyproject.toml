@@ -19,7 +19,7 @@ classifiers = [
 ]
 license = "MPL-2.0"
 dependencies = [
-  "bugdantic==0.6.1",
+  "bugdantic==0.6.2",
   "filetype==1.2.0",
   "google-cloud-bigquery==3.45.2",
   "html5lib==1.1",
