@@ -1,0 +1,15 @@
+[bugzilla_product]
+type = "STRING"
+mode = "REQUIRED"
+
+[bugzilla_component]
+type = "STRING"
+mode = "REQUIRED"
+
+[team]
+type = "STRING"
+mode = "REQUIRED"
+
+[manager]
+type = "STRING"
+mode = "NULLABLE"
