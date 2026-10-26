@@ -17,6 +17,12 @@ RUN groupadd --gid ${USER_ID} ${GROUP_ID} && \
 
 WORKDIR ${HOME}
 
+# git: metric-config-parser's ConfigCollection clones mozilla/metric-hub at runtime (via GitPython)
+# to read its nimbus/ metric definitions, and python:3.11-slim carries no git binary by default.
+RUN apt-get update && \
+    apt-get install --no-install-recommends --yes git && \
+    rm -rf /var/lib/apt/lists/*
+
 # The literal python3.11 rather than an interpolated version: the base image sets its own
 # PYTHON_VERSION to a full 3.11.x, which shadows a build ARG of the same name and leaves the COPY
 # pointing at a path that does not exist.

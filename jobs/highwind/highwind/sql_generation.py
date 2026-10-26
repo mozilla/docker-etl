@@ -44,7 +44,6 @@ import datetime
 import math
 import textwrap
 
-from .metrics import SOURCES
 from .units import PROFILE_GROUP_ID
 
 # The bucket a unit's pre-enrollment rows land in. The covariate is one fixed window rather than
@@ -453,24 +452,24 @@ def enrollment_unit_id(run):
 # ----------------------------------------------------------------------- the source queries ----
 
 
-def build_queries(run, metrics_by_source, cohort_table):
+def build_queries(run, metrics_by_source, sources, cohort_table):
     """One SQL string per (source table, analysis unit), covering every experiment in the run.
 
     Keyed by both, because a run whose experiments randomize on different units reads each source
-    once per unit and the two are separate queries with separate costs.
+    once per unit and the two are separate queries with separate costs. `sources` is the
+    aggregation plan's resolved source definitions, keyed the same way as `metrics_by_source`.
     """
     return {
         f"{source}/{unit.kind}": build_source_query(
-            unit_run, source, metrics, cohort_table, unit
+            unit_run, source, metrics, sources[source], cohort_table, unit
         )
         for unit, unit_run in run.by_unit().items()
         for source, metrics in metrics_by_source.items()
     }
 
 
-def build_source_query(run, source, metrics, cohort_table, unit):
+def build_source_query(run, source, metrics, source_definition, cohort_table, unit):
     """Build the full query for one source: cohort, per-slug facts, rows, stages, rollup."""
-    source_definition = SOURCES[source]
     return textwrap.dedent(f"""
         WITH cohort AS (
         {_indent(cohort_source(cohort_table, unit))}
@@ -527,30 +526,30 @@ def source_cte(source_definition, run, unit):
     why an old recipe is expensive no matter how the window horizon is set, and why age is handled
     by declining to analyse it.
 
-    Column selection is explicit, so the scan is the columns this source's metrics name plus
-    whatever a source-level restriction reads. `desktop_active_users` is the case where those
-    differ: its `is_desktop` is a computed column, so filtering on it also reads the ISP,
-    distribution and version columns behind it.
+    `source_definition.from_expression` is used verbatim rather than backtick-quoted, because
+    metric-hub's own data source can be a parenthesised subquery rather than a bare table name: the
+    active-users source's `is_desktop` restriction is baked into its `from_expression` by metric-hub
+    itself, so Highwind applies no restriction of its own here.
+
+    Column selection is explicit, so the scan is the columns this source's metrics name plus the
+    submission date column every source declares, deduplicated against each other.
     """
-    columns = ",\n  ".join(source_definition["columns"])
-    restriction = (
-        f"\n  AND {source_definition['where']}"
-        if source_definition.get("where")
-        else ""
-    )
+    submission_date_column = source_definition.submission_date_column
+    extra_columns = sorted(set(source_definition.columns) - {submission_date_column})
+    separator = ",\n  "
+    extra = f"{separator}{separator.join(extra_columns)}" if extra_columns else ""
     return textwrap.dedent(f"""
         SELECT
-          {unit.source_column} AS unit_id,
-          submission_date,
-          {columns}
-        FROM `{source_definition['table']}`
-        WHERE submission_date
+          {unit.source_column(source_definition)} AS unit_id,
+          {submission_date_column} AS submission_date{extra}
+        FROM {source_definition.from_expression}
+        WHERE {submission_date_column}
           BETWEEN DATE '{run.first_source_date()}'
-              AND DATE '{run.as_of}'{restriction}{source_sample(run, unit)}
+              AND DATE '{run.as_of}'{source_sample(run, unit, source_definition)}
     """).strip()
 
 
-def source_sample(run, unit):
+def source_sample(run, unit, source_definition):
     """Restrict a source scan to the run's sample, in whichever form this unit allows.
 
     The bare clustered column where the unit is the id it is hashed from, since only that form lets
@@ -561,7 +560,9 @@ def source_sample(run, unit):
         return ""
     if unit.clustered_sample_id:
         return f"\n  AND sample_id < {run.sample_percent}"
-    return sample_clause(unit.source_column, run.sample_percent, prefix="\n  AND ")
+    return sample_clause(
+        unit.source_column(source_definition), run.sample_percent, prefix="\n  AND "
+    )
 
 
 # ---------------------------------------------------------------------------- the stages ----
@@ -708,7 +709,7 @@ def window_value(metric, kind):
         )
     else:
         combined = f"bucket_total.{metric.name}__raw"
-    return reducer.finalize(f"COALESCE({combined}, {reducer.no_rows})")
+    return reducer.finalize_sql(f"COALESCE({combined}, {reducer.no_rows})")
 
 
 def covariate_value(metric):
@@ -718,7 +719,7 @@ def covariate_value(metric):
         f"MAX(IF(grid.bucket = {PRE_BUCKET}, bucket_total.{metric.name}__raw, NULL))"
         f" OVER unit_all"
     )
-    return reducer.finalize(f"COALESCE({combined}, {reducer.no_rows})")
+    return reducer.finalize_sql(f"COALESCE({combined}, {reducer.no_rows})")
 
 
 def rollup_select(metrics):

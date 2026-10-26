@@ -5,6 +5,8 @@ import logging
 import types
 
 import pytest
+from metric_config_parser.aggregation import BucketedAggregation, Combine
+from metric_config_parser.aggregation_plan import AggregationSource
 from mozilla_nimbus_schemas.highwind import HighwindAnalysis
 
 from highwind import analysis, output_writing, sql_generation, units
@@ -16,7 +18,7 @@ from highwind.gbstats_compute import (
     INSUFFICIENT_DATA,
     NOT_STARTED,
 )
-from highwind.metrics import metric_definitions
+from highwind.metrics import CUMULATIVE_WEEKLY, Metric
 
 AS_OF = datetime.date(2026, 8, 20)
 
@@ -28,6 +30,34 @@ EXPERIMENT = Experiment(
     treatment_branches=("treatment-a",),
     unit=units.resolve("firefox_desktop", "normandy_id"),
 )
+
+# One resolved metric, standing in for what `metrics.resolve()` would build off a real aggregation
+# plan: these tests exercise the run's orchestration, not metric resolution itself (see
+# test_metrics.py for that).
+TEST_METRICS = [
+    Metric(
+        name="active_hours",
+        source="clients_daily",
+        reducer=BucketedAggregation(
+            bucket_aggregate="SUM(active_hours_sum)",
+            combine=Combine.SUM,
+            no_rows="0",
+            finalize="{combined}",
+        ),
+        window_rules=(CUMULATIVE_WEEKLY,),
+    )
+]
+TEST_SOURCES = {
+    "clients_daily": AggregationSource(
+        data_source="clients_daily",
+        from_expression="mozdata.telemetry.clients_daily",
+        client_id_column="client_id",
+        group_id_column="profile_group_id",
+        analysis_units=("client_id", "profile_group_id"),
+        submission_date_column="submission_date",
+        columns=("active_hours_sum",),
+    )
+}
 
 
 class FakeLoadJob:
@@ -145,7 +175,7 @@ def test_a_failure_while_recording_a_failure_is_still_returned_not_raised():
     # has to come back as a summary, because raising here escapes through future.result() and costs
     # every other experiment its results.
     recorded, results = analysis.analyze_experiment(
-        EXPERIMENT, [], {"clients_daily": None}, {}, "the shared scan failed"
+        EXPERIMENT, [], None, {}, "the shared scan failed"
     )
 
     assert results == []
@@ -226,7 +256,7 @@ def test_an_experiment_that_fails_outright_is_recorded_against_its_slug():
 
     with analysis.collecting_run_log(AS_OF, client, output_writing.Outputs(), True):
         analysis.analyze_experiment(
-            EXPERIMENT, [], {"clients_daily": None}, {}, "the shared scan failed"
+            EXPERIMENT, [], None, {}, "the shared scan failed"
         )
 
     failures = [row for row in client.log_rows if row["log_level"] == "ERROR"]
@@ -337,7 +367,7 @@ def publish(storage, experiments, refused, results_by_slug, run_log):
         storage,
         AS_OF,
         experiments,
-        analysis.all_metrics(metric_definitions()),
+        {experiment.slug: TEST_METRICS for experiment in experiments},
         results_by_slug,
         {},
         {},
@@ -357,8 +387,7 @@ def test_analysed_and_refused_experiments_each_get_a_blob_carrying_their_own_log
         unit=units.resolve("firefox_desktop", "normandy_id"),
     )
     storage, client = RecordingStorage(), RecordingClient()
-    metrics_by_source = metric_definitions()
-    windows = analysis.run_windows(EXPERIMENT, AS_OF, metrics_by_source)
+    windows = analysis.run_windows(EXPERIMENT, AS_OF, TEST_METRICS)
 
     with analysis.collecting_run_log(
         AS_OF, client, output_writing.Outputs(), False
@@ -366,16 +395,14 @@ def test_analysed_and_refused_experiments_each_get_a_blob_carrying_their_own_log
         analysis.report_selection(
             [EXPERIMENT], [("an-old-slug", "416d old", refused)], AS_OF
         )
-        _, results = analysis.analyze_experiment(
-            EXPERIMENT, windows, metrics_by_source, {}, None
-        )
+        _, results = analysis.analyze_experiment(EXPERIMENT, windows, TEST_METRICS, {}, None)
         publish(storage, [EXPERIMENT], [refused], {"a-slug": results}, run_log)
 
     assert sorted(storage.uploaded) == ["highwind/a_slug.json", "highwind/an_old_slug.json"]
     analysed = storage.payloads["highwind/a_slug.json"]
     refusal = storage.payloads["highwind/an_old_slug.json"]
     assert [metric.slug for metric in analysed.metrics] == [
-        metric.name for metric in analysis.all_metrics(metrics_by_source)
+        metric.name for metric in TEST_METRICS
     ]
     assert analysed.errors == []
     assert refusal.metrics == []
@@ -408,7 +435,6 @@ def test_a_blob_that_cannot_be_built_is_logged_rather_than_raised():
         unit=units.AnalysisUnit(
             kind="nimbus_id",
             enrollment_column="nimbus_id",
-            source_column="nimbus_id",
             clustered_sample_id=False,
         ),
     )
@@ -474,17 +500,17 @@ class UnitCountFailingClient:
 def test_a_failed_unit_count_keeps_the_cells_the_shared_scan_computed(caplog):
     # The unit counts are display-only, so losing them must not turn every experiment's computed
     # statistics into an error grid.
-    metrics_by_source = metric_definitions()
+    metrics_by_source = {"clients_daily": TEST_METRICS}
     run = sql_generation.Run(
         [EXPERIMENT],
-        {"a-slug": analysis.run_windows(EXPERIMENT, AS_OF, metrics_by_source)},
+        {"a-slug": analysis.run_windows(EXPERIMENT, AS_OF, TEST_METRICS)},
         AS_OF,
         analysis.COVARIATE_DAYS,
     )
 
     cells_by_slug, units_by_slug, timings, failure = (
         analysis.gather_sufficient_statistics(
-            UnitCountFailingClient(), run, metrics_by_source, AS_OF, False
+            UnitCountFailingClient(), run, metrics_by_source, TEST_SOURCES, AS_OF, False
         )
     )
 

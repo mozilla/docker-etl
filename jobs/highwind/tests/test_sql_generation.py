@@ -3,6 +3,8 @@
 import datetime
 
 import pytest
+from metric_config_parser.aggregation import BucketedAggregation, Combine
+from metric_config_parser.aggregation_plan import AggregationSource
 
 from highwind import discovery, metrics, sql_generation, units
 from highwind.discovery import Experiment, Window
@@ -12,6 +14,71 @@ COVARIATE_DAYS = 28
 
 CLIENT_UNIT = units.resolve("firefox_desktop", "normandy_id")
 GROUP_UNIT = units.resolve("firefox_desktop", "group_id")
+
+CLIENTS_DAILY_SOURCE = AggregationSource(
+    data_source="clients_daily",
+    from_expression="mozdata.telemetry.clients_daily",
+    client_id_column="client_id",
+    group_id_column="profile_group_id",
+    analysis_units=("client_id", "profile_group_id"),
+    submission_date_column="submission_date",
+    columns=("active_hours_sum", "pings_aggregated_by_this_row"),
+)
+ACTIVE_USERS_SOURCE = AggregationSource(
+    data_source="active_users",
+    from_expression=(
+        "(\n    SELECT * FROM mozdata.telemetry.desktop_active_users\n    WHERE is_desktop\n)"
+    ),
+    client_id_column="client_id",
+    group_id_column="profile_group_id",
+    analysis_units=("client_id", "profile_group_id"),
+    submission_date_column="submission_date",
+    columns=("is_dau", "days_active_bits"),
+)
+
+
+def reducer(bucket_aggregate, combine=Combine.SUM, no_rows="0", finalize="{combined}"):
+    return BucketedAggregation(
+        bucket_aggregate=bucket_aggregate, combine=combine, no_rows=no_rows, finalize=finalize
+    )
+
+
+# The handful of desktop guardrail shapes these tests exercise, built directly rather than read off
+# metric-hub: these tests are about sql_generation.py's own composition of a reducer into the bucket
+# grid, not about what metric-hub happens to return today.
+FIXTURE_METRICS = {
+    "active_hours": metrics.Metric(
+        name="active_hours",
+        source="clients_daily",
+        reducer=reducer("SUM(active_hours_sum)"),
+        window_rules=(metrics.CUMULATIVE_WEEKLY,),
+    ),
+    "retained": metrics.Metric(
+        name="retained",
+        source="clients_daily",
+        reducer=reducer(
+            "SUM(pings_aggregated_by_this_row)", finalize="CAST({combined} > 0 AS INT64)"
+        ),
+        window_rules=(metrics.DISJOINT_WEEKLY,),
+    ),
+    "retained_dau": metrics.Metric(
+        name="retained_dau",
+        source="active_users",
+        reducer=reducer("COUNTIF(is_dau)", finalize="CAST({combined} > 0 AS INT64)"),
+        window_rules=(metrics.DISJOINT_WEEKLY,),
+    ),
+    "active_in_last_3_days_legacy": metrics.Metric(
+        name="active_in_last_3_days_legacy",
+        source="active_users",
+        reducer=reducer(
+            "MIN(mozfun.bits28.days_since_seen(days_active_bits))",
+            combine=Combine.MIN,
+            no_rows="30",
+            finalize="CAST({combined} < 3 AS INT64)",
+        ),
+        window_rules=(metrics.DISJOINT_WEEKLY,),
+    ),
+}
 
 
 def experiment(slug, start_date, unit=CLIENT_UNIT):
@@ -60,7 +127,7 @@ def run_of(windows_by_slug, sample_percent=None, units_by_slug=None):
 
 
 def named(name):
-    return next(metric for metric in metrics.GUARDRAILS if metric.name == name)
+    return FIXTURE_METRICS[name]
 
 
 def test_a_weekly_window_set_yields_a_weekly_bucket_grid():
@@ -182,7 +249,12 @@ def test_a_metric_that_combines_with_min_takes_a_running_minimum():
     metric = metrics.Metric(
         name="a-metric",
         source="active_users",
-        reducer=metrics.per_unit_min_below("days_since_seen", 3, 30),
+        reducer=reducer(
+            "MIN(days_since_seen)",
+            combine=Combine.MIN,
+            no_rows="30",
+            finalize="CAST({combined} < 3 AS INT64)",
+        ),
         window_rules=(metrics.CUMULATIVE_WEEKLY,),
     )
     value = sql_generation.window_value(metric, "cumulative")
@@ -237,7 +309,7 @@ def test_a_client_randomized_run_samples_the_sources_on_the_clustered_column():
 
     cohort = sql_generation.cohort_query(run)
     source = sql_generation.source_cte(
-        sql_generation.SOURCES["clients_daily"], run, CLIENT_UNIT
+        CLIENTS_DAILY_SOURCE, run, CLIENT_UNIT
     )
 
     assert "udf.safe_sample_id(unit_id) < 1" in cohort
@@ -254,7 +326,7 @@ def test_a_group_randomized_run_samples_the_sources_on_the_group_rather_than_the
     )
 
     source = sql_generation.source_cte(
-        sql_generation.SOURCES["clients_daily"], run, GROUP_UNIT
+        CLIENTS_DAILY_SOURCE, run, GROUP_UNIT
     )
 
     assert "udf.safe_sample_id(profile_group_id) < 1" in source
@@ -267,7 +339,7 @@ def test_an_unsampled_run_restricts_neither_the_cohort_nor_the_sources():
     assert "safe_sample_id" not in sql_generation.cohort_query(run)
     for unit in (CLIENT_UNIT, GROUP_UNIT):
         source = sql_generation.source_cte(
-            sql_generation.SOURCES["clients_daily"], run, unit
+            CLIENTS_DAILY_SOURCE, run, unit
         )
 
         assert "sample_id <" not in source
@@ -287,7 +359,7 @@ def test_the_sql_and_discovery_build_a_window_label_the_same_way():
         metric = metrics.Metric(
             name="probe",
             source="clients_daily",
-            reducer=metrics.per_unit_sum("active_hours_sum"),
+            reducer=None,
             window_rules=(rule,),
         )
         windows = discovery.windows_for(metric, tenure_days=60)
@@ -301,7 +373,7 @@ def test_the_sql_and_discovery_build_a_window_label_the_same_way():
 
 def test_a_source_query_reads_the_column_the_experiments_unit_names():
     run = run_of({"a-slug": cumulative_windows(2)})
-    source_definition = sql_generation.SOURCES["clients_daily"]
+    source_definition = CLIENTS_DAILY_SOURCE
 
     assert "profile_group_id AS unit_id" in sql_generation.source_cte(
         source_definition, run, GROUP_UNIT
@@ -414,7 +486,8 @@ def test_a_run_is_split_into_one_query_per_source_and_unit():
         "clients_daily": [named("active_hours")],
         "active_users": [named("retained_dau")],
     }
-    queries = sql_generation.build_queries(run, metrics_by_source, "a.cohort_table")
+    sources = {"clients_daily": CLIENTS_DAILY_SOURCE, "active_users": ACTIVE_USERS_SOURCE}
+    queries = sql_generation.build_queries(run, metrics_by_source, sources, "a.cohort_table")
 
     assert set(queries) == {
         "clients_daily/client_id",
@@ -429,7 +502,10 @@ def test_a_run_is_split_into_one_query_per_source_and_unit():
 def test_a_run_whose_experiments_all_randomize_alike_stays_one_query_per_source():
     run = run_of({"a-slug": cumulative_windows(2), "b-slug": cumulative_windows(2)})
     queries = sql_generation.build_queries(
-        run, {"clients_daily": [named("active_hours")]}, "a.cohort_table"
+        run,
+        {"clients_daily": [named("active_hours")]},
+        {"clients_daily": CLIENTS_DAILY_SOURCE},
+        "a.cohort_table",
     )
 
     assert set(queries) == {"clients_daily/client_id"}
