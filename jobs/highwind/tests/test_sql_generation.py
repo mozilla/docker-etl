@@ -81,7 +81,7 @@ FIXTURE_METRICS = {
 }
 
 
-def experiment(slug, start_date, unit=CLIENT_UNIT):
+def experiment(slug, start_date, unit=CLIENT_UNIT, metric_names=()):
     return Experiment(
         slug=slug,
         start_date=start_date,
@@ -89,6 +89,12 @@ def experiment(slug, start_date, unit=CLIENT_UNIT):
         reference_branch="control",
         treatment_branches=("treatment",),
         unit=unit,
+        metrics={
+            name: discovery.MetricDisplay(
+                friendly_name=None, description=None, bigger_is_better=None
+            )
+            for name in metric_names
+        },
     )
 
 
@@ -111,13 +117,15 @@ def disjoint_windows(count):
     ]
 
 
-def run_of(windows_by_slug, sample_percent=None, units_by_slug=None):
+def run_of(windows_by_slug, sample_percent=None, units_by_slug=None, metric_names_by_slug=None):
     units_by_slug = units_by_slug or {}
+    metric_names_by_slug = metric_names_by_slug or {}
     experiments = [
         experiment(
             slug,
             AS_OF - datetime.timedelta(days=60),
             units_by_slug.get(slug, CLIENT_UNIT),
+            metric_names_by_slug.get(slug, ()),
         )
         for slug in windows_by_slug
     ]
@@ -481,13 +489,17 @@ def test_a_run_is_split_into_one_query_per_source_and_unit():
     run = run_of(
         {"grouped": cumulative_windows(2), "by-client": cumulative_windows(2)},
         units_by_slug={"grouped": GROUP_UNIT},
+        metric_names_by_slug={
+            "grouped": ("active_hours", "retained_dau"),
+            "by-client": ("active_hours", "retained_dau"),
+        },
     )
-    metrics_by_source = {
-        "clients_daily": [named("active_hours")],
-        "active_users": [named("retained_dau")],
+    resolved_metrics = {
+        "active_hours": named("active_hours"),
+        "retained_dau": named("retained_dau"),
     }
     sources = {"clients_daily": CLIENTS_DAILY_SOURCE, "active_users": ACTIVE_USERS_SOURCE}
-    queries = sql_generation.build_queries(run, metrics_by_source, sources, "a.cohort_table")
+    queries = sql_generation.build_queries(run, resolved_metrics, sources, "a.cohort_table")
 
     assert set(queries) == {
         "clients_daily/client_id",
@@ -500,15 +512,56 @@ def test_a_run_is_split_into_one_query_per_source_and_unit():
 
 
 def test_a_run_whose_experiments_all_randomize_alike_stays_one_query_per_source():
-    run = run_of({"a-slug": cumulative_windows(2), "b-slug": cumulative_windows(2)})
+    run = run_of(
+        {"a-slug": cumulative_windows(2), "b-slug": cumulative_windows(2)},
+        metric_names_by_slug={"a-slug": ("active_hours",), "b-slug": ("active_hours",)},
+    )
     queries = sql_generation.build_queries(
         run,
-        {"clients_daily": [named("active_hours")]},
+        {"active_hours": named("active_hours")},
         {"clients_daily": CLIENTS_DAILY_SOURCE},
         "a.cohort_table",
     )
 
     assert set(queries) == {"clients_daily/client_id"}
+
+
+def test_a_source_used_only_at_one_unit_builds_no_query_for_the_other():
+    run = run_of(
+        {"grouped": cumulative_windows(2), "by-client": cumulative_windows(2)},
+        units_by_slug={"grouped": GROUP_UNIT},
+        metric_names_by_slug={
+            "grouped": ("retained_dau",),
+            "by-client": ("active_hours",),
+        },
+    )
+    resolved_metrics = {
+        "active_hours": named("active_hours"),
+        "retained_dau": named("retained_dau"),
+    }
+    sources = {"clients_daily": CLIENTS_DAILY_SOURCE, "active_users": ACTIVE_USERS_SOURCE}
+
+    queries = sql_generation.build_queries(run, resolved_metrics, sources, "a.cohort_table")
+
+    assert set(queries) == {"active_users/profile_group_id", "clients_daily/client_id"}
+
+
+def test_each_units_query_carries_only_its_own_experiments_metrics():
+    run = run_of(
+        {"grouped": cumulative_windows(2), "by-client": cumulative_windows(2)},
+        units_by_slug={"grouped": GROUP_UNIT},
+        metric_names_by_slug={
+            "grouped": ("active_hours",),
+            "by-client": ("active_hours", "retained"),
+        },
+    )
+    resolved_metrics = {"active_hours": named("active_hours"), "retained": named("retained")}
+    sources = {"clients_daily": CLIENTS_DAILY_SOURCE}
+
+    queries = sql_generation.build_queries(run, resolved_metrics, sources, "a.cohort_table")
+
+    assert "retained__raw" not in queries["clients_daily/profile_group_id"]
+    assert "retained__raw" in queries["clients_daily/client_id"]
 
 
 def test_each_units_source_scan_reaches_back_only_as_far_as_its_own_experiments():

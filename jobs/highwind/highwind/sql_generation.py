@@ -44,6 +44,7 @@ import datetime
 import math
 import textwrap
 
+from . import metrics
 from .units import PROFILE_GROUP_ID
 
 # The bucket a unit's pre-enrollment rows land in. The covariate is one fixed window rather than
@@ -452,20 +453,29 @@ def enrollment_unit_id(run):
 # ----------------------------------------------------------------------- the source queries ----
 
 
-def build_queries(run, metrics_by_source, sources, cohort_table):
-    """One SQL string per (source table, analysis unit), covering every experiment in the run.
+def build_queries(run, resolved_metrics, sources, cohort_table):
+    """One SQL string per (source table, analysis unit) that has something to compute.
 
     Keyed by both, because a run whose experiments randomize on different units reads each source
-    once per unit and the two are separate queries with separate costs. `sources` is the
-    aggregation plan's resolved source definitions, keyed the same way as `metrics_by_source`.
+    once per unit and the two are separate queries with separate costs. Scoped to each unit's own
+    experiments: a source whose metrics only ever appear at a different unit contributes no group
+    for this one, so that (source, unit) pair is skipped rather than scanned for metrics nothing
+    there reads. `sources` is the aggregation plan's resolved source definitions, keyed by the same
+    source names as `resolved_metrics`' own `.source` field.
     """
-    return {
-        f"{source}/{unit.kind}": build_source_query(
-            unit_run, source, metrics, sources[source], cohort_table, unit
-        )
-        for unit, unit_run in run.by_unit().items()
-        for source, metrics in metrics_by_source.items()
-    }
+    queries = {}
+    for unit, unit_run in run.by_unit().items():
+        names = {
+            name for experiment in unit_run.experiments for name in experiment.metric_names
+        }
+        unit_metrics = {
+            name: metric for name, metric in resolved_metrics.items() if name in names
+        }
+        for source, source_metrics in metrics.group_by_source(unit_metrics).items():
+            queries[f"{source}/{unit.kind}"] = build_source_query(
+                unit_run, source, source_metrics, sources[source], cohort_table, unit
+            )
+    return queries
 
 
 def build_source_query(run, source, metrics, source_definition, cohort_table, unit):

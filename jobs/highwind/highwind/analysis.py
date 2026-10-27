@@ -87,7 +87,7 @@ def run_daily_job(
         if not experiments:
             return []
 
-        metrics_by_slug, metrics_by_source, sources = resolve_run_metrics(experiments)
+        metrics_by_slug, resolved_metrics, sources = resolve_run_metrics(experiments)
         windows_by_slug = {
             experiment.slug: run_windows(experiment, as_of, metrics_by_slug[experiment.slug])
             for experiment in experiments
@@ -97,7 +97,7 @@ def run_daily_job(
         )
 
         cells_by_slug, units_by_slug, timings, failure = gather_sufficient_statistics(
-            client, run, metrics_by_source, sources, as_of, validate_only
+            client, run, resolved_metrics, sources, as_of, validate_only
         )
 
         # No lock: `as_completed` yields in this thread, so the accumulation below is
@@ -317,8 +317,9 @@ def writes_blobs(validate_only, sample_percent, outputs):
 def resolve_run_metrics(experiments):
     """Resolve the whole run's metrics from metric-hub, once, from every experiment's own names.
 
-    Returns each experiment's own metric list (for `run_windows`, the statistics and the blob),
-    the resolved metrics grouped by source (for the shared per-source scan), and the plan's source
+    Returns each experiment's own metric list (for `run_windows`, the statistics and the blob), the
+    resolved metrics by name (for `sql_generation.build_queries`, which scopes them to each
+    analysis unit's own experiments and groups them by source there), and the plan's source
     definitions (for the SQL itself). A name that does not resolve, whether metric-hub has no
     `nimbus/` definition for it or its windows are not ones Highwind can express, is reported
     against every experiment that asked for it rather than failing the run or that experiment.
@@ -338,11 +339,12 @@ def resolve_run_metrics(experiments):
                 f"{experiment.slug}: metric {problem.name!r} not computed: {problem.reason}",
                 extra={"experiment_slug": experiment.slug, "metric": problem.name},
             )
-    return metrics_by_slug, metrics.group_by_source(resolved_metrics), plan.sources
+    return metrics_by_slug, resolved_metrics, plan.sources
 
 
-def gather_sufficient_statistics(client, run, metrics_by_source, sources, as_of, validate_only):
-    """Run the shared scan: cohort once, then one query per source and unit, split by slug.
+def gather_sufficient_statistics(client, run, resolved_metrics, sources, as_of, validate_only):
+    """Run the shared scan: cohort once, then one query per (source, unit) pair with something to
+    compute, split by slug.
 
     Returns the cells keyed by slug plus whatever went wrong, rather than raising, so a source
     failure becomes an error grid on every experiment instead of an exception that ends the run
@@ -354,7 +356,7 @@ def gather_sufficient_statistics(client, run, metrics_by_source, sources, as_of,
         cohort_table, cohort_timing = sql_running.materialize_cohort(
             client, sql_generation.cohort_query(run), as_of, validate_only
         )
-        queries = sql_generation.build_queries(run, metrics_by_source, sources, cohort_table)
+        queries = sql_generation.build_queries(run, resolved_metrics, sources, cohort_table)
         cells_by_slug, timings = sql_running.run_queries(
             client, queries, validate_only=validate_only
         )

@@ -12,7 +12,11 @@ windows are declared the same way: metric-hub's `cumulative_window` and `increme
 counts, carried over as Highwind's own cumulative and disjoint window rules. Only a *repeating*
 family has a Highwind equivalent (see `sql_generation.py`'s window-rule docstring), so a metric
 whose `repeat_windows` is false, or that declares neither window, has no window rule Highwind can
-build and is reported unresolved rather than silently dropped or mis-rendered.
+build and is reported unresolved rather than silently dropped or mis-rendered. The same holds for
+a window that does not fit Highwind's own bucket grid (`BUCKET_LENGTH`): an `incremental_window`
+must be exactly one bucket and a `cumulative_window` an exact multiple of one, or there is no grid
+to read it off, and reporting it here is what keeps one metric's misfit window from failing the
+whole run (see `sql_generation.bucket_length`).
 """
 
 from dataclasses import dataclass
@@ -25,11 +29,18 @@ APP_NAME = "firefox_desktop"
 CUMULATIVE = "cumulative"
 DISJOINT = "disjoint"
 
+# Highwind's own bucket grid (see `sql_generation.py`'s `Run` and `bucket_length`): every window a
+# run builds is read off buckets this many days long, no matter which metrics the run happens to
+# carry. Fixed here, at resolution time, rather than derived from the windows a run's metrics
+# declare, so a metric whose window does not fit it is reported unresolved instead of changing the
+# grid every other metric in the run is read against.
+BUCKET_LENGTH = 7
+
 # The only lengths metric-hub's desktop guardrails declare today. Kept as named fixtures because
 # every window rule built from the plan is one of these two shapes; nothing downstream depends on
 # the names themselves.
-CUMULATIVE_WEEKLY = {"kind": CUMULATIVE, "length": 7}
-DISJOINT_WEEKLY = {"kind": DISJOINT, "length": 7}
+CUMULATIVE_WEEKLY = {"kind": CUMULATIVE, "length": BUCKET_LENGTH}
+DISJOINT_WEEKLY = {"kind": DISJOINT, "length": BUCKET_LENGTH}
 
 
 @dataclass(frozen=True)
@@ -71,13 +82,17 @@ def load_plan(configs, metric_names):
 def window_rules(aggregation_metric):
     """The window rules Highwind can build from a plan metric's window fields, or why not.
 
-    Returns `(rules, None)` when the metric has at least one window family and repeats it, or
-    `(None, reason)` otherwise. A metric with neither `cumulative_window` nor `incremental_window`
-    set has nothing for Highwind to compute a window over at all; one that sets `repeat_windows`
-    false declares a single window that stops, which none of Highwind's window rules can express,
-    since every rule it has ever supported extends for as long as the experiment runs (see
-    `sql_generation.py`'s `Run` docstring). Mapping either case onto a repeating rule would compute
-    windows the metric never declared.
+    Returns `(rules, None)` when the metric has at least one window family, repeats it, and that
+    family fits Highwind's bucket grid, or `(None, reason)` otherwise. A metric with neither
+    `cumulative_window` nor `incremental_window` set has nothing for Highwind to compute a window
+    over at all; one that sets `repeat_windows` false declares a single window that stops, which
+    none of Highwind's window rules can express, since every rule it has ever supported extends for
+    as long as the experiment runs (see `sql_generation.py`'s `Run` docstring). An
+    `incremental_window` that is not exactly one `BUCKET_LENGTH`, or a `cumulative_window` that is
+    not an exact multiple of one, has no grid to read off: a disjoint window must BE one bucket and
+    a cumulative one is summed from whole buckets (see `sql_generation.bucket_length`'s own
+    backstop validation). Mapping any of these cases onto a repeating rule would compute windows
+    the metric never declared, or on a grid that does not fit.
     """
     no_window = (
         aggregation_metric.cumulative_window is None
@@ -90,11 +105,23 @@ def window_rules(aggregation_metric):
             "repeat_windows is false; Highwind's window rules always repeat and cannot "
             "express a one-off window"
         )
+    incremental = aggregation_metric.incremental_window
+    if incremental is not None and incremental != BUCKET_LENGTH:
+        return None, (
+            f"incremental_window is {incremental} days, not {BUCKET_LENGTH}; a disjoint window "
+            f"must be exactly one bucket on Highwind's {BUCKET_LENGTH}-day grid"
+        )
+    cumulative = aggregation_metric.cumulative_window
+    if cumulative is not None and cumulative % BUCKET_LENGTH:
+        return None, (
+            f"cumulative_window is {cumulative} days, not a multiple of Highwind's "
+            f"{BUCKET_LENGTH}-day bucket grid"
+        )
     rules = []
-    if aggregation_metric.cumulative_window is not None:
-        rules.append({"kind": CUMULATIVE, "length": aggregation_metric.cumulative_window})
-    if aggregation_metric.incremental_window is not None:
-        rules.append({"kind": DISJOINT, "length": aggregation_metric.incremental_window})
+    if cumulative is not None:
+        rules.append({"kind": CUMULATIVE, "length": cumulative})
+    if incremental is not None:
+        rules.append({"kind": DISJOINT, "length": incremental})
     return tuple(rules), None
 
 

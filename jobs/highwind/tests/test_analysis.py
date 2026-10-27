@@ -10,7 +10,7 @@ from metric_config_parser.aggregation_plan import AggregationSource
 from mozilla_nimbus_schemas.highwind import HighwindAnalysis
 
 from highwind import analysis, output_writing, sql_generation, units
-from highwind.discovery import Experiment
+from highwind.discovery import Experiment, MetricDisplay
 from highwind.gbstats_compute import (
     CONFIDENT,
     ERROR,
@@ -29,6 +29,11 @@ EXPERIMENT = Experiment(
     reference_branch="control",
     treatment_branches=("treatment-a",),
     unit=units.resolve("firefox_desktop", "normandy_id"),
+    metrics={
+        "active_hours": MetricDisplay(
+            friendly_name=None, description=None, bigger_is_better=None
+        )
+    },
 )
 
 # One resolved metric, standing in for what `metrics.resolve()` would build off a real aggregation
@@ -500,7 +505,7 @@ class UnitCountFailingClient:
 def test_a_failed_unit_count_keeps_the_cells_the_shared_scan_computed(caplog):
     # The unit counts are display-only, so losing them must not turn every experiment's computed
     # statistics into an error grid.
-    metrics_by_source = {"clients_daily": TEST_METRICS}
+    resolved_metrics = {"active_hours": TEST_METRICS[0]}
     run = sql_generation.Run(
         [EXPERIMENT],
         {"a-slug": analysis.run_windows(EXPERIMENT, AS_OF, TEST_METRICS)},
@@ -510,7 +515,7 @@ def test_a_failed_unit_count_keeps_the_cells_the_shared_scan_computed(caplog):
 
     cells_by_slug, units_by_slug, timings, failure = (
         analysis.gather_sufficient_statistics(
-            UnitCountFailingClient(), run, metrics_by_source, TEST_SOURCES, AS_OF, False
+            UnitCountFailingClient(), run, resolved_metrics, TEST_SOURCES, AS_OF, False
         )
     )
 

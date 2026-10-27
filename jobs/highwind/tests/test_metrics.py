@@ -53,12 +53,12 @@ def test_an_incremental_window_becomes_a_disjoint_rule():
 
 def test_both_windows_together_become_both_rules():
     rules, reason = metrics.window_rules(
-        aggregation_metric(cumulative_window=7, incremental_window=3)
+        aggregation_metric(cumulative_window=14, incremental_window=7)
     )
 
     assert rules == (
-        {"kind": "cumulative", "length": 7},
-        {"kind": "disjoint", "length": 3},
+        {"kind": "cumulative", "length": 14},
+        {"kind": "disjoint", "length": 7},
     )
     assert reason is None
 
@@ -79,6 +79,38 @@ def test_a_non_repeating_window_is_unsupported():
 
     assert rules is None
     assert "repeat_windows" in reason
+
+
+def test_an_incremental_window_that_is_not_one_bucket_is_reported_not_raised():
+    rules, reason = metrics.window_rules(
+        aggregation_metric(cumulative_window=None, incremental_window=14)
+    )
+
+    assert rules is None
+    assert "incremental_window" in reason
+
+
+def test_a_cumulative_window_that_is_not_a_multiple_of_the_bucket_is_reported():
+    rules, reason = metrics.window_rules(aggregation_metric(cumulative_window=10))
+
+    assert rules is None
+    assert "cumulative_window" in reason
+
+
+def test_a_cumulative_window_that_is_a_multiple_of_the_bucket_is_accepted():
+    rules, reason = metrics.window_rules(aggregation_metric(cumulative_window=14))
+
+    assert rules == ({"kind": "cumulative", "length": 14},)
+    assert reason is None
+
+
+def test_resolve_reports_a_misfit_window_the_same_way_as_repeat_windows_false():
+    plan = plan_of({"active_hours": aggregation_metric(cumulative_window=10)})
+
+    resolved, unresolved = metrics.resolve(plan)
+
+    assert resolved == {}
+    assert "cumulative_window" in unresolved["active_hours"]
 
 
 def test_resolve_splits_missing_names_into_unresolved_with_a_reason():
