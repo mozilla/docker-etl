@@ -1,0 +1,13 @@
+job-revenue-forecasting:
+  jobs:
+    - build-job-revenue-forecasting
+    - gcp-gcr/build-and-push-image:
+        context: data-eng-airflow-gcr
+        docker-context: jobs/revenue-forecasting/
+        path: jobs/revenue-forecasting/
+        image: revenue-forecasting_docker_etl
+        requires:
+          - build-job-revenue-forecasting
+        filters:
+          branches:
+            only: main
