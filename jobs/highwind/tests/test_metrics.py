@@ -107,7 +107,7 @@ def test_a_cumulative_window_that_is_a_multiple_of_the_bucket_is_accepted():
 def test_resolve_reports_a_misfit_window_the_same_way_as_repeat_windows_false():
     plan = plan_of({"active_hours": aggregation_metric(cumulative_window=10)})
 
-    resolved, unresolved = metrics.resolve(plan)
+    resolved, unresolved = metrics.split_resolved_metrics(plan)
 
     assert resolved == {}
     assert "cumulative_window" in unresolved["active_hours"]
@@ -116,7 +116,7 @@ def test_resolve_reports_a_misfit_window_the_same_way_as_repeat_windows_false():
 def test_resolve_splits_missing_names_into_unresolved_with_a_reason():
     plan = plan_of({}, missing=["no_such_metric"])
 
-    resolved, unresolved = metrics.resolve(plan)
+    resolved, unresolved = metrics.split_resolved_metrics(plan)
 
     assert resolved == {}
     assert "no nimbus/ definition" in unresolved["no_such_metric"]
@@ -125,7 +125,7 @@ def test_resolve_splits_missing_names_into_unresolved_with_a_reason():
 def test_resolve_reports_an_unsupported_window_the_same_way_as_a_missing_name():
     plan = plan_of({"active_hours": aggregation_metric(repeat_windows=False)})
 
-    resolved, unresolved = metrics.resolve(plan)
+    resolved, unresolved = metrics.split_resolved_metrics(plan)
 
     assert resolved == {}
     assert "repeat_windows" in unresolved["active_hours"]
@@ -134,7 +134,7 @@ def test_resolve_reports_an_unsupported_window_the_same_way_as_a_missing_name():
 def test_resolve_builds_a_metric_from_a_resolvable_plan_entry():
     plan = plan_of({"active_hours": aggregation_metric()})
 
-    resolved, unresolved = metrics.resolve(plan)
+    resolved, unresolved = metrics.split_resolved_metrics(plan)
 
     assert unresolved == {}
     metric = resolved["active_hours"]
@@ -211,7 +211,7 @@ def test_for_experiment_keeps_only_the_names_it_asked_for():
     }
     experiment = experiment_with(["active_hours"])
 
-    chosen, problems = metrics.for_experiment(experiment, resolved, {})
+    chosen, problems = metrics.metrics_for_experiment(experiment, resolved, {})
 
     assert [metric.name for metric in chosen] == ["active_hours"]
     assert problems == []
@@ -231,7 +231,7 @@ def test_for_experiment_attaches_its_own_display_text():
     )
     experiment = experiment_with(["active_hours"], display={"active_hours": display})
 
-    chosen, _ = metrics.for_experiment(experiment, resolved, {})
+    chosen, _ = metrics.metrics_for_experiment(experiment, resolved, {})
 
     assert chosen[0].friendly_name == "Active hours"
     assert chosen[0].description == "Time with input."
@@ -240,7 +240,7 @@ def test_for_experiment_attaches_its_own_display_text():
 def test_for_experiment_reports_a_name_it_asked_for_that_did_not_resolve():
     experiment = experiment_with(["an_outcome_metric"])
 
-    chosen, problems = metrics.for_experiment(
+    chosen, problems = metrics.metrics_for_experiment(
         experiment, {}, {"an_outcome_metric": "no nimbus/ definition for this app"}
     )
 

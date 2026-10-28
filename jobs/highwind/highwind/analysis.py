@@ -25,8 +25,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from google.cloud import storage  # type: ignore
 from google.cloud import bigquery
 
-from . import discovery, gbstats_compute, metrics
+from . import discovery, gbstats_compute
 from . import output_writing, sql_generation, sql_running
+from .metrics import (
+    build_aggregation_plan,
+    load_metric_hub,
+    metrics_for_experiment,
+    split_resolved_metrics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -324,13 +330,13 @@ def resolve_run_metrics(experiments):
     `nimbus/` definition for it or its windows are not ones Highwind can express, is reported
     against every experiment that asked for it rather than failing the run or that experiment.
     """
-    configs = metrics.load_configs()
+    configs = load_metric_hub()
     requested = {name for experiment in experiments for name in experiment.metric_names}
-    plan = metrics.load_plan(configs, requested)
-    resolved_metrics, unresolved_metrics = metrics.resolve(plan)
+    plan = build_aggregation_plan(configs, requested)
+    resolved_metrics, unresolved_metrics = split_resolved_metrics(plan)
     metrics_by_slug = {}
     for experiment in experiments:
-        exp_metrics, problems = metrics.for_experiment(
+        exp_metrics, problems = metrics_for_experiment(
             experiment, resolved_metrics, unresolved_metrics
         )
         metrics_by_slug[experiment.slug] = exp_metrics
@@ -469,7 +475,9 @@ def failed_summary(experiment, windows, metrics, error):
 def run_windows(experiment, as_of, metrics):
     """List every distinct window any of the experiment's own metrics declares.
 
-    `metrics` is that experiment's own resolved list, out to the maturity frontier.
+    `metrics` is that experiment's own resolved list. Only windows that end within the
+    experiment's tenure as of `as_of` are listed, because no unit can have completed a later
+    window.
     """
     tenure = experiment.tenure_days(as_of)
     seen, windows = set(), []

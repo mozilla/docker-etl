@@ -36,8 +36,8 @@ EXPERIMENT = Experiment(
     },
 )
 
-# One resolved metric, standing in for what `metrics.resolve()` would build off a real aggregation
-# plan: these tests exercise the run's orchestration, not metric resolution itself (see
+# One resolved metric, standing in for what `split_resolved_metrics()` would build off a real
+# aggregation plan: these tests exercise the run's orchestration, not metric resolution itself (see
 # test_metrics.py for that).
 TEST_METRICS = [
     Metric(

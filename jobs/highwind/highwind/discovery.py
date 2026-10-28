@@ -61,16 +61,13 @@ SELECT
   -- The experiment's own resolved Jetstream metric set (guardrails, outcomes and custom configs
   -- alike), already computed for the mirror and `as_of`-matched to Jetstream. NULL for a rollout,
   -- which `UNNEST` turns into zero rows rather than an error, and which this query excludes anyway.
-  -- Grouped by name because the mirror carries one row per (metric, statistic), so the same metric
-  -- name can repeat; ANY_VALUE picks the metric's own display text off whichever row survives.
   ARRAY(
     SELECT AS STRUCT
       metric.name,
-      ANY_VALUE(metric.friendly_name) AS friendly_name,
-      ANY_VALUE(metric.description) AS description,
-      ANY_VALUE(metric.bigger_is_better) AS bigger_is_better
+      metric.friendly_name,
+      metric.description,
+      metric.bigger_is_better
     FROM UNNEST(metric_config.metrics) AS metric
-    GROUP BY metric.name
   ) AS metric_configs
 FROM (
   SELECT
@@ -148,8 +145,9 @@ class Experiment:
     def tenure_days(self, as_of):
         """Calendar days from first enrollment to the last date with complete data.
 
-        The maturity frontier is derived from this: a window can only be reported once some unit has
-        lived through it, and no unit can have lived longer than the experiment has run.
+        Every window this experiment can report is bounded by this value: a window can only be
+        reported once some unit has lived through it, and no unit can have lived longer than the
+        experiment itself has run.
         """
         return (as_of - self.start_date).days
 
@@ -157,8 +155,8 @@ class Experiment:
 def metric_display(metric_configs):
     """Turn the mirror's per-experiment metric rows into a name-keyed display map.
 
-    The mirror has already deduplicated by name (see `DISCOVERY_SQL`'s `GROUP BY metric.name`), so
-    this is a straight rekey rather than a second dedup.
+    `metric_config.metrics` holds one entry per metric (see `DISCOVERY_SQL`), so this is a
+    straight rekey rather than a dedup.
     """
     return {
         metric.name: MetricDisplay(
@@ -258,7 +256,8 @@ class Window:
 
 
 def generate_windows(rule, tenure_days):
-    """Concrete windows for one metric's window rule, up to the maturity frontier.
+    """Concrete windows for one metric's window rule, stopping once a window would need more than
+    `tenure_days` to complete.
 
     Windows are declared as a length and a kind rather than as enumerated bounds, because enumerated
     bounds terminate the series: a metric declaring four weekly windows goes quiet after week four

@@ -164,8 +164,9 @@ def test_an_experiment_carries_its_own_deduplicated_metric_names():
                 mirror_row(
                     metric_configs=[
                         metric_config("active_hours", friendly_name="Active hours"),
-                        # The mirror carries one row per (metric, statistic), so the same metric
-                        # name can repeat; discover() reads the dedup DISCOVERY_SQL already did.
+                        # `metric_config.metrics` holds one entry per metric, so a repeated name is
+                        # not expected from the mirror; `metric_display` keys on name regardless, so
+                        # a repeat still collapses to one entry rather than raising.
                         metric_config("active_hours", friendly_name="Active hours"),
                         metric_config("retained_dau", friendly_name="Retained (DAU)"),
                     ]

@@ -64,7 +64,7 @@ class UnresolvedMetric:
     reason: str
 
 
-def load_configs():
+def load_metric_hub():
     """Load metric-hub's own `nimbus/` definitions, once per run.
 
     A fresh clone of `mozilla/metric-hub` every call (see metric-config-parser's
@@ -74,7 +74,7 @@ def load_configs():
     return ConfigCollection.from_github_repo()
 
 
-def load_plan(configs, metric_names):
+def build_aggregation_plan(configs, metric_names):
     """Resolve one run's metric names against metric-hub's `nimbus/` definitions for this app."""
     return aggregation_plan(configs, APP_NAME, sorted(set(metric_names)))
 
@@ -125,7 +125,7 @@ def window_rules(aggregation_metric):
     return tuple(rules), None
 
 
-def resolve(plan):
+def split_resolved_metrics(plan):
     """Split one run's plan into the metrics Highwind can compute and the ones it cannot, with why.
 
     A name fails to resolve two ways: no `nimbus/` definition at all (`plan.missing`), or a
@@ -162,7 +162,7 @@ def group_by_source(resolved_metrics):
     return by_source
 
 
-def for_experiment(experiment, resolved_metrics, unresolved_metrics):
+def metrics_for_experiment(experiment, resolved_metrics, unresolved_metrics):
     """One experiment's own metric list, with its own display text, and the names it could not get.
 
     A metric's aggregation shape is the same for every experiment that reads it, so
