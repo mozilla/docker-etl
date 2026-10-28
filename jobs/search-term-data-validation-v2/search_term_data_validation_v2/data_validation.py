@@ -1,3 +1,5 @@
+print("Hello from search_term_data_validation_v2/data_validation.py!")
+
 from google.cloud import bigquery
 from datetime import date, timedelta, datetime
 from collections import namedtuple
@@ -199,27 +201,31 @@ def range_check(
     if metric not in validation_data.columns.values:
         raise Exception(f'dataframe does not include target metric "{metric}"')
 
+    print("Calculating dates for running range check...")
     today = date.today()
     latest_finished_at = max(validation_data["finished_at"])
-
     test_earliest_date = today - timedelta(days=test_window)
-
     comparison_earliest_date = test_earliest_date - timedelta(days=full_lookback_window)
 
+    print("Calculating comparison values...")
     comparison_values = validation_data["finished_at"].apply(
         lambda m: comparison_earliest_date < m.date() <= test_earliest_date
     )
+    print("Calculating test values...")
     test_values = validation_data["finished_at"].apply(
         lambda m: test_earliest_date < m.date() <= today
     )
 
+    print("Calculating comparison range and test range...")
     comparison_range = validation_data.loc[comparison_values]
     test_range = validation_data.loc[test_values]
 
+    print("Calculating upper and lower range limits...")
     range_lower, range_upper = comparison_range[metric].quantile(
         q=[range_lower_bound, range_upper_bound]
     )
 
+    print("Recording whether the range check fails for the metric...")
     should_trigger = len(test_range[metric]) != 0 and (
         all(test_range[metric] > range_upper) or all(test_range[metric] < range_lower)
     )
