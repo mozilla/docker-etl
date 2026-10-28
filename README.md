@@ -1,4 +1,4 @@
-# Docker ETL
+# Docker ETL :)
 
 This repo is a collection of dockerized ETL jobs to increase discoverability
 of the source code of scheduled ETL.
