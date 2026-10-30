@@ -1,6 +1,18 @@
 """Resolving a recipe's analysis unit, and refusing to invent one."""
 
-from highwind import metrics, units
+from metric_config_parser.aggregation_plan import AggregationSource
+
+from highwind import units
+
+CLIENTS_DAILY = AggregationSource(
+    data_source="clients_daily",
+    from_expression="mozdata.telemetry.clients_daily",
+    client_id_column="client_id",
+    group_id_column="profile_group_id",
+    analysis_units=("client_id", "profile_group_id"),
+    submission_date_column="submission_date",
+    columns=("active_hours_sum",),
+)
 
 
 def test_a_group_randomized_desktop_recipe_is_analysed_at_the_profile_group():
@@ -8,7 +20,7 @@ def test_a_group_randomized_desktop_recipe_is_analysed_at_the_profile_group():
 
     assert unit.kind == units.PROFILE_GROUP_ID
     assert unit.enrollment_column == "profile_group_id"
-    assert unit.source_column == "profile_group_id"
+    assert unit.source_column(CLIENTS_DAILY) == "profile_group_id"
 
 
 def test_the_desktop_client_units_all_resolve_to_the_same_unit():
@@ -24,7 +36,7 @@ def test_the_enrollment_and_source_columns_differ_for_a_client_randomized_recipe
     unit = units.resolve("firefox_desktop", "normandy_id")
 
     assert unit.enrollment_column == "legacy_telemetry_client_id"
-    assert unit.source_column == "client_id"
+    assert unit.source_column(CLIENTS_DAILY) == "client_id"
 
 
 def test_only_the_client_unit_matches_the_clustered_sample_column():
@@ -51,7 +63,7 @@ def test_no_unit_column_is_also_a_metric_column():
     # The source CTE selects the unit column aliased to unit_id and then the metric columns, so a
     # column named by both would be selected twice under two names.
     for unit in set(units.ANALYSIS_UNITS.values()):
-        assert unit.source_column
+        column = unit.source_column(CLIENTS_DAILY)
+        assert column
         assert unit.enrollment_column
-        for spec in metrics.SOURCES.values():
-            assert unit.source_column not in spec["columns"]
+        assert column not in CLIENTS_DAILY.columns

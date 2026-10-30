@@ -6,7 +6,7 @@ does. That is what lets the rest of the job be tested against a fixed list of sl
 """
 
 import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from google.cloud import bigquery
 
@@ -57,7 +57,18 @@ SELECT
   start_date,
   end_date,
   reference_branch,
-  ARRAY(SELECT branch.slug FROM UNNEST(branches) AS branch) AS branch_slugs
+  ARRAY(SELECT branch.slug FROM UNNEST(branches) AS branch) AS branch_slugs,
+  -- The experiment's own resolved Jetstream metric set (guardrails, outcomes and custom configs
+  -- alike), already computed for the mirror and `as_of`-matched to Jetstream. NULL for a rollout,
+  -- which `UNNEST` turns into zero rows rather than an error, and which this query excludes anyway.
+  ARRAY(
+    SELECT AS STRUCT
+      metric.name,
+      metric.friendly_name,
+      metric.description,
+      metric.bigger_is_better
+    FROM UNNEST(metric_config.metrics) AS metric
+  ) AS metric_configs
 FROM (
   SELECT
     mirror.* EXCEPT (end_date),
@@ -87,6 +98,19 @@ ORDER BY DATE_DIFF(@as_of, start_date, DAY) ASC
 
 
 @dataclass(frozen=True)
+class MetricDisplay:
+    """The display text the mirror carried for one of an experiment's metrics.
+
+    Read off the mirror's own resolved Jetstream metric set rather than hard-coded, so the text
+    matches whatever metric-hub says for the experiment that was actually analysed.
+    """
+
+    friendly_name: str | None
+    description: str | None
+    bigger_is_better: bool | None
+
+
+@dataclass(frozen=True)
 class Experiment:
     """One recipe to analyse, with everything the SQL needs and nothing it does not."""
 
@@ -96,11 +120,20 @@ class Experiment:
     reference_branch: str
     treatment_branches: tuple[str, ...]
     unit: units.AnalysisUnit
+    # The experiment's own metric names, deduplicated, keyed to their display text. Resolving a
+    # name against metric-hub's `nimbus/` definitions is `metrics.py`'s job, not discovery's: this
+    # is only ever what the mirror's own resolved Jetstream metric set names.
+    metrics: dict[str, MetricDisplay] = field(default_factory=dict)
 
     @property
     def branches(self):
         """Return every branch, reference first."""
         return (self.reference_branch, *self.treatment_branches)
+
+    @property
+    def metric_names(self):
+        """Return the experiment's own metric names, sorted for a deterministic order."""
+        return tuple(sorted(self.metrics))
 
     def ended(self, as_of):
         return self.end_date is not None and self.end_date <= as_of
@@ -112,10 +145,27 @@ class Experiment:
     def tenure_days(self, as_of):
         """Calendar days from first enrollment to the last date with complete data.
 
-        The maturity frontier is derived from this: a window can only be reported once some unit has
-        lived through it, and no unit can have lived longer than the experiment has run.
+        Every window this experiment can report is bounded by this value: a window can only be
+        reported once some unit has lived through it, and no unit can have lived longer than the
+        experiment itself has run.
         """
         return (as_of - self.start_date).days
+
+
+def metric_display(metric_configs):
+    """Turn the mirror's per-experiment metric rows into a name-keyed display map.
+
+    `metric_config.metrics` holds one entry per metric (see `DISCOVERY_SQL`), so this is a
+    straight rekey rather than a dedup.
+    """
+    return {
+        metric.name: MetricDisplay(
+            friendly_name=metric.friendly_name,
+            description=metric.description,
+            bigger_is_better=metric.bigger_is_better,
+        )
+        for metric in metric_configs
+    }
 
 
 def discover(client, as_of, limit=None, only_slugs=None):
@@ -167,6 +217,7 @@ def discover(client, as_of, limit=None, only_slugs=None):
             reference_branch=row.reference_branch,
             treatment_branches=others,
             unit=unit,
+            metrics=metric_display(row.metric_configs),
         )
         if experiment.too_old(as_of):
             skipped.append(
@@ -205,7 +256,8 @@ class Window:
 
 
 def generate_windows(rule, tenure_days):
-    """Concrete windows for one metric's window rule, up to the maturity frontier.
+    """Concrete windows for one metric's window rule, stopping once a window would need more than
+    `tenure_days` to complete.
 
     Windows are declared as a length and a kind rather than as enumerated bounds, because enumerated
     bounds terminate the series: a metric declaring four weekly windows goes quiet after week four

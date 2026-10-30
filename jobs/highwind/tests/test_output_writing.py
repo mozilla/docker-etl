@@ -12,7 +12,7 @@ from gbstats.frequentist.tests import sequential_interval_halfwidth
 
 from highwind import discovery, gbstats_compute, output_writing, units
 from highwind.discovery import Experiment
-from highwind.metrics import CUMULATIVE_WEEKLY, DISJOINT_WEEKLY, Metric, per_unit_sum
+from highwind.metrics import CUMULATIVE_WEEKLY, DISJOINT_WEEKLY, Metric
 
 AS_OF = datetime.date(2026, 8, 1)
 
@@ -404,7 +404,7 @@ def test_the_log_table_is_partitioned_and_clustered_like_the_tables_it_sits_besi
 CUMULATIVE_METRIC = Metric(
     name="active_hours",
     source="clients_daily",
-    reducer=per_unit_sum("active_hours_sum"),
+    reducer=None,
     window_rules=(CUMULATIVE_WEEKLY,),
     friendly_name="Active hours",
     description="Time with user input.",
@@ -413,7 +413,7 @@ CUMULATIVE_METRIC = Metric(
 DISJOINT_METRIC = Metric(
     name="retained",
     source="clients_daily",
-    reducer=per_unit_sum("pings_aggregated_by_this_row"),
+    reducer=None,
     window_rules=(DISJOINT_WEEKLY,),
     friendly_name="Retained",
 )

@@ -8,7 +8,7 @@ import types
 import pytest
 
 from highwind import discovery, units
-from highwind.metrics import CUMULATIVE_WEEKLY, DISJOINT_WEEKLY, Metric, per_unit_sum
+from highwind.metrics import CUMULATIVE_WEEKLY, DISJOINT_WEEKLY, Metric
 
 AS_OF = datetime.date(2026, 8, 1)
 
@@ -28,7 +28,7 @@ def metric(*window_rules):
     return Metric(
         name="a-metric",
         source="clients_daily",
-        reducer=per_unit_sum("a_column"),
+        reducer=None,
         window_rules=window_rules,
     )
 
@@ -103,6 +103,15 @@ def test_branches_lists_the_reference_first():
     assert experiment(AS_OF).branches == ("control", "treatment-a", "treatment-b")
 
 
+def metric_config(name, friendly_name=None, description=None, bigger_is_better=None):
+    return types.SimpleNamespace(
+        name=name,
+        friendly_name=friendly_name,
+        description=description,
+        bigger_is_better=bigger_is_better,
+    )
+
+
 def mirror_row(**overrides):
     """One row of the mirror, in the shape `discover` reads."""
     return types.SimpleNamespace(
@@ -114,6 +123,7 @@ def mirror_row(**overrides):
             "end_date": None,
             "reference_branch": "control",
             "branch_slugs": ["control", "treatment"],
+            "metric_configs": [],
             **overrides,
         }
     )
@@ -145,6 +155,39 @@ def test_an_experiment_is_analysed_at_the_unit_its_own_recipe_randomized_on():
         "grouped": units.PROFILE_GROUP_ID,
         "by-client": units.CLIENT_ID,
     }
+
+
+def test_an_experiment_carries_its_own_deduplicated_metric_names():
+    experiments, _ = discovery.discover(
+        FakeClient(
+            [
+                mirror_row(
+                    metric_configs=[
+                        metric_config("active_hours", friendly_name="Active hours"),
+                        # `metric_config.metrics` holds one entry per metric, so a repeated name is
+                        # not expected from the mirror; `metric_display` keys on name regardless, so
+                        # a repeat still collapses to one entry rather than raising.
+                        metric_config("active_hours", friendly_name="Active hours"),
+                        metric_config("retained_dau", friendly_name="Retained (DAU)"),
+                    ]
+                )
+            ]
+        ),
+        AS_OF,
+    )
+
+    (experiment,) = experiments
+    assert experiment.metric_names == ("active_hours", "retained_dau")
+    assert experiment.metrics["active_hours"].friendly_name == "Active hours"
+
+
+def test_a_rollout_with_no_metric_config_carries_no_metrics():
+    experiments, _ = discovery.discover(
+        FakeClient([mirror_row(metric_configs=[])]), AS_OF
+    )
+
+    (experiment,) = experiments
+    assert experiment.metric_names == ()
 
 
 def test_a_randomization_unit_with_no_analysis_unit_is_skipped_not_defaulted():

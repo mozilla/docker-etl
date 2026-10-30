@@ -13,8 +13,9 @@ Reading order is this file, then the modules it calls into:
 The entry point is main.py, which parses the arguments Airflow passes and calls `run_daily_job`
 here.
 
-Desktop experiments only, guardrail metrics only, full recompute every run. Each of those is a
-deliberate limit of the proof of concept and is noted where it bites.
+The job analyses Firefox Desktop experiments only and recomputes every result on each run. Each
+experiment's metrics are the list the Experimenter mirror resolves for it (`discovery.py`), computed
+from their metric-hub `nimbus/` definitions (`metrics.py`).
 """
 
 import contextlib
@@ -25,8 +26,13 @@ from google.cloud import storage  # type: ignore
 from google.cloud import bigquery
 
 from . import discovery, gbstats_compute
-from . import metrics as metric_definitions_module
 from . import output_writing, sql_generation, sql_running
+from .metrics import (
+    build_aggregation_plan,
+    load_metric_hub,
+    metrics_for_experiment,
+    split_resolved_metrics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,9 +93,9 @@ def run_daily_job(
         if not experiments:
             return []
 
-        metrics_by_source = metric_definitions_module.metric_definitions()
+        metrics_by_slug, resolved_metrics, sources = resolve_run_metrics(experiments)
         windows_by_slug = {
-            experiment.slug: run_windows(experiment, as_of, metrics_by_source)
+            experiment.slug: run_windows(experiment, as_of, metrics_by_slug[experiment.slug])
             for experiment in experiments
         }
         run = sql_generation.Run(
@@ -97,7 +103,7 @@ def run_daily_job(
         )
 
         cells_by_slug, units_by_slug, timings, failure = gather_sufficient_statistics(
-            client, run, metrics_by_source, as_of, validate_only
+            client, run, resolved_metrics, sources, as_of, validate_only
         )
 
         # No lock: `as_completed` yields in this thread, so the accumulation below is
@@ -109,7 +115,7 @@ def run_daily_job(
                     analyze_experiment,
                     experiment,
                     windows_by_slug[experiment.slug],
-                    metrics_by_source,
+                    metrics_by_slug[experiment.slug],
                     cells_by_slug.get(experiment.slug, {}),
                     failure,
                 )
@@ -162,7 +168,7 @@ def run_daily_job(
                 storage_client,
                 as_of,
                 experiments,
-                all_metrics(metrics_by_source),
+                metrics_by_slug,
                 results_by_slug,
                 cells_by_slug,
                 units_by_slug,
@@ -177,7 +183,7 @@ def publish_analyses(
     storage_client,
     as_of,
     experiments,
-    metrics,
+    metrics_by_slug,
     results_by_slug,
     cells_by_slug,
     units_by_slug,
@@ -195,7 +201,7 @@ def publish_analyses(
                 output_writing.build_analysis,
                 experiment,
                 as_of,
-                metrics,
+                metrics_by_slug[experiment.slug],
                 results_by_slug.get(experiment.slug, []),
                 cells_by_slug.get(experiment.slug, {}),
                 units_by_slug.get(experiment.slug, {}),
@@ -314,8 +320,37 @@ def writes_blobs(validate_only, sample_percent, outputs):
     return sample_percent is None or outputs.local_blob_dir is not None
 
 
-def gather_sufficient_statistics(client, run, metrics_by_source, as_of, validate_only):
-    """Run the shared scan: cohort once, then one query per source and unit, split by slug.
+def resolve_run_metrics(experiments):
+    """Resolve the whole run's metrics from metric-hub, once, from every experiment's own names.
+
+    Returns each experiment's own metric list (for `run_windows`, the statistics and the blob), the
+    resolved metrics by name (for `sql_generation.build_queries`, which scopes them to each
+    analysis unit's own experiments and groups them by source there), and the plan's source
+    definitions (for the SQL itself). A name that does not resolve, whether metric-hub has no
+    `nimbus/` definition for it or its windows are not ones Highwind can express, is reported
+    against every experiment that asked for it rather than failing the run or that experiment.
+    """
+    configs = load_metric_hub()
+    requested = {name for experiment in experiments for name in experiment.metric_names}
+    plan = build_aggregation_plan(configs, requested)
+    resolved_metrics, unresolved_metrics = split_resolved_metrics(plan)
+    metrics_by_slug = {}
+    for experiment in experiments:
+        exp_metrics, problems = metrics_for_experiment(
+            experiment, resolved_metrics, unresolved_metrics
+        )
+        metrics_by_slug[experiment.slug] = exp_metrics
+        for problem in problems:
+            logger.warning(
+                f"{experiment.slug}: metric {problem.name!r} not computed: {problem.reason}",
+                extra={"experiment_slug": experiment.slug, "metric": problem.name},
+            )
+    return metrics_by_slug, resolved_metrics, plan.sources
+
+
+def gather_sufficient_statistics(client, run, resolved_metrics, sources, as_of, validate_only):
+    """Run the shared scan: cohort once, then one query per (source, unit) pair with something to
+    compute, split by slug.
 
     Returns the cells keyed by slug plus whatever went wrong, rather than raising, so a source
     failure becomes an error grid on every experiment instead of an exception that ends the run
@@ -327,7 +362,7 @@ def gather_sufficient_statistics(client, run, metrics_by_source, as_of, validate
         cohort_table, cohort_timing = sql_running.materialize_cohort(
             client, sql_generation.cohort_query(run), as_of, validate_only
         )
-        queries = sql_generation.build_queries(run, metrics_by_source, cohort_table)
+        queries = sql_generation.build_queries(run, resolved_metrics, sources, cohort_table)
         cells_by_slug, timings = sql_running.run_queries(
             client, queries, validate_only=validate_only
         )
@@ -380,23 +415,22 @@ def report_progress(summary, done, total):
     )
 
 
-def analyze_experiment(experiment, windows, metrics_by_source, cells, shared_failure):
+def analyze_experiment(experiment, windows, metrics, cells, shared_failure):
     """One experiment's statistics, from cells the shared scan already produced.
 
     Wrapped so a failure is recorded against this experiment's cells and the loop continues. The
     unit of isolation is the experiment because that is the unit a user reads: one experiment whose
-    statistics blow up should not cost the others their results.
+    statistics blow up should not cost the others their results. `metrics` is this experiment's own
+    resolved list, not the run's full set: two experiments can ask for different metrics.
     """
     try:
         if shared_failure is not None:
-            return failed_summary(experiment, windows, metrics_by_source, shared_failure)
+            return failed_summary(experiment, windows, metrics, shared_failure)
         if not windows:
             # Younger than the shortest window, so no unit has completed one and there is nothing
             # to compute. Its cells are all `not_started` by construction.
             return experiment_summary(experiment, []), []
-        results = gbstats_compute.compute_statistics(
-            experiment, all_metrics(metrics_by_source), windows, cells
-        )
+        results = gbstats_compute.compute_statistics(experiment, metrics, windows, cells)
         return experiment_summary(experiment, results), results
     # The whole point is to record it, not to raise.
     except Exception as error:
@@ -406,7 +440,7 @@ def analyze_experiment(experiment, windows, metrics_by_source, cells, shared_fai
             f"{experiment.slug} failed", extra={"experiment_slug": experiment.slug}
         )
         try:
-            return failed_summary(experiment, windows, metrics_by_source, error)
+            return failed_summary(experiment, windows, metrics, error)
         except Exception as while_recording:
             # A failure while recording a failure must not propagate: it would come back out of
             # future.result() and cost every other experiment its results, which is exactly the
@@ -425,7 +459,7 @@ def analyze_experiment(experiment, windows, metrics_by_source, cells, shared_fai
             )
 
 
-def failed_summary(experiment, windows, metrics_by_source, error):
+def failed_summary(experiment, windows, metrics, error):
     """Record a query-level failure across every cell this experiment expected to produce.
 
     Without this the error rate cannot see an outage: an experiment that produced nothing would
@@ -433,29 +467,26 @@ def failed_summary(experiment, windows, metrics_by_source, error):
     perfect health.
     """
     results = gbstats_compute.compute_statistics(
-        experiment, all_metrics(metrics_by_source), windows, cells={}, failure=error
+        experiment, metrics, windows, cells={}, failure=error
     )
     return experiment_summary(experiment, results, error=error), results
 
 
-def run_windows(experiment, as_of, metrics_by_source=None):
-    """List every distinct window any metric declares, out to the maturity frontier."""
+def run_windows(experiment, as_of, metrics):
+    """List every distinct window any of the experiment's own metrics declares.
+
+    `metrics` is that experiment's own resolved list. Only windows that end within the
+    experiment's tenure as of `as_of` are listed, because no unit can have completed a later
+    window.
+    """
     tenure = experiment.tenure_days(as_of)
-    metrics_by_source = (
-        metrics_by_source or metric_definitions_module.metric_definitions()
-    )
     seen, windows = set(), []
-    for metric in all_metrics(metrics_by_source):
+    for metric in metrics:
         for window in discovery.windows_for(metric, tenure):
             if window.label not in seen:
                 seen.add(window.label)
                 windows.append(window)
     return windows
-
-
-def all_metrics(metrics_by_source):
-    """Flatten the per-source metric mapping into one list."""
-    return [metric for metrics in metrics_by_source.values() for metric in metrics]
 
 
 def experiment_summary(experiment, results, error=None):

@@ -17,13 +17,13 @@ WINDOWS = [
 CONTINUOUS = metrics.Metric(
     name="active_hours",
     source="clients_daily",
-    reducer=metrics.per_unit_sum("active_hours_sum"),
+    reducer=None,
     window_rules=(metrics.CUMULATIVE_WEEKLY,),
 )
 BINARY = metrics.Metric(
     name="retained_dau",
     source="active_users",
-    reducer=metrics.per_unit_any("is_dau"),
+    reducer=None,
     window_rules=(metrics.DISJOINT_WEEKLY,),
 )
 

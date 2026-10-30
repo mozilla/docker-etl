@@ -84,7 +84,7 @@ RESULTS_SCHEMA = [
     bigquery.SchemaField(
         "metric",
         "STRING",
-        description="Metric name, from the hard-coded desktop guardrail set.",
+        description="Metric name, resolved against metric-hub's nimbus/ definitions.",
     ),
     bigquery.SchemaField(
         "window",
@@ -212,7 +212,7 @@ SUFFICIENT_STATS_SCHEMA = [
     bigquery.SchemaField(
         "metric",
         "STRING",
-        description="Metric name, from the hard-coded desktop guardrail set.",
+        description="Metric name, resolved against metric-hub's nimbus/ definitions.",
     ),
     bigquery.SchemaField(
         "window",

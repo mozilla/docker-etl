@@ -147,8 +147,9 @@ carries no interval, so an inferred schema would vary with the day's mix of stat
 ## Proof-of-concept scope
 
 - Firefox Desktop only.
-- A hard-coded guardrail metric set, so the prototype has no cross-repo dependency. In the real
-  system these come from metric-hub through metric-config-parser.
+- Each experiment's own metric set, read off the Experimenter mirror and resolved against
+  metric-hub's `nimbus/` definitions; a name with no `nimbus/` definition, or whose windows Highwind
+  cannot express, is reported rather than computed.
 - A full recompute every run. Nothing is accumulated across days.
 - Rollouts excluded. They have no randomized control to compare against until the synthetic-control
   work lands, and Jetstream skips them today.
