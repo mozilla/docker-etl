@@ -156,13 +156,14 @@ def metric_display(metric_configs):
     """Turn the mirror's per-experiment metric rows into a name-keyed display map.
 
     `metric_config.metrics` holds one entry per metric (see `DISCOVERY_SQL`), so this is a
-    straight rekey rather than a dedup.
+    straight rekey rather than a dedup. Each element is a repeated RECORD, which the BigQuery
+    client returns as a plain dict rather than a `Row`, so it is read by key.
     """
     return {
-        metric.name: MetricDisplay(
-            friendly_name=metric.friendly_name,
-            description=metric.description,
-            bigger_is_better=metric.bigger_is_better,
+        metric["name"]: MetricDisplay(
+            friendly_name=metric["friendly_name"],
+            description=metric["description"],
+            bigger_is_better=metric["bigger_is_better"],
         )
         for metric in metric_configs
     }
