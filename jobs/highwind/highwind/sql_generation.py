@@ -45,7 +45,6 @@ import math
 import textwrap
 
 from . import metrics
-from .units import PROFILE_GROUP_ID
 
 # The bucket a unit's pre-enrollment rows land in. The covariate is one fixed window rather than
 # one per analysis window, so it is a single extra bucket that sorts before every other and is
@@ -56,24 +55,6 @@ PRE_BUCKET = -1
 # the branch's retention rate times this, so it sets how finely a rate can be expressed: one part
 # per million is far below the sampling error on any branch large enough to need balancing.
 BALANCE_RESOLUTION = 1_000_000
-
-# A profile group fanning out to more than this many client ids is a cloned or bot fleet rather
-# than a household. The threshold and the distribution behind it are the SQL spec's, §3.4 and §1.4:
-# a real group is one client, and the tail runs orders of magnitude above that. It matters at group
-# grain in a way it does not at client grain, because the whole fleet collapses into a single
-# analysis unit carrying a physically impossible value and lands entirely in whichever branch its id
-# hashes to.
-#
-# Detected over enrollment events rather than over `baseline_clients_daily` across the window as the
-# spec has it. That is an approximation and it under-detects: a fleet only shows the clients that
-# enrolled, so one whose members enrolled sparsely can stay under the threshold and survive. The
-# spec's version needs its own scan of a client-daily source, where this rides along on the scan the
-# cohort already does.
-MAX_CLIENTS_PER_GROUP = 10
-
-# The id a group's fan-out is counted over. Present on the enrollment event beside the group id, so
-# counting it costs a column rather than a join.
-FLEET_CLIENT_COLUMN = "legacy_telemetry_client_id"
 
 # How many times the smallest branch the largest is allowed to be. Chosen at the knee of the
 # precision-versus-units curve for a 90/10 split: 4:1 discards about half the units for ~6% wider
@@ -283,9 +264,6 @@ def cohort_query(run):
     only analyses experiments. Rollouts will need `enrollment_status`, since it is the only source
     that records a rollout's assignment, and that cost has to be paid then rather than avoided.
 
-    Cloned fleets are dropped here too, on the runs whose grain they distort. See
-    `MAX_CLIENTS_PER_GROUP`.
-
     A unit is taken at its FIRST enrollment in each experiment, so a client that re-enrols is
     anchored once. Units seen on more than one branch of the same experiment are dropped rather than
     resolved: a contradictory assignment is a data problem, and picking a branch would silently bias
@@ -367,8 +345,6 @@ def assignment_query(run):
     """
     slugs = ", ".join(f"'{slug}'" for slug in run.slugs)
     columns = {unit.enrollment_column for unit in run.units}
-    if detects_fleets(run):
-        columns.add(FLEET_CLIENT_COLUMN)
     id_columns = ",\n      ".join(sorted(columns))
     return textwrap.dedent(f"""
         SELECT
@@ -383,7 +359,7 @@ def assignment_query(run):
             valid.unit_kind,
             {enrollment_unit_id(run)} AS unit_id,
             event.branch_slug,
-            event.enrollment_date{fleet_select(run)}
+            event.enrollment_date
           FROM (
             SELECT
               JSON_VALUE(event_extra, '$.experiment') AS slug,
@@ -403,34 +379,8 @@ def assignment_query(run):
         WHERE unit_id IS NOT NULL
           {sample_clause("unit_id", run.sample_percent, prefix="AND ")}
         GROUP BY slug, unit_kind, unit_id
-        HAVING COUNT(DISTINCT branch_slug) = 1{fleet_having(run)}
+        HAVING COUNT(DISTINCT branch_slug) = 1
     """).strip()
-
-
-def detects_fleets(run):
-    """Whether any experiment in this run is analysed at the grain a fleet collapses into."""
-    return any(unit.kind == PROFILE_GROUP_ID for unit in run.units)
-
-
-def fleet_select(run):
-    """Carry the client id up to the aggregation, where a group's fan-out is counted."""
-    return f",\n            event.{FLEET_CLIENT_COLUMN}" if detects_fleets(run) else ""
-
-
-def fleet_having(run):
-    """Drop cloned fleets, at the unit kind the exclusion is meaningful for.
-
-    Conditional on the unit kind because the cohort holds every experiment in the run at once, and a
-    client-randomized slug's unit already IS the client: counting clients per unit there is a test
-    of nothing, and a client sharing a group with a fleet would be dropped for the fleet's fan-out
-    rather than its own.
-    """
-    if not detects_fleets(run):
-        return ""
-    return (
-        f"\n   AND (unit_kind != '{PROFILE_GROUP_ID}'\n"
-        f"        OR COUNT(DISTINCT {FLEET_CLIENT_COLUMN}) <= {MAX_CLIENTS_PER_GROUP})"
-    )
 
 
 def enrollment_unit_id(run):

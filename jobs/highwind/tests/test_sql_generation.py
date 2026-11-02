@@ -433,46 +433,6 @@ def test_the_dedup_and_the_branch_cap_both_key_on_the_resolved_unit():
     assert "MOD(ABS(FARM_FINGERPRINT(assignment.unit_id))" in cohort
 
 
-def test_a_group_randomized_run_drops_groups_that_fan_out_to_a_fleet():
-    # At group grain a cloned fleet is one analysis unit carrying an impossible value, and it lands
-    # whole in whichever branch its id hashes to, so it has to go before the branch cap sees it.
-    run = run_of(
-        {"grouped": cumulative_windows(2)}, units_by_slug={"grouped": GROUP_UNIT}
-    )
-    cohort = sql_generation.cohort_query(run)
-
-    assert f"event.{sql_generation.FLEET_CLIENT_COLUMN}" in cohort
-    assert (
-        f"OR COUNT(DISTINCT {sql_generation.FLEET_CLIENT_COLUMN}) "
-        f"<= {sql_generation.MAX_CLIENTS_PER_GROUP})" in cohort
-    )
-    assert f"unit_kind != '{units.PROFILE_GROUP_ID}'" in cohort
-
-
-def test_a_client_randomized_run_counts_no_clients_per_group():
-    # The unit already IS the client, so the per-group count is a test of nothing, and the column it
-    # would need is not worth carrying through the scan.
-    run = run_of({"by-client": cumulative_windows(2)})
-    cohort = sql_generation.cohort_query(run)
-
-    assert "COUNT(DISTINCT branch_slug) = 1" in cohort
-    assert f"COUNT(DISTINCT {sql_generation.FLEET_CLIENT_COLUMN})" not in cohort
-    assert units.PROFILE_GROUP_ID not in cohort
-
-
-def test_a_mixed_run_applies_the_fleet_filter_to_the_group_slugs_only():
-    # One cohort query serves both units, so the exclusion is conditioned on the unit kind rather
-    # than on which query it is in.
-    run = run_of(
-        {"grouped": cumulative_windows(2), "by-client": cumulative_windows(2)},
-        units_by_slug={"grouped": GROUP_UNIT},
-    )
-    cohort = sql_generation.cohort_query(run)
-
-    assert f"COUNT(DISTINCT {sql_generation.FLEET_CLIENT_COLUMN})" in cohort
-    assert f"AND (unit_kind != '{units.PROFILE_GROUP_ID}'" in cohort
-
-
 def test_the_cohort_carries_the_unit_and_each_source_query_reads_only_its_own():
     run = run_of({"a-slug": cumulative_windows(2)})
 
