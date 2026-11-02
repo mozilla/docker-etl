@@ -273,7 +273,8 @@ def test_an_experiment_that_fails_outright_is_recorded_against_its_slug():
 
 def test_the_log_is_written_even_when_the_run_it_covers_raises():
     # The run this table is worth most for is the one that died, so the write cannot be a step the
-    # run reaches only by finishing.
+    # run reaches only by finishing. The run's own failure becomes a third row, on top of whatever
+    # it had already logged, so the table shows the raise and not just what preceded it.
     client = RecordingClient()
 
     with pytest.raises(RuntimeError):
@@ -281,7 +282,35 @@ def test_the_log_is_written_even_when_the_run_it_covers_raises():
             analysis.report_selection([], [("a-slug", "a reason", None)], AS_OF)
             raise RuntimeError("whatever ended the run")
 
-    assert [row["experiment_slug"] for row in client.log_rows] == [None, "a-slug"]
+    assert [row["experiment_slug"] for row in client.log_rows] == [None, "a-slug", None]
+
+
+def test_a_run_that_fails_before_logging_anything_still_gets_an_error_row():
+    # The crash this exists for: a run that dies in discovery, before its first log statement, used
+    # to leave the table with no row at all for the date.
+    client = RecordingClient()
+
+    with pytest.raises(AttributeError):
+        with analysis.collecting_run_log(AS_OF, client, output_writing.Outputs(), True):
+            raise AttributeError("'dict' object has no attribute 'name'")
+
+    failures = [row for row in client.log_rows if row["log_level"] == "ERROR"]
+    assert len(failures) == 1
+    assert failures[0]["experiment_slug"] is None
+    assert failures[0]["exception_type"] == "AttributeError"
+    assert "'dict' object has no attribute 'name'" in failures[0]["exception"]
+
+
+def test_a_run_that_writes_no_tables_does_not_write_its_failure_row_either():
+    # Filtered, sampled, dry-run and validate-only runs write none of the three tables, the log
+    # among them, so their failures stay out of it the same way their results do.
+    client = RecordingClient()
+
+    with pytest.raises(RuntimeError):
+        with analysis.collecting_run_log(AS_OF, client, output_writing.Outputs(), False):
+            raise RuntimeError("whatever ended the run")
+
+    assert client.loads == []
 
 
 def test_a_partial_run_writes_no_log_rows_any_more_than_it_writes_results():
@@ -314,6 +343,8 @@ def test_the_log_table_is_written_by_exactly_the_runs_that_write_the_result_tabl
 
 
 def test_a_log_that_cannot_be_written_does_not_replace_whatever_ended_the_run():
+    # The run logged its own failure row above, and writing that row is itself what fails here: the
+    # original exception still has to be the one that surfaces, not a complaint about logging it.
     class FailingClient:
         def create_table(self, table, exists_ok=False):
             raise RuntimeError("the log table could not be created")
