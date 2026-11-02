@@ -104,12 +104,12 @@ def test_branches_lists_the_reference_first():
 
 
 def metric_config(name, friendly_name=None, description=None, bigger_is_better=None):
-    return types.SimpleNamespace(
-        name=name,
-        friendly_name=friendly_name,
-        description=description,
-        bigger_is_better=bigger_is_better,
-    )
+    return {
+        "name": name,
+        "friendly_name": friendly_name,
+        "description": description,
+        "bigger_is_better": bigger_is_better,
+    }
 
 
 def mirror_row(**overrides):

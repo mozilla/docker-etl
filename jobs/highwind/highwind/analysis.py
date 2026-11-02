@@ -240,11 +240,18 @@ def collecting_run_log(as_of, client, outputs, write_tables):
     """Collect everything the block logs, and write it whether or not the block finishes.
 
     A context manager rather than a `try` in the caller, so that the behaviour this table exists
-    for, a run that died recording why, is a property of something exercisable without a run.
+    for, a run that died recording why, is a property of something exercisable without a run. A run
+    that fails before logging anything of its own, a crash inside discovery for instance, would
+    otherwise leave the table with no row at all for the date: the `except` below logs the failure
+    itself, so the buffer `finally` flushes always has at least that one row, and re-raises so the
+    process still exits non-zero.
     """
     run_log = start_run_log(as_of)
     try:
         yield run_log
+    except Exception:
+        logger.exception("the run failed and did not finish")
+        raise
     finally:
         finish_run_log(run_log, client, outputs, write_tables)
 
