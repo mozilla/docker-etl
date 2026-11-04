@@ -1,0 +1,17 @@
+version: "3.4"
+
+services:
+  app:
+    build:
+      context: .
+    volumes:
+      - ./:/app
+      # Mount the local gcloud sdk configuration when developing. Note that this
+      # will modify the contents on the host. 
+      - /Users/plee/.config/gcloud/application_default_credentials.json:/gcp/creds.json
+    environment:
+      - CLOUDSDK_CONFIG=/tmp/.config/gcloud
+      - CLOUDSDK_CORE_PROJECT
+      - GOOGLE_APPLICATION_CREDENTIALS=/gcp/creds.json
+    command: >
+      sh -c "python 05_upload_data.py"
