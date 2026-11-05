@@ -50,7 +50,7 @@ prophet==1.1.5
 proto-plus==1.22.2
 protobuf==4.23.3
 pyarrow==12.0.1
-pyasn1==0.5.0
+pyasn1==0.6.5
 pyasn1-modules==0.3.0
 PyMeeus==0.5.12
 pyparsing==3.0.9
