@@ -1,0 +1,10 @@
+ci_job.yaml
+.DS_Store
+*.pyc
+.pytest_cache/
+__pycache__/
+venv/
+.venv/
+# never build query text from a local run into the image
+.cache/
+labels/

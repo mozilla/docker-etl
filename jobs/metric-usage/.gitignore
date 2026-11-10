@@ -1,0 +1,11 @@
+.DS_Store
+*.pyc
+__pycache__/
+.pytest_cache/
+venv/
+.venv/
+# API responses, query results, generated SQL and the generated-sql and
+# metric-hub copies; some of it holds query text
+.cache/
+# hand labels for the accuracy check hold snippets of query text
+labels/
