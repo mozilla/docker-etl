@@ -20,14 +20,54 @@ whole run (see `sql_generation.bucket_length`).
 """
 
 from dataclasses import dataclass
+from enum import Enum
 
+import attr
+from metric_config_parser.aggregation import Aggregation
 from metric_config_parser.aggregation_plan import aggregation_plan
 from metric_config_parser.config import ConfigCollection
 
 APP_NAME = "firefox_desktop"
 
+# The metric-hub aggregations whose per-unit value is always 0 or 1. `threshold` turns any
+# aggregation into one of these too (see `_is_yes_no_aggregation`), so this set alone is not the
+# whole test.
+YES_NO_AGGREGATIONS = frozenset({Aggregation.ANY, Aggregation.RECENCY_WITHIN})
+
 CUMULATIVE = "cumulative"
 DISJOINT = "disjoint"
+
+# The share of the reference branch's upper tail a metric is clipped at when it sets neither
+# `winsorize_fraction` nor `winsorize_threshold`. Mirrors Jetstream's own linear-mean default
+# (EXP-8000's "Decided" list), so turning winsorization on here changes nothing about today's
+# metric behaviour until a metric opts out. A later ticket (EXP-8008), once Data Science has
+# validated the reference-branch method, switches this one constant to off.
+DEFAULT_WINSORIZE_FRACTION = 0.005
+
+
+class WinsorizeMode(Enum):
+    """How a metric's window is clipped: not at all, at a reference-branch quantile, or at a
+    fixed per-week value. `TOO_FEW_UNITS` is a FRACTION window the reference branch could not
+    support (see `sql_generation.reference_quantiles_cte`), resolved at query time rather than
+    here, so it never comes out of `winsorize_mode` below."""
+
+    OFF = "off"
+    FRACTION = "fraction"
+    FIXED = "fixed"
+    TOO_FEW_UNITS = "skipped_too_few"
+
+
+@dataclass(frozen=True)
+class Winsorize:
+    """One metric's resolved winsorize setting: a mode, and the one value that mode uses.
+
+    `value` is the fraction FRACTION clips at, or the per-week threshold FIXED scales; it is
+    unused (and left None) for OFF.
+    """
+
+    mode: WinsorizeMode
+    value: float | None = None
+
 
 # Highwind's own bucket grid (see `sql_generation.py`'s `Run` and `bucket_length`): every window a
 # run builds is read off buckets this many days long, no matter which metrics the run happens to
@@ -46,7 +86,20 @@ DISJOINT_WEEKLY = {"kind": DISJOINT, "length": BUCKET_LENGTH}
 @dataclass(frozen=True)
 class Metric:
     """One metric: which metric-hub source it reads, how it reduces a unit's rows, its windows,
-    and the display text the experiment that asked for it carried in the mirror."""
+    the display text the experiment that asked for it carried in the mirror, and its winsorize
+    setting.
+
+    `winsorize_fraction` and `winsorize_threshold` are EXP-8004's fields: metric-hub's own
+    `nimbus/` metric definitions will carry them once that ships, and metric-config-parser's
+    `AggregationMetric` (`metric_config_parser/aggregation_plan.py`) will resolve them the same
+    way it resolves everything else `Metric` carries. Until then they default to None here,
+    meaning "not set", exactly as an unset field will read once EXP-8004 lands; see
+    `_winsorize_fields` below for where that absence is read defensively, in this one place.
+
+    `is_yes_no` is resolved once, in `split_resolved_metrics`, from the metric-hub
+    `MetricDefinition`'s own `aggregation`/`threshold` fields (see `_is_yes_no_aggregation`)
+    rather than read again from the reducer wherever it is needed.
+    """
 
     name: str
     source: str
@@ -54,6 +107,9 @@ class Metric:
     window_rules: tuple
     friendly_name: str | None = None
     description: str | None = None
+    winsorize_fraction: float | None = None
+    winsorize_threshold: float | None = None
+    is_yes_no: bool = False
 
 
 @dataclass(frozen=True)
@@ -125,13 +181,58 @@ def window_rules(aggregation_metric):
     return tuple(rules), None
 
 
-def split_resolved_metrics(plan):
+def _winsorize_fields(aggregation_metric):
+    """Read `winsorize_fraction`/`winsorize_threshold` off a plan metric, defensively.
+
+    EXP-8004 adds both fields to metric-config-parser's `AggregationMetric`
+    (`metric_config_parser/aggregation_plan.py`); this job's current pin of that package does not
+    carry them, so a direct `aggregation_metric.winsorize_fraction` would raise `AttributeError`
+    on every metric today. Checked through attrs' own field registry rather than a direct read,
+    since that is the one place this absence is handled: once the pin moves past EXP-8004 every
+    `AggregationMetric` declares both fields, `declared` is always true, and this function (and
+    the `attr` import) can be deleted in favour of two plain attribute reads at the call site.
+    """
+    declared = attr.fields_dict(type(aggregation_metric))
+    if "winsorize_fraction" not in declared or "winsorize_threshold" not in declared:
+        return None, None
+    return aggregation_metric.winsorize_fraction, aggregation_metric.winsorize_threshold
+
+
+def _is_yes_no_aggregation(metric_definition):
+    """Whether a metric-hub metric's per-unit value is always 0 or 1.
+
+    True for the `any` and `recency_within` aggregations, and for any aggregation a `threshold`
+    was applied to: metric_config_parser's `aggregation.py` (`aggregation_bucketed`) finalizes
+    all three the same way, through a `CAST` of a comparison. Read off `MetricDefinition`'s own
+    structured `aggregation` and `threshold` fields rather than off the rendered
+    `BucketedAggregation` SQL, so a metric whose finalize happens to contain a `CAST` for an
+    unrelated reason, such as EXP-8013's proposed `cast_as_int` (which would cast a plain sum,
+    not a comparison, to an integer), is never mistaken for one. `AggregationMetric`
+    (`metric_config_parser/aggregation_plan.py`) does not carry `aggregation`/`threshold`
+    forward itself, which is why `split_resolved_metrics` looks the `MetricDefinition` up
+    separately through `configs.get_nimbus_metric_definition` rather than reading them off the
+    plan.
+    """
+    return (
+        metric_definition.aggregation in YES_NO_AGGREGATIONS
+        or metric_definition.threshold is not None
+    )
+
+
+def split_resolved_metrics(plan, configs):
     """Split one run's plan into the metrics Highwind can compute and the ones it cannot, with why.
 
     A name fails to resolve two ways: no `nimbus/` definition at all (`plan.missing`), or a
     definition whose windows Highwind has no rule for (`window_rules` above). Both are reported by
     name and reason rather than raised, so neither one metric nor an unrelated experiment is lost
     over it.
+
+    `configs` is the same `ConfigCollection` the plan was built from, looked up again here for
+    each resolved name's own `MetricDefinition`, since the plan itself carries only the already
+    reduced `BucketedAggregation` and drops `aggregation`/`threshold` on the way. A name that
+    resolved through `aggregation_plan()` always has a `MetricDefinition` to find this way, so
+    the lookup failing would mean the two disagree about what resolved; treated as not yes/no
+    rather than raised, since nothing here depends on it being impossible.
     """
     resolved, unresolved = {}, {}
     for name in plan.missing:
@@ -141,13 +242,46 @@ def split_resolved_metrics(plan):
         if rules is None:
             unresolved[name] = reason
             continue
+        winsorize_fraction, winsorize_threshold = _winsorize_fields(aggregation_metric)
+        metric_definition = configs.get_nimbus_metric_definition(name, APP_NAME)
+        is_yes_no = metric_definition is not None and _is_yes_no_aggregation(metric_definition)
         resolved[name] = Metric(
             name=name,
             source=aggregation_metric.data_source,
             reducer=aggregation_metric.aggregation,
             window_rules=rules,
+            winsorize_fraction=winsorize_fraction,
+            winsorize_threshold=winsorize_threshold,
+            is_yes_no=is_yes_no,
         )
     return resolved, unresolved
+
+
+def winsorize_mode(metric):
+    """Resolve one metric's `winsorize_fraction`/`winsorize_threshold` into a mode and value.
+
+    Neither field set means the job's own `DEFAULT_WINSORIZE_FRACTION` applies; an explicit
+    fraction of 0 means off. A yes/no metric is never clipped regardless of its fields: clipping a
+    0/1 value changes nothing, which is why EXP-8004's metric-hub validation refuses
+    `winsorize_fraction`/`winsorize_threshold` on one. Reaching a yes/no metric here with either
+    field set can therefore only mean that validation has not run (or has not shipped) yet; this
+    treats it as off rather than clip a metric it cannot sharpen.
+    """
+    if metric.is_yes_no:
+        return Winsorize(WinsorizeMode.OFF)
+    fraction = metric.winsorize_fraction
+    threshold = metric.winsorize_threshold
+    if fraction is not None and threshold is not None:
+        raise ValueError(
+            f"metric '{metric.name}' sets both winsorize_fraction and winsorize_threshold"
+        )
+    if fraction == 0:
+        return Winsorize(WinsorizeMode.OFF)
+    if fraction is not None:
+        return Winsorize(WinsorizeMode.FRACTION, fraction)
+    if threshold is not None:
+        return Winsorize(WinsorizeMode.FIXED, threshold)
+    return Winsorize(WinsorizeMode.FRACTION, DEFAULT_WINSORIZE_FRACTION)
 
 
 def group_by_source(resolved_metrics):
@@ -186,6 +320,9 @@ def metrics_for_experiment(experiment, resolved_metrics, unresolved_metrics):
                 window_rules=metric.window_rules,
                 friendly_name=display.friendly_name if display else None,
                 description=display.description if display else None,
+                winsorize_fraction=metric.winsorize_fraction,
+                winsorize_threshold=metric.winsorize_threshold,
+                is_yes_no=metric.is_yes_no,
             )
         )
     return chosen, problems

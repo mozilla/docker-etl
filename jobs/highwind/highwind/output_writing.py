@@ -271,6 +271,45 @@ SUFFICIENT_STATS_SCHEMA = [
             "coefficient is fitted from."
         ),
     ),
+    bigquery.SchemaField(
+        "winsorize_mode",
+        "STRING",
+        description=(
+            "How this metric and window were winsorized. off, every value summed above is "
+            "exactly the unclipped one; fraction, sum and pre_sum were clipped at a quantile of "
+            "the reference branch's own window and covariate values; fixed, at a fixed value "
+            "scaled to the window's length; skipped_too_few, a fraction was set but the "
+            "reference branch had too few matured units for it to clip at least one of them, so "
+            "nothing was clipped this window despite the metric's mode being fraction."
+        ),
+    ),
+    bigquery.SchemaField(
+        "outcome_threshold",
+        "FLOAT64",
+        description=(
+            "The value sum/sum_squares/sum_x_pre clipped post-enrollment values at, shared by "
+            "every branch of this metric and window. NULL when winsorize_mode is off or "
+            "skipped_too_few."
+        ),
+    ),
+    bigquery.SchemaField(
+        "covariate_threshold",
+        "FLOAT64",
+        description=(
+            "The value pre_sum/pre_sum_squares/sum_x_pre clipped the covariate at, shared by "
+            "every branch of this metric and window. NULL when winsorize_mode is off or "
+            "skipped_too_few."
+        ),
+    ),
+    bigquery.SchemaField(
+        "clipped_share",
+        "FLOAT64",
+        description=(
+            "Share of this branch's own matured units whose post-enrollment value exceeded "
+            "outcome_threshold and so was reduced to it. 0 when winsorize_mode is off or "
+            "skipped_too_few."
+        ),
+    ),
 ]
 
 # One row per log record the run emitted. The columns after the first three are the ones

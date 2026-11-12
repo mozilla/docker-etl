@@ -1,5 +1,6 @@
 """The bucket grid, the maturity cap, and where a metric's threshold is applied."""
 
+import dataclasses
 import datetime
 
 import pytest
@@ -60,12 +61,14 @@ FIXTURE_METRICS = {
             "SUM(pings_aggregated_by_this_row)", finalize="CAST({combined} > 0 AS INT64)"
         ),
         window_rules=(metrics.DISJOINT_WEEKLY,),
+        is_yes_no=True,
     ),
     "retained_dau": metrics.Metric(
         name="retained_dau",
         source="active_users",
         reducer=reducer("COUNTIF(is_dau)", finalize="CAST({combined} > 0 AS INT64)"),
         window_rules=(metrics.DISJOINT_WEEKLY,),
+        is_yes_no=True,
     ),
     "active_in_last_3_days_legacy": metrics.Metric(
         name="active_in_last_3_days_legacy",
@@ -77,6 +80,7 @@ FIXTURE_METRICS = {
             finalize="CAST({combined} < 3 AS INT64)",
         ),
         window_rules=(metrics.DISJOINT_WEEKLY,),
+        is_yes_no=True,
     ),
 }
 
@@ -293,11 +297,25 @@ def test_a_units_value_defaults_to_the_metrics_no_rows_value():
 
 
 def test_the_rollup_keys_every_metric_by_name_so_the_schema_is_metric_independent():
-    sql = sql_generation.rollup_select([named("active_hours"), named("retained_dau")])
+    # Both metrics explicitly off, so this stays a test of the schema rather than of winsorization.
+    run = run_of({"a-slug": cumulative_windows(2)})
+    off_active_hours = dataclasses.replace(named("active_hours"), winsorize_fraction=0)
+    sql = sql_generation.rollup_select([off_active_hours, named("retained_dau")], run)
 
     assert "STRUCT('active_hours' AS metric" in sql
     assert "STRUCT('retained_dau' AS metric" in sql
-    for aggregate in ("n", "sum", "sum_squares", "pre_sum", "pre_sum_squares", "sum_x_pre"):
+    for aggregate in (
+        "n",
+        "sum",
+        "sum_squares",
+        "pre_sum",
+        "pre_sum_squares",
+        "sum_x_pre",
+        "winsorize_mode",
+        "outcome_threshold",
+        "covariate_threshold",
+        "clipped_share",
+    ):
         assert f"AS {aggregate}" in sql
     assert "WHERE bucket >= 0" in sql
 
@@ -551,3 +569,195 @@ def test_branch_units_are_counted_off_the_runs_cohort_table():
     assert "FROM `a-project.a_dataset.a_cohort`" in sql
     assert "COUNT(*) AS units" in sql
     assert "GROUP BY slug, branch" in sql
+
+
+# ------------------------------------------------------------------------- winsorization ----
+
+
+def fraction_metric(fraction):
+    return dataclasses.replace(named("active_hours"), winsorize_fraction=fraction)
+
+
+def fixed_metric(threshold):
+    return dataclasses.replace(named("active_hours"), winsorize_threshold=threshold)
+
+
+def off_metric():
+    return dataclasses.replace(named("active_hours"), winsorize_fraction=0)
+
+
+def test_an_off_metric_leaves_the_rollup_exactly_as_it_was_before_winsorization():
+    # The same assertions the metric-independent-schema test made before winsorize_mode existed,
+    # so an explicitly off metric still produces exactly today's SQL for post and pre.
+    run = run_of({"a-slug": cumulative_windows(2)})
+
+    sql = sql_generation.rollup_select([off_metric()], run)
+
+    assert "active_hours__cumulative AS post" in sql
+    assert "active_hours__pre AS pre" in sql
+    assert "LEAST" not in sql
+    assert "reference_quantiles" not in sql
+    assert "'off' AS winsorize_mode" in sql
+    assert "WHERE bucket >= 0" in sql
+    assert "GROUP BY slug, branch, metric_row.window_label, metric_row.metric" in sql
+
+
+def test_a_yes_no_metric_is_never_clipped_in_the_rollup():
+    run = run_of({"a-slug": disjoint_windows(1)})
+
+    sql = sql_generation.rollup_select([named("retained_dau")], run)
+
+    assert "LEAST" not in sql
+    assert "reference_quantiles" not in sql
+    assert "'off' AS winsorize_mode" in sql
+
+
+def test_an_unset_metric_defaults_to_the_jobs_fraction_and_needs_a_quantile():
+    run = run_of({"a-slug": cumulative_windows(2)})
+
+    quantiles = sql_generation.reference_quantiles_cte([named("active_hours")], run)
+
+    assert quantiles is not None
+    offset = round((1 - metrics.DEFAULT_WINSORIZE_FRACTION) * sql_generation.QUANTILE_RESOLUTION)
+    assert f"[OFFSET({offset})] AS active_hours__cumulative__outcome_quantile" in quantiles
+
+
+def test_reference_quantiles_cte_is_none_when_no_metric_needs_one():
+    run = run_of({"a-slug": cumulative_windows(2)})
+
+    assert sql_generation.reference_quantiles_cte([off_metric()], run) is None
+    assert sql_generation.reference_quantiles_cte([named("retained_dau")], run) is None
+
+
+def test_reference_quantiles_cte_reads_each_metrics_own_fraction_as_an_offset():
+    run = run_of({"a-slug": cumulative_windows(2)})
+
+    quantiles = sql_generation.reference_quantiles_cte([fraction_metric(0.02)], run)
+
+    offset = round((1 - 0.02) * sql_generation.QUANTILE_RESOLUTION)
+    assert (
+        f"APPROX_QUANTILES(unit_windows.active_hours__cumulative, "
+        f"{sql_generation.QUANTILE_RESOLUTION})[OFFSET({offset})] "
+        f"AS active_hours__cumulative__outcome_quantile" in quantiles
+    )
+    assert (
+        f"APPROX_QUANTILES(unit_windows.active_hours__pre, "
+        f"{sql_generation.QUANTILE_RESOLUTION})[OFFSET({offset})] "
+        f"AS active_hours__covariate_quantile" in quantiles
+    )
+    assert "COUNT(*) AS reference_n" in quantiles
+    assert "GROUP BY unit_windows.slug, unit_windows.bucket" in quantiles
+
+
+def test_reference_quantiles_cte_restricts_to_each_slugs_own_reference_branch():
+    run = run_of({"a-slug": cumulative_windows(2)})
+
+    quantiles = sql_generation.reference_quantiles_cte([fraction_metric(0.02)], run)
+
+    assert "STRUCT('a-slug' AS slug, 'control' AS branch)" in quantiles
+    assert "ON reference_branch.slug = unit_windows.slug" in quantiles
+    assert "AND reference_branch.branch = unit_windows.branch" in quantiles
+
+
+def test_fraction_mode_clips_the_outcome_at_the_reference_quantile():
+    run = run_of({"a-slug": cumulative_windows(1)})
+
+    sql = sql_generation.rollup_select([fraction_metric(0.02)], run)
+
+    assert "LEFT JOIN reference_quantiles AS rq" in sql
+    assert "ON rq.slug = unit_windows.slug AND rq.bucket = unit_windows.bucket" in sql
+    assert (
+        "LEAST(active_hours__cumulative, "
+        "IF((rq.reference_n IS NULL OR rq.reference_n * 0.02 < 1), NULL, "
+        "rq.active_hours__cumulative__outcome_quantile))" in sql
+    )
+    assert "WHERE unit_windows.bucket >= 0" in sql
+    assert "GROUP BY unit_windows.slug, unit_windows.branch," in sql
+
+
+def test_the_covariate_is_clipped_at_its_own_reference_quantile():
+    run = run_of({"a-slug": cumulative_windows(1)})
+
+    sql = sql_generation.rollup_select([fraction_metric(0.02)], run)
+
+    assert (
+        "LEAST(active_hours__pre, "
+        "IF((rq.reference_n IS NULL OR rq.reference_n * 0.02 < 1), NULL, "
+        "rq.active_hours__covariate_quantile))" in sql
+    )
+
+
+def test_too_few_reference_units_is_recorded_distinctly_from_a_clipped_fraction():
+    run = run_of({"a-slug": cumulative_windows(1)})
+
+    sql = sql_generation.rollup_select([fraction_metric(0.02)], run)
+
+    assert "'skipped_too_few'" in sql
+    assert "'fraction'" in sql
+    assert "rq.reference_n * 0.02 < 1" in sql
+
+
+def test_the_fraction_threshold_does_not_depend_on_which_branch_it_clips():
+    # The clip expression never reads `branch`, so the one expression generated here runs
+    # against every branch's own rows: the reference branch's threshold, not each branch's own.
+    run = run_of({"a-slug": cumulative_windows(1)})
+
+    sql = sql_generation.rollup_select([fraction_metric(0.02)], run)
+
+    assert "active_hours__cumulative__outcome_quantile" in sql
+    assert "branch" not in sql_generation._clip_fields(
+        fraction_metric(0.02), "cumulative", run
+    )["post"]
+
+
+def test_fixed_mode_scales_the_outcome_threshold_by_the_window_length_in_buckets():
+    run = run_of({"a-slug": cumulative_windows(3)})
+
+    sql = sql_generation.rollup_select([fixed_metric(500)], run)
+
+    assert "LEAST(active_hours__cumulative, 500 * (unit_windows.bucket + 1))" in sql
+    assert "reference_quantiles" not in sql
+
+
+def test_fixed_mode_scales_the_covariate_threshold_by_the_covariate_window_length():
+    run = run_of({"a-slug": cumulative_windows(1)})
+
+    sql = sql_generation.rollup_select([fixed_metric(500)], run)
+
+    covariate_weeks = COVARIATE_DAYS / run.length
+    assert f"LEAST(active_hours__pre, {500 * covariate_weeks})" in sql
+
+
+def test_a_disjoint_fixed_window_is_not_scaled_past_its_own_single_bucket():
+    metric = dataclasses.replace(
+        named("retained"),
+        reducer=named("active_hours").reducer,
+        winsorize_threshold=10,
+        is_yes_no=False,
+    )
+    run = run_of({"a-slug": disjoint_windows(1)})
+
+    sql = sql_generation.rollup_select([metric], run)
+
+    assert "LEAST(retained__disjoint, 10 * 1)" in sql
+
+
+def test_thresholds_and_the_clipped_share_are_recorded_alongside_the_aggregates():
+    run = run_of({"a-slug": cumulative_windows(1)})
+
+    sql = sql_generation.rollup_select([fraction_metric(0.02)], run)
+
+    assert "ANY_VALUE(metric_row.winsorize_mode) AS winsorize_mode" in sql
+    assert "ANY_VALUE(metric_row.outcome_threshold) AS outcome_threshold" in sql
+    assert "ANY_VALUE(metric_row.covariate_threshold) AS covariate_threshold" in sql
+    assert "SAFE_DIVIDE(SUM(metric_row.was_clipped), COUNT(*)) AS clipped_share" in sql
+
+
+def test_a_multi_arm_run_still_builds_one_shared_threshold_expression():
+    # Multiple treatment branches share one Experiment/cohort shape here; the generated SQL has
+    # no branch-specific clause, which is what makes the same threshold apply to every arm.
+    run = run_of({"a-slug": cumulative_windows(1)})
+
+    sql = sql_generation.rollup_select([fraction_metric(0.02)], run)
+
+    assert sql.count("LEFT JOIN reference_quantiles AS rq") == 1

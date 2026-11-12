@@ -140,7 +140,13 @@ def query_timing(source, job, rows, wall_seconds):
 
 
 def sufficient_stats(row):
-    """One cell's six aggregates, as floats with an integer count."""
+    """One cell's six aggregates, as floats with an integer count, plus how it was winsorized.
+
+    The winsorize columns are nullable rather than defaulted like the six aggregates above: NULL
+    is itself meaningful here (no threshold applied, for an OFF metric or a skipped-too-few
+    window), where a NULL aggregate would only ever mean a BigQuery NULL arithmetic result this
+    job already treats as zero.
+    """
     return {
         "n": int(row["n"]),
         "sum": float(row["sum"] or 0.0),
@@ -148,4 +154,8 @@ def sufficient_stats(row):
         "pre_sum": float(row["pre_sum"] or 0.0),
         "pre_sum_squares": float(row["pre_sum_squares"] or 0.0),
         "sum_x_pre": float(row["sum_x_pre"] or 0.0),
+        "winsorize_mode": row["winsorize_mode"],
+        "outcome_threshold": row["outcome_threshold"],
+        "covariate_threshold": row["covariate_threshold"],
+        "clipped_share": row["clipped_share"],
     }

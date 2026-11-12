@@ -256,6 +256,42 @@ def test_the_aggregates_are_keyed_out_to_columns_the_statistics_can_be_joined_on
     assert stats_row["metric"] == "active_hours"
     assert stats_row["window"] == "cumu:1"
     assert stats_row["branch"] == "control"
+
+
+def test_the_sufficient_stats_schema_declares_the_winsorize_columns():
+    declared = {field.name for field in output_writing.SUFFICIENT_STATS_SCHEMA}
+
+    assert {
+        "winsorize_mode",
+        "outcome_threshold",
+        "covariate_threshold",
+        "clipped_share",
+    } <= declared
+
+
+def test_a_clipped_cells_winsorize_columns_flow_through_to_the_written_row():
+    client = RecordingClient()
+    clipped_aggregates = dict(
+        AGGREGATES,
+        winsorize_mode="fraction",
+        outcome_threshold=500.0,
+        covariate_threshold=2000.0,
+        clipped_share=0.01,
+    )
+
+    output_writing.write_tables(
+        client,
+        AS_OF,
+        {"an-experiment": [CONFIDENT_CELL]},
+        {"an-experiment": {("active_hours", "cumu:1", "control"): clipped_aggregates}},
+        output_writing.Outputs(),
+    )
+    stats_row = client.loads[1][1][0]
+
+    assert stats_row["winsorize_mode"] == "fraction"
+    assert stats_row["outcome_threshold"] == 500.0
+    assert stats_row["covariate_threshold"] == 2000.0
+    assert stats_row["clipped_share"] == 0.01
     assert {key: stats_row[key] for key in AGGREGATES} == AGGREGATES
 
 
