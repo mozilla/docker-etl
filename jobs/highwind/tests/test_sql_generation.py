@@ -659,6 +659,27 @@ def test_reference_quantiles_cte_restricts_to_each_slugs_own_reference_branch():
     assert "AND reference_branch.branch = unit_windows.branch" in quantiles
 
 
+def test_reference_quantiles_cte_selects_fraction_metrics_through_the_shared_helper(monkeypatch):
+    # reference_quantiles_cte and rollup_select each decide which metrics need a quantile; if
+    # reference_quantiles_cte ever grew its own copy of that filter instead of calling
+    # _fraction_mode_metrics, the two could silently drift apart on a future change to the
+    # filter (e.g. a new winsorize mode). Spying on the shared helper, rather than just comparing
+    # outputs, is what catches that even when the two filters still happen to agree today.
+    run = run_of({"a-slug": cumulative_windows(2)})
+    calls = []
+    original = sql_generation._fraction_mode_metrics
+
+    def spy(metrics):
+        calls.append(metrics)
+        return original(metrics)
+
+    monkeypatch.setattr(sql_generation, "_fraction_mode_metrics", spy)
+
+    sql_generation.reference_quantiles_cte([fraction_metric(0.02), off_metric()], run)
+
+    assert calls == [[fraction_metric(0.02), off_metric()]]
+
+
 def test_fraction_mode_clips_the_outcome_at_the_reference_quantile():
     run = run_of({"a-slug": cumulative_windows(1)})
 
@@ -761,3 +782,4 @@ def test_a_multi_arm_run_still_builds_one_shared_threshold_expression():
     sql = sql_generation.rollup_select([fraction_metric(0.02)], run)
 
     assert sql.count("LEFT JOIN reference_quantiles AS rq") == 1
+

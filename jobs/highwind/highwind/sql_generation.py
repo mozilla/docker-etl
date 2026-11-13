@@ -515,9 +515,7 @@ def reference_quantiles_cte(metrics, run):
     population behind it is exactly the set of reference units that matured THIS bucket, matching
     the population `rollup_select` sums `pre_sum` over for that same window.
     """
-    fraction_metrics = [
-        metric for metric in metrics if winsorize_mode(metric).mode == WinsorizeMode.FRACTION
-    ]
+    fraction_metrics = _fraction_mode_metrics(metrics)
     if not fraction_metrics:
         return None
     columns = []
