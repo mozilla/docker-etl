@@ -89,19 +89,35 @@ class Metric:
     the display text the experiment that asked for it carried in the mirror, and its winsorize
     setting.
 
-    `winsorize_fraction` and `winsorize_threshold` are EXP-8004's fields: metric-hub's own
-    `nimbus/` metric definitions will carry them once that ships, and metric-config-parser's
-    `AggregationMetric` (`metric_config_parser/aggregation_plan.py`) will resolve them the same
-    way it resolves everything else `Metric` carries. Until then they default to None here,
-    meaning "not set", exactly as an unset field will read once EXP-8004 lands; see
-    `_winsorize_fields` below for where that absence is read defensively, in this one place.
-    A metric sets at most one of the two (setting both is a `winsorize_mode` `ValueError`);
-    there is no separate mode field here, since `winsorize_mode` infers fraction, fixed or off
-    entirely from which one (if either) is set.
-
-    `is_yes_no` is resolved once, in `split_resolved_metrics`, from the metric-hub
-    `MetricDefinition`'s own `aggregation`/`threshold` fields (see `_is_yes_no_aggregation`)
-    rather than read again from the reducer wherever it is needed.
+    Args:
+        name (str): The metric's name, as metric-hub and the Experimenter mirror know it.
+        source (str): Name of the metric-hub data source this metric reads from; the key
+            `sql_generation.py` groups metrics by to build one query per source.
+        reducer (object): How one unit's rows become one number: a `BucketedAggregation`
+            (`metric_config_parser/aggregation.py`) resolved from metric-hub's own aggregation.
+        window_rules (tuple): The window rules (e.g. `CUMULATIVE_WEEKLY`, `DISJOINT_WEEKLY`, or a
+            metric-hub-declared length) this metric's windows are generated from.
+        friendly_name (str, optional): Display name the mirror carried for this metric, for the
+            experiment that asked for it. Defaults to None (no experiment-specific display text).
+        description (str, optional): Display description, from the same source as
+            `friendly_name`. Defaults to None.
+        winsorize_fraction (float, optional): The share of the reference branch's upper tail to
+            clip at. EXP-8004's field: metric-hub's own `nimbus/` metric definitions will carry it
+            once that ships, and metric-config-parser's `AggregationMetric`
+            (`metric_config_parser/aggregation_plan.py`) will resolve it the same way it resolves
+            everything else `Metric` carries. Defaults to None, meaning "not set", exactly as an
+            unset field will read once EXP-8004 lands; see `_winsorize_fields` below for where
+            that absence is read defensively, in this one place. A metric sets at most one of
+            `winsorize_fraction` and `winsorize_threshold` (setting both is a `winsorize_mode`
+            `ValueError`); there is no separate mode field, since `winsorize_mode` infers
+            fraction, fixed or off entirely from which one (if either) is set.
+        winsorize_threshold (float, optional): A fixed per-week value to clip at, the other half
+            of the same EXP-8004 field pair described above (see `winsorize_fraction`). Defaults
+            to None, meaning "not set".
+        is_yes_no (bool, optional): Whether this metric's per-unit value is always 0 or 1.
+            Resolved once, in `split_resolved_metrics`, from the metric-hub `MetricDefinition`'s
+            own `aggregation`/`threshold` fields (see `_is_yes_no_aggregation`) rather than read
+            again from the reducer wherever it is needed. Defaults to False.
     """
 
     name: str
