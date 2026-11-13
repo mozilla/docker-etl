@@ -13,7 +13,7 @@ from metric_config_parser.aggregation import (
 )
 from metric_config_parser.aggregation_plan import AggregationMetric, AggregationPlan
 
-from highwind import metrics
+from highwind import metrics, sql_generation
 from highwind.discovery import Experiment, MetricDisplay
 from highwind import units
 
@@ -300,15 +300,34 @@ def test_for_experiment_reports_a_name_it_asked_for_that_did_not_resolve():
 # ------------------------------------------------------------------------- winsorization ----
 
 
-def test_todays_aggregation_metric_resolves_with_no_winsorize_fields_set():
-    # EXP-8004 has not shipped, so today's real AggregationMetric carries neither field, and
-    # split_resolved_metrics reads that absence as None rather than raising.
+def test_todays_aggregation_metric_resolves_as_explicitly_off():
+    # Today's installed parser carries neither winsorize field, so every metric resolves off
+    # (winsorize_quantile = 1) rather than unset, which would read as the job's own default the
+    # moment a parser that declares the fields is installed.
     plan = plan_of({"active_hours": aggregation_metric()})
 
     resolved, _ = metrics.split_resolved_metrics(plan, FakeConfigs())
 
-    assert resolved["active_hours"].winsorize_quantile is None
+    assert resolved["active_hours"].winsorize_quantile == 1
     assert resolved["active_hours"].winsorize_threshold is None
+    assert metrics.winsorize_mode(resolved["active_hours"]) == metrics.Winsorize(
+        metrics.WinsorizeMode.OFF
+    )
+
+
+def test_todays_parser_produces_sql_identical_to_the_unwinsorized_path():
+    # Integration: a metric resolved against today's real parser (fields absent) must generate
+    # exactly the SQL an explicitly off metric would, not a quantile clip.
+    plan = plan_of({"active_hours": aggregation_metric()})
+    resolved, _ = metrics.split_resolved_metrics(plan, FakeConfigs())
+    run = types.SimpleNamespace(length=7, covariate_days=28)
+
+    sql = sql_generation.rollup_select([resolved["active_hours"]], run)
+
+    assert "active_hours__cumulative AS post" in sql
+    assert "LEAST" not in sql
+    assert "reference_quantiles" not in sql
+    assert "'off' AS winsorize_mode" in sql
 
 
 def test_split_resolved_metrics_reads_the_winsorize_fields_once_they_exist():
@@ -331,6 +350,33 @@ def test_split_resolved_metrics_reads_the_winsorize_fields_once_they_exist():
 
     assert resolved["active_hours"].winsorize_quantile == 0.99
     assert resolved["active_hours"].winsorize_threshold is None
+
+
+def test_once_the_parser_declares_the_fields_unset_resolves_to_the_jobs_default():
+    # Once a parser that declares the fields is installed, a metric that sets neither is truly
+    # unset (not forced off), and winsorize_mode reads that as the job's own default quantile.
+    plan = plan_of(
+        {
+            "active_hours": FutureAggregationMetric(
+                name="active_hours",
+                data_source="clients_daily",
+                aggregation=REDUCER,
+                cumulative_window=7,
+                incremental_window=None,
+                repeat_windows=True,
+                winsorize_quantile=None,
+                winsorize_threshold=None,
+            )
+        }
+    )
+
+    resolved, _ = metrics.split_resolved_metrics(plan, FakeConfigs())
+
+    assert resolved["active_hours"].winsorize_quantile is None
+    assert resolved["active_hours"].winsorize_threshold is None
+    assert metrics.winsorize_mode(resolved["active_hours"]) == metrics.Winsorize(
+        metrics.WinsorizeMode.QUANTILE, metrics.DEFAULT_WINSORIZE_QUANTILE
+    )
 
 
 def test_for_experiment_carries_the_winsorize_fields_forward():
@@ -398,14 +444,30 @@ def test_a_summed_metric_whose_finalize_contains_a_cast_is_still_continuous():
     # EXP-8013 proposes a `cast_as_int` option that would wrap a plain sum's finalize in
     # CAST(... AS INT64), the same SQL shape a real yes/no metric's comparison-cast produces. The
     # structured fields this job reads instead, aggregation=SUM and no threshold, are unaffected
-    # by what the rendered SQL happens to contain.
+    # by what the rendered SQL happens to contain. Built against a parser that declares the
+    # winsorize fields, so an unset quantile resolves to the job's default rather than off, which
+    # is what makes the winsorize_mode assertion below prove is_yes_no itself, not the
+    # parser-dark fallback.
     cast_as_int_reducer = BucketedAggregation(
         bucket_aggregate="SUM(active_hours_sum)",
         combine=Combine.SUM,
         no_rows="0",
         finalize="CAST({combined} AS INT64)",
     )
-    plan = plan_of({"active_hours": aggregation_metric(reducer=cast_as_int_reducer)})
+    plan = plan_of(
+        {
+            "active_hours": FutureAggregationMetric(
+                name="active_hours",
+                data_source="clients_daily",
+                aggregation=cast_as_int_reducer,
+                cumulative_window=7,
+                incremental_window=None,
+                repeat_windows=True,
+                winsorize_quantile=None,
+                winsorize_threshold=None,
+            )
+        }
+    )
     configs = FakeConfigs({"active_hours": metric_definition(Aggregation.SUM, threshold=None)})
 
     resolved, _ = metrics.split_resolved_metrics(plan, configs)

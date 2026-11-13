@@ -104,13 +104,12 @@ class Metric:
             `friendly_name`. Defaults to None.
         winsorize_quantile (float, optional): The upper-tail quantile (cut point) of the
             reference branch's distribution to clip at, e.g. 0.995 keeps everything at or below
-            the reference branch's own 99.5th percentile. EXP-8004's field: metric-hub's own
-            `nimbus/` metric definitions will carry it once that ships, and
-            metric-config-parser's `AggregationMetric`
-            (`metric_config_parser/aggregation_plan.py`) will resolve it the same way it resolves
-            everything else `Metric` carries. Defaults to None, meaning "not set", exactly as an
-            unset field will read once EXP-8004 lands; see `_winsorize_fields` below for where
-            that absence is read defensively, in this one place. A metric sets at most one of
+            the reference branch's own 99.5th percentile. Metric-hub's `nimbus/` metric
+            definitions and metric-config-parser's `AggregationMetric`
+            (`metric_config_parser/aggregation_plan.py`) carry this field once EXP-8004 ships it;
+            see `_winsorize_fields` below for how a metric resolved against today's parser, which
+            has neither field, reads as explicitly off rather than unset. Defaults to None here,
+            meaning "not set" on a `Metric` built directly. A metric sets at most one of
             `winsorize_quantile` and `winsorize_threshold` (setting both is a `winsorize_mode`
             `ValueError`); there is no separate mode field, since `winsorize_mode` infers
             quantile, fixed or off entirely from which one (if either) is set.
@@ -204,19 +203,20 @@ def window_rules(aggregation_metric):
 
 
 def _winsorize_fields(aggregation_metric):
-    """Read `winsorize_quantile`/`winsorize_threshold` off a plan metric, defensively.
+    """Read `winsorize_quantile`/`winsorize_threshold` off a plan metric.
 
-    EXP-8004 adds both fields to metric-config-parser's `AggregationMetric`
-    (`metric_config_parser/aggregation_plan.py`); this job's current pin of that package does not
-    carry them, so a direct `aggregation_metric.winsorize_quantile` would raise `AttributeError`
-    on every metric today. Checked through attrs' own field registry rather than a direct read,
-    since that is the one place this absence is handled: once the pin moves past EXP-8004 every
-    `AggregationMetric` declares both fields, `declared` is always true, and this function (and
-    the `attr` import) can be deleted in favour of two plain attribute reads at the call site.
+    Metrics are off when the installed parser carries no winsorization fields, so the mechanism
+    changes nothing until a parser that declares them (EXP-8004) is installed: this returns
+    `winsorize_quantile = 1` rather than leaving both unset, since unset means the job's own
+    0.995 default once the fields exist, and that default must not switch on the moment the
+    parser pin moves without a metric having asked for it. Checked through attrs' own field
+    registry rather than a direct read, which is what lets this function tell "the installed
+    parser has no such field" apart from "the field is set to None" without raising
+    `AttributeError` on today's `AggregationMetric`.
     """
     declared = attr.fields_dict(type(aggregation_metric))
     if "winsorize_quantile" not in declared or "winsorize_threshold" not in declared:
-        return None, None
+        return 1, None
     return aggregation_metric.winsorize_quantile, aggregation_metric.winsorize_threshold
 
 
