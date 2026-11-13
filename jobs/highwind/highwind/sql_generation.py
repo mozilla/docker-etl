@@ -52,13 +52,13 @@ from .metrics import WinsorizeMode, winsorize_mode
 # read back out of the same pass.
 PRE_BUCKET = -1
 
-# How many quantile boundaries a FRACTION-mode metric's reference-branch threshold is read off.
+# How many quantile boundaries a QUANTILE-mode metric's reference-branch threshold is read off.
 # `APPROX_QUANTILES(x, N)` returns N+1 evenly-spaced boundaries regardless of which one a metric
-# needs, so one resolution serves every fraction: a metric's own offset is
-# `round((1 - fraction) * QUANTILE_RESOLUTION)`, computed once per metric at SQL-build time
-# because the fraction is a property of the metric, not of the data. 2000 places every offset
-# within 0.05 percentage points of the fraction asked for, comfortably finer than any fraction
-# this job expects to see.
+# needs, so one resolution serves every metric: a metric's own offset is
+# `round(quantile * QUANTILE_RESOLUTION)`, computed once per metric at SQL-build time because the
+# quantile is a property of the metric, not of the data. 2000 places every offset within 0.05
+# percentage points of the quantile asked for, comfortably finer than any quantile this job
+# expects to see.
 QUANTILE_RESOLUTION = 2000
 
 # Granularity of the branch-balancing hash. A unit is kept when its hash modulo this falls under
@@ -441,7 +441,7 @@ def build_queries(run, resolved_metrics, sources, cohort_table):
 def build_source_query(run, source, metrics, source_definition, cohort_table, unit):
     """Build the full query for one source: cohort, per-slug facts, rows, stages, rollup.
 
-    `reference_quantiles` is appended as one more CTE only when this source has a FRACTION-mode
+    `reference_quantiles` is appended as one more CTE only when this source has a QUANTILE-mode
     metric to compute a threshold for; a source whose metrics are all OFF or FIXED adds no CTE
     and `rollup_select` emits exactly the SQL it always has, which is what keeps an unwinsorized
     metric's query byte-identical to before this threshold existed.
@@ -493,16 +493,16 @@ def reference_branch_cte(run):
 
 
 def reference_quantiles_cte(metrics, run):
-    """STAGE B.5: the reference branch's quantile of each FRACTION-mode metric, per slug and
-    bucket, or None when this source has no FRACTION-mode metric to compute one for.
+    """STAGE B.5: the reference branch's quantile of each QUANTILE-mode metric, per slug and
+    bucket, or None when this source has no QUANTILE-mode metric to compute one for.
 
     Grouped on `bucket` rather than on a window label string, because a bucket already determines
     every window label a row carries (see `unit_windows_cte`), in whichever family a metric uses.
     `COUNT(*)` within that grouping is the number of reference-branch units that matured this
     bucket; since every metric's raw value is COALESCEd to its `no_rows` default, it is the same
     count for every metric at a given bucket, so it is read once rather than once per metric, and
-    `rollup_select` reads it back as `reference_n` to decide whether a fraction has enough units
-    to clip at least one of them.
+    `rollup_select` reads it back as `reference_n` to decide whether the reference branch has
+    enough units for the clip to touch at least one of them.
 
     Restricted to the reference branch via a join rather than a literal branch name, because a
     run covers many experiments, each with its own reference branch.
@@ -515,13 +515,13 @@ def reference_quantiles_cte(metrics, run):
     population behind it is exactly the set of reference units that matured THIS bucket, matching
     the population `rollup_select` sums `pre_sum` over for that same window.
     """
-    fraction_metrics = _fraction_mode_metrics(metrics)
-    if not fraction_metrics:
+    quantile_metrics = _quantile_mode_metrics(metrics)
+    if not quantile_metrics:
         return None
     columns = []
-    for metric in fraction_metrics:
-        fraction = winsorize_mode(metric).value
-        offset = round((1 - fraction) * QUANTILE_RESOLUTION)
+    for metric in quantile_metrics:
+        quantile = winsorize_mode(metric).value
+        offset = round(quantile * QUANTILE_RESOLUTION)
         for rule in metric.window_rules:
             kind = rule["kind"]
             columns.append(
@@ -779,14 +779,14 @@ def covariate_value(metric):
     return reducer.finalize_sql(f"COALESCE({combined}, {reducer.no_rows})")
 
 
-def _fraction_mode_metrics(metrics):
+def _quantile_mode_metrics(metrics):
     """The metrics in `metrics` that winsorize against a reference-branch quantile.
 
     Shared between `reference_quantiles_cte` (which computes the quantiles) and `rollup_select`
     (which joins to them), so the two agree on which metrics need the join without the two lists
     being able to drift apart.
     """
-    return [metric for metric in metrics if winsorize_mode(metric).mode == WinsorizeMode.FRACTION]
+    return [metric for metric in metrics if winsorize_mode(metric).mode == WinsorizeMode.QUANTILE]
 
 
 def _clip_fields(metric, kind, run):
@@ -799,10 +799,11 @@ def _clip_fields(metric, kind, run):
     by how many bucket-lengths the window spans, known at SQL-build time from the bucket index
     (`unit_windows.bucket + 1` buckets for a cumulative window ending there, one bucket for a
     disjoint window) and, for the covariate, from the fixed covariate window's own length.
-    FRACTION reads its threshold off `reference_quantiles` (aliased `rq`, joined by slug and
+    QUANTILE reads its threshold off `reference_quantiles` (aliased `rq`, joined by slug and
     bucket in `rollup_select`), treating a bucket the reference branch had too few units to clip
     the same way as a NULL threshold: `rq.reference_n` is NULL when no reference-branch unit
-    matured this bucket at all, and `rq.reference_n * fraction < 1` when some did but not enough.
+    matured this bucket at all, and `rq.reference_n * (1 - quantile) < 1` when some did but not
+    enough units sit in the upper tail the quantile cuts off.
     """
     raw_post = f"{metric.name}__{kind}"
     raw_pre = f"{metric.name}__pre"
@@ -828,7 +829,7 @@ def _clip_fields(metric, kind, run):
             covariate_threshold=f"CAST({covariate_threshold} AS FLOAT64)",
             was_clipped=f"IF({raw_post} > {outcome_threshold}, 1, 0)",
         )
-    too_few = f"(rq.reference_n IS NULL OR rq.reference_n * {setting.value} < 1)"
+    too_few = f"(rq.reference_n IS NULL OR rq.reference_n * (1 - {setting.value}) < 1)"
     outcome_quantile = f"rq.{metric.name}__{kind}__outcome_quantile"
     covariate_quantile = f"rq.{metric.name}__covariate_quantile"
     outcome_threshold = f"IF({too_few}, NULL, {outcome_quantile})"
@@ -838,7 +839,7 @@ def _clip_fields(metric, kind, run):
     return dict(
         post=f"IF({outcome_threshold} IS NULL, {raw_post}, {post})",
         pre=f"IF({covariate_threshold} IS NULL, {raw_pre}, {pre})",
-        mode=f"IF({too_few}, '{WinsorizeMode.TOO_FEW_UNITS.value}', 'fraction')",
+        mode=f"IF({too_few}, '{WinsorizeMode.TOO_FEW_UNITS.value}', 'quantile')",
         outcome_threshold=outcome_threshold,
         covariate_threshold=covariate_threshold,
         was_clipped=(
@@ -875,14 +876,14 @@ def rollup_select(metrics, run):
     metric's mode and thresholds are the same for every unit in its (slug, branch, window) group.
 
     The reference-branch join (`rq`) is added, and `slug`/`branch`/`bucket` qualified to
-    `unit_windows`, only when some metric needs it: a query with no FRACTION-mode metric has no
+    `unit_windows`, only when some metric needs it: a query with no QUANTILE-mode metric has no
     `reference_quantiles` CTE to join (see `build_source_query`), and leaving the qualification
     off in that case is what keeps that query's SQL exactly what it was before winsorization.
 
     A NULL label is a bucket that completes no window of that metric's kind, and the covariate
     bucket is every metric's NULL, so the filter drops both.
     """
-    needs_quantiles = bool(_fraction_mode_metrics(metrics))
+    needs_quantiles = bool(_quantile_mode_metrics(metrics))
     prefix = "unit_windows." if needs_quantiles else ""
     join_clause = (
         f"\nLEFT JOIN reference_quantiles AS rq\n"

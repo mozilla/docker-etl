@@ -37,22 +37,23 @@ YES_NO_AGGREGATIONS = frozenset({Aggregation.ANY, Aggregation.RECENCY_WITHIN})
 CUMULATIVE = "cumulative"
 DISJOINT = "disjoint"
 
-# The share of the reference branch's upper tail a metric is clipped at when it sets neither
-# `winsorize_fraction` nor `winsorize_threshold`. Mirrors Jetstream's own linear-mean default
-# (EXP-8000's "Decided" list), so turning winsorization on here changes nothing about today's
-# metric behaviour until a metric opts out. A later ticket (EXP-8008), once Data Science has
-# validated the reference-branch method, switches this one constant to off.
-DEFAULT_WINSORIZE_FRACTION = 0.005
+# The upper-tail quantile (cut point) of the reference branch's distribution a metric is clipped
+# at when it sets neither `winsorize_quantile` nor `winsorize_threshold`. 0.995 mirrors
+# Jetstream's own linear-mean default of dropping the top 0.5% (EXP-8000's "Decided" list), so
+# turning winsorization on here changes nothing about today's metric behaviour until a metric
+# opts out. A later ticket (EXP-8008), once Data Science has validated the reference-branch
+# method, switches this one constant to 1 (off).
+DEFAULT_WINSORIZE_QUANTILE = 0.995
 
 
 class WinsorizeMode(Enum):
     """How a metric's window is clipped: not at all, at a reference-branch quantile, or at a
-    fixed per-week value. `TOO_FEW_UNITS` is a FRACTION window the reference branch could not
+    fixed per-week value. `TOO_FEW_UNITS` is a QUANTILE window the reference branch could not
     support (see `sql_generation.reference_quantiles_cte`), resolved at query time rather than
     here, so it never comes out of `winsorize_mode` below."""
 
     OFF = "off"
-    FRACTION = "fraction"
+    QUANTILE = "quantile"
     FIXED = "fixed"
     TOO_FEW_UNITS = "skipped_too_few"
 
@@ -61,7 +62,7 @@ class WinsorizeMode(Enum):
 class Winsorize:
     """One metric's resolved winsorize setting: a mode, and the one value that mode uses.
 
-    `value` is the fraction FRACTION clips at, or the per-week threshold FIXED scales; it is
+    `value` is the quantile QUANTILE clips at, or the per-week threshold FIXED scales; it is
     unused (and left None) for OFF.
     """
 
@@ -101,18 +102,20 @@ class Metric:
             experiment that asked for it. Defaults to None (no experiment-specific display text).
         description (str, optional): Display description, from the same source as
             `friendly_name`. Defaults to None.
-        winsorize_fraction (float, optional): The share of the reference branch's upper tail to
-            clip at. EXP-8004's field: metric-hub's own `nimbus/` metric definitions will carry it
-            once that ships, and metric-config-parser's `AggregationMetric`
+        winsorize_quantile (float, optional): The upper-tail quantile (cut point) of the
+            reference branch's distribution to clip at, e.g. 0.995 keeps everything at or below
+            the reference branch's own 99.5th percentile. EXP-8004's field: metric-hub's own
+            `nimbus/` metric definitions will carry it once that ships, and
+            metric-config-parser's `AggregationMetric`
             (`metric_config_parser/aggregation_plan.py`) will resolve it the same way it resolves
             everything else `Metric` carries. Defaults to None, meaning "not set", exactly as an
             unset field will read once EXP-8004 lands; see `_winsorize_fields` below for where
             that absence is read defensively, in this one place. A metric sets at most one of
-            `winsorize_fraction` and `winsorize_threshold` (setting both is a `winsorize_mode`
+            `winsorize_quantile` and `winsorize_threshold` (setting both is a `winsorize_mode`
             `ValueError`); there is no separate mode field, since `winsorize_mode` infers
-            fraction, fixed or off entirely from which one (if either) is set.
+            quantile, fixed or off entirely from which one (if either) is set.
         winsorize_threshold (float, optional): A fixed per-week value to clip at, the other half
-            of the same EXP-8004 field pair described above (see `winsorize_fraction`). Defaults
+            of the same EXP-8004 field pair described above (see `winsorize_quantile`). Defaults
             to None, meaning "not set".
         is_yes_no (bool, optional): Whether this metric's per-unit value is always 0 or 1.
             Resolved once, in `split_resolved_metrics`, from the metric-hub `MetricDefinition`'s
@@ -126,7 +129,7 @@ class Metric:
     window_rules: tuple
     friendly_name: str | None = None
     description: str | None = None
-    winsorize_fraction: float | None = None
+    winsorize_quantile: float | None = None
     winsorize_threshold: float | None = None
     is_yes_no: bool = False
 
@@ -201,20 +204,20 @@ def window_rules(aggregation_metric):
 
 
 def _winsorize_fields(aggregation_metric):
-    """Read `winsorize_fraction`/`winsorize_threshold` off a plan metric, defensively.
+    """Read `winsorize_quantile`/`winsorize_threshold` off a plan metric, defensively.
 
     EXP-8004 adds both fields to metric-config-parser's `AggregationMetric`
     (`metric_config_parser/aggregation_plan.py`); this job's current pin of that package does not
-    carry them, so a direct `aggregation_metric.winsorize_fraction` would raise `AttributeError`
+    carry them, so a direct `aggregation_metric.winsorize_quantile` would raise `AttributeError`
     on every metric today. Checked through attrs' own field registry rather than a direct read,
     since that is the one place this absence is handled: once the pin moves past EXP-8004 every
     `AggregationMetric` declares both fields, `declared` is always true, and this function (and
     the `attr` import) can be deleted in favour of two plain attribute reads at the call site.
     """
     declared = attr.fields_dict(type(aggregation_metric))
-    if "winsorize_fraction" not in declared or "winsorize_threshold" not in declared:
+    if "winsorize_quantile" not in declared or "winsorize_threshold" not in declared:
         return None, None
-    return aggregation_metric.winsorize_fraction, aggregation_metric.winsorize_threshold
+    return aggregation_metric.winsorize_quantile, aggregation_metric.winsorize_threshold
 
 
 def _is_yes_no_aggregation(metric_definition):
@@ -261,7 +264,7 @@ def split_resolved_metrics(plan, configs):
         if rules is None:
             unresolved[name] = reason
             continue
-        winsorize_fraction, winsorize_threshold = _winsorize_fields(aggregation_metric)
+        winsorize_quantile, winsorize_threshold = _winsorize_fields(aggregation_metric)
         metric_definition = configs.get_nimbus_metric_definition(name, APP_NAME)
         is_yes_no = metric_definition is not None and _is_yes_no_aggregation(metric_definition)
         resolved[name] = Metric(
@@ -269,7 +272,7 @@ def split_resolved_metrics(plan, configs):
             source=aggregation_metric.data_source,
             reducer=aggregation_metric.aggregation,
             window_rules=rules,
-            winsorize_fraction=winsorize_fraction,
+            winsorize_quantile=winsorize_quantile,
             winsorize_threshold=winsorize_threshold,
             is_yes_no=is_yes_no,
         )
@@ -277,43 +280,47 @@ def split_resolved_metrics(plan, configs):
 
 
 def winsorize_mode(metric):
-    """Resolve one metric's `winsorize_fraction`/`winsorize_threshold` into a mode and value.
+    """Resolve one metric's `winsorize_quantile`/`winsorize_threshold` into a mode and value.
 
-    Neither field set means the job's own `DEFAULT_WINSORIZE_FRACTION` applies; an explicit
-    fraction or threshold of 0 means off, for either field, which is why their valid ranges below
-    are the half-open `[0, 1)` and `[0, inf)` rather than open at zero too: zero already has a
-    meaning on each field, and carving it out as its own case first would only move the same
-    check down one line. A yes/no metric is never clipped regardless of its fields: clipping a
-    0/1 value changes nothing, which is why EXP-8004's metric-hub validation refuses
-    `winsorize_fraction`/`winsorize_threshold` on one. Reaching a yes/no metric here with either
-    field set can therefore only mean that validation has not run (or has not shipped) yet; this
-    treats it as off rather than clip a metric it cannot sharpen.
+    Neither field set means the job's own `DEFAULT_WINSORIZE_QUANTILE` applies.
+    `winsorize_quantile` is the cut point rather than the tail share: 0.995 keeps everything at or
+    below the reference branch's own 99.5th percentile, so a quantile of 1 means off (nothing is
+    above the 100th percentile) and its valid range is the half-open `(0, 1]`.
+    `winsorize_threshold` has no boundary value that means off: metric-hub's own validation
+    (EXP-8004) requires a fixed threshold to be strictly positive, so `winsorize_quantile = 1` is
+    the only way a metric turns winsorization off, and a threshold of 0 or below is refused here
+    the same way metric-hub refuses it. A yes/no metric is never clipped regardless of its
+    fields: clipping a 0/1 value changes nothing, which is why EXP-8004's metric-hub validation
+    refuses `winsorize_quantile`/`winsorize_threshold` on one. Reaching a yes/no metric here with
+    either field set can therefore only mean that validation has not run (or has not shipped)
+    yet; this treats it as off rather than clip a metric it cannot sharpen.
     """
     if metric.is_yes_no:
         return Winsorize(WinsorizeMode.OFF)
-    fraction = metric.winsorize_fraction
+    quantile = metric.winsorize_quantile
     threshold = metric.winsorize_threshold
-    if fraction is not None and threshold is not None:
+    if quantile is not None and threshold is not None:
         raise ValueError(
-            f"metric '{metric.name}' sets both winsorize_fraction and winsorize_threshold"
+            f"metric '{metric.name}' sets both winsorize_quantile and winsorize_threshold"
         )
-    if fraction is not None and not 0 <= fraction < 1:
+    if quantile is not None and not 0 < quantile <= 1:
         raise ValueError(
-            f"metric '{metric.name}' has winsorize_fraction {fraction}, which must be in "
-            f"[0, 1): 0 means off, and a fraction of 1 or more would clip the whole branch"
+            f"metric '{metric.name}' has winsorize_quantile {quantile}, which must be in "
+            f"(0, 1]: 1 means off, and a quantile at or below 0 is not a point on the "
+            f"distribution"
         )
-    if threshold is not None and threshold < 0:
+    if threshold is not None and threshold <= 0:
         raise ValueError(
-            f"metric '{metric.name}' has winsorize_threshold {threshold}, which must be >= 0: "
-            f"0 means off"
+            f"metric '{metric.name}' has winsorize_threshold {threshold}, which must be > 0: "
+            f"winsorize_quantile = 1 is how a metric turns winsorization off"
         )
-    if fraction == 0 or threshold == 0:
+    if quantile == 1:
         return Winsorize(WinsorizeMode.OFF)
-    if fraction is not None:
-        return Winsorize(WinsorizeMode.FRACTION, fraction)
+    if quantile is not None:
+        return Winsorize(WinsorizeMode.QUANTILE, quantile)
     if threshold is not None:
         return Winsorize(WinsorizeMode.FIXED, threshold)
-    return Winsorize(WinsorizeMode.FRACTION, DEFAULT_WINSORIZE_FRACTION)
+    return Winsorize(WinsorizeMode.QUANTILE, DEFAULT_WINSORIZE_QUANTILE)
 
 
 def group_by_source(resolved_metrics):
@@ -352,7 +359,7 @@ def metrics_for_experiment(experiment, resolved_metrics, unresolved_metrics):
                 window_rules=metric.window_rules,
                 friendly_name=display.friendly_name if display else None,
                 description=display.description if display else None,
-                winsorize_fraction=metric.winsorize_fraction,
+                winsorize_quantile=metric.winsorize_quantile,
                 winsorize_threshold=metric.winsorize_threshold,
                 is_yes_no=metric.is_yes_no,
             )

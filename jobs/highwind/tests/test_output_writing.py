@@ -290,7 +290,7 @@ def test_a_clipped_cells_winsorize_columns_flow_through_to_the_written_row():
     client = RecordingClient()
     clipped_aggregates = dict(
         AGGREGATES,
-        winsorize_mode="fraction",
+        winsorize_mode="quantile",
         outcome_threshold=500.0,
         covariate_threshold=2000.0,
         clipped_share=0.01,
@@ -305,7 +305,7 @@ def test_a_clipped_cells_winsorize_columns_flow_through_to_the_written_row():
     )
     stats_row = client.loads[1][1][0]
 
-    assert stats_row["winsorize_mode"] == "fraction"
+    assert stats_row["winsorize_mode"] == "quantile"
     assert stats_row["outcome_threshold"] == 500.0
     assert stats_row["covariate_threshold"] == 2000.0
     assert stats_row["clipped_share"] == 0.01

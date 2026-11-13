@@ -37,7 +37,7 @@ class FutureAggregationMetric:
     cumulative_window: int | None
     incremental_window: int | None
     repeat_windows: bool
-    winsorize_fraction: float | None
+    winsorize_quantile: float | None
     winsorize_threshold: float | None
 
 
@@ -307,7 +307,7 @@ def test_todays_aggregation_metric_resolves_with_no_winsorize_fields_set():
 
     resolved, _ = metrics.split_resolved_metrics(plan, FakeConfigs())
 
-    assert resolved["active_hours"].winsorize_fraction is None
+    assert resolved["active_hours"].winsorize_quantile is None
     assert resolved["active_hours"].winsorize_threshold is None
 
 
@@ -321,7 +321,7 @@ def test_split_resolved_metrics_reads_the_winsorize_fields_once_they_exist():
                 cumulative_window=7,
                 incremental_window=None,
                 repeat_windows=True,
-                winsorize_fraction=0.01,
+                winsorize_quantile=0.99,
                 winsorize_threshold=None,
             )
         }
@@ -329,7 +329,7 @@ def test_split_resolved_metrics_reads_the_winsorize_fields_once_they_exist():
 
     resolved, _ = metrics.split_resolved_metrics(plan, FakeConfigs())
 
-    assert resolved["active_hours"].winsorize_fraction == 0.01
+    assert resolved["active_hours"].winsorize_quantile == 0.99
     assert resolved["active_hours"].winsorize_threshold is None
 
 
@@ -340,24 +340,24 @@ def test_for_experiment_carries_the_winsorize_fields_forward():
             source="clients_daily",
             reducer=REDUCER,
             window_rules=(metrics.CUMULATIVE_WEEKLY,),
-            winsorize_fraction=0.02,
+            winsorize_quantile=0.98,
         )
     }
     experiment = experiment_with(["active_hours"])
 
     chosen, _ = metrics.metrics_for_experiment(experiment, resolved, {})
 
-    assert chosen[0].winsorize_fraction == 0.02
+    assert chosen[0].winsorize_quantile == 0.98
     assert chosen[0].winsorize_threshold is None
 
 
-def metric_with(is_yes_no=False, winsorize_fraction=None, winsorize_threshold=None):
+def metric_with(is_yes_no=False, winsorize_quantile=None, winsorize_threshold=None):
     return metrics.Metric(
         name="a-metric",
         source="clients_daily",
         reducer=REDUCER,
         window_rules=(metrics.CUMULATIVE_WEEKLY,),
-        winsorize_fraction=winsorize_fraction,
+        winsorize_quantile=winsorize_quantile,
         winsorize_threshold=winsorize_threshold,
         is_yes_no=is_yes_no,
     )
@@ -411,7 +411,7 @@ def test_a_summed_metric_whose_finalize_contains_a_cast_is_still_continuous():
     resolved, _ = metrics.split_resolved_metrics(plan, configs)
 
     assert resolved["active_hours"].is_yes_no is False
-    assert metrics.winsorize_mode(resolved["active_hours"]).mode == metrics.WinsorizeMode.FRACTION
+    assert metrics.winsorize_mode(resolved["active_hours"]).mode == metrics.WinsorizeMode.QUANTILE
 
 
 def test_split_resolved_metrics_reads_is_yes_no_off_the_metric_definition():
@@ -443,30 +443,33 @@ def test_for_experiment_carries_is_yes_no_forward():
 # --------------------------------------------------------------------------- winsorize_mode ----
 
 
-def test_an_unset_metric_defaults_to_the_jobs_own_fraction():
+def test_an_unset_metric_defaults_to_the_jobs_own_quantile():
     setting = metrics.winsorize_mode(metric_with())
 
     assert setting == metrics.Winsorize(
-        metrics.WinsorizeMode.FRACTION, metrics.DEFAULT_WINSORIZE_FRACTION
+        metrics.WinsorizeMode.QUANTILE, metrics.DEFAULT_WINSORIZE_QUANTILE
     )
 
 
-def test_an_explicit_zero_fraction_is_off():
-    setting = metrics.winsorize_mode(metric_with(winsorize_fraction=0))
+def test_a_quantile_of_one_is_off():
+    # Nothing is above the 100th percentile, so a quantile of 1 means off; it is the only value
+    # that does, since winsorize_threshold has no zero-like value metric-hub lets through.
+    setting = metrics.winsorize_mode(metric_with(winsorize_quantile=1))
 
     assert setting == metrics.Winsorize(metrics.WinsorizeMode.OFF)
 
 
-def test_an_explicit_zero_threshold_is_off():
-    setting = metrics.winsorize_mode(metric_with(winsorize_threshold=0))
+def test_a_zero_threshold_is_refused():
+    # metric-hub (EXP-8004) requires a fixed threshold to be strictly positive; winsorize_quantile
+    # = 1 is the only way to turn winsorization off.
+    with pytest.raises(ValueError, match="a-metric"):
+        metrics.winsorize_mode(metric_with(winsorize_threshold=0))
 
-    assert setting == metrics.Winsorize(metrics.WinsorizeMode.OFF)
 
+def test_an_explicit_quantile_is_used_as_is():
+    setting = metrics.winsorize_mode(metric_with(winsorize_quantile=0.98))
 
-def test_an_explicit_fraction_is_used_as_is():
-    setting = metrics.winsorize_mode(metric_with(winsorize_fraction=0.02))
-
-    assert setting == metrics.Winsorize(metrics.WinsorizeMode.FRACTION, 0.02)
+    assert setting == metrics.Winsorize(metrics.WinsorizeMode.QUANTILE, 0.98)
 
 
 def test_a_fixed_threshold_is_used_as_is():
@@ -478,18 +481,23 @@ def test_a_fixed_threshold_is_used_as_is():
 def test_setting_both_fields_is_refused():
     with pytest.raises(ValueError):
         metrics.winsorize_mode(
-            metric_with(winsorize_fraction=0.01, winsorize_threshold=500)
+            metric_with(winsorize_quantile=0.99, winsorize_threshold=500)
         )
 
 
-def test_a_fraction_of_one_or_more_is_refused():
+def test_a_quantile_above_one_is_refused():
     with pytest.raises(ValueError, match="a-metric"):
-        metrics.winsorize_mode(metric_with(winsorize_fraction=1))
+        metrics.winsorize_mode(metric_with(winsorize_quantile=1.5))
 
 
-def test_a_negative_fraction_is_refused():
+def test_a_quantile_of_zero_is_refused():
     with pytest.raises(ValueError, match="a-metric"):
-        metrics.winsorize_mode(metric_with(winsorize_fraction=-0.01))
+        metrics.winsorize_mode(metric_with(winsorize_quantile=0))
+
+
+def test_a_negative_quantile_is_refused():
+    with pytest.raises(ValueError, match="a-metric"):
+        metrics.winsorize_mode(metric_with(winsorize_quantile=-0.01))
 
 
 def test_a_negative_threshold_is_refused():
@@ -497,8 +505,8 @@ def test_a_negative_threshold_is_refused():
         metrics.winsorize_mode(metric_with(winsorize_threshold=-1))
 
 
-def test_a_yes_no_metric_is_never_clipped_even_with_a_fraction_set():
-    setting = metrics.winsorize_mode(metric_with(is_yes_no=True, winsorize_fraction=0.02))
+def test_a_yes_no_metric_is_never_clipped_even_with_a_quantile_set():
+    setting = metrics.winsorize_mode(metric_with(is_yes_no=True, winsorize_quantile=0.98))
 
     assert setting == metrics.Winsorize(metrics.WinsorizeMode.OFF)
 

@@ -276,11 +276,11 @@ SUFFICIENT_STATS_SCHEMA = [
         "STRING",
         description=(
             "How this metric and window were winsorized. off, every value summed above is "
-            "exactly the unclipped one; fraction, sum and pre_sum were clipped at a quantile of "
+            "exactly the unclipped one; quantile, sum and pre_sum were clipped at a quantile of "
             "the reference branch's own window and covariate values; fixed, at a fixed value "
-            "scaled to the window's length; skipped_too_few, a fraction was set but the "
+            "scaled to the window's length; skipped_too_few, a quantile was set but the "
             "reference branch had too few matured units for it to clip at least one of them, so "
-            "nothing was clipped this window despite the metric's mode being fraction."
+            "nothing was clipped this window despite the metric's mode being quantile."
         ),
     ),
     bigquery.SchemaField(

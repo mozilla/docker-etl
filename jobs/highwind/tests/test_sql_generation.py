@@ -299,7 +299,7 @@ def test_a_units_value_defaults_to_the_metrics_no_rows_value():
 def test_the_rollup_keys_every_metric_by_name_so_the_schema_is_metric_independent():
     # Both metrics explicitly off, so this stays a test of the schema rather than of winsorization.
     run = run_of({"a-slug": cumulative_windows(2)})
-    off_active_hours = dataclasses.replace(named("active_hours"), winsorize_fraction=0)
+    off_active_hours = dataclasses.replace(named("active_hours"), winsorize_quantile=1)
     sql = sql_generation.rollup_select([off_active_hours, named("retained_dau")], run)
 
     assert "STRUCT('active_hours' AS metric" in sql
@@ -574,8 +574,8 @@ def test_branch_units_are_counted_off_the_runs_cohort_table():
 # ------------------------------------------------------------------------- winsorization ----
 
 
-def fraction_metric(fraction):
-    return dataclasses.replace(named("active_hours"), winsorize_fraction=fraction)
+def quantile_metric(quantile):
+    return dataclasses.replace(named("active_hours"), winsorize_quantile=quantile)
 
 
 def fixed_metric(threshold):
@@ -583,7 +583,7 @@ def fixed_metric(threshold):
 
 
 def off_metric():
-    return dataclasses.replace(named("active_hours"), winsorize_fraction=0)
+    return dataclasses.replace(named("active_hours"), winsorize_quantile=1)
 
 
 def test_an_off_metric_leaves_the_rollup_exactly_as_it_was_before_winsorization():
@@ -612,13 +612,13 @@ def test_a_yes_no_metric_is_never_clipped_in_the_rollup():
     assert "'off' AS winsorize_mode" in sql
 
 
-def test_an_unset_metric_defaults_to_the_jobs_fraction_and_needs_a_quantile():
+def test_an_unset_metric_defaults_to_the_jobs_quantile_and_needs_a_quantile_cte():
     run = run_of({"a-slug": cumulative_windows(2)})
 
     quantiles = sql_generation.reference_quantiles_cte([named("active_hours")], run)
 
     assert quantiles is not None
-    offset = round((1 - metrics.DEFAULT_WINSORIZE_FRACTION) * sql_generation.QUANTILE_RESOLUTION)
+    offset = round(metrics.DEFAULT_WINSORIZE_QUANTILE * sql_generation.QUANTILE_RESOLUTION)
     assert f"[OFFSET({offset})] AS active_hours__cumulative__outcome_quantile" in quantiles
 
 
@@ -629,12 +629,12 @@ def test_reference_quantiles_cte_is_none_when_no_metric_needs_one():
     assert sql_generation.reference_quantiles_cte([named("retained_dau")], run) is None
 
 
-def test_reference_quantiles_cte_reads_each_metrics_own_fraction_as_an_offset():
+def test_reference_quantiles_cte_reads_each_metrics_own_quantile_as_an_offset():
     run = run_of({"a-slug": cumulative_windows(2)})
 
-    quantiles = sql_generation.reference_quantiles_cte([fraction_metric(0.02)], run)
+    quantiles = sql_generation.reference_quantiles_cte([quantile_metric(0.98)], run)
 
-    offset = round((1 - 0.02) * sql_generation.QUANTILE_RESOLUTION)
+    offset = round(0.98 * sql_generation.QUANTILE_RESOLUTION)
     assert (
         f"APPROX_QUANTILES(unit_windows.active_hours__cumulative, "
         f"{sql_generation.QUANTILE_RESOLUTION})[OFFSET({offset})] "
@@ -652,44 +652,44 @@ def test_reference_quantiles_cte_reads_each_metrics_own_fraction_as_an_offset():
 def test_reference_quantiles_cte_restricts_to_each_slugs_own_reference_branch():
     run = run_of({"a-slug": cumulative_windows(2)})
 
-    quantiles = sql_generation.reference_quantiles_cte([fraction_metric(0.02)], run)
+    quantiles = sql_generation.reference_quantiles_cte([quantile_metric(0.98)], run)
 
     assert "STRUCT('a-slug' AS slug, 'control' AS branch)" in quantiles
     assert "ON reference_branch.slug = unit_windows.slug" in quantiles
     assert "AND reference_branch.branch = unit_windows.branch" in quantiles
 
 
-def test_reference_quantiles_cte_selects_fraction_metrics_through_the_shared_helper(monkeypatch):
+def test_reference_quantiles_cte_selects_quantile_metrics_through_the_shared_helper(monkeypatch):
     # reference_quantiles_cte and rollup_select each decide which metrics need a quantile; if
     # reference_quantiles_cte ever grew its own copy of that filter instead of calling
-    # _fraction_mode_metrics, the two could silently drift apart on a future change to the
+    # _quantile_mode_metrics, the two could silently drift apart on a future change to the
     # filter (e.g. a new winsorize mode). Spying on the shared helper, rather than just comparing
     # outputs, is what catches that even when the two filters still happen to agree today.
     run = run_of({"a-slug": cumulative_windows(2)})
     calls = []
-    original = sql_generation._fraction_mode_metrics
+    original = sql_generation._quantile_mode_metrics
 
     def spy(metrics):
         calls.append(metrics)
         return original(metrics)
 
-    monkeypatch.setattr(sql_generation, "_fraction_mode_metrics", spy)
+    monkeypatch.setattr(sql_generation, "_quantile_mode_metrics", spy)
 
-    sql_generation.reference_quantiles_cte([fraction_metric(0.02), off_metric()], run)
+    sql_generation.reference_quantiles_cte([quantile_metric(0.98), off_metric()], run)
 
-    assert calls == [[fraction_metric(0.02), off_metric()]]
+    assert calls == [[quantile_metric(0.98), off_metric()]]
 
 
-def test_fraction_mode_clips_the_outcome_at_the_reference_quantile():
+def test_quantile_mode_clips_the_outcome_at_the_reference_quantile():
     run = run_of({"a-slug": cumulative_windows(1)})
 
-    sql = sql_generation.rollup_select([fraction_metric(0.02)], run)
+    sql = sql_generation.rollup_select([quantile_metric(0.98)], run)
 
     assert "LEFT JOIN reference_quantiles AS rq" in sql
     assert "ON rq.slug = unit_windows.slug AND rq.bucket = unit_windows.bucket" in sql
     assert (
         "LEAST(active_hours__cumulative, "
-        "IF((rq.reference_n IS NULL OR rq.reference_n * 0.02 < 1), NULL, "
+        "IF((rq.reference_n IS NULL OR rq.reference_n * (1 - 0.98) < 1), NULL, "
         "rq.active_hours__cumulative__outcome_quantile))" in sql
     )
     assert "WHERE unit_windows.bucket >= 0" in sql
@@ -699,35 +699,35 @@ def test_fraction_mode_clips_the_outcome_at_the_reference_quantile():
 def test_the_covariate_is_clipped_at_its_own_reference_quantile():
     run = run_of({"a-slug": cumulative_windows(1)})
 
-    sql = sql_generation.rollup_select([fraction_metric(0.02)], run)
+    sql = sql_generation.rollup_select([quantile_metric(0.98)], run)
 
     assert (
         "LEAST(active_hours__pre, "
-        "IF((rq.reference_n IS NULL OR rq.reference_n * 0.02 < 1), NULL, "
+        "IF((rq.reference_n IS NULL OR rq.reference_n * (1 - 0.98) < 1), NULL, "
         "rq.active_hours__covariate_quantile))" in sql
     )
 
 
-def test_too_few_reference_units_is_recorded_distinctly_from_a_clipped_fraction():
+def test_too_few_reference_units_is_recorded_distinctly_from_a_clipped_quantile():
     run = run_of({"a-slug": cumulative_windows(1)})
 
-    sql = sql_generation.rollup_select([fraction_metric(0.02)], run)
+    sql = sql_generation.rollup_select([quantile_metric(0.98)], run)
 
     assert "'skipped_too_few'" in sql
-    assert "'fraction'" in sql
-    assert "rq.reference_n * 0.02 < 1" in sql
+    assert "'quantile'" in sql
+    assert "rq.reference_n * (1 - 0.98) < 1" in sql
 
 
-def test_the_fraction_threshold_does_not_depend_on_which_branch_it_clips():
+def test_the_quantile_threshold_does_not_depend_on_which_branch_it_clips():
     # The clip expression never reads `branch`, so the one expression generated here runs
     # against every branch's own rows: the reference branch's threshold, not each branch's own.
     run = run_of({"a-slug": cumulative_windows(1)})
 
-    sql = sql_generation.rollup_select([fraction_metric(0.02)], run)
+    sql = sql_generation.rollup_select([quantile_metric(0.98)], run)
 
     assert "active_hours__cumulative__outcome_quantile" in sql
     assert "branch" not in sql_generation._clip_fields(
-        fraction_metric(0.02), "cumulative", run
+        quantile_metric(0.98), "cumulative", run
     )["post"]
 
 
@@ -766,7 +766,7 @@ def test_a_disjoint_fixed_window_is_not_scaled_past_its_own_single_bucket():
 def test_thresholds_and_the_clipped_share_are_recorded_alongside_the_aggregates():
     run = run_of({"a-slug": cumulative_windows(1)})
 
-    sql = sql_generation.rollup_select([fraction_metric(0.02)], run)
+    sql = sql_generation.rollup_select([quantile_metric(0.98)], run)
 
     assert "ANY_VALUE(metric_row.winsorize_mode) AS winsorize_mode" in sql
     assert "ANY_VALUE(metric_row.outcome_threshold) AS outcome_threshold" in sql
@@ -779,13 +779,13 @@ def test_a_multi_arm_run_still_builds_one_shared_threshold_expression():
     # no branch-specific clause, which is what makes the same threshold apply to every arm.
     run = run_of({"a-slug": cumulative_windows(1)})
 
-    sql = sql_generation.rollup_select([fraction_metric(0.02)], run)
+    sql = sql_generation.rollup_select([quantile_metric(0.98)], run)
 
     assert sql.count("LEFT JOIN reference_quantiles AS rq") == 1
 
 
 def test_build_source_query_assembles_every_stage_for_a_multi_metric_source():
-    # The full query for a source carrying one default-fraction metric and one yes/no (off)
+    # The full query for a source carrying one default-quantile metric and one yes/no (off)
     # metric: every stage is present, in order, and the reference-quantiles CTE is added only
     # because active_hours needs one.
     run = run_of(
@@ -836,7 +836,7 @@ def test_build_source_query_adds_no_quantile_cte_when_every_metric_is_off():
     assert "LEAST(retained_dau" not in sql
 
 
-def metric_with_name(name, winsorize_fraction=None, winsorize_threshold=None, is_yes_no=False):
+def metric_with_name(name, winsorize_quantile=None, winsorize_threshold=None, is_yes_no=False):
     """A continuous metric distinguished only by name and winsorize setting, for tests that need
     several metrics with different settings to coexist in one source without colliding on the
     column names their own struct/quantile entries are keyed by."""
@@ -845,26 +845,26 @@ def metric_with_name(name, winsorize_fraction=None, winsorize_threshold=None, is
         source="clients_daily",
         reducer=reducer(f"SUM({name}_sum)"),
         window_rules=(metrics.CUMULATIVE_WEEKLY,),
-        winsorize_fraction=winsorize_fraction,
+        winsorize_quantile=winsorize_quantile,
         winsorize_threshold=winsorize_threshold,
         is_yes_no=is_yes_no,
     )
 
 
 def test_a_source_with_mixed_winsorize_settings_clips_each_metric_on_its_own_terms():
-    # One data source, three metrics each in a different mode: fraction, fixed and off. Each
+    # One data source, three metrics each in a different mode: quantile, fixed and off. Each
     # must get its own clip, independent of the other two, and the off metric must be untouched.
     run = run_of({"a-slug": cumulative_windows(1)})
-    fraction_m = metric_with_name("metric_fraction", winsorize_fraction=0.02)
+    quantile_m = metric_with_name("metric_quantile", winsorize_quantile=0.98)
     fixed_m = metric_with_name("metric_fixed", winsorize_threshold=500)
-    off_m = metric_with_name("metric_off", winsorize_fraction=0)
+    off_m = metric_with_name("metric_off", winsorize_quantile=1)
 
-    sql = sql_generation.rollup_select([fraction_m, fixed_m, off_m], run)
+    sql = sql_generation.rollup_select([quantile_m, fixed_m, off_m], run)
 
     assert (
-        "LEAST(metric_fraction__cumulative, "
-        "IF((rq.reference_n IS NULL OR rq.reference_n * 0.02 < 1), NULL, "
-        "rq.metric_fraction__cumulative__outcome_quantile))" in sql
+        "LEAST(metric_quantile__cumulative, "
+        "IF((rq.reference_n IS NULL OR rq.reference_n * (1 - 0.98) < 1), NULL, "
+        "rq.metric_quantile__cumulative__outcome_quantile))" in sql
     )
     assert "LEAST(metric_fixed__cumulative, 500 * (unit_windows.bucket + 1))" in sql
     assert "metric_off__cumulative AS post" in sql
@@ -872,8 +872,8 @@ def test_a_source_with_mixed_winsorize_settings_clips_each_metric_on_its_own_ter
     assert "metric_off__cumulative__outcome_quantile" not in sql
     assert "metric_fixed__cumulative__outcome_quantile" not in sql
 
-    quantiles = sql_generation.reference_quantiles_cte([fraction_m, fixed_m, off_m], run)
+    quantiles = sql_generation.reference_quantiles_cte([quantile_m, fixed_m, off_m], run)
 
-    assert "metric_fraction__cumulative__outcome_quantile" in quantiles
+    assert "metric_quantile__cumulative__outcome_quantile" in quantiles
     assert "metric_fixed" not in quantiles
     assert "metric_off" not in quantiles

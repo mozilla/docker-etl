@@ -91,7 +91,7 @@ def test_sufficient_stats_carries_the_winsorize_columns_through():
         "pre_sum": 4.0,
         "pre_sum_squares": 4.0,
         "sum_x_pre": 3.0,
-        "winsorize_mode": "fraction",
+        "winsorize_mode": "quantile",
         "outcome_threshold": 500.0,
         "covariate_threshold": 2000.0,
         "clipped_share": 0.01,
@@ -99,7 +99,7 @@ def test_sufficient_stats_carries_the_winsorize_columns_through():
 
     stats = sql_running.sufficient_stats(row)
 
-    assert stats["winsorize_mode"] == "fraction"
+    assert stats["winsorize_mode"] == "quantile"
     assert stats["outcome_threshold"] == 500.0
     assert stats["covariate_threshold"] == 2000.0
     assert stats["clipped_share"] == 0.01
