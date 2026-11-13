@@ -92,16 +92,16 @@ def test_sufficient_stats_carries_the_winsorize_columns_through():
         "pre_sum_squares": 4.0,
         "sum_x_pre": 3.0,
         "winsorize_mode": "quantile",
-        "post_threshold": 500.0,
-        "pre_threshold": 2000.0,
+        "post_winsorize_threshold": 500.0,
+        "pre_winsorize_threshold": 2000.0,
         "clipped_share": 0.01,
     }
 
     stats = sql_running.sufficient_stats(row)
 
     assert stats["winsorize_mode"] == "quantile"
-    assert stats["post_threshold"] == 500.0
-    assert stats["pre_threshold"] == 2000.0
+    assert stats["post_winsorize_threshold"] == 500.0
+    assert stats["pre_winsorize_threshold"] == 2000.0
     assert stats["clipped_share"] == 0.01
 
 
@@ -114,13 +114,13 @@ def test_sufficient_stats_leaves_an_off_cells_winsorize_columns_as_the_null_the_
         "pre_sum_squares": 4.0,
         "sum_x_pre": 3.0,
         "winsorize_mode": "off",
-        "post_threshold": None,
-        "pre_threshold": None,
+        "post_winsorize_threshold": None,
+        "pre_winsorize_threshold": None,
         "clipped_share": None,
     }
 
     stats = sql_running.sufficient_stats(row)
 
-    assert stats["post_threshold"] is None
-    assert stats["pre_threshold"] is None
+    assert stats["post_winsorize_threshold"] is None
+    assert stats["pre_winsorize_threshold"] is None
     assert stats["clipped_share"] is None

@@ -512,8 +512,8 @@ class UnitCountFailingClient:
         pre_sum_squares=4.0,
         sum_x_pre=3.0,
         winsorize_mode="off",
-        post_threshold=None,
-        pre_threshold=None,
+        post_winsorize_threshold=None,
+        pre_winsorize_threshold=None,
         clipped_share=None,
     )
 

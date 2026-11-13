@@ -280,8 +280,8 @@ def test_the_sufficient_stats_schema_declares_the_winsorize_columns():
 
     assert {
         "winsorize_mode",
-        "post_threshold",
-        "pre_threshold",
+        "post_winsorize_threshold",
+        "pre_winsorize_threshold",
         "clipped_share",
     } <= declared
 
@@ -291,8 +291,8 @@ def test_a_clipped_cells_winsorize_columns_flow_through_to_the_written_row():
     clipped_aggregates = dict(
         AGGREGATES,
         winsorize_mode="quantile",
-        post_threshold=500.0,
-        pre_threshold=2000.0,
+        post_winsorize_threshold=500.0,
+        pre_winsorize_threshold=2000.0,
         clipped_share=0.01,
     )
 
@@ -306,8 +306,8 @@ def test_a_clipped_cells_winsorize_columns_flow_through_to_the_written_row():
     stats_row = client.loads[1][1][0]
 
     assert stats_row["winsorize_mode"] == "quantile"
-    assert stats_row["post_threshold"] == 500.0
-    assert stats_row["pre_threshold"] == 2000.0
+    assert stats_row["post_winsorize_threshold"] == 500.0
+    assert stats_row["pre_winsorize_threshold"] == 2000.0
     assert stats_row["clipped_share"] == 0.01
     assert {key: stats_row[key] for key in AGGREGATES} == AGGREGATES
 

@@ -312,8 +312,8 @@ def test_the_rollup_keys_every_metric_by_name_so_the_schema_is_metric_independen
         "pre_sum_squares",
         "sum_x_pre",
         "winsorize_mode",
-        "post_threshold",
-        "pre_threshold",
+        "post_winsorize_threshold",
+        "pre_winsorize_threshold",
         "clipped_share",
     ):
         assert f"AS {aggregate}" in sql
@@ -619,7 +619,7 @@ def test_an_unset_metric_defaults_to_the_jobs_quantile_and_needs_a_quantile_cte(
 
     assert quantiles is not None
     offset = round(metrics.DEFAULT_WINSORIZE_QUANTILE * sql_generation.QUANTILE_RESOLUTION)
-    assert f"[OFFSET({offset})] AS active_hours__cumulative__post_quantile" in quantiles
+    assert f"[OFFSET({offset})] AS active_hours__cumulative__post_winsorize_quantile" in quantiles
 
 
 def test_reference_quantiles_cte_is_none_when_no_metric_needs_one():
@@ -638,7 +638,7 @@ def test_reference_quantiles_cte_reads_each_metrics_own_quantile_as_an_offset():
     assert (
         f"APPROX_QUANTILES(unit_windows.active_hours__cumulative, "
         f"{sql_generation.QUANTILE_RESOLUTION})[OFFSET({offset})] "
-        f"AS active_hours__cumulative__post_quantile" in quantiles
+        f"AS active_hours__cumulative__post_winsorize_quantile" in quantiles
     )
     assert (
         f"APPROX_QUANTILES(unit_windows.active_hours__pre, "
@@ -690,7 +690,7 @@ def test_quantile_mode_clips_the_post_value_at_the_reference_quantile():
     assert (
         "LEAST(active_hours__cumulative, "
         "IF((rq.reference_n IS NULL OR rq.reference_n * (1 - 0.98) < 1), NULL, "
-        "rq.active_hours__cumulative__post_quantile))" in sql
+        "rq.active_hours__cumulative__post_winsorize_quantile))" in sql
     )
     assert "WHERE unit_windows.bucket >= 0" in sql
     assert "GROUP BY unit_windows.slug, unit_windows.branch," in sql
@@ -725,13 +725,13 @@ def test_the_quantile_threshold_does_not_depend_on_which_branch_it_clips():
 
     sql = sql_generation.rollup_select([quantile_metric(0.98)], run)
 
-    assert "active_hours__cumulative__post_quantile" in sql
+    assert "active_hours__cumulative__post_winsorize_quantile" in sql
     assert "branch" not in sql_generation._clip_fields(
         quantile_metric(0.98), "cumulative", run
     )["post"]
 
 
-def test_fixed_mode_scales_the_post_threshold_by_the_window_length_in_buckets():
+def test_fixed_mode_scales_the_post_winsorize_threshold_by_the_window_length_in_buckets():
     run = run_of({"a-slug": cumulative_windows(3)})
 
     sql = sql_generation.rollup_select([fixed_metric(500)], run)
@@ -740,7 +740,7 @@ def test_fixed_mode_scales_the_post_threshold_by_the_window_length_in_buckets():
     assert "reference_quantiles" not in sql
 
 
-def test_fixed_mode_scales_the_pre_threshold_by_the_covariate_window_length():
+def test_fixed_mode_scales_the_pre_winsorize_threshold_by_the_covariate_window_length():
     run = run_of({"a-slug": cumulative_windows(1)})
 
     sql = sql_generation.rollup_select([fixed_metric(500)], run)
@@ -769,8 +769,8 @@ def test_thresholds_and_the_clipped_share_are_recorded_alongside_the_aggregates(
     sql = sql_generation.rollup_select([quantile_metric(0.98)], run)
 
     assert "ANY_VALUE(metric_row.winsorize_mode) AS winsorize_mode" in sql
-    assert "ANY_VALUE(metric_row.post_threshold) AS post_threshold" in sql
-    assert "ANY_VALUE(metric_row.pre_threshold) AS pre_threshold" in sql
+    assert "ANY_VALUE(metric_row.post_winsorize_threshold) AS post_winsorize_threshold" in sql
+    assert "ANY_VALUE(metric_row.pre_winsorize_threshold) AS pre_winsorize_threshold" in sql
     assert "SAFE_DIVIDE(SUM(metric_row.was_clipped), COUNT(*)) AS clipped_share" in sql
 
 
@@ -864,16 +864,16 @@ def test_a_source_with_mixed_winsorize_settings_clips_each_metric_on_its_own_ter
     assert (
         "LEAST(metric_quantile__cumulative, "
         "IF((rq.reference_n IS NULL OR rq.reference_n * (1 - 0.98) < 1), NULL, "
-        "rq.metric_quantile__cumulative__post_quantile))" in sql
+        "rq.metric_quantile__cumulative__post_winsorize_quantile))" in sql
     )
     assert "LEAST(metric_fixed__cumulative, 500 * (unit_windows.bucket + 1))" in sql
     assert "metric_off__cumulative AS post" in sql
     assert "LEAST(metric_off" not in sql
-    assert "metric_off__cumulative__post_quantile" not in sql
-    assert "metric_fixed__cumulative__post_quantile" not in sql
+    assert "metric_off__cumulative__post_winsorize_quantile" not in sql
+    assert "metric_fixed__cumulative__post_winsorize_quantile" not in sql
 
     quantiles = sql_generation.reference_quantiles_cte([quantile_m, fixed_m, off_m], run)
 
-    assert "metric_quantile__cumulative__post_quantile" in quantiles
+    assert "metric_quantile__cumulative__post_winsorize_quantile" in quantiles
     assert "metric_fixed" not in quantiles
     assert "metric_off" not in quantiles

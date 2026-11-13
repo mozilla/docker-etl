@@ -526,7 +526,7 @@ def reference_quantiles_cte(metrics, run):
             kind = rule["kind"]
             columns.append(
                 f"APPROX_QUANTILES(unit_windows.{metric.name}__{kind}, {QUANTILE_RESOLUTION})"
-                f"[OFFSET({offset})] AS {metric.name}__{kind}__post_quantile"
+                f"[OFFSET({offset})] AS {metric.name}__{kind}__post_winsorize_quantile"
             )
         columns.append(
             f"APPROX_QUANTILES(unit_windows.{metric.name}__pre, {QUANTILE_RESOLUTION})"
@@ -813,37 +813,38 @@ def _clip_fields(metric, kind, run):
             post=raw_post,
             pre=raw_pre,
             mode="'off'",
-            post_threshold="CAST(NULL AS FLOAT64)",
-            pre_threshold="CAST(NULL AS FLOAT64)",
+            post_winsorize_threshold="CAST(NULL AS FLOAT64)",
+            pre_winsorize_threshold="CAST(NULL AS FLOAT64)",
             was_clipped="0",
         )
     if setting.mode == WinsorizeMode.FIXED:
         weeks = "(unit_windows.bucket + 1)" if kind == "cumulative" else "1"
-        post_threshold = f"{setting.value} * {weeks}"
-        pre_threshold = f"{setting.value * (run.covariate_days / run.length)}"
+        post_winsorize_threshold = f"{setting.value} * {weeks}"
+        pre_winsorize_threshold = f"{setting.value * (run.covariate_days / run.length)}"
         return dict(
-            post=f"LEAST({raw_post}, {post_threshold})",
-            pre=f"LEAST({raw_pre}, {pre_threshold})",
+            post=f"LEAST({raw_post}, {post_winsorize_threshold})",
+            pre=f"LEAST({raw_pre}, {pre_winsorize_threshold})",
             mode="'fixed'",
-            post_threshold=f"CAST({post_threshold} AS FLOAT64)",
-            pre_threshold=f"CAST({pre_threshold} AS FLOAT64)",
-            was_clipped=f"IF({raw_post} > {post_threshold}, 1, 0)",
+            post_winsorize_threshold=f"CAST({post_winsorize_threshold} AS FLOAT64)",
+            pre_winsorize_threshold=f"CAST({pre_winsorize_threshold} AS FLOAT64)",
+            was_clipped=f"IF({raw_post} > {post_winsorize_threshold}, 1, 0)",
         )
     too_few = f"(rq.reference_n IS NULL OR rq.reference_n * (1 - {setting.value}) < 1)"
-    post_quantile = f"rq.{metric.name}__{kind}__post_quantile"
+    post_winsorize_quantile = f"rq.{metric.name}__{kind}__post_winsorize_quantile"
     covariate_quantile = f"rq.{metric.name}__covariate_quantile"
-    post_threshold = f"IF({too_few}, NULL, {post_quantile})"
-    pre_threshold = f"IF({too_few}, NULL, {covariate_quantile})"
-    post = f"LEAST({raw_post}, {post_threshold})"
-    pre = f"LEAST({raw_pre}, {pre_threshold})"
+    post_winsorize_threshold = f"IF({too_few}, NULL, {post_winsorize_quantile})"
+    pre_winsorize_threshold = f"IF({too_few}, NULL, {covariate_quantile})"
+    post = f"LEAST({raw_post}, {post_winsorize_threshold})"
+    pre = f"LEAST({raw_pre}, {pre_winsorize_threshold})"
     return dict(
-        post=f"IF({post_threshold} IS NULL, {raw_post}, {post})",
-        pre=f"IF({pre_threshold} IS NULL, {raw_pre}, {pre})",
+        post=f"IF({post_winsorize_threshold} IS NULL, {raw_post}, {post})",
+        pre=f"IF({pre_winsorize_threshold} IS NULL, {raw_pre}, {pre})",
         mode=f"IF({too_few}, '{WinsorizeMode.TOO_FEW_UNITS.value}', 'quantile')",
-        post_threshold=post_threshold,
-        pre_threshold=pre_threshold,
+        post_winsorize_threshold=post_winsorize_threshold,
+        pre_winsorize_threshold=pre_winsorize_threshold,
         was_clipped=(
-            f"IF({post_threshold} IS NOT NULL AND {raw_post} > {post_threshold}, 1, 0)"
+            f"IF({post_winsorize_threshold} IS NOT NULL "
+            f"AND {raw_post} > {post_winsorize_threshold}, 1, 0)"
         ),
     )
 
@@ -855,8 +856,8 @@ def _struct_entry(metric, rule, run):
         f"STRUCT('{metric.name}' AS metric, {rule['kind']}_window AS window_label, "
         f"{fields['post']} AS post, {fields['pre']} AS pre, "
         f"{fields['mode']} AS winsorize_mode, "
-        f"{fields['post_threshold']} AS post_threshold, "
-        f"{fields['pre_threshold']} AS pre_threshold, "
+        f"{fields['post_winsorize_threshold']} AS post_winsorize_threshold, "
+        f"{fields['pre_winsorize_threshold']} AS pre_winsorize_threshold, "
         f"{fields['was_clipped']} AS was_clipped)"
     )
 
@@ -907,8 +908,8 @@ def rollup_select(metrics, run):
           SUM(POW(metric_row.pre, 2)) AS pre_sum_squares,
           SUM(CAST(metric_row.post AS FLOAT64) * metric_row.pre) AS sum_x_pre,
           ANY_VALUE(metric_row.winsorize_mode) AS winsorize_mode,
-          ANY_VALUE(metric_row.post_threshold) AS post_threshold,
-          ANY_VALUE(metric_row.pre_threshold) AS pre_threshold,
+          ANY_VALUE(metric_row.post_winsorize_threshold) AS post_winsorize_threshold,
+          ANY_VALUE(metric_row.pre_winsorize_threshold) AS pre_winsorize_threshold,
           SAFE_DIVIDE(SUM(metric_row.was_clipped), COUNT(*)) AS clipped_share
         FROM unit_windows{join_clause},
              UNNEST([{structs}]) AS metric_row

@@ -155,7 +155,7 @@ def sufficient_stats(row):
         "pre_sum_squares": float(row["pre_sum_squares"] or 0.0),
         "sum_x_pre": float(row["sum_x_pre"] or 0.0),
         "winsorize_mode": row["winsorize_mode"],
-        "post_threshold": row["post_threshold"],
-        "pre_threshold": row["pre_threshold"],
+        "post_winsorize_threshold": row["post_winsorize_threshold"],
+        "pre_winsorize_threshold": row["pre_winsorize_threshold"],
         "clipped_share": row["clipped_share"],
     }

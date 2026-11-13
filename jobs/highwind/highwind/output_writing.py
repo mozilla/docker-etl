@@ -284,7 +284,7 @@ SUFFICIENT_STATS_SCHEMA = [
         ),
     ),
     bigquery.SchemaField(
-        "post_threshold",
+        "post_winsorize_threshold",
         "FLOAT64",
         description=(
             "The value sum/sum_squares/sum_x_pre clipped post-enrollment values at, shared by "
@@ -293,7 +293,7 @@ SUFFICIENT_STATS_SCHEMA = [
         ),
     ),
     bigquery.SchemaField(
-        "pre_threshold",
+        "pre_winsorize_threshold",
         "FLOAT64",
         description=(
             "The value pre_sum/pre_sum_squares/sum_x_pre clipped the covariate at, shared by "
@@ -306,7 +306,7 @@ SUFFICIENT_STATS_SCHEMA = [
         "FLOAT64",
         description=(
             "Share of this branch's own matured units whose post-enrollment value exceeded "
-            "post_threshold and so was reduced to it. 0 when winsorize_mode is off or "
+            "post_winsorize_threshold and so was reduced to it. 0 when winsorize_mode is off or "
             "skipped_too_few."
         ),
     ),
