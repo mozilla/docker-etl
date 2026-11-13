@@ -282,18 +282,11 @@ def split_resolved_metrics(plan, configs):
 def winsorize_mode(metric):
     """Resolve one metric's `winsorize_quantile`/`winsorize_threshold` into a mode and value.
 
-    Neither field set means the job's own `DEFAULT_WINSORIZE_QUANTILE` applies.
-    `winsorize_quantile` is the cut point rather than the tail share: 0.995 keeps everything at or
-    below the reference branch's own 99.5th percentile, so a quantile of 1 means off (nothing is
-    above the 100th percentile) and its valid range is the half-open `(0, 1]`.
-    `winsorize_threshold` has no boundary value that means off: metric-hub's own validation
-    (EXP-8004) requires a fixed threshold to be strictly positive, so `winsorize_quantile = 1` is
-    the only way a metric turns winsorization off, and a threshold of 0 or below is refused here
-    the same way metric-hub refuses it. A yes/no metric is never clipped regardless of its
-    fields: clipping a 0/1 value changes nothing, which is why EXP-8004's metric-hub validation
-    refuses `winsorize_quantile`/`winsorize_threshold` on one. Reaching a yes/no metric here with
-    either field set can therefore only mean that validation has not run (or has not shipped)
-    yet; this treats it as off rather than clip a metric it cannot sharpen.
+    `winsorize_quantile` is the cut point, not the tail share, so its range is `(0, 1]` and a
+    quantile of 1 means off (nothing is above the 100th percentile). `winsorize_threshold` has no
+    such off value: metric-hub (EXP-8004) requires a fixed threshold to be strictly positive, so
+    quantile 1 is the only way to turn winsorization off. A yes/no metric is never clipped
+    regardless of its fields, since clipping a 0/1 value changes nothing.
     """
     if metric.is_yes_no:
         return Winsorize(WinsorizeMode.OFF)
