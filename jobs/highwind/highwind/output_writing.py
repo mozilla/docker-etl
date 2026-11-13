@@ -38,9 +38,23 @@ from mozilla_nimbus_schemas.highwind import (
     HighwindWindow,
     HighwindWindowKind,
     HighwindWindowResult,
+    HighwindWinsorizeMode,
 )
 
 from . import discovery, gbstats_compute
+from .metrics import WinsorizeMode
+
+# The job's own winsorize_mode strings (sql_generation.py's _clip_fields, carried through
+# sql_running.sufficient_stats) onto the blob schema's enum. Not a 1:1 name match: the job's
+# TOO_FEW_UNITS reads "skipped_too_few", self-explanatory in highwind_sufficient_stats_v1, where
+# the blob schema's shorter enum value is SKIPPED; and the job's own QUANTILE mode maps onto the
+# schema's FRACTION, the schema's name for the same reference-branch-quantile clipping.
+WINSORIZE_MODE_BY_JOB_VALUE = {
+    WinsorizeMode.QUANTILE.value: HighwindWinsorizeMode.FRACTION,
+    WinsorizeMode.FIXED.value: HighwindWinsorizeMode.FIXED,
+    WinsorizeMode.OFF.value: HighwindWinsorizeMode.OFF,
+    WinsorizeMode.TOO_FEW_UNITS.value: HighwindWinsorizeMode.SKIPPED,
+}
 
 # Production targets, the defaults an `Outputs` takes when nothing overrides them. Their own
 # dataset, so this job's artifacts are separable from the production analysis tables around them.
@@ -526,15 +540,58 @@ def build_segment_result(experiment, as_of, metric, results_by_cell, cells):
     return HighwindSegmentResult(
         segment=discovery.ALL_ENROLLED,
         windows=[
-            HighwindWindowResult(
-                window=schema_window(experiment, window),
-                is_summary=position == summary,
-                branches=branches,
-                comparisons=comparisons,
+            build_window_result(
+                experiment, metric, window, branches, comparisons, cells, position == summary
             )
             for position, (window, branches, comparisons) in enumerate(rows)
         ],
     )
+
+
+def build_window_result(experiment, metric, window, branches, comparisons, cells, is_summary):
+    winsorize = winsorize_cell(experiment, metric, window, cells) or {}
+    return HighwindWindowResult(
+        window=schema_window(experiment, window),
+        is_summary=is_summary,
+        branches=branches,
+        comparisons=comparisons,
+        winsorize_mode=winsorize_mode_schema(winsorize.get("winsorize_mode")),
+        post_winsorize_threshold=winsorize.get("post_winsorize_threshold"),
+        pre_winsorize_threshold=winsorize.get("pre_winsorize_threshold"),
+    )
+
+
+def winsorize_cell(experiment, metric, window, cells):
+    """This (metric, window)'s own sufficient-stats cell, for whichever branch has one.
+
+    The mode and both thresholds are the same on every branch's cell for a window: they are
+    derived once from the reference branch and applied to every arm (see
+    `sql_generation.rollup_select`), so any one branch's cell carries the window's own answer.
+    None when no branch has a cell yet, which is a window that has not matured for this
+    experiment.
+    """
+    for branch in experiment.branches:
+        cell = cells.get((metric.name, window.label, branch))
+        if cell is not None:
+            return cell
+    return None
+
+
+def winsorize_mode_schema(mode):
+    """Map one of the job's own winsorize_mode strings onto the blob schema's enum.
+
+    None, for a cell with nothing to report (no branch has matured this window yet) or no
+    `winsorize_mode` entry at all. Otherwise `mode` is a column read back from
+    `highwind_sufficient_stats_v1`'s own cells, a closed set the job itself produces, so an
+    unrecognised non-None value is a genuine inconsistency between the two rather than a thing a
+    blob build should carry through silently.
+    """
+    if mode is None:
+        return None
+    try:
+        return WINSORIZE_MODE_BY_JOB_VALUE[mode]
+    except KeyError:
+        raise ValueError(f"unknown winsorize mode {mode!r}") from None
 
 
 def summary_position(metric, rows):
@@ -558,6 +615,9 @@ def build_branches(experiment, metric, window, cells, comparisons):
             branch=branch,
             n=cell_units(cells, metric, window, branch),
             value=empty_interval() if errored(experiment, branch, comparisons) else means[branch],
+            clipped_share=cells.get((metric.name, window.label, branch), {}).get(
+                "clipped_share"
+            ),
         )
         for branch in experiment.branches
     ]
