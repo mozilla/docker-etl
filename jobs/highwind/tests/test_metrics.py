@@ -457,6 +457,12 @@ def test_an_explicit_zero_fraction_is_off():
     assert setting == metrics.Winsorize(metrics.WinsorizeMode.OFF)
 
 
+def test_an_explicit_zero_threshold_is_off():
+    setting = metrics.winsorize_mode(metric_with(winsorize_threshold=0))
+
+    assert setting == metrics.Winsorize(metrics.WinsorizeMode.OFF)
+
+
 def test_an_explicit_fraction_is_used_as_is():
     setting = metrics.winsorize_mode(metric_with(winsorize_fraction=0.02))
 
@@ -474,6 +480,21 @@ def test_setting_both_fields_is_refused():
         metrics.winsorize_mode(
             metric_with(winsorize_fraction=0.01, winsorize_threshold=500)
         )
+
+
+def test_a_fraction_of_one_or_more_is_refused():
+    with pytest.raises(ValueError, match="a-metric"):
+        metrics.winsorize_mode(metric_with(winsorize_fraction=1))
+
+
+def test_a_negative_fraction_is_refused():
+    with pytest.raises(ValueError, match="a-metric"):
+        metrics.winsorize_mode(metric_with(winsorize_fraction=-0.01))
+
+
+def test_a_negative_threshold_is_refused():
+    with pytest.raises(ValueError, match="a-metric"):
+        metrics.winsorize_mode(metric_with(winsorize_threshold=-1))
 
 
 def test_a_yes_no_metric_is_never_clipped_even_with_a_fraction_set():

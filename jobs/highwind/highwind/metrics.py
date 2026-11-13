@@ -95,6 +95,9 @@ class Metric:
     way it resolves everything else `Metric` carries. Until then they default to None here,
     meaning "not set", exactly as an unset field will read once EXP-8004 lands; see
     `_winsorize_fields` below for where that absence is read defensively, in this one place.
+    A metric sets at most one of the two (setting both is a `winsorize_mode` `ValueError`);
+    there is no separate mode field here, since `winsorize_mode` infers fraction, fixed or off
+    entirely from which one (if either) is set.
 
     `is_yes_no` is resolved once, in `split_resolved_metrics`, from the metric-hub
     `MetricDefinition`'s own `aggregation`/`threshold` fields (see `_is_yes_no_aggregation`)
@@ -261,7 +264,10 @@ def winsorize_mode(metric):
     """Resolve one metric's `winsorize_fraction`/`winsorize_threshold` into a mode and value.
 
     Neither field set means the job's own `DEFAULT_WINSORIZE_FRACTION` applies; an explicit
-    fraction of 0 means off. A yes/no metric is never clipped regardless of its fields: clipping a
+    fraction or threshold of 0 means off, for either field, which is why their valid ranges below
+    are the half-open `[0, 1)` and `[0, inf)` rather than open at zero too: zero already has a
+    meaning on each field, and carving it out as its own case first would only move the same
+    check down one line. A yes/no metric is never clipped regardless of its fields: clipping a
     0/1 value changes nothing, which is why EXP-8004's metric-hub validation refuses
     `winsorize_fraction`/`winsorize_threshold` on one. Reaching a yes/no metric here with either
     field set can therefore only mean that validation has not run (or has not shipped) yet; this
@@ -275,7 +281,17 @@ def winsorize_mode(metric):
         raise ValueError(
             f"metric '{metric.name}' sets both winsorize_fraction and winsorize_threshold"
         )
-    if fraction == 0:
+    if fraction is not None and not 0 <= fraction < 1:
+        raise ValueError(
+            f"metric '{metric.name}' has winsorize_fraction {fraction}, which must be in "
+            f"[0, 1): 0 means off, and a fraction of 1 or more would clip the whole branch"
+        )
+    if threshold is not None and threshold < 0:
+        raise ValueError(
+            f"metric '{metric.name}' has winsorize_threshold {threshold}, which must be >= 0: "
+            f"0 means off"
+        )
+    if fraction == 0 or threshold == 0:
         return Winsorize(WinsorizeMode.OFF)
     if fraction is not None:
         return Winsorize(WinsorizeMode.FRACTION, fraction)
