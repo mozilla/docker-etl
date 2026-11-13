@@ -940,6 +940,16 @@ def replace_partition(client, table, schema, rows, as_of):
     changes type between days. That is a live risk here rather than a theoretical one, because a
     cell in the `error` or `not_started` state omits `point`, `lower`, `upper` and `theta`
     entirely, so which columns appear at all varies with the day's mix of states.
+
+    `schema_update_options=[ALLOW_FIELD_ADDITION]`, because `table` is not recreated by a code
+    change: `ensure_table`'s `create_table(..., exists_ok=True)` is a no-op against a table that
+    already exists, so a live table carries whatever schema its first `CREATE TABLE` declared,
+    not today's `schema` argument. The target here is a partition decorator
+    (`table$YYYYMMDD`), one of the two cases BigQuery allows `schema_update_options` on at all
+    (the other is a plain `WRITE_APPEND`); without it, a load whose declared schema adds a column
+    the live table does not have yet fails on the schema mismatch rather than widening the table.
+    Only ever adds nullable columns (every field this job has added has been nullable), which is
+    the one change `ALLOW_FIELD_ADDITION` permits; a required column would need a different plan.
     """
     if not rows:
         return
@@ -947,6 +957,7 @@ def replace_partition(client, table, schema, rows, as_of):
         write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
         autodetect=False,
         schema=schema,
+        schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION],
     )
     target = f"{table}${as_of.strftime('%Y%m%d')}"
     client.load_table_from_json(rows, target, job_config=config).result()

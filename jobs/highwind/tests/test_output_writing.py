@@ -6,6 +6,7 @@ import logging
 import pathlib
 
 import pytest
+from google.cloud import bigquery
 from mozilla_nimbus_schemas.highwind import HighwindAnalysis
 
 from gbstats.frequentist.tests import sequential_interval_halfwidth
@@ -207,6 +208,22 @@ def test_a_run_writes_one_partition_of_each_table():
     ]
     assert all(
         config.write_disposition == "WRITE_TRUNCATE" for _, _, config in client.loads
+    )
+
+
+def test_a_partition_replace_allows_adding_a_field_to_a_table_that_already_exists():
+    # ensure_table's create_table(..., exists_ok=True) is a no-op against a live table, so a
+    # column added to SUFFICIENT_STATS_SCHEMA (or RESULTS_SCHEMA) only reaches a production table
+    # that was created before it if the load itself is allowed to widen the schema. Without
+    # ALLOW_FIELD_ADDITION, BigQuery refuses a load whose declared schema has a column the
+    # existing partition table does not.
+    client = RecordingClient()
+
+    write_one_run(client)
+
+    assert all(
+        config.schema_update_options == [bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION]
+        for _, _, config in client.loads
     )
 
 
