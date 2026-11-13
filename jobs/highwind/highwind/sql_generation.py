@@ -45,11 +45,21 @@ import math
 import textwrap
 
 from . import metrics
+from .metrics import WinsorizeMode, winsorize_mode
 
 # The bucket a unit's pre-enrollment rows land in. The covariate is one fixed window rather than
 # one per analysis window, so it is a single extra bucket that sorts before every other and is
 # read back out of the same pass.
 PRE_BUCKET = -1
+
+# How many quantile boundaries a QUANTILE-mode metric's reference-branch threshold is read off.
+# `APPROX_QUANTILES(x, N)` returns N+1 evenly-spaced boundaries regardless of which one a metric
+# needs, so one resolution serves every metric: a metric's own offset is
+# `round(quantile * QUANTILE_RESOLUTION)`, computed once per metric at SQL-build time because the
+# quantile is a property of the metric, not of the data. 2000 places every offset within 0.05
+# percentage points of the quantile asked for, comfortably finer than any quantile this job
+# expects to see.
+QUANTILE_RESOLUTION = 2000
 
 # Granularity of the branch-balancing hash. A unit is kept when its hash modulo this falls under
 # the branch's retention rate times this, so it sets how finely a rate can be expressed: one part
@@ -429,7 +439,22 @@ def build_queries(run, resolved_metrics, sources, cohort_table):
 
 
 def build_source_query(run, source, metrics, source_definition, cohort_table, unit):
-    """Build the full query for one source: cohort, per-slug facts, rows, stages, rollup."""
+    """Build the full query for one source: cohort, per-slug facts, rows, stages, rollup.
+
+    `reference_quantiles` is appended as one more CTE only when this source has a QUANTILE-mode
+    metric to compute a threshold for; a source whose metrics are all OFF or FIXED adds no CTE
+    and `rollup_select` emits exactly the SQL it always has, which is what keeps an unwinsorized
+    metric's query byte-identical to before this threshold existed.
+    """
+    quantiles = reference_quantiles_cte(metrics, run)
+    quantiles_block = (
+        f""",
+        reference_quantiles AS (
+        {_indent(quantiles)}
+        )"""
+        if quantiles is not None
+        else ""
+    )
     return textwrap.dedent(f"""
         WITH cohort AS (
         {_indent(cohort_source(cohort_table, unit))}
@@ -448,8 +473,80 @@ def build_source_query(run, source, metrics, source_definition, cohort_table, un
         ),
         unit_windows AS (
         {_indent(unit_windows_cte(metrics))}
+        ){quantiles_block}
+        {rollup_select(metrics, run)}
+    """).strip()
+
+
+def reference_branch_cte(run):
+    """List each slug's reference branch, one row per experiment.
+
+    Inlined like `branch_lookup`, so `reference_quantiles_cte` can restrict to the reference
+    branch's own rows with a join rather than a scan: it is one short row per experiment, and
+    BigQuery can broadcast it instead of materialising anything for it.
+    """
+    rows = ",\n    ".join(
+        f"STRUCT('{experiment.slug}' AS slug, '{experiment.reference_branch}' AS branch)"
+        for experiment in run.experiments
+    )
+    return f"SELECT * FROM UNNEST([\n    {rows}])"
+
+
+def reference_quantiles_cte(metrics, run):
+    """STAGE B.5: the reference branch's quantile of each QUANTILE-mode metric, per slug and
+    bucket, or None when this source has no QUANTILE-mode metric to compute one for.
+
+    Grouped on `bucket` rather than on a window label string, because a bucket already determines
+    every window label a row carries (see `unit_windows_cte`), in whichever family a metric uses.
+    `COUNT(*)` within that grouping is the number of reference-branch units that matured this
+    bucket; since every metric's raw value is COALESCEd to its `no_rows` default, it is the same
+    count for every metric at a given bucket, so it is read once rather than once per metric, and
+    `rollup_select` reads it back as `reference_n` to decide whether the reference branch has
+    enough units for the clip to touch at least one of them.
+
+    Restricted to the reference branch via a join rather than a literal branch name, because a
+    run covers many experiments, each with its own reference branch.
+
+    Metrics stay columns here, as in `bucket_totals_cte`: the quantile itself is a per-metric
+    aggregate over the UNCLIPPED raw window value (`unit_windows.{metric}__{kind}`, read before
+    any clip is applied, which is what keeps the threshold computed from the distribution it is
+    meant to describe rather than from itself), not something that needs to travel as a row. The
+    covariate's own quantile is read the same way, off `{metric}__pre`, at the same grouping: the
+    population behind it is exactly the set of reference units that matured THIS bucket, matching
+    the population `rollup_select` sums `pre_sum` over for that same window.
+    """
+    quantile_metrics = _quantile_mode_metrics(metrics)
+    if not quantile_metrics:
+        return None
+    columns = []
+    for metric in quantile_metrics:
+        quantile = winsorize_mode(metric).value
+        offset = round(quantile * QUANTILE_RESOLUTION)
+        for rule in metric.window_rules:
+            kind = rule["kind"]
+            columns.append(
+                f"APPROX_QUANTILES(unit_windows.{metric.name}__{kind}, {QUANTILE_RESOLUTION})"
+                f"[OFFSET({offset})] AS {metric.name}__{kind}__post_winsorize_quantile"
+            )
+        columns.append(
+            f"APPROX_QUANTILES(unit_windows.{metric.name}__pre, {QUANTILE_RESOLUTION})"
+            f"[OFFSET({offset})] AS {metric.name}__covariate_quantile"
         )
-        {rollup_select(metrics)}
+    column_list = ",\n  ".join(columns)
+    return textwrap.dedent(f"""
+        SELECT
+          unit_windows.slug,
+          unit_windows.bucket,
+          COUNT(*) AS reference_n,
+          {column_list}
+        FROM unit_windows
+        JOIN (
+        {_indent(reference_branch_cte(run))}
+        ) AS reference_branch
+          ON reference_branch.slug = unit_windows.slug
+         AND reference_branch.branch = unit_windows.branch
+        WHERE unit_windows.bucket >= 0
+        GROUP BY unit_windows.slug, unit_windows.bucket
     """).strip()
 
 
@@ -682,7 +779,90 @@ def covariate_value(metric):
     return reducer.finalize_sql(f"COALESCE({combined}, {reducer.no_rows})")
 
 
-def rollup_select(metrics):
+def _quantile_mode_metrics(metrics):
+    """The metrics in `metrics` that winsorize against a reference-branch quantile.
+
+    Shared between `reference_quantiles_cte` (which computes the quantiles) and `rollup_select`
+    (which joins to them), so the two agree on which metrics need the join without the two lists
+    being able to drift apart.
+    """
+    return [metric for metric in metrics if winsorize_mode(metric).mode == WinsorizeMode.QUANTILE]
+
+
+def _clip_fields(metric, kind, run):
+    """How one metric's (kind) window is clipped: the post/pre values the struct carries, the
+    mode and thresholds recorded alongside them, and whether a unit's own value was reduced.
+
+    OFF (including every yes/no metric) leaves `post`/`pre` exactly the bare column reference
+    `rollup_select` always read, which is what keeps an unwinsorized metric's generated SQL
+    byte-identical to before winsorization existed. FIXED scales the metric's per-week threshold
+    by how many bucket-lengths the window spans, known at SQL-build time from the bucket index
+    (`unit_windows.bucket + 1` buckets for a cumulative window ending there, one bucket for a
+    disjoint window) and, for the covariate, from the fixed covariate window's own length.
+    QUANTILE reads its threshold off `reference_quantiles` (aliased `rq`, joined by slug and
+    bucket in `rollup_select`), treating a bucket the reference branch had too few units to clip
+    the same way as a NULL threshold: `rq.reference_n` is NULL when no reference-branch unit
+    matured this bucket at all, and `rq.reference_n * (1 - quantile) < 1` when some did but not
+    enough units sit in the upper tail the quantile cuts off.
+    """
+    raw_post = f"{metric.name}__{kind}"
+    raw_pre = f"{metric.name}__pre"
+    setting = winsorize_mode(metric)
+    if setting.mode == WinsorizeMode.OFF:
+        return dict(
+            post=raw_post,
+            pre=raw_pre,
+            mode="'off'",
+            post_winsorize_threshold="CAST(NULL AS FLOAT64)",
+            pre_winsorize_threshold="CAST(NULL AS FLOAT64)",
+            was_clipped="0",
+        )
+    if setting.mode == WinsorizeMode.FIXED:
+        weeks = "(unit_windows.bucket + 1)" if kind == "cumulative" else "1"
+        post_winsorize_threshold = f"{setting.value} * {weeks}"
+        pre_winsorize_threshold = f"{setting.value * (run.covariate_days / run.length)}"
+        return dict(
+            post=f"LEAST({raw_post}, {post_winsorize_threshold})",
+            pre=f"LEAST({raw_pre}, {pre_winsorize_threshold})",
+            mode="'fixed'",
+            post_winsorize_threshold=f"CAST({post_winsorize_threshold} AS FLOAT64)",
+            pre_winsorize_threshold=f"CAST({pre_winsorize_threshold} AS FLOAT64)",
+            was_clipped=f"IF({raw_post} > {post_winsorize_threshold}, 1, 0)",
+        )
+    too_few = f"(rq.reference_n IS NULL OR rq.reference_n * (1 - {setting.value}) < 1)"
+    post_winsorize_quantile = f"rq.{metric.name}__{kind}__post_winsorize_quantile"
+    covariate_quantile = f"rq.{metric.name}__covariate_quantile"
+    post_winsorize_threshold = f"IF({too_few}, NULL, {post_winsorize_quantile})"
+    pre_winsorize_threshold = f"IF({too_few}, NULL, {covariate_quantile})"
+    post = f"LEAST({raw_post}, {post_winsorize_threshold})"
+    pre = f"LEAST({raw_pre}, {pre_winsorize_threshold})"
+    return dict(
+        post=f"IF({post_winsorize_threshold} IS NULL, {raw_post}, {post})",
+        pre=f"IF({pre_winsorize_threshold} IS NULL, {raw_pre}, {pre})",
+        mode=f"IF({too_few}, '{WinsorizeMode.TOO_FEW_UNITS.value}', 'quantile')",
+        post_winsorize_threshold=post_winsorize_threshold,
+        pre_winsorize_threshold=pre_winsorize_threshold,
+        was_clipped=(
+            f"IF({post_winsorize_threshold} IS NOT NULL "
+            f"AND {raw_post} > {post_winsorize_threshold}, 1, 0)"
+        ),
+    )
+
+
+def _struct_entry(metric, rule, run):
+    """One metric_row struct literal: its identity, clipped values, and winsorize bookkeeping."""
+    fields = _clip_fields(metric, rule["kind"], run)
+    return (
+        f"STRUCT('{metric.name}' AS metric, {rule['kind']}_window AS window_label, "
+        f"{fields['post']} AS post, {fields['pre']} AS pre, "
+        f"{fields['mode']} AS winsorize_mode, "
+        f"{fields['post_winsorize_threshold']} AS post_winsorize_threshold, "
+        f"{fields['pre_winsorize_threshold']} AS pre_winsorize_threshold, "
+        f"{fields['was_clipped']} AS was_clipped)"
+    )
+
+
+def rollup_select(metrics, run):
     """STAGE C: per-branch sufficient statistics, one row per (slug, branch, window, metric).
 
     The six aggregates are everything a covariate-adjusted mean comparison needs, which is the
@@ -691,19 +871,34 @@ def rollup_select(metrics):
     is applied to the units-by-buckets table rather than to source rows, so it multiplies the small
     table and not the large one.
 
+    `post` and `pre` are clipped per metric by `_clip_fields`, at whichever threshold its mode
+    resolves to; the four extra struct fields it also returns ride along the same unpivot and are
+    read back here as the sufficient statistics' own winsorize columns, `ANY_VALUE` because a
+    metric's mode and thresholds are the same for every unit in its (slug, branch, window) group.
+
+    The reference-branch join (`rq`) is added, and `slug`/`branch`/`bucket` qualified to
+    `unit_windows`, only when some metric needs it: a query with no QUANTILE-mode metric has no
+    `reference_quantiles` CTE to join (see `build_source_query`), and leaving the qualification
+    off in that case is what keeps that query's SQL exactly what it was before winsorization.
+
     A NULL label is a bucket that completes no window of that metric's kind, and the covariate
     bucket is every metric's NULL, so the filter drops both.
     """
+    needs_quantiles = bool(_quantile_mode_metrics(metrics))
+    prefix = "unit_windows." if needs_quantiles else ""
+    join_clause = (
+        f"\nLEFT JOIN reference_quantiles AS rq\n"
+        f"  ON rq.slug = {prefix}slug AND rq.bucket = {prefix}bucket"
+        if needs_quantiles
+        else ""
+    )
     structs = ",\n         ".join(
-        f"STRUCT('{metric.name}' AS metric, {rule['kind']}_window AS window_label, "
-        f"{metric.name}__{rule['kind']} AS post, {metric.name}__pre AS pre)"
-        for metric in metrics
-        for rule in metric.window_rules
+        _struct_entry(metric, rule, run) for metric in metrics for rule in metric.window_rules
     )
     return textwrap.dedent(f"""
         SELECT
-          slug,
-          branch,
+          {prefix}slug,
+          {prefix}branch,
           metric_row.window_label,
           metric_row.metric,
           COUNT(*) AS n,
@@ -711,12 +906,16 @@ def rollup_select(metrics):
           SUM(POW(metric_row.post, 2)) AS sum_squares,
           SUM(metric_row.pre) AS pre_sum,
           SUM(POW(metric_row.pre, 2)) AS pre_sum_squares,
-          SUM(CAST(metric_row.post AS FLOAT64) * metric_row.pre) AS sum_x_pre
-        FROM unit_windows,
+          SUM(CAST(metric_row.post AS FLOAT64) * metric_row.pre) AS sum_x_pre,
+          ANY_VALUE(metric_row.winsorize_mode) AS winsorize_mode,
+          ANY_VALUE(metric_row.post_winsorize_threshold) AS post_winsorize_threshold,
+          ANY_VALUE(metric_row.pre_winsorize_threshold) AS pre_winsorize_threshold,
+          SAFE_DIVIDE(SUM(metric_row.was_clipped), COUNT(*)) AS clipped_share
+        FROM unit_windows{join_clause},
              UNNEST([{structs}]) AS metric_row
-        WHERE bucket >= 0
+        WHERE {prefix}bucket >= 0
           AND metric_row.window_label IS NOT NULL
-        GROUP BY slug, branch, metric_row.window_label, metric_row.metric
+        GROUP BY {prefix}slug, {prefix}branch, metric_row.window_label, metric_row.metric
     """).strip()
 
 

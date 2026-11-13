@@ -81,3 +81,46 @@ def test_the_cohort_table_is_given_an_expiry_so_a_runs_intermediate_does_not_acc
     (table, fields) = client.updated[0]
     assert fields == ["expires"]
     assert table.expires > datetime.datetime.now(datetime.timezone.utc)
+
+
+def test_sufficient_stats_carries_the_winsorize_columns_through():
+    row = {
+        "n": 10,
+        "sum": 5.0,
+        "sum_squares": 5.0,
+        "pre_sum": 4.0,
+        "pre_sum_squares": 4.0,
+        "sum_x_pre": 3.0,
+        "winsorize_mode": "quantile",
+        "post_winsorize_threshold": 500.0,
+        "pre_winsorize_threshold": 2000.0,
+        "clipped_share": 0.01,
+    }
+
+    stats = sql_running.sufficient_stats(row)
+
+    assert stats["winsorize_mode"] == "quantile"
+    assert stats["post_winsorize_threshold"] == 500.0
+    assert stats["pre_winsorize_threshold"] == 2000.0
+    assert stats["clipped_share"] == 0.01
+
+
+def test_sufficient_stats_leaves_an_off_cells_winsorize_columns_as_the_null_the_row_carried():
+    row = {
+        "n": 10,
+        "sum": 5.0,
+        "sum_squares": 5.0,
+        "pre_sum": 4.0,
+        "pre_sum_squares": 4.0,
+        "sum_x_pre": 3.0,
+        "winsorize_mode": "off",
+        "post_winsorize_threshold": None,
+        "pre_winsorize_threshold": None,
+        "clipped_share": None,
+    }
+
+    stats = sql_running.sufficient_stats(row)
+
+    assert stats["post_winsorize_threshold"] is None
+    assert stats["pre_winsorize_threshold"] is None
+    assert stats["clipped_share"] is None

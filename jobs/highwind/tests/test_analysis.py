@@ -511,6 +511,10 @@ class UnitCountFailingClient:
         pre_sum=4.0,
         pre_sum_squares=4.0,
         sum_x_pre=3.0,
+        winsorize_mode="off",
+        post_winsorize_threshold=None,
+        pre_winsorize_threshold=None,
+        clipped_share=None,
     )
 
     def __init__(self):

@@ -6,6 +6,7 @@ import logging
 import pathlib
 
 import pytest
+from google.cloud import bigquery
 from mozilla_nimbus_schemas.highwind import HighwindAnalysis
 
 from gbstats.frequentist.tests import sequential_interval_halfwidth
@@ -210,6 +211,22 @@ def test_a_run_writes_one_partition_of_each_table():
     )
 
 
+def test_a_partition_replace_allows_adding_a_field_to_a_table_that_already_exists():
+    # ensure_table's create_table(..., exists_ok=True) is a no-op against a live table, so a
+    # column added to SUFFICIENT_STATS_SCHEMA (or RESULTS_SCHEMA) only reaches a production table
+    # that was created before it if the load itself is allowed to widen the schema. Without
+    # ALLOW_FIELD_ADDITION, BigQuery refuses a load whose declared schema has a column the
+    # existing partition table does not.
+    client = RecordingClient()
+
+    write_one_run(client)
+
+    assert all(
+        config.schema_update_options == [bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION]
+        for _, _, config in client.loads
+    )
+
+
 def test_the_schema_is_declared_rather_than_inferred_from_the_rows():
     client = RecordingClient()
 
@@ -256,6 +273,42 @@ def test_the_aggregates_are_keyed_out_to_columns_the_statistics_can_be_joined_on
     assert stats_row["metric"] == "active_hours"
     assert stats_row["window"] == "cumu:1"
     assert stats_row["branch"] == "control"
+
+
+def test_the_sufficient_stats_schema_declares_the_winsorize_columns():
+    declared = {field.name for field in output_writing.SUFFICIENT_STATS_SCHEMA}
+
+    assert {
+        "winsorize_mode",
+        "post_winsorize_threshold",
+        "pre_winsorize_threshold",
+        "clipped_share",
+    } <= declared
+
+
+def test_a_clipped_cells_winsorize_columns_flow_through_to_the_written_row():
+    client = RecordingClient()
+    clipped_aggregates = dict(
+        AGGREGATES,
+        winsorize_mode="quantile",
+        post_winsorize_threshold=500.0,
+        pre_winsorize_threshold=2000.0,
+        clipped_share=0.01,
+    )
+
+    output_writing.write_tables(
+        client,
+        AS_OF,
+        {"an-experiment": [CONFIDENT_CELL]},
+        {"an-experiment": {("active_hours", "cumu:1", "control"): clipped_aggregates}},
+        output_writing.Outputs(),
+    )
+    stats_row = client.loads[1][1][0]
+
+    assert stats_row["winsorize_mode"] == "quantile"
+    assert stats_row["post_winsorize_threshold"] == 500.0
+    assert stats_row["pre_winsorize_threshold"] == 2000.0
+    assert stats_row["clipped_share"] == 0.01
     assert {key: stats_row[key] for key in AGGREGATES} == AGGREGATES
 
 
