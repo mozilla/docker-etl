@@ -783,3 +783,97 @@ def test_a_multi_arm_run_still_builds_one_shared_threshold_expression():
 
     assert sql.count("LEFT JOIN reference_quantiles AS rq") == 1
 
+
+def test_build_source_query_assembles_every_stage_for_a_multi_metric_source():
+    # The full query for a source carrying one default-fraction metric and one yes/no (off)
+    # metric: every stage is present, in order, and the reference-quantiles CTE is added only
+    # because active_hours needs one.
+    run = run_of(
+        {"a-slug": cumulative_windows(2)},
+        metric_names_by_slug={"a-slug": ("active_hours", "retained")},
+    )
+
+    sql = sql_generation.build_source_query(
+        run,
+        "clients_daily",
+        [named("active_hours"), named("retained")],
+        CLIENTS_DAILY_SOURCE,
+        "a.cohort_table",
+        CLIENT_UNIT,
+    )
+
+    assert sql.startswith("WITH cohort AS (")
+    for stage in (
+        "experiment_meta AS (",
+        "source_rows AS (",
+        "bucket_totals AS (",
+        "unit_buckets AS (",
+        "unit_windows AS (",
+        "reference_quantiles AS (",
+    ):
+        assert stage in sql, stage
+    assert sql.index("unit_windows AS (") < sql.index("reference_quantiles AS (")
+    assert "active_hours__raw" in sql
+    assert "retained__raw" in sql
+    assert "STRUCT('active_hours' AS metric" in sql
+    assert "STRUCT('retained' AS metric" in sql
+    assert "'off' AS winsorize_mode" in sql
+    assert sql.rstrip().endswith(
+        "GROUP BY unit_windows.slug, unit_windows.branch, metric_row.window_label, "
+        "metric_row.metric"
+    )
+
+
+def test_build_source_query_adds_no_quantile_cte_when_every_metric_is_off():
+    run = run_of({"a-slug": disjoint_windows(1)})
+
+    sql = sql_generation.build_source_query(
+        run, "active_users", [named("retained_dau")], ACTIVE_USERS_SOURCE, "a.cohort_table",
+        CLIENT_UNIT,
+    )
+
+    assert "reference_quantiles" not in sql
+    assert "LEAST(retained_dau" not in sql
+
+
+def metric_with_name(name, winsorize_fraction=None, winsorize_threshold=None, is_yes_no=False):
+    """A continuous metric distinguished only by name and winsorize setting, for tests that need
+    several metrics with different settings to coexist in one source without colliding on the
+    column names their own struct/quantile entries are keyed by."""
+    return metrics.Metric(
+        name=name,
+        source="clients_daily",
+        reducer=reducer(f"SUM({name}_sum)"),
+        window_rules=(metrics.CUMULATIVE_WEEKLY,),
+        winsorize_fraction=winsorize_fraction,
+        winsorize_threshold=winsorize_threshold,
+        is_yes_no=is_yes_no,
+    )
+
+
+def test_a_source_with_mixed_winsorize_settings_clips_each_metric_on_its_own_terms():
+    # One data source, three metrics each in a different mode: fraction, fixed and off. Each
+    # must get its own clip, independent of the other two, and the off metric must be untouched.
+    run = run_of({"a-slug": cumulative_windows(1)})
+    fraction_m = metric_with_name("metric_fraction", winsorize_fraction=0.02)
+    fixed_m = metric_with_name("metric_fixed", winsorize_threshold=500)
+    off_m = metric_with_name("metric_off", winsorize_fraction=0)
+
+    sql = sql_generation.rollup_select([fraction_m, fixed_m, off_m], run)
+
+    assert (
+        "LEAST(metric_fraction__cumulative, "
+        "IF((rq.reference_n IS NULL OR rq.reference_n * 0.02 < 1), NULL, "
+        "rq.metric_fraction__cumulative__outcome_quantile))" in sql
+    )
+    assert "LEAST(metric_fixed__cumulative, 500 * (unit_windows.bucket + 1))" in sql
+    assert "metric_off__cumulative AS post" in sql
+    assert "LEAST(metric_off" not in sql
+    assert "metric_off__cumulative__outcome_quantile" not in sql
+    assert "metric_fixed__cumulative__outcome_quantile" not in sql
+
+    quantiles = sql_generation.reference_quantiles_cte([fraction_m, fixed_m, off_m], run)
+
+    assert "metric_fraction__cumulative__outcome_quantile" in quantiles
+    assert "metric_fixed" not in quantiles
+    assert "metric_off" not in quantiles
