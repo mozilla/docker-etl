@@ -340,7 +340,7 @@ def resolve_run_metrics(experiments):
     configs = load_metric_hub()
     requested = {name for experiment in experiments for name in experiment.metric_names}
     plan = build_aggregation_plan(configs, requested)
-    resolved_metrics, unresolved_metrics = split_resolved_metrics(plan)
+    resolved_metrics, unresolved_metrics = split_resolved_metrics(plan, configs)
     metrics_by_slug = {}
     for experiment in experiments:
         exp_metrics, problems = metrics_for_experiment(

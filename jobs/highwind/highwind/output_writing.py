@@ -271,6 +271,45 @@ SUFFICIENT_STATS_SCHEMA = [
             "coefficient is fitted from."
         ),
     ),
+    bigquery.SchemaField(
+        "winsorize_mode",
+        "STRING",
+        description=(
+            "How this metric and window were winsorized. off, every value summed above is "
+            "exactly the unclipped one; quantile, sum and pre_sum were clipped at a quantile of "
+            "the reference branch's own window and covariate values; fixed, at a fixed value "
+            "scaled to the window's length; skipped_too_few, a quantile was set but the "
+            "reference branch had too few matured units for it to clip at least one of them, so "
+            "nothing was clipped this window despite the metric's mode being quantile."
+        ),
+    ),
+    bigquery.SchemaField(
+        "post_winsorize_threshold",
+        "FLOAT64",
+        description=(
+            "The value sum/sum_squares/sum_x_pre clipped post-enrollment values at, shared by "
+            "every branch of this metric and window. NULL when winsorize_mode is off or "
+            "skipped_too_few."
+        ),
+    ),
+    bigquery.SchemaField(
+        "pre_winsorize_threshold",
+        "FLOAT64",
+        description=(
+            "The value pre_sum/pre_sum_squares/sum_x_pre clipped the covariate at, shared by "
+            "every branch of this metric and window. NULL when winsorize_mode is off or "
+            "skipped_too_few."
+        ),
+    ),
+    bigquery.SchemaField(
+        "clipped_share",
+        "FLOAT64",
+        description=(
+            "Share of this branch's own matured units whose post-enrollment value exceeded "
+            "post_winsorize_threshold and so was reduced to it. 0 when winsorize_mode is off or "
+            "skipped_too_few."
+        ),
+    ),
 ]
 
 # One row per log record the run emitted. The columns after the first three are the ones
@@ -901,6 +940,16 @@ def replace_partition(client, table, schema, rows, as_of):
     changes type between days. That is a live risk here rather than a theoretical one, because a
     cell in the `error` or `not_started` state omits `point`, `lower`, `upper` and `theta`
     entirely, so which columns appear at all varies with the day's mix of states.
+
+    `schema_update_options=[ALLOW_FIELD_ADDITION]`, because `table` is not recreated by a code
+    change: `ensure_table`'s `create_table(..., exists_ok=True)` is a no-op against a table that
+    already exists, so a live table carries whatever schema its first `CREATE TABLE` declared,
+    not today's `schema` argument. The target here is a partition decorator
+    (`table$YYYYMMDD`), one of the two cases BigQuery allows `schema_update_options` on at all
+    (the other is a plain `WRITE_APPEND`); without it, a load whose declared schema adds a column
+    the live table does not have yet fails on the schema mismatch rather than widening the table.
+    Only ever adds nullable columns (every field this job has added has been nullable), which is
+    the one change `ALLOW_FIELD_ADDITION` permits; a required column would need a different plan.
     """
     if not rows:
         return
@@ -908,6 +957,7 @@ def replace_partition(client, table, schema, rows, as_of):
         write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
         autodetect=False,
         schema=schema,
+        schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION],
     )
     target = f"{table}${as_of.strftime('%Y%m%d')}"
     client.load_table_from_json(rows, target, job_config=config).result()
