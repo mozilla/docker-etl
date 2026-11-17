@@ -5,6 +5,7 @@ Reading order is this file, then the modules it calls into:
     discovery.py        which experiments, and which windows each metric gets
     units.py            the unit each experiment is analysed at
     metrics.py          SECTION 1: metric definitions
+    segments.py         SECTION 1B: segment definitions
     sql_generation.py   SECTION 2: SQL generation
     sql_running.py      SECTION 3: SQL running
     gbstats_compute.py  SECTION 4: gbstats compute
@@ -15,7 +16,9 @@ here.
 
 The job analyses Firefox Desktop experiments only and recomputes every result on each run. Each
 experiment's metrics are the list the Experimenter mirror resolves for it (`discovery.py`), computed
-from their metric-hub `nimbus/` definitions (`metrics.py`).
+from their metric-hub `nimbus/` definitions (`metrics.py`). Each experiment's own selected shared
+segments are resolved the same way (`segments.py`); a name that does not resolve is reported in a
+warning.
 """
 
 import contextlib
@@ -25,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from google.cloud import storage  # type: ignore
 from google.cloud import bigquery
 
-from . import discovery, gbstats_compute
+from . import discovery, gbstats_compute, segments
 from . import output_writing, sql_generation, sql_running
 from .metrics import (
     build_aggregation_plan,
@@ -93,7 +96,9 @@ def run_daily_job(
         if not experiments:
             return []
 
-        metrics_by_slug, resolved_metrics, sources = resolve_run_metrics(experiments)
+        configs = load_metric_hub()
+        metrics_by_slug, resolved_metrics, sources = resolve_run_metrics(experiments, configs)
+        resolve_run_segments(experiments, configs)
         windows_by_slug = {
             experiment.slug: run_windows(experiment, as_of, metrics_by_slug[experiment.slug])
             for experiment in experiments
@@ -328,7 +333,7 @@ def writes_blobs(validate_only, sample_percent, outputs):
     return sample_percent is None or outputs.local_blob_dir is not None
 
 
-def resolve_run_metrics(experiments):
+def resolve_run_metrics(experiments, configs):
     """Resolve the whole run's metrics from metric-hub, once, from every experiment's own names.
 
     Returns each experiment's own metric list (for `run_windows`, the statistics and the blob), the
@@ -338,7 +343,6 @@ def resolve_run_metrics(experiments):
     `nimbus/` definition for it or its windows are not ones Highwind can express, is reported
     against every experiment that asked for it rather than failing the run or that experiment.
     """
-    configs = load_metric_hub()
     requested = {name for experiment in experiments for name in experiment.metric_names}
     plan = build_aggregation_plan(configs, requested)
     resolved_metrics, unresolved_metrics = split_resolved_metrics(plan, configs)
@@ -354,6 +358,36 @@ def resolve_run_metrics(experiments):
                 extra={"experiment_slug": experiment.slug, "metric": problem.name},
             )
     return metrics_by_slug, resolved_metrics, plan.sources
+
+
+def resolve_run_segments(experiments, configs):
+    """Resolve the whole run's segments from metric-hub, once, from every experiment's own names.
+
+    Mirrors `resolve_run_metrics`. Returns each experiment's own resolved segment NAMES (never
+    `all_enrolled`, which every experiment gets regardless of what resolved here), the resolved
+    segments by name, and the resolved segment sources. A name that does not resolve, whether it is
+    an inline-only segment or the installed parser has no `segment_plan()` at all (`segments.py`),
+    is reported against every experiment that selected it rather than failing the run or that
+    experiment.
+    """
+    requested = {name for experiment in experiments for name in experiment.segment_names}
+    sources, resolved_segments, unresolved_segments = segments.build_segment_plan(
+        configs, requested
+    )
+    segment_names_by_slug = {}
+    for experiment in experiments:
+        exp_segments, problems = segments.segments_for_experiment(
+            experiment, resolved_segments, unresolved_segments
+        )
+        segment_names_by_slug[experiment.slug] = tuple(
+            sorted(segment.name for segment in exp_segments)
+        )
+        for problem in problems:
+            logger.warning(
+                f"{experiment.slug}: segment {problem.name!r} not computed: {problem.reason}",
+                extra={"experiment_slug": experiment.slug, "segment": problem.name},
+            )
+    return segment_names_by_slug, resolved_segments, sources
 
 
 def gather_sufficient_statistics(client, run, resolved_metrics, sources, as_of, validate_only):
