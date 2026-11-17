@@ -135,6 +135,16 @@ RESULTS_SCHEMA = [
         description="Branch the comparison is made against, from the Experimenter mirror.",
     ),
     bigquery.SchemaField(
+        "segment",
+        "STRING",
+        description=(
+            "Which population this row is computed over: all_enrolled for every analysed unit, "
+            "or a shared segment the experiment selected, resolved against metric-hub's nimbus/ "
+            "segment definitions. Nullable only because the column was added after rows without "
+            "it already existed; every row this job writes carries one."
+        ),
+    ),
+    bigquery.SchemaField(
         "state",
         "STRING",
         description=(
@@ -239,6 +249,16 @@ SUFFICIENT_STATS_SCHEMA = [
     ),
     bigquery.SchemaField(
         "branch", "STRING", description="Branch these aggregates are for."
+    ),
+    bigquery.SchemaField(
+        "segment",
+        "STRING",
+        description=(
+            "Which population these aggregates are computed over: all_enrolled for every analysed "
+            "unit, or a shared segment the experiment selected. Joins to "
+            "highwind_statistics_v1.segment. Nullable only because the column was added after "
+            "rows without it already existed; every row this job writes carries one."
+        ),
     ),
     bigquery.SchemaField(
         "n",
@@ -466,16 +486,31 @@ def write_blob(storage, analysis, outputs):
     return f"{outputs.blob_prefix}/{name}"
 
 
-def build_analysis(experiment, as_of, metrics, results, cells, units, problems):
+def build_analysis(
+    experiment,
+    as_of,
+    metrics,
+    results,
+    cells,
+    units,
+    segment_names,
+    problems,
+):
+    """Build one experiment's full analysis, one `HighwindSegmentResult` per `segment_names` entry.
+
+    `segment_names` is the experiment's own segment set; every metric is broken down by the same
+    set, since a segment is a population split, not a property of any one metric. `units` is the
+    whole cohort's per-branch unit count.
+    """
     results_by_cell = {
-        (result["metric"], result["window"], result["branch"]): result
+        (result["metric"], result["window"], result["segment"], result["branch"]): result
         for result in results
     }
     return HighwindAnalysis(
         metadata=build_metadata(experiment, as_of),
-        segments=[build_segment(experiment, units)],
+        segments=[build_segment(experiment, name, units) for name in segment_names],
         metrics=[
-            build_metric(experiment, as_of, metric, results_by_cell, cells)
+            build_metric(experiment, as_of, metric, results_by_cell, cells, segment_names)
             for metric in metrics
         ],
         errors=[build_error(experiment, problem) for problem in problems],
@@ -506,50 +541,63 @@ def build_metadata(experiment, as_of):
     )
 
 
-def build_segment(experiment, units):
+def build_segment(experiment, name, units):
+    """One top-level `HighwindSegment`: its display text and its own per-branch unit count.
+
+    `all_enrolled` needs no resolution and no display text of its own; its units are the whole
+    cohort's, already counted in `units`.
+    """
+    friendly_name = discovery.ALL_ENROLLED_NAME
+    description = None
+    branch_units = units
     return HighwindSegment(
-        slug=discovery.ALL_ENROLLED,
-        friendly_name=discovery.ALL_ENROLLED_NAME,
+        slug=name,
+        friendly_name=friendly_name,
+        description=description,
         branches=[
-            HighwindSegmentBranch(branch=branch, units=units.get(branch, 0))
+            HighwindSegmentBranch(branch=branch, units=branch_units.get(branch, 0))
             for branch in experiment.branches
         ],
     )
 
 
-def build_metric(experiment, as_of, metric, results_by_cell, cells):
+def build_metric(experiment, as_of, metric, results_by_cell, cells, segment_names):
     return HighwindMetricResult(
         slug=metric.name,
         friendly_name=metric.friendly_name or metric.name,
         description=metric.description,
         segments=[
-            build_segment_result(experiment, as_of, metric, results_by_cell, cells)
+            build_segment_result(experiment, as_of, metric, results_by_cell, cells, name)
+            for name in segment_names
         ],
     )
 
 
-def build_segment_result(experiment, as_of, metric, results_by_cell, cells):
+def build_segment_result(experiment, as_of, metric, results_by_cell, cells, segment):
     rows = []
     for window in discovery.reported_windows(metric, experiment, as_of):
         comparisons = build_comparisons(
-            experiment, as_of, metric, window, results_by_cell, cells
+            experiment, as_of, metric, window, results_by_cell, cells, segment
         )
-        branches = build_branches(experiment, metric, window, cells, comparisons)
+        branches = build_branches(experiment, metric, window, cells, comparisons, segment)
         rows.append((window, branches, comparisons))
     summary = summary_position(metric, rows)
     return HighwindSegmentResult(
-        segment=discovery.ALL_ENROLLED,
+        segment=segment,
         windows=[
             build_window_result(
-                experiment, metric, window, branches, comparisons, cells, position == summary
+                experiment, metric, window, branches, comparisons, cells, segment,
+                position == summary,
             )
             for position, (window, branches, comparisons) in enumerate(rows)
         ],
     )
 
 
-def build_window_result(experiment, metric, window, branches, comparisons, cells, is_summary):
-    winsorize = winsorize_cell(experiment, metric, window, cells) or {}
+def build_window_result(
+    experiment, metric, window, branches, comparisons, cells, segment, is_summary
+):
+    winsorize = winsorize_cell(experiment, metric, window, cells, segment) or {}
     return HighwindWindowResult(
         window=schema_window(experiment, window),
         is_summary=is_summary,
@@ -561,17 +609,17 @@ def build_window_result(experiment, metric, window, branches, comparisons, cells
     )
 
 
-def winsorize_cell(experiment, metric, window, cells):
-    """This (metric, window)'s own sufficient-stats cell, for whichever branch has one.
+def winsorize_cell(experiment, metric, window, cells, segment):
+    """This (metric, window, segment)'s own sufficient-stats cell, for whichever branch has one.
 
     The mode and both thresholds are the same on every branch's cell for a window: they are
     derived once from the reference branch and applied to every arm (see
-    `sql_generation.rollup_select`), so any one branch's cell carries the window's own answer.
-    None when no branch has a cell yet, which is a window that has not matured for this
-    experiment.
+    `sql_generation.rollup_select`), so any one branch's cell for the segment carries the
+    window's own answer. None when no branch has a cell yet, which is a window that has not
+    matured for this experiment.
     """
     for branch in experiment.branches:
-        cell = cells.get((metric.name, window.label, branch))
+        cell = cells.get((metric.name, window.label, segment, branch))
         if cell is not None:
             return cell
     return None
@@ -608,14 +656,14 @@ def summary_position(metric, rows):
     return min(range(len(rows)), key=lambda position: rows[position][0].end, default=None)
 
 
-def build_branches(experiment, metric, window, cells, comparisons):
-    means = branch_means(experiment, metric, window, cells)
+def build_branches(experiment, metric, window, cells, comparisons, segment):
+    means = branch_means(experiment, metric, window, cells, segment)
     return [
         HighwindBranchValue(
             branch=branch,
-            n=cell_units(cells, metric, window, branch),
+            n=cell_units(cells, metric, window, branch, segment),
             value=empty_interval() if errored(experiment, branch, comparisons) else means[branch],
-            clipped_share=cells.get((metric.name, window.label, branch), {}).get(
+            clipped_share=cells.get((metric.name, window.label, segment, branch), {}).get(
                 "clipped_share"
             ),
         )
@@ -623,14 +671,14 @@ def build_branches(experiment, metric, window, cells, comparisons):
     ]
 
 
-def branch_means(experiment, metric, window, cells):
+def branch_means(experiment, metric, window, cells, segment):
     reported = [
-        cells[(metric.name, window.label, branch)]
+        cells[(metric.name, window.label, segment, branch)]
         for branch in experiment.branches
-        if (metric.name, window.label, branch) in cells
+        if (metric.name, window.label, segment, branch) in cells
     ]
     try:
-        theta = gbstats_compute.window_theta(experiment, metric, window, cells)
+        theta = gbstats_compute.window_theta(experiment, metric, window, cells, segment)
         pooled_pre_mean = sum(cell["pre_sum"] for cell in reported) / sum(
             cell["n"] for cell in reported
         )
@@ -638,7 +686,7 @@ def branch_means(experiment, metric, window, cells):
         return {branch: empty_interval() for branch in experiment.branches}
     return {
         branch: branch_mean(
-            cells.get((metric.name, window.label, branch)), theta, pooled_pre_mean
+            cells.get((metric.name, window.label, segment, branch)), theta, pooled_pre_mean
         )
         for branch in experiment.branches
     }
@@ -676,11 +724,11 @@ def errored(experiment, branch, comparisons):
     return all(comparison.state == HighwindCellState.ERROR for comparison in involved)
 
 
-def cell_units(cells, metric, window, branch):
-    return cells.get((metric.name, window.label, branch), {}).get("n", 0)
+def cell_units(cells, metric, window, branch, segment):
+    return cells.get((metric.name, window.label, segment, branch), {}).get("n", 0)
 
 
-def build_comparisons(experiment, as_of, metric, window, results_by_cell, cells):
+def build_comparisons(experiment, as_of, metric, window, results_by_cell, cells, segment):
     if not discovery.has_matured(experiment, window, as_of):
         return [
             HighwindComparison(
@@ -702,14 +750,15 @@ def build_comparisons(experiment, as_of, metric, window, results_by_cell, cells)
             metric,
             window,
             treatment,
-            results_by_cell.get((metric.name, window.label, treatment)),
+            results_by_cell.get((metric.name, window.label, segment, treatment)),
             cells,
+            segment,
         )
         for treatment in experiment.treatment_branches
     ]
 
 
-def build_comparison(experiment, metric, window, treatment, result, cells):
+def build_comparison(experiment, metric, window, treatment, result, cells, segment):
     if result is None:
         return HighwindComparison(
             branch=treatment,
@@ -726,8 +775,8 @@ def build_comparison(experiment, metric, window, treatment, result, cells):
     n_reference, n_treatment = result.get("n_reference"), result.get("n_treatment")
     if state == HighwindCellState.NOT_STARTED:
         state = HighwindCellState.INSUFFICIENT_DATA
-        n_reference = cell_units(cells, metric, window, experiment.reference_branch)
-        n_treatment = cell_units(cells, metric, window, treatment)
+        n_reference = cell_units(cells, metric, window, experiment.reference_branch, segment)
+        n_treatment = cell_units(cells, metric, window, treatment, segment)
     return HighwindComparison(
         branch=treatment,
         reference_branch=experiment.reference_branch,
@@ -806,10 +855,11 @@ def write_tables(client, as_of, results_by_slug, cells_by_slug, outputs):
             as_of_date=as_of.isoformat(),
             metric=metric,
             window=window,
+            segment=segment,
             branch=branch,
         )
         for slug, cells in cells_by_slug.items()
-        for (metric, window, branch), stats in cells.items()
+        for (metric, window, segment, branch), stats in cells.items()
     ]
     replace_partition(client, outputs.results_table, RESULTS_SCHEMA, results_rows, as_of)
     replace_partition(

@@ -84,9 +84,9 @@ def run_queries(client, queries, validate_only=False):
     """Run every source query, returning (cells_by_slug, timings).
 
     The queries cover every experiment at once, so the rows come back carrying a slug and are split
-    here. `cells_by_slug[slug][(metric, window, branch)]` is that cell's six sufficient statistics,
-    which is the shape the statistics section asks for: one comparison needs two branches of one
-    (metric, window) for one experiment, and nothing else.
+    here. `cells_by_slug[slug][(metric, window, segment, branch)]` is that cell's six sufficient
+    statistics, which is the shape the statistics section asks for: one comparison needs two
+    branches of one (metric, window, segment) for one experiment, and nothing else.
 
     Run concurrently. The sources are independent tables, so serialising them would make the run's
     wall time their sum rather than the longest of them.
@@ -102,7 +102,7 @@ def run_queries(client, queries, validate_only=False):
             timings.append(timing)
             for row in rows:
                 cells_by_slug.setdefault(row["slug"], {})[
-                    (row["metric"], row["window_label"], row["branch"])
+                    (row["metric"], row["window_label"], row["segment"], row["branch"])
                 ] = sufficient_stats(row)
     return cells_by_slug, sorted(timings, key=lambda timing: timing["source"])
 

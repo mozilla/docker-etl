@@ -504,6 +504,7 @@ class UnitCountFailingClient:
         slug="a-slug",
         metric="a-metric",
         window_label="week:1",
+        segment="all_enrolled",
         branch="control",
         n=10,
         sum=5.0,
@@ -557,6 +558,6 @@ def test_a_failed_unit_count_keeps_the_cells_the_shared_scan_computed(caplog):
     assert failure is None
     assert units_by_slug == {}
     assert list(cells_by_slug) == ["a-slug"]
-    assert cells_by_slug["a-slug"][("a-metric", "week:1", "control")]["n"] == 10
+    assert cells_by_slug["a-slug"][("a-metric", "week:1", "all_enrolled", "control")]["n"] == 10
     assert timings
     assert "the branch unit count failed" in caplog.text
