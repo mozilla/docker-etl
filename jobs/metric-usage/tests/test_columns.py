@@ -117,6 +117,32 @@ def test_union_keeps_columns_the_first_branch_lacks():
     assert set(r.carried("a")) == {"a.count"}
 
 
+
+def test_except_outputs_only_the_left_branch():
+    r = resolve(f"""
+        SELECT client_info.client_id AS id, metrics.counter.a_count AS a FROM {TBL}
+        EXCEPT DISTINCT
+        SELECT client_info.client_id, metrics.counter.b_count FROM {TBL}""", METRICS)
+    assert set(r.carried("id")) == {"client_id"}
+    assert set(r.carried("a")) == {"a.count"}
+    assert r.uses["b.count"].role == "filter"
+    assert r.uses["b.count"].named
+
+
+def test_view_over_intersect_in_a_cte():
+    r = resolve(f"""
+        CREATE OR REPLACE VIEW `moz-fx-data-shared-prod.app.both` AS
+        WITH both_days AS (
+          SELECT client_info.client_id AS id FROM {TBL} WHERE metrics.boolean.d_on
+          INTERSECT DISTINCT
+          SELECT client_info.client_id FROM {TBL} WHERE metrics.boolean.e_on
+        )
+        SELECT id FROM both_days""", METRICS)
+    assert set(r.carried("id")) == {"client_id"}
+    assert r.uses["d.on"].role == "filter"
+    assert r.uses["e.on"].role == "filter"
+
+
 def test_join_using_reads_both_sides():
     other = table("app_stable.other_v1", {"client_id": "other.client_id"})
     mine = table("app_stable.mine_v1", {"client_id": "mine.client_id"})

@@ -64,7 +64,6 @@ Known limits, counted rather than hidden:
 import argparse
 import collections
 import re
-import sys
 
 import yaml
 
@@ -74,7 +73,7 @@ from sqlglot import exp
 from sqlglot.optimizer.scope import ScopeType, build_scope
 
 from .common import (CACHE, DEST, PREFIX, PROBEINFO, artifact_schema, get_json, log,
-                     query, ref_schema, snakecase, union_views, write_table)
+                     query, ref_schema, run_deep, snakecase, union_views, write_table)
 
 from . import runs
 
@@ -531,7 +530,7 @@ class Resolver:
                 # tree, so it gets a scope of its own; kept referenced so its id
                 # cannot be reused while the memo holds it
                 target = node.this if isinstance(node, exp.Subquery) else node
-                if isinstance(target, (exp.Select, exp.Union)):
+                if isinstance(target, (exp.Select, exp.SetOperation)):
                     sub = build_scope(target)
                     self._orphans.append(sub)
             if sub is not None:
@@ -829,6 +828,10 @@ class Resolver:
             # not survive it. A column with the same name in both branches is
             # matched by name; the rest by position.
             branches = [self.outputs(b) for b in scope.union_scopes]
+            if not isinstance(scope.expression, exp.Union):
+                # EXCEPT and INTERSECT return the left branch's rows; the right
+                # one only decides which, so its metrics are filters
+                return dict(branches[0])
             names = list(branches[0])
             merged = {n: branches[0][n] for n in names}
             for br in branches[1:]:
@@ -1426,11 +1429,11 @@ def parse_script(text):
         # CREATE TEMP TABLE t AS (SELECT ...) wraps the body in a Subquery
         if isinstance(st, exp.Create) and isinstance(st.expression, exp.Subquery):
             st.set("expression", st.expression.this)
-        if isinstance(st, exp.Create) and isinstance(st.expression, (exp.Select, exp.Union)):
+        if isinstance(st, exp.Create) and isinstance(st.expression, (exp.Select, exp.SetOperation)):
             target = st.this.this if isinstance(st.this, exp.Schema) else st.this
             name = target.name if isinstance(target, exp.Table) else None
             found.append((name, st.expression))
-        elif isinstance(st, (exp.Select, exp.Union, exp.Subquery)):
+        elif isinstance(st, (exp.Select, exp.SetOperation, exp.Subquery)):
             found.append((None, st))
     if not found:
         return [], None, "no query statement, read by regex"
@@ -1758,7 +1761,7 @@ def touch_all(r, root):
     little.
     """
     for sc in root.traverse():
-        if isinstance(sc.expression, (exp.Select, exp.Union)):
+        if isinstance(sc.expression, (exp.Select, exp.SetOperation)):
             try:
                 r.outputs(sc)
             except Exception:
@@ -2038,13 +2041,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # sqlglot trees for the larger queries (clients_daily_v6 and its long AND and
-    # CONCAT chains) are deeper than the default recursion limit allows, and a
-    # raised limit needs a thread with a bigger stack to go with it.
-    import threading
-
-    sys.setrecursionlimit(200000)
-    threading.stack_size(1024 * 1024 * 1024)
-    t = threading.Thread(target=main)
-    t.start()
-    t.join()
+    run_deep(main)

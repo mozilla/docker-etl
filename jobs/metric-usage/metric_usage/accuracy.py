@@ -59,7 +59,8 @@ import csv
 import random
 import re
 
-from .common import CACHE, DEST, LABELS, PREFIX, held_labels, log, query, write_labels
+from .common import (CACHE, DEST, LABELS, PREFIX, held_labels, log, query, run_deep,
+                     write_labels)
 
 from . import adhoc as AH
 from . import lineage as L
@@ -578,11 +579,4 @@ WHERE r.artifact_kind IN ('bqetl_table', 'bqetl_view', 'glean_ping_view', 'redas
 
 
 if __name__ == "__main__":
-    import sys
-    import threading
-
-    sys.setrecursionlimit(200000)
-    threading.stack_size(1024 * 1024 * 1024)
-    t = threading.Thread(target=main)
-    t.start()
-    t.join()
+    run_deep(main)

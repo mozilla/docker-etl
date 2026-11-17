@@ -51,6 +51,34 @@ def log(*args):
     print(*args, file=sys.stderr)
 
 
+def run_deep(main):
+    """Run main in a thread with a 1 GiB stack and a raised recursion limit.
+
+    sqlglot trees for the larger queries (clients_daily_v6 and its long AND and
+    CONCAT chains) are deeper than the default recursion limit allows, and a
+    raised limit needs a thread with a bigger stack to go with it. An exception
+    in a thread only prints, and a SystemExit there is dropped, so either is
+    raised again here for the process to exit with it.
+    """
+    import threading
+
+    sys.setrecursionlimit(200000)
+    threading.stack_size(1024 * 1024 * 1024)
+    failed = []
+
+    def target():
+        try:
+            main()
+        except BaseException as e:
+            failed.append(e)
+
+    t = threading.Thread(target=target)
+    t.start()
+    t.join()
+    if failed:
+        raise failed[0]
+
+
 def window_end():
     return datetime.date.today() - datetime.timedelta(days=1)
 
