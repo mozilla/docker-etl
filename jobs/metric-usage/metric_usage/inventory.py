@@ -152,12 +152,15 @@ def glean_apps(force):
     listings = get_json(f"{PROBEINFO}/v2/glean/app-listings", force)
     apps = {}
     for a in listings:
-        app = apps.setdefault(a["app_name"], {
-            "label": a.get("canonical_app_name") or a["app_name"],
-            "deprecated": True,
-            "variants": [],
-            "dependencies": set(),
-        })
+        app = apps.setdefault(
+            a["app_name"],
+            {
+                "label": a.get("canonical_app_name") or a["app_name"],
+                "deprecated": True,
+                "variants": [],
+                "dependencies": set(),
+            },
+        )
         app["variants"].append(a)
         # an app is deprecated only if every channel of it is
         app["deprecated"] = app["deprecated"] and bool(a.get("deprecated"))
@@ -166,16 +169,21 @@ def glean_apps(force):
 
 
 def glean_inventory(force, glean_idx, info_idx):
-    libraries = {lib["dependency_name"]: lib for lib in
-                 get_json(f"{PROBEINFO}/v2/glean/library-variants", force)}
+    libraries = {
+        lib["dependency_name"]: lib
+        for lib in get_json(f"{PROBEINFO}/v2/glean/library-variants", force)
+    }
     out = []
     for app_name, app in sorted(glean_apps(force).items()):
         # Gather definitions from every channel and every library, keeping the
         # most recently seen definition for each name, as the Dictionary does.
         defs, pings = {}, set()
         sources = [(v["v1_name"], app_name) for v in app["variants"]]
-        sources += [(libraries[d]["v1_name"], libraries[d]["library_name"])
-                    for d in sorted(app["dependencies"]) if d in libraries]
+        sources += [
+            (libraries[d]["v1_name"], libraries[d]["library_name"])
+            for d in sorted(app["dependencies"])
+            if d in libraries
+        ]
         for v1_name, origin in sources:
             # a variant probeinfo does not list is skipped; any other error
             # stops the step rather than write metrics with some missing
@@ -187,24 +195,30 @@ def glean_inventory(force, glean_idx, info_idx):
             pings |= set(got)
             for name, d in metrics.items():
                 held = defs.get(name)
-                if held is None or latest(d["history"])["dates"]["last"] > \
-                        latest(held[0]["history"])["dates"]["last"]:
+                if (
+                    held is None
+                    or latest(d["history"])["dates"]["last"]
+                    > latest(held[0]["history"])["dates"]["last"]
+                ):
                     defs[name] = (d, origin)
 
         datasets = sorted({f"{v['bq_dataset_family']}_stable" for v in app["variants"]})
         for name, (d, origin) in sorted(defs.items()):
-            out.append(glean_row(app_name, app, name, d, origin, datasets, pings,
-                                 glean_idx, info_idx))
+            out.append(
+                glean_row(app_name, app, name, d, origin, datasets, pings, glean_idx, info_idx)
+            )
     return out
 
 
-def glean_row(app_name, app, name, d, origin, datasets, app_pings, glean_idx,
-              info_idx):
+def glean_row(app_name, app, name, d, origin, datasets, app_pings, glean_idx, info_idx):
     h = latest(d["history"])
     mtype = h["type"]
     send_in = list(h.get("send_in_pings") or [])
-    prefix = ("client_info" if "glean_client_info" in send_in
-              else "ping_info" if "glean_internal_info" in send_in else None)
+    prefix = (
+        "client_info"
+        if "glean_client_info" in send_in
+        else "ping_info" if "glean_internal_info" in send_in else None
+    )
     # Every ping table the app has, not just the ones the current definition
     # sends in: a metric moved out of a ping keeps its column there, and old
     # queries still read it (fenix's play_store_attribution_campaign in
@@ -299,8 +313,11 @@ def legacy_inventory(force, legacy_idx):
     out = []
     for probe_id, p in sorted(probes.items()):
         kind = p["type"]
-        hist = p["history"].get("nightly") or p["history"].get("beta") or \
-            next(iter(p["history"].values()))
+        hist = (
+            p["history"].get("nightly")
+            or p["history"].get("beta")
+            or next(iter(p["history"].values()))
+        )
         h = hist[0]
         columns, leaf = [], None
         if kind in ("histogram", "scalar"):
@@ -322,35 +339,38 @@ def legacy_inventory(force, legacy_idx):
             det = h.get("details") or {}
             methods = list(det.get("methods") or [head.rpartition(".")[2]])
             objects = list(det.get("objects") or [])
-        out.append({
-            "app": "telemetry",
-            "app_label": "Legacy telemetry",
-            "app_deprecated": False,
-            "source": "legacy",
-            "metric": p["name"],
-            "origin": "telemetry",
-            "type": kind + ("_keyed" if (h.get("details") or {}).get("keyed") else ""),
-            "description": (h.get("description") or "").strip(),
-            "owners": list(h.get("notification_emails") or []),
-            "expires": h.get("expiry_version"),
-            "in_source": nightly_last(p) == newest,
-            "first_seen": (p.get("first_added") or {}).get("nightly", "")[:10] or None,
-            "last_change": None,
-            "send_in_pings": [],
-            "tags": [],
-            "data_sensitivity": [],
-            "column_leaf": leaf,
-            "column_status": status,
-            "columns": [{"table": t, "path": pth} for t, pth in sorted(set(columns))],
-            "event_category": category,
-            "event_name": event_name or None,
-            "event_methods": methods,
-            "event_objects": objects,
-            "telemetry_mirror": None,
-            "glean_mirrors": [],
-            "dictionary_url": DICTIONARY.format(app="firefox_legacy", metric=leaf)
-            if leaf else None,
-        })
+        out.append(
+            {
+                "app": "telemetry",
+                "app_label": "Legacy telemetry",
+                "app_deprecated": False,
+                "source": "legacy",
+                "metric": p["name"],
+                "origin": "telemetry",
+                "type": kind + ("_keyed" if (h.get("details") or {}).get("keyed") else ""),
+                "description": (h.get("description") or "").strip(),
+                "owners": list(h.get("notification_emails") or []),
+                "expires": h.get("expiry_version"),
+                "in_source": nightly_last(p) == newest,
+                "first_seen": (p.get("first_added") or {}).get("nightly", "")[:10] or None,
+                "last_change": None,
+                "send_in_pings": [],
+                "tags": [],
+                "data_sensitivity": [],
+                "column_leaf": leaf,
+                "column_status": status,
+                "columns": [{"table": t, "path": pth} for t, pth in sorted(set(columns))],
+                "event_category": category,
+                "event_name": event_name or None,
+                "event_methods": methods,
+                "event_objects": objects,
+                "telemetry_mirror": None,
+                "glean_mirrors": [],
+                "dictionary_url": (
+                    DICTIONARY.format(app="firefox_legacy", metric=leaf) if leaf else None
+                ),
+            }
+        )
     return out
 
 
@@ -370,38 +390,42 @@ def environment_inventory(env_idx):
     out = []
     for path, kind in sorted(kinds.items()):
         parts = path.split(".")
-        if kind == "STRUCT" or any(kinds.get(".".join(parts[:i])) == "ARRAY"
-                                   for i in range(2, len(parts))):
+        if kind == "STRUCT" or any(
+            kinds.get(".".join(parts[:i])) == "ARRAY" for i in range(2, len(parts))
+        ):
             continue
-        out.append({
-            "app": "telemetry",
-            "app_label": "Legacy telemetry",
-            "app_deprecated": False,
-            "source": "legacy",
-            "metric": path,
-            "origin": "telemetry",
-            "type": "environment",
-            "description": (descriptions[path] or "").strip(),
-            "owners": [],
-            "expires": None,
-            "in_source": None,
-            "first_seen": None,
-            "last_change": None,
-            "send_in_pings": [],
-            "tags": [],
-            "data_sensitivity": [],
-            "column_leaf": parts[-1],
-            "column_status": "column",
-            "columns": [{"table": t, "path": path}
-                        for t in sorted({hit[0] for hit in env_idx[path]})],
-            "event_category": None,
-            "event_name": None,
-            "event_methods": [],
-            "event_objects": [],
-            "telemetry_mirror": None,
-            "glean_mirrors": [],
-            "dictionary_url": None,
-        })
+        out.append(
+            {
+                "app": "telemetry",
+                "app_label": "Legacy telemetry",
+                "app_deprecated": False,
+                "source": "legacy",
+                "metric": path,
+                "origin": "telemetry",
+                "type": "environment",
+                "description": (descriptions[path] or "").strip(),
+                "owners": [],
+                "expires": None,
+                "in_source": None,
+                "first_seen": None,
+                "last_change": None,
+                "send_in_pings": [],
+                "tags": [],
+                "data_sensitivity": [],
+                "column_leaf": parts[-1],
+                "column_status": "column",
+                "columns": [
+                    {"table": t, "path": path} for t in sorted({hit[0] for hit in env_idx[path]})
+                ],
+                "event_category": None,
+                "event_name": None,
+                "event_methods": [],
+                "event_objects": [],
+                "telemetry_mirror": None,
+                "glean_mirrors": [],
+                "dictionary_url": None,
+            }
+        )
     return out
 
 
@@ -417,10 +441,14 @@ def link_mirrors(glean_rows, legacy_rows):
     """
     by_leaf = {}
     for r in legacy_rows:
-        if r["source"] == "legacy" and r["type"] != "environment" \
-                and not r["type"].startswith("event"):
+        if (
+            r["source"] == "legacy"
+            and r["type"] != "environment"
+            and not r["type"].startswith("event")
+        ):
             for leaf in legacy_leaves(None, r["metric"]):
                 by_leaf.setdefault(leaf, r)
+
     def flat(x):
         return re.sub(r"[^a-z0-9]", "", x.lower())
 
@@ -456,7 +484,13 @@ def schema():
 
     s, b, rep = "STRING", "BOOL", "REPEATED"
     return [
-        F("app", s, description="Glean Dictionary app name, or 'telemetry' for legacy probes and environment fields"),
+        F(
+            "app",
+            s,
+            description=(
+                "Glean Dictionary app name, or 'telemetry' for legacy probes and environment fields"
+            ),
+        ),
         F("app_label", s),
         F("app_deprecated", b, description="Every channel of the app is deprecated"),
         F("source", s, description="glean or legacy"),
@@ -466,22 +500,53 @@ def schema():
         F("description", s),
         F("owners", s, mode=rep),
         F("expires", s),
-        F("in_source", b, description="Still in the code; null for environment fields, where it is not known"),
+        F(
+            "in_source",
+            b,
+            description="Still in the code; null for environment fields, where it is not known",
+        ),
         F("first_seen", "DATE"),
         F("last_change", "DATE"),
         F("send_in_pings", s, mode=rep),
         F("tags", s, mode=rep),
         F("data_sensitivity", s, mode=rep),
-        F("column_leaf", s, description="Last segment of the column path; what a bare token would match"),
+        F(
+            "column_leaf",
+            s,
+            description="Last segment of the column path; what a bare token would match",
+        ),
         F("column_status", s, description="column, event, or missing"),
-        F("columns", "RECORD", mode=rep, fields=[F("table", s), F("path", s)],
-          description="Stable-table fields holding the metric, table as dataset.table in moz-fx-data-shared-prod"),
+        F(
+            "columns",
+            "RECORD",
+            mode=rep,
+            fields=[F("table", s), F("path", s)],
+            description=(
+                "Stable-table fields holding the metric, table as dataset.table in "
+                "moz-fx-data-shared-prod"
+            ),
+        ),
         F("event_category", s),
         F("event_name", s),
-        F("event_methods", s, mode=rep, description="Legacy events: the methods it can be recorded with"),
-        F("event_objects", s, mode=rep, description="Legacy events: the objects it can be recorded with"),
+        F(
+            "event_methods",
+            s,
+            mode=rep,
+            description="Legacy events: the methods it can be recorded with",
+        ),
+        F(
+            "event_objects",
+            s,
+            mode=rep,
+            description="Legacy events: the objects it can be recorded with",
+        ),
         F("telemetry_mirror", s, description="For a Glean metric, the legacy probe it mirrors"),
-        F("glean_mirrors", s, mode=rep, description="For a legacy probe, app:metric of its Glean mirrors"),
+        F(
+            "glean_mirrors",
+            s,
+            mode=rep,
+            description="For a legacy probe, app:metric of its Glean mirrors",
+        ),
         F("dictionary_url", s),
     ]
 
@@ -496,22 +561,30 @@ DESCRIPTION = (
 
 
 def summarize(rows):
-    by = collections.Counter(("environment" if r["type"] == "environment" else r["source"],
-                              r["column_status"]) for r in rows)
-    log(f"\n{len(rows):,} (app, metric) rows across "
-        f"{len({r['app'] for r in rows})} apps")
+    by = collections.Counter(
+        ("environment" if r["type"] == "environment" else r["source"], r["column_status"])
+        for r in rows
+    )
+    log(f"\n{len(rows):,} (app, metric) rows across " f"{len({r['app'] for r in rows})} apps")
     for (src, status), n in sorted(by.items()):
         log(f"  {src:11} {status:8} {n:7,}")
-    live = [r for r in rows if r["source"] == "glean" and not r["app_deprecated"]
-            and r["in_source"] and r["column_status"] == "missing"]
+    live = [
+        r
+        for r in rows
+        if r["source"] == "glean"
+        and not r["app_deprecated"]
+        and r["in_source"]
+        and r["column_status"] == "missing"
+    ]
     log(f"  in-source Glean metrics of live apps with no column: {len(live):,}")
     for t, n in collections.Counter(r["type"] for r in live).most_common(8):
         log(f"    {t:28} {n:6,}")
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--force", action="store_true", help="ignore the cache")
     ap.add_argument("--dry-run", action="store_true", help="write nothing")
     args = ap.parse_args()

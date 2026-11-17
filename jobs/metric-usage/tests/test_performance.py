@@ -23,8 +23,9 @@ def test_nested_case_is_linear():
     expr = "0"
     for i in range(22):
         expr = f"CASE WHEN metrics.counter.c{i} > 0 THEN {expr} ELSE {i} END"
-    r, took = timed(f"SELECT {expr} AS x FROM `moz-fx-data-shared-prod.app_stable.metrics_v1`",
-                    COUNTERS)
+    r, took = timed(
+        f"SELECT {expr} AS x FROM `moz-fx-data-shared-prod.app_stable.metrics_v1`", COUNTERS
+    )
     assert took < LIMIT
     assert len(r.carried("x")) == 22
 
@@ -37,9 +38,12 @@ def test_alias_fall_through_skips_unnests():
     # over 20.
     counts = table("app.client_counts", {"id": "client_id"})
     joins = "\n".join(f"LEFT JOIN UNNEST(client_counts.x{i}) AS u{i}" for i in range(12))
-    r, took = timed(f"""
+    r, took = timed(
+        f"""
         SELECT client_counts.nothing AS n, client_counts.id AS id
         FROM `moz-fx-data-shared-prod.app.client_counts` AS client_counts
-        {joins}""", counts)
+        {joins}""",
+        counts,
+    )
     assert took < LIMIT
     assert set(r.carried("id")) == {"client_id"}

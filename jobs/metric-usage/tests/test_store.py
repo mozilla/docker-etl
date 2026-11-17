@@ -10,7 +10,7 @@ from metric_usage import common, lineage as L, redash as R
 INVENTORY = [{"app": "app", "metric": m} for m in ("a.count", "b.count", "c.count")]
 A, B, C = range(3)
 TBL = "moz-fx-data-shared-prod.app_stable.metrics_v1"
-SQL = "SELECT metrics.counter.a_count AS my_total FROM `moz-fx-data-shared-prod.app_stable.metrics_v1`"
+SQL = f"SELECT metrics.counter.a_count AS my_total FROM `{TBL}`"
 
 
 def shapes(**columns):
@@ -20,9 +20,11 @@ def shapes(**columns):
 @pytest.fixture
 def loaded(monkeypatch):
     """Point redash's globals at a set of shapes, as load_shapes() does."""
+
     def load(s):
         monkeypatch.setattr(R, "_SHAPES", s)
         monkeypatch.setattr(R, "_DIGESTS", L.shape_digests(INVENTORY, s))
+
     return load
 
 
@@ -65,8 +67,9 @@ def test_table_that_gains_a_shape_is_redone(loaded):
 def store(monkeypatch, loaded):
     loaded(shapes(**{"metrics.counter.a_count": A}))
     rows = []
-    fake = type("Client", (), {"query": lambda self, sql: type("Job", (), {
-        "result": lambda self: rows})()})()
+    fake = type(
+        "Client", (), {"query": lambda self, sql: type("Job", (), {"result": lambda self: rows})()}
+    )()
     monkeypatch.setattr(common, "client", lambda: fake)
     s = common.ResolvedStore("resolved_test", "v1", R.dependency_digest, INVENTORY)
     deps = R.dependencies(SQL, "mozdata")
@@ -90,7 +93,9 @@ def test_store_redoes_a_changed_column(store, loaded):
 def test_store_redoes_an_old_entry(store):
     store.today += datetime.timedelta(days=common.ResolvedStore.MAX_AGE)
     assert store.get("k") is None
-    store.today -= datetime.timedelta(days=common.ResolvedStore.MAX_AGE - common.ResolvedStore.MIN_AGE + 1)
+    store.today -= datetime.timedelta(
+        days=common.ResolvedStore.MAX_AGE - common.ResolvedStore.MIN_AGE + 1
+    )
     assert store.get("k") is not None
 
 
@@ -114,8 +119,9 @@ def test_store_keeps_a_frozen_entry_from_another_version(store, monkeypatch):
     store.version = "v2"
     assert store.get("k", frozen=True) is not None
     written = {}
-    monkeypatch.setattr(common, "write_table",
-                        lambda name, rows, *a, **k: written.update(rows=rows))
+    monkeypatch.setattr(
+        common, "write_table", lambda name, rows, *a, **k: written.update(rows=rows)
+    )
     store.save()
     assert [(r["key"], r["version"]) for r in written["rows"]] == [("k", "v1")]
 

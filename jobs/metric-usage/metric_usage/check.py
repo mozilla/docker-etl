@@ -33,8 +33,12 @@ import csv
 from .common import CACHE, DEST, LABELS, LONGEST, PREFIX, log, query
 
 OUT = CACHE / "accuracy"
-SOURCE_NAMES = {"sql": "bigquery-etl and Redash", "looker": "Looker",
-                "adhoc": "ad hoc queries", "metrichub": "metric-hub"}
+SOURCE_NAMES = {
+    "sql": "bigquery-etl and Redash",
+    "looker": "Looker",
+    "adhoc": "ad hoc queries",
+    "metrichub": "metric-hub",
+}
 
 
 def source_of(artifact_id):
@@ -63,8 +67,10 @@ def bounds(acc):
     wrong for the low bound and right for the high one; unreviewed text-only
     hits count as real misses for the low recall and as noise for the high."""
     tp, fp, fn, u_po, u_to = acc
+
     def p(t, f):
         return t / (t + f) if t + f else float("nan")
+
     return (p(tp, fp + u_po), p(tp + u_po, fp)), (p(tp, fn + u_to), p(tp + u_po, fn))
 
 
@@ -102,7 +108,10 @@ def main():
 
     def line(name, acc):
         (pl, ph), (rl, rh) = bounds(acc)
-        rng = lambda lo, hi: f"{lo:6.1%}" if abs(hi - lo) < 0.0005 else f"{lo:6.1%} to {hi:6.1%}"
+
+        def rng(lo, hi):
+            return f"{lo:6.1%}" if abs(hi - lo) < 0.0005 else f"{lo:6.1%} to {hi:6.1%}"
+
         n = acc[0] + acc[1] + acc[3]
         log(f"{name:<26} precision {rng(pl, ph):<18} recall {rng(rl, rh):<18} parser refs {n:,.0f}")
 
@@ -116,8 +125,10 @@ def main():
         log("")
     line("all sources", total)
     labelled = sum(1 for r in dis if r["verdict"] in ("ref", "not_ref"))
-    log(f"\n{labelled} of {len(dis)} review rows labelled; unreviewed disagreements: "
-        f"{total[3]:,.0f} parser-only, {total[4]:,.0f} text-only")
+    log(
+        f"\n{labelled} of {len(dis)} review rows labelled; unreviewed disagreements: "
+        f"{total[3]:,.0f} parser-only, {total[4]:,.0f} text-only"
+    )
     little_use(summary, dis)
 
 
@@ -142,20 +153,30 @@ JOIN `{DEST}.{PREFIX}definitions` AS d
 
 def little_use(summary, dis):
     keys = {(s["app"], s["metric"]) for s in summary}
-    listed = {(r["app"], r["metric"]) for r in query(LISTED_SQL, name="definitions",
-                                                    tables=["metrics", "definitions"])
-              if (r["app"], r["metric"]) in keys and r["n_consumers"] == 0}
+    listed = {
+        (r["app"], r["metric"])
+        for r in query(LISTED_SQL, name="definitions", tables=["metrics", "definitions"])
+        if (r["app"], r["metric"]) in keys and r["n_consumers"] == 0
+    }
     used = {r["artifact_id"] for r in query(USED_SQL, name="used artifacts", tables=["artifacts"])}
     wrong = collections.defaultdict(list)
     for r in dis:
-        if (r["side"] == "text_only" and r["verdict"] != "not_ref"
-                and (r["app"], r["metric"]) in listed and r["artifact_id"] in used):
+        if (
+            r["side"] == "text_only"
+            and r["verdict"] != "not_ref"
+            and (r["app"], r["metric"]) in listed
+            and r["artifact_id"] in used
+        ):
             wrong[(r["app"], r["metric"])].append(r)
-    log(f"\nlittle or no use: {len(listed)} of {len(keys)} sampled metrics listed with no use seen "
-        f"in {LONGEST} days; {len(wrong)} of them have a missed use")
+    log(
+        f"\nlittle or no use: {len(listed)} of {len(keys)} sampled metrics listed with no use seen "
+        f"in {LONGEST} days; {len(wrong)} of them have a missed use"
+    )
     for (app, metric), rows in sorted(wrong.items()):
-        log(f"  {app}:{metric}  " + ", ".join(
-            f"{r['artifact_id']} ({r['verdict'] or 'unlabelled'})" for r in rows))
+        log(
+            f"  {app}:{metric}  "
+            + ", ".join(f"{r['artifact_id']} ({r['verdict'] or 'unlabelled'})" for r in rows)
+        )
 
 
 if __name__ == "__main__":

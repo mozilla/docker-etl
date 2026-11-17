@@ -7,8 +7,12 @@ import pytest
 
 from harness import legacy_events, regex, resolve, table
 
-EVENT = table("telemetry_stable.event_v4", {"client_id": "client_id"},
-              events_app="telemetry", legacy_paths=["payload.events.parent"])
+EVENT = table(
+    "telemetry_stable.event_v4",
+    {"client_id": "client_id"},
+    events_app="telemetry",
+    legacy_paths=["payload.events.parent"],
+)
 PROBES = legacy_events(
     "telemetry",
     ("security.unexpectedload#load", "security", ["unexpectedload"], ["script", "stylesheet"]),
@@ -19,8 +23,10 @@ PROBES = legacy_events(
     ("addonsmanager.install#install", "addonsmanager", ["install"], ["extension"]),
     ("addonsmanager.disable#disable", "addonsmanager", ["disable"], ["extension"]),
 )
-FROM = ("FROM `moz-fx-data-shared-prod.telemetry_stable.event_v4`, "
-        "UNNEST(payload.events.parent) AS e")
+FROM = (
+    "FROM `moz-fx-data-shared-prod.telemetry_stable.event_v4`, "
+    "UNNEST(payload.events.parent) AS e"
+)
 
 
 def run(where):
@@ -29,8 +35,12 @@ def run(where):
 
 def test_category_with_method_names_the_probe():
     r = run("e.f1_ = 'security' AND e.f2_ = 'unexpectedload'")
-    assert r.uses["security.unexpectedload#load"] == ("filter", True, True,
-                                                      r.uses["security.unexpectedload#load"].via)
+    assert r.uses["security.unexpectedload#load"] == (
+        "filter",
+        True,
+        True,
+        r.uses["security.unexpectedload#load"].via,
+    )
     assert set(r.reached) == {"client_id", "security.unexpectedload#load"}
 
 
@@ -55,8 +65,11 @@ def test_method_alone_names_only_a_unique_probe():
 
 def test_category_alone_reaches_without_naming():
     r = run("e.f1_ = 'normandy'")
-    assert r.reached == {"client_id": True, "normandy.enroll#enroll": False,
-                         "normandy.validationfailed#fail": False}
+    assert r.reached == {
+        "client_id": True,
+        "normandy.enroll#enroll": False,
+        "normandy.validationfailed#fail": False,
+    }
 
 
 def test_like_reaches_without_naming():
@@ -78,24 +91,33 @@ def test_full_name_on_a_combined_column():
 def test_deanonymize_event_names_the_fields():
     # udf.deanonymize_event is what turns f1_ / f2_ / f3_ into event_category,
     # event_method and event_object for everything downstream
-    t = resolve(f"SELECT `moz-fx-data-shared-prod.udf.deanonymize_event`(e).* {FROM}",
-                EVENT).shape_for("telemetry_derived.events_v1")
-    r = resolve("SELECT COUNT(*) AS n FROM `moz-fx-data-shared-prod.telemetry_derived.events_v1` "
-                "WHERE event_category = 'normandy' AND event_method = 'enroll'", t, events=PROBES)
+    t = resolve(
+        f"SELECT `moz-fx-data-shared-prod.udf.deanonymize_event`(e).* {FROM}", EVENT
+    ).shape_for("telemetry_derived.events_v1")
+    r = resolve(
+        "SELECT COUNT(*) AS n FROM `moz-fx-data-shared-prod.telemetry_derived.events_v1` "
+        "WHERE event_category = 'normandy' AND event_method = 'enroll'",
+        t,
+        events=PROBES,
+    )
     assert r.uses["normandy.enroll#enroll"].named
     assert "normandy.validationfailed#fail" not in r.reached
 
 
 def test_regex_fallback_needs_a_fitting_method():
     # quoted 'install' as a method rules out addonsManager.disable
-    sql = ("SELECT f1_, f2_, FROM `moz-fx-data-shared-prod.telemetry_stable.event_v4`, "
-           "UNNEST(payload.events.parent) WHERE f1_ = 'addonsmanager' AND f2_ = 'install'")
+    sql = (
+        "SELECT f1_, f2_, FROM `moz-fx-data-shared-prod.telemetry_stable.event_v4`, "
+        "UNNEST(payload.events.parent) WHERE f1_ = 'addonsmanager' AND f2_ = 'install'"
+    )
     assert regex(sql, EVENT, events=PROBES) == {"addonsmanager.install#install": True}
 
 
 def test_regex_fallback_category_alone_names_nothing():
-    sql = ("SELECT f1_, FROM `moz-fx-data-shared-prod.telemetry_stable.event_v4`, "
-           "UNNEST(payload.events.parent) WHERE f1_ = 'normandy'")
+    sql = (
+        "SELECT f1_, FROM `moz-fx-data-shared-prod.telemetry_stable.event_v4`, "
+        "UNNEST(payload.events.parent) WHERE f1_ = 'normandy'"
+    )
     assert regex(sql, EVENT, events=PROBES) == {}
 
 
@@ -103,14 +125,22 @@ def test_regex_fallback_category_alone_names_nothing():
 # arrays merged by an array literal of STRUCTs, then deanonymize_event(e).*
 
 PROCESSES = ("content", "dynamic", "extension", "gpu", "parent")
-TELEMETRY_EVENT = table("telemetry.event", {"client_id": "client_id"}, events_app="telemetry",
-                        legacy_paths=[f"payload.events.{p}" for p in PROCESSES])
+TELEMETRY_EVENT = table(
+    "telemetry.event",
+    {"client_id": "client_id"},
+    events_app="telemetry",
+    legacy_paths=[f"payload.events.{p}" for p in PROCESSES],
+)
 
 
 @pytest.fixture(scope="module")
 def event_events():
-    sql = (pathlib.Path(__file__).parent / "fixtures" / "bqetl" /
-           "telemetry_derived.event_events_v1.sql").read_text()
+    sql = (
+        pathlib.Path(__file__).parent
+        / "fixtures"
+        / "bqetl"
+        / "telemetry_derived.event_events_v1.sql"
+    ).read_text()
     return resolve(sql, TELEMETRY_EVENT, events=PROBES)
 
 

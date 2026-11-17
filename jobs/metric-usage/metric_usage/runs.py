@@ -115,8 +115,11 @@ def table_runs(table_ids, end=None):
     return out
 
 
-NO_RUNS = {"last_run": None, "is_scheduled": False,
-           **{f"{k}_{w}d": 0 for w in WINDOWS for k in ("views", "users")}}
+NO_RUNS = {
+    "last_run": None,
+    "is_scheduled": False,
+    **{f"{k}_{w}d": 0 for w in WINDOWS for k in ("views", "users")},
+}
 
 
 def add_runs(arts):
@@ -127,6 +130,8 @@ def add_runs(arts):
     for a in tables:
         a.update(got.get(a["artifact_id"]) or NO_RUNS)
     written = sum(1 for a in tables if a["last_run"])
-    log(f"  run history: {written:,} of {len(tables):,} bqetl tables written in "
+    log(
+        f"  run history: {written:,} of {len(tables):,} bqetl tables written in "
         f"{LONGEST} days ({sum(1 for a in tables if a['is_scheduled']):,} by Airflow), "
-        f"{sum(1 for a in tables if a[f'views_{LONGEST}d']):,} read")
+        f"{sum(1 for a in tables if a[f'views_{LONGEST}d']):,} read"
+    )

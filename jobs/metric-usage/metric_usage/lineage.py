@@ -28,7 +28,8 @@ How a query is read
 Resolving columns by name would turn metrics.counter.foo into "metrics" and
 every metric in the table into one node, so this keeps the shape instead.
 Every expression evaluates to either a Leaf, the set of metrics it depends on,
-or a Struct, a mapping of field names to shapes. A table's shape is a tree built from the columns known to carry a metric, so
+or a Struct, a mapping of field names to shapes. A table's shape is a tree
+built from the columns known to carry a metric, so
 `metrics.*`, `STRUCT(...)`, `SELECT AS STRUCT` and `* EXCEPT / REPLACE` forward
 individual metrics with their paths intact, and anything else (a function, an
 operator, an aggregate) collapses its arguments into one Leaf.
@@ -76,9 +77,22 @@ from jinja2.sandbox import SandboxedEnvironment
 from sqlglot import exp
 from sqlglot.optimizer.scope import ScopeType, build_scope
 
-from .common import (CACHE, DEST, PREFIX, PROBEINFO, artifact_schema, get_json,
-                     get_json_if_found, log,
-                     query, ref_schema, run_deep, snakecase, union_views, write_table)
+from .common import (
+    CACHE,
+    DEST,
+    PREFIX,
+    PROBEINFO,
+    artifact_schema,
+    get_json,
+    get_json_if_found,
+    log,
+    query,
+    ref_schema,
+    run_deep,
+    snakecase,
+    union_views,
+    write_table,
+)
 
 from . import runs
 
@@ -91,18 +105,37 @@ logging.getLogger("sqlglot").setLevel(logging.ERROR)
 # computing something new: ARRAY_AGG(STRUCT(...) ORDER BY ... LIMIT 1)[OFFSET(0)]
 # picks a whole row, and collapsing it would make every field depend on every
 # other. Matched on sqlglot's class name, and on the name for UDFs.
-VALUE_FUNCS = {"arrayagg", "anyvalue", "argmax", "argmin", "firstvalue", "lastvalue",
-               "nthvalue", "arrayreverse", "arrayconcat", "arrayconcatagg", "first", "last",
-               # JSON keeps the struct it was made from: TO_JSON(metrics) still
-               # has metrics.counter.foo, now at $.counter.foo
-               "jsonformat", "jsonstripnulls", "parsejson"}
+VALUE_FUNCS = {
+    "arrayagg",
+    "anyvalue",
+    "argmax",
+    "argmin",
+    "firstvalue",
+    "lastvalue",
+    "nthvalue",
+    "arrayreverse",
+    "arrayconcat",
+    "arrayconcatagg",
+    "first",
+    "last",
+    # JSON keeps the struct it was made from: TO_JSON(metrics) still
+    # has metrics.counter.foo, now at $.counter.foo
+    "jsonformat",
+    "jsonstripnulls",
+    "parsejson",
+}
 VALUE_UDF_RE = re.compile(
-    r"mode_(last|first)|^(first|last)_value|any_value|^from_(nested_)?map$|^json_strip_nulls$",
-    re.I)
+    r"mode_(last|first)|^(first|last)_value|any_value|^from_(nested_)?map$|^json_strip_nulls$", re.I
+)
 
 # JSON functions that read a path out of a JSON value
-JSON_EXTRACT_FUNCS = ("JSONExtract", "JSONExtractScalar", "JSONExtractArray",
-                      "JSONValueArray", "JSONExtractQuote")
+JSON_EXTRACT_FUNCS = (
+    "JSONExtract",
+    "JSONExtractScalar",
+    "JSONExtractArray",
+    "JSONValueArray",
+    "JSONExtractQuote",
+)
 
 # Glean events have no column of their own: a query picks one out by comparing
 # the events array's category and name to string literals. Lineage marks where
@@ -115,9 +148,13 @@ JSON_EXTRACT_FUNCS = ("JSONExtract", "JSONExtractScalar", "JSONExtractArray",
 # branches says which side of each OR, CASE branch, select item or set
 # operation above it the comparison is on (literal_branches()), so that
 # literals in different ones are not taken as picking out one event together.
-IDENTITY_METRIC = {"category": "(event category)", "name": "(event name)",
-                   # legacy telemetry events are category, method and object
-                   "method": "(event method)", "object": "(event object)"}
+IDENTITY_METRIC = {
+    "category": "(event category)",
+    "name": "(event name)",
+    # legacy telemetry events are category, method and object
+    "method": "(event method)",
+    "object": "(event object)",
+}
 # Legacy event fields are anonymous: f1_ category, f2_ method, f3_ object
 LEGACY_EVENT_FIELD = {"f1_": "category", "f2_": "method", "f3_": "object"}
 IDENTITY_KIND = {v: k for k, v in IDENTITY_METRIC.items()}
@@ -147,7 +184,8 @@ EXCLUDE_PATHS = ("glam-fenix-dev", "moz-fx-glam-prod", "/glam_etl/")
 LEGACY_GLAM_RE = re.compile(
     r"moz-fx-data-shared-prod/(?:"
     r"telemetry(?:_derived)?/(?:client_probe_counts"
-    r"|clients_(?:daily_)?(?:keyed_)?(?:histogram|scalar|boolean)_(?:aggregates|bucket_counts|probe_counts)(?:_[a-z]+)?(?:_v\d+)?"
+    r"|clients_(?:daily_)?(?:keyed_)?(?:histogram|scalar|boolean)"
+    r"_(?:aggregates|bucket_counts|probe_counts)(?:_[a-z]+)?(?:_v\d+)?"
     r"|glam_extract_firefox_[a-z]+_v\d+|glam_sample_counts_v\d+)"
     r"|glam_derived/client_probe_counts_firefox_desktop_[a-z]+_v\d+)$"
 )
@@ -209,9 +247,17 @@ def flatten(shape):
 def mark(leaf, transformed=None, named=None):
     if not leaf:
         return leaf
-    return Leaf({m: (h, v, t if transformed is None else (t or transformed),
-                     n if named is None else named)
-                 for m, (h, v, t, n) in leaf.items()})
+    return Leaf(
+        {
+            m: (
+                h,
+                v,
+                t if transformed is None else (t or transformed),
+                n if named is None else named,
+            )
+            for m, (h, v, t, n) in leaf.items()
+        }
+    )
 
 
 def bulk(shape):
@@ -297,21 +343,21 @@ class Resolver:
     """Evaluates the shapes of one query, given the shapes of its tables."""
 
     def __init__(self, tables, project, reads=None, udfs=None):
-        self.tables = tables          # normalized table id -> Struct
+        self.tables = tables  # normalized table id -> Struct
         self.project = project
-        self.udfs = udfs or {}        # SQL function name -> (params, body)
-        self.frames = []              # per computation in progress: half-built keys it hit
-        self.waiting = {}             # half-built key -> provisional results to drop
-        self.pending = {}             # provisional result -> half-built keys it waits on
+        self.udfs = udfs or {}  # SQL function name -> (params, body)
+        self.frames = []  # per computation in progress: half-built keys it hit
+        self.waiting = {}  # half-built key -> provisional results to drop
+        self.pending = {}  # provisional result -> half-built keys it waits on
         self._orphans = []
-        self.bindings = []            # parameter shapes while a UDF body is evaluated
-        self.binding_ids = []         # a unique number per UDF call, for cache keys
+        self.bindings = []  # parameter shapes while a UDF body is evaluated
+        self.binding_ids = []  # a unique number per UDF call, for cache keys
         self.call_seq = 0
-        self.reads = reads if reads is not None else set()   # table ids looked up
+        self.reads = reads if reads is not None else set()  # table ids looked up
         self.memo = {}
         self.active = set()
-        self.touched = Leaf()         # every metric any column reference reached
-        self.star_tables = set()      # base tables read with SELECT *
+        self.touched = Leaf()  # every metric any column reference reached
+        self.star_tables = set()  # base tables read with SELECT *
 
     # sources
 
@@ -334,8 +380,8 @@ class Resolver:
                 parts = [self.shape(e, src) for e in expr.expressions]
                 if len(parts) == 1:
                     return parts[0]
-                return mark(flatten({str(i): p for i, p in enumerate(parts)}),
-                            transformed=True)
+                return mark(flatten({str(i): p for i, p in enumerate(parts)}), transformed=True)
+
             # inside a UDF body the same UNNEST node is evaluated once per call,
             # each with different arguments, so the call is part of the key
             # (otherwise every mode_last(...) got the first call's value). The
@@ -359,9 +405,13 @@ class Resolver:
                 # A bare name that is both a table's alias and one of its
                 # columns is the column: in `FROM firefox_desktop.events,
                 # UNNEST(events) AS event` it is the events array, not the row.
-                if len(parts) == 1 and isinstance(sources[parts[0]], exp.Table) \
-                        and isinstance(whole, dict) and not isinstance(whole, Leaf) \
-                        and parts[0] in whole:
+                if (
+                    len(parts) == 1
+                    and isinstance(sources[parts[0]], exp.Table)
+                    and isinstance(whole, dict)
+                    and not isinstance(whole, Leaf)
+                    and parts[0] in whole
+                ):
                     return whole[parts[0]]
                 got = access(whole, parts[1:])
                 # `FROM firefox_desktop.metrics` gives the table the implicit
@@ -419,8 +469,9 @@ class Resolver:
         if key in self.memo:
             return self.memo[key]
         try:
-            out = [(a, v[1] if isinstance(v, tuple) else v)
-                   for a, v in scope.selected_sources.items()]
+            out = [
+                (a, v[1] if isinstance(v, tuple) else v) for a, v in scope.selected_sources.items()
+            ]
         except Exception:
             out = []
             select = scope.expression
@@ -429,8 +480,7 @@ class Resolver:
             if frm is not None:
                 nodes.append(frm.this)
             nodes += [j.this for j in select.args.get("joins") or []]
-            by_expr = {id(c.expression): c for c in
-                       scope.derived_table_scopes + scope.udtf_scopes}
+            by_expr = {id(c.expression): c for c in scope.derived_table_scopes + scope.udtf_scopes}
             for n in nodes:
                 if id(n) in by_expr:
                     out.append((n.alias_or_name, by_expr[id(n)]))
@@ -462,13 +512,17 @@ class Resolver:
             # mozfun.hist.extract(x) as a Column whose name is the call, so it
             # read as a column named extract and the argument was never seen
             qual = [node.args[k].name for k in ("catalog", "db", "table") if node.args.get(k)]
-            key = self.udf_key(qual + [node.this.name]) \
-                if isinstance(node.this, exp.Anonymous) else None
+            key = (
+                self.udf_key(qual + [node.this.name])
+                if isinstance(node.this, exp.Anonymous)
+                else None
+            )
             if key:
                 return self.call_function(node.this, scope, key)
             return self.shape(node.this, scope)
         if isinstance(node, (exp.EQ, exp.In, exp.Like, exp.ILike)) or (
-                isinstance(node, exp.Case) and node.this is not None):
+            isinstance(node, exp.Case) and node.this is not None
+        ):
             got = self.event_literals(node, scope)
             if got is not None:
                 return got
@@ -486,12 +540,17 @@ class Resolver:
             if key:
                 return self.call_function(node, scope, key)
         if type(node).__name__ in ("JSONSet", "JSONRemove") or (
-                isinstance(node, exp.Anonymous) and (node.name or "").lower() in ("json_set", "json_remove")):
+            isinstance(node, exp.Anonymous)
+            and (node.name or "").lower() in ("json_set", "json_remove")
+        ):
             got = self.json_edit(node, scope)
             if got is not None:
                 return got
-        if isinstance(node, exp.Array) and len(node.expressions) > 1 and \
-                isinstance(node.expressions[0], exp.Struct):
+        if (
+            isinstance(node, exp.Array)
+            and len(node.expressions) > 1
+            and isinstance(node.expressions[0], exp.Struct)
+        ):
             # [STRUCT("content" AS p, x AS events), ("dynamic", y), ...]: the
             # elements are one struct type, named by the first; later tuples
             # line up with it by position
@@ -519,8 +578,11 @@ class Resolver:
                 base = self.shape(node.this, scope)
                 field = node.expression
                 if isinstance(field, exp.Identifier):
-                    return access(base, [field.name]) if isinstance(base, dict) \
-                        and not isinstance(base, Leaf) else base
+                    return (
+                        access(base, [field.name])
+                        if isinstance(base, dict) and not isinstance(base, Leaf)
+                        else base
+                    )
         if isinstance(node, exp.Struct):
             out = {}
             for i, e in enumerate(node.expressions):
@@ -572,14 +634,22 @@ class Resolver:
             # in hand: walking the children again re-evaluated each branch at
             # every level, so nested CASEs cost exponential time (a Looker
             # query of 49 CASEs ran past ten minutes).
-            others = [node.this] if isinstance(node, exp.If) else \
-                [node.this] + [i.this for i in node.args.get("ifs") or []] \
-                if isinstance(node, exp.Case) else []
+            others = (
+                [node.this]
+                if isinstance(node, exp.If)
+                else (
+                    [node.this] + [i.this for i in node.args.get("ifs") or []]
+                    if isinstance(node, exp.Case)
+                    else []
+                )
+            )
             acc = Leaf()
-            names = [field_name(a) for a in arms if a is not None] + \
-                [field_name(o) for o in others if o is not None]
-            for got, name in zip(shapes + [self.shape(o, scope) for o in others if o is not None],
-                                 names):
+            names = [field_name(a) for a in arms if a is not None] + [
+                field_name(o) for o in others if o is not None
+            ]
+            for got, name in zip(
+                shapes + [self.shape(o, scope) for o in others if o is not None], names
+            ):
                 if isinstance(got, dict) and not isinstance(got, Leaf):
                     merge_into(acc, whole(got, name))
                 else:
@@ -587,10 +657,17 @@ class Resolver:
             return mark(acc, transformed=True)
         if isinstance(node, exp.Bracket):
             base = self.shape(node.this, scope)
-            keys = [e.this.lower() for e in node.expressions
-                    if isinstance(e, exp.Literal) and e.is_string]
-            if keys and len(keys) == len(node.expressions) and isinstance(base, dict) \
-                    and not isinstance(base, Leaf):
+            keys = [
+                e.this.lower()
+                for e in node.expressions
+                if isinstance(e, exp.Literal) and e.is_string
+            ]
+            if (
+                keys
+                and len(keys) == len(node.expressions)
+                and isinstance(base, dict)
+                and not isinstance(base, Leaf)
+            ):
                 # metrics['uuid']['x'] on a JSON column
                 got = access(base, keys)
                 merge_into(self.touched, referenced(got, keys[-1] if keys else None))
@@ -662,7 +739,11 @@ class Resolver:
         """The registered name for a function called as parts, or None.
         `moz-fx-data-shared-prod`.udf.f, udf.f and mozfun.map.f all resolve."""
         parts = [p.lower() for p in parts if p]
-        for k in (".".join(parts), ".".join(parts[1:]), ".".join(parts[-2:]) if len(parts) > 2 else None):
+        for k in (
+            ".".join(parts),
+            ".".join(parts[1:]),
+            ".".join(parts[-2:]) if len(parts) > 2 else None,
+        ):
             if k and k in self.udfs:
                 return k
         return None
@@ -681,8 +762,7 @@ class Resolver:
         for child in node.iter_expressions():
             if child is not first and not first_of(child, first):
                 self.shape(child, scope)
-        return {k: mark(v, transformed=True) if isinstance(v, Leaf) else v
-                for k, v in got.items()}
+        return {k: mark(v, transformed=True) if isinstance(v, Leaf) else v for k, v in got.items()}
 
     def call_function(self, node, scope, key):
         """A call to a SQL function, expanded, unless it is one that returns
@@ -706,8 +786,10 @@ class Resolver:
         params, body = self.udfs[name]
         key = ("udf", name)
         if key in self.active:
-            return mark(flatten({str(i): self.shape(a, scope)
-                                 for i, a in enumerate(node.expressions)}), transformed=True)
+            return mark(
+                flatten({str(i): self.shape(a, scope) for i, a in enumerate(node.expressions)}),
+                transformed=True,
+            )
         args = [self.shape(a, scope) for a in node.expressions]
         self.active.add(key)
         self.bindings.append(dict(zip(params, args)))
@@ -726,8 +808,11 @@ class Resolver:
     def json_edit(self, node, scope):
         """JSON_SET(json, path, value, ...) and JSON_REMOVE(json, path, ...) on
         a JSON value built from a struct, applied to that struct's shape."""
-        args = list(node.expressions) if isinstance(node, exp.Anonymous) else \
-            [node.this] + list(node.expressions)
+        args = (
+            list(node.expressions)
+            if isinstance(node, exp.Anonymous)
+            else [node.this] + list(node.expressions)
+        )
         if not args:
             return None
         base = self.shape(args[0], scope)
@@ -735,8 +820,9 @@ class Resolver:
             return None
         out = copy_shape(base)
         rest = args[1:]
-        is_set = type(node).__name__ == "JSONSet" or \
-            (isinstance(node, exp.Anonymous) and node.name.lower() == "json_set")
+        is_set = type(node).__name__ == "JSONSet" or (
+            isinstance(node, exp.Anonymous) and node.name.lower() == "json_set"
+        )
         if is_set:
             for path, value in zip(rest[0::2], rest[1::2]):
                 keys = json_path_keys(path)
@@ -760,8 +846,11 @@ class Resolver:
         got = self.shape(node, scope)
         if isinstance(got, dict) and not isinstance(got, Leaf):
             return got
-        call = node.expression if isinstance(node, exp.Dot) and \
-            isinstance(node.expression, exp.Func) else node
+        call = (
+            node.expression
+            if isinstance(node, exp.Dot) and isinstance(node.expression, exp.Func)
+            else node
+        )
         if isinstance(call, exp.Func):
             merged = None
             for arg in call.iter_expressions():
@@ -769,8 +858,10 @@ class Resolver:
                 if isinstance(s, dict) and not isinstance(s, Leaf) and s:
                     merged = merge_shapes(merged, s)
             if merged is not None:
-                return {k: mark(v, transformed=True) if isinstance(v, Leaf) else v
-                        for k, v in merged.items()}
+                return {
+                    k: mark(v, transformed=True) if isinstance(v, Leaf) else v
+                    for k, v in merged.items()
+                }
         return got
 
     def branches(self, node):
@@ -778,8 +869,9 @@ class Resolver:
         if isinstance(node, exp.If):
             return [node.args.get("true"), node.args.get("false")]
         if isinstance(node, exp.Case):
-            return [i.args.get("true") for i in node.args.get("ifs") or []] + \
-                [node.args.get("default")]
+            return [i.args.get("true") for i in node.args.get("ifs") or []] + [
+                node.args.get("default")
+            ]
         if isinstance(node, exp.Coalesce):
             return [node.this] + list(node.expressions)
         return None
@@ -892,16 +984,24 @@ class Resolver:
             if clause == "order" and arg is not None:
                 # ORDER BY total means the SELECT's total, read above, as in
                 # GROUP BY
-                nodes = [o.this for o in arg.expressions
-                         if not (isinstance(o.this, exp.Column) and not o.this.table
-                                 and o.this.name.lower() in out)]
+                nodes = [
+                    o.this
+                    for o in arg.expressions
+                    if not (
+                        isinstance(o.this, exp.Column)
+                        and not o.this.table
+                        and o.this.name.lower() in out
+                    )
+                ]
             if clause == "group" and arg is not None:
                 # GROUP BY install_source means the SELECT's install_source
                 # when there is one, even if a FROM table has a column of that
                 # name; the alias's expression was read above
-                nodes = [n for n in arg.expressions
-                         if not (isinstance(n, exp.Column) and not n.table
-                                 and n.name.lower() in out)]
+                nodes = [
+                    n
+                    for n in arg.expressions
+                    if not (isinstance(n, exp.Column) and not n.table and n.name.lower() in out)
+                ]
                 for k, v in arg.args.items():  # ROLLUP, CUBE, GROUPING SETS
                     if k != "expressions" and isinstance(v, (exp.Expression, list)):
                         nodes += v if isinstance(v, list) else [v]
@@ -948,8 +1048,9 @@ class Resolver:
                 call = call.expression
             if not isinstance(call, exp.Func):
                 break
-            args = list(call.expressions) if call.expressions else \
-                [a for a in call.iter_expressions()]
+            args = (
+                list(call.expressions) if call.expressions else [a for a in call.iter_expressions()]
+            )
             if not args:
                 return value
             first = args[0]
@@ -961,8 +1062,9 @@ class Resolver:
             return value
         inner = self.lookup(parts, scope)
         if isinstance(inner, dict) and not isinstance(inner, Leaf) and inner:
-            return {k: mark(v, transformed=True) if isinstance(v, Leaf) else v
-                    for k, v in inner.items()}
+            return {
+                k: mark(v, transformed=True) if isinstance(v, Leaf) else v for k, v in inner.items()
+            }
         return value
 
     def expand_star(self, proj, star, scope, out):
@@ -993,7 +1095,9 @@ class Resolver:
                         fields.setdefault(k, v)
         if isinstance(fields, Leaf):
             return
-        excluded = {e.name.lower() for e in (star.args.get("except_") or star.args.get("except") or [])}
+        excluded = {
+            e.name.lower() for e in (star.args.get("except_") or star.args.get("except") or [])
+        }
         replaced = {}
         for r in star.args.get("replace") or []:
             if isinstance(r, exp.Alias):
@@ -1005,8 +1109,10 @@ class Resolver:
             # recorded in touched below; the values themselves are as specific
             # as they were upstream, and downstream readers depend on that.
             out[k] = replaced[k] if k in replaced else v
-        merge_into(self.touched, mark(flatten({k: v for k, v in fields.items()
-                                                if k not in excluded}), named=False))
+        merge_into(
+            self.touched,
+            mark(flatten({k: v for k, v in fields.items() if k not in excluded}), named=False),
+        )
 
 
 def is_string(node):
@@ -1016,16 +1122,25 @@ def is_string(node):
 def event_index(inventory):
     """app -> {"full": {"cat.name": mid}, "cat": {cat: [mid]}, "name": {name: [mid]}}
     for the Glean events in the inventory."""
-    idx = collections.defaultdict(lambda: {"full": {}, "cat": collections.defaultdict(list),
-                                           "name": collections.defaultdict(list)})
+    idx = collections.defaultdict(
+        lambda: {
+            "full": {},
+            "cat": collections.defaultdict(list),
+            "name": collections.defaultdict(list),
+        }
+    )
     for mid, r in enumerate(inventory):
         if r.get("source") == "legacy" and r.get("event_category"):
             # legacy: (category, methods, objects) per probe
             e = idx[r["app"]]
-            e.setdefault("legacy", []).append((
-                r["event_category"].lower(),
-                {m.lower() for m in r.get("event_methods") or []},
-                {o.lower() for o in r.get("event_objects") or []}, mid))
+            e.setdefault("legacy", []).append(
+                (
+                    r["event_category"].lower(),
+                    {m.lower() for m in r.get("event_methods") or []},
+                    {o.lower() for o in r.get("event_objects") or []},
+                    mid,
+                )
+            )
         elif r.get("type") == "event" and r.get("event_category") and r.get("event_name"):
             c, n = r["event_category"].lower(), r["event_name"].lower()
             e = idx[r["app"]]
@@ -1095,8 +1210,11 @@ def resolve_events(leaf, events):
                 found[mid] = (v[0], v[1], True, named)
 
         if e.get("legacy"):
-            resolve_legacy(e["legacy"], {g: [(lit, v) for lit, v, _ in items]
-                                         for g, items in groups.items()}, hit)
+            resolve_legacy(
+                e["legacy"],
+                {g: [(lit, v) for lit, v, _ in items] for g, items in groups.items()},
+                hit,
+            )
             merge_into(out, Leaf(found))
             continue
         cats = groups.get(("category", "eq"), [])
@@ -1142,16 +1260,23 @@ def resolve_legacy(probes, groups, hit):
     (address / detected picks out both address_form and address_form_ext). A
     method or object alone names its probe only if just one has it. A category
     alone, or a LIKE, reaches its probes without naming them."""
-    lits = {k: {lit for lit, _ in groups.get((k, "eq"), [])} for k in ("category", "method", "object")}
+    lits = {
+        k: {lit for lit, _ in groups.get((k, "eq"), [])} for k in ("category", "method", "object")
+    }
     any_v = next((v for items in groups.values() for _, v in items), None)
     for lit, v in groups.get(("full", "eq"), []):
         for cat, methods, objects, mid in probes:
-            if any(lit in (f"{cat}.{m}", f"{cat}.{m}.{o}") for m in methods for o in (objects or {""})):
+            if any(
+                lit in (f"{cat}.{m}", f"{cat}.{m}.{o}") for m in methods for o in (objects or {""})
+            ):
                 hit(mid, v, True)
     C, M, O = lits["category"], lits["method"], lits["object"]
     if C or M or O:
-        fits = [mid for cat, methods, objects, mid in probes
-                if (not C or cat in C) and (not M or methods & M) and (not O or objects & O)]
+        fits = [
+            mid
+            for cat, methods, objects, mid in probes
+            if (not C or cat in C) and (not M or methods & M) and (not O or objects & O)
+        ]
         named = (bool(C) and bool(M or O)) or (not C and len(fits) == 1)
         for mid in fits:
             hit(mid, any_v, named)
@@ -1202,9 +1327,13 @@ def persistent_udfs():
         except Exception:
             continue
         for st in statements:
-            if not (isinstance(st, exp.Create) and (st.args.get("kind") or "").upper() == "FUNCTION"
-                    and isinstance(st.this, exp.UserDefinedFunction)
-                    and st.expression is not None and not isinstance(st.expression, exp.Literal)):
+            if not (
+                isinstance(st, exp.Create)
+                and (st.args.get("kind") or "").upper() == "FUNCTION"
+                and isinstance(st.this, exp.UserDefinedFunction)
+                and st.expression is not None
+                and not isinstance(st.expression, exp.Literal)
+            ):
                 continue
             t = st.this.this
             name, db = (t.name, t.db) if isinstance(t, exp.Table) else (st.this.name, "")
@@ -1220,14 +1349,19 @@ def json_path_keys(node):
     None when the path is not a literal. Array subscripts are skipped: an
     element of a metric is still that metric."""
     if isinstance(node, exp.JSONPath):
-        return [k.this.lower() for k in node.expressions
-                if isinstance(k, exp.JSONPathKey) and isinstance(k.this, str)]
+        return [
+            k.this.lower()
+            for k in node.expressions
+            if isinstance(k, exp.JSONPathKey) and isinstance(k.this, str)
+        ]
     if isinstance(node, exp.Literal) and node.is_string:
         text = node.this
         if not text.startswith("$"):
             return None
-        return [(a or b).lower() for a, b in
-                re.findall(r"\[\s*['\"]([^'\"]+)['\"]\s*\]|\.([A-Za-z0-9_]+)", text)]
+        return [
+            (a or b).lower()
+            for a, b in re.findall(r"\[\s*['\"]([^'\"]+)['\"]\s*\]|\.([A-Za-z0-9_]+)", text)
+        ]
     return None
 
 
@@ -1268,10 +1402,10 @@ def is_value_func(call):
 def value_arg(call):
     """The argument a value function returns, past ORDER BY, IGNORE NULLS, LIMIT."""
     # a UDF (exp.Anonymous) keeps its name as a string in `this`
-    first = call.this if isinstance(call.this, exp.Expression) else \
-        (call.expressions or [None])[0]
-    while isinstance(first, (exp.IgnoreNulls, exp.RespectNulls, exp.Order, exp.Limit,
-                             exp.HavingMax)):
+    first = call.this if isinstance(call.this, exp.Expression) else (call.expressions or [None])[0]
+    while isinstance(
+        first, (exp.IgnoreNulls, exp.RespectNulls, exp.Order, exp.Limit, exp.HavingMax)
+    ):
         first = first.this
     if isinstance(first, exp.Distinct):
         first = (first.expressions or [None])[0]
@@ -1289,8 +1423,12 @@ def first_of(child, first):
 def merge_shapes(a, b):
     if a is None:
         return b
-    if isinstance(a, dict) and not isinstance(a, Leaf) and \
-            isinstance(b, dict) and not isinstance(b, Leaf):
+    if (
+        isinstance(a, dict)
+        and not isinstance(a, Leaf)
+        and isinstance(b, dict)
+        and not isinstance(b, Leaf)
+    ):
         out = dict(a)
         for k, v in b.items():
             out[k] = merge_shapes(out.get(k), v) if k in out else v
@@ -1356,8 +1494,11 @@ class Artifact:
         self.path = path
         rel = path.relative_to(SQL_ROOT)
         self.project, self.dataset, self.table = rel.parts[:3]
-        self.kind = {"query.sql": "bqetl_table", "view.sql": "bqetl_view",
-                     "query.py": "bqetl_table"}[path.name]
+        self.kind = {
+            "query.sql": "bqetl_table",
+            "view.sql": "bqetl_view",
+            "query.py": "bqetl_table",
+        }[path.name]
         self.id = f"{PROJECT_ALIASES.get(self.project, self.project)}.{self.dataset}.{self.table}"
         self.url = GITHUB.format(path=rel.as_posix())
         self.sql = None
@@ -1423,9 +1564,11 @@ def merge_quoted(text):
     """text with each name quoted part by part quoted whole instead, so that
     `a`.`b`.c reads as `a.b.c`. TABLE_TEXT_RE and TABLE_REF_RE take a
     backtick only around a whole name."""
+
     def whole(m):
         name = m.group(0)
         return f"`{name.replace('`', '')}`" if "`" in name else name
+
     return _QUOTED_PARTS_RE.sub(whole, text)
 
 
@@ -1475,8 +1618,11 @@ def parse_script(text):
         # an unresolved name, which carries nothing.
         text = re.sub(r"^\s*(DECLARE|SET)\b[^;]*;", "", text, flags=re.MULTILINE | re.I)
         # IF( at the start of a SELECT line is the function, not IF ... THEN
-        if re.search(r"^\s*(IF\b(?!\s*\()|BEGIN\b|LOOP\b|WHILE\b|FOR\b|EXECUTE\b)", text,
-                     flags=re.MULTILINE | re.I):
+        if re.search(
+            r"^\s*(IF\b(?!\s*\()|BEGIN\b|LOOP\b|WHILE\b|FOR\b|EXECUTE\b)",
+            text,
+            flags=re.MULTILINE | re.I,
+        ):
             return [], None, "script, read by regex"
     try:
         statements = sqlglot.parse(alter_sql_for_sqlglot(text), read="bigquery")
@@ -1487,9 +1633,13 @@ def parse_script(text):
     for st in statements:
         # SQL temp functions are kept so calls to them can be expanded; a
         # JavaScript one has a string body and stays a black box
-        if isinstance(st, exp.Create) and (st.args.get("kind") or "").upper() == "FUNCTION" \
-                and isinstance(st.this, exp.UserDefinedFunction) \
-                and not isinstance(st.expression, exp.Literal) and st.expression is not None:
+        if (
+            isinstance(st, exp.Create)
+            and (st.args.get("kind") or "").upper() == "FUNCTION"
+            and isinstance(st.this, exp.UserDefinedFunction)
+            and not isinstance(st.expression, exp.Literal)
+            and st.expression is not None
+        ):
             params = [p.name.lower() for p in st.this.expressions]
             # the name is a Table node inside the UserDefinedFunction
             fname = st.this.this.name if isinstance(st.this.this, exp.Expression) else st.this.name
@@ -1515,6 +1665,7 @@ def parse_script(text):
 class Prelude(list):
     """Temp tables in build order, plus the script's SQL temp functions and
     the plain SELECTs before the last statement."""
+
     udfs = {}
     selects = []
 
@@ -1574,23 +1725,32 @@ def shapes_from_tables():
     # These tables are rewritten in place, so the reads are cached by when
     # they were last written. Metric ids are row positions, and looker.py
     # caches results by id, so the order has to be the same on every read.
-    inventory = query(f"SELECT app, metric, source, type, columns, event_category, event_name, "
-                      f"event_methods, event_objects "
-                      f"FROM `{DEST}.{PREFIX}metrics` ORDER BY app, metric",
-                      tables=["metrics"], name="inventory")
+    inventory = query(
+        f"SELECT app, metric, source, type, columns, event_category, event_name, "
+        f"event_methods, event_objects "
+        f"FROM `{DEST}.{PREFIX}metrics` ORDER BY app, metric",
+        tables=["metrics"],
+        name="inventory",
+    )
     shapes = stable_shapes(inventory)
     mid = {(r["app"], r["metric"]): i for i, r in enumerate(inventory)}
     for app in {r["app"] for r in inventory}:
         for kind, name in IDENTITY_METRIC.items():
             mid[(app, name)] = ("ident", app, kind)
-    rows = query(f"SELECT `table`, path, app, metric, hops, named "
-                 f"FROM `{DEST}.{PREFIX}carries`", tables=["carries"], name="carries")
+    rows = query(
+        f"SELECT `table`, path, app, metric, hops, named " f"FROM `{DEST}.{PREFIX}carries`",
+        tables=["carries"],
+        name="carries",
+    )
     for r in rows:
         m = mid.get((r["app"], r["metric"]))
         if m is None:
             continue
-        insert(shapes.setdefault(r["table"], {}), r["path"].split("."),
-               Leaf({m: (r["hops"], f"{r['table']}:{r['path']}", False, bool(r["named"]))}))
+        insert(
+            shapes.setdefault(r["table"], {}),
+            r["path"].split("."),
+            Leaf({m: (r["hops"], f"{r['table']}:{r['path']}", False, bool(r["named"]))}),
+        )
     return inventory, shapes
 
 
@@ -1610,11 +1770,17 @@ def shape_digests(inventory, shapes):
     events = collections.defaultdict(list)
     for r in inventory:
         if r.get("event_category"):
-            events[r["app"]].append([r["event_category"], r.get("event_name"),
-                                     sorted(r.get("event_methods") or []),
-                                     sorted(r.get("event_objects") or [])])
-    event_digest = {app: hashlib.sha256(json.dumps(sorted(v)).encode()).hexdigest()
-                    for app, v in events.items()}
+            events[r["app"]].append(
+                [
+                    r["event_category"],
+                    r.get("event_name"),
+                    sorted(r.get("event_methods") or []),
+                    sorted(r.get("event_objects") or []),
+                ]
+            )
+    event_digest = {
+        app: hashlib.sha256(json.dumps(sorted(v)).encode()).hexdigest() for app, v in events.items()
+    }
 
     out = {}
     for table, shape in shapes.items():
@@ -1632,8 +1798,10 @@ def shape_digests(inventory, shapes):
                 else:
                     items.append([names[k], list(v)])
             by_name[path[-1] if path else ""].append([".".join(path), sorted(items)])
-        out[table] = {n: hashlib.sha256(json.dumps(sorted(v)).encode()).hexdigest()[:12]
-                      for n, v in by_name.items()}
+        out[table] = {
+            n: hashlib.sha256(json.dumps(sorted(v)).encode()).hexdigest()[:12]
+            for n, v in by_name.items()
+        }
     return out
 
 
@@ -1716,8 +1884,9 @@ def ping_pages():
     """
     from .inventory import glean_apps
 
-    libraries = {lib["dependency_name"]: lib for lib in
-                 get_json(f"{PROBEINFO}/v2/glean/library-variants")}
+    libraries = {
+        lib["dependency_name"]: lib for lib in get_json(f"{PROBEINFO}/v2/glean/library-variants")
+    }
     pages = {}
     for app_name, app in glean_apps(False).items():
         sources = [v["v1_name"] for v in app["variants"]]
@@ -1741,7 +1910,8 @@ WHERE ENDS_WITH(table_schema, '_stable')
     field_path IN ('events.category', 'events.name')
     -- legacy: main ping payload.processes.<p>.events, event ping payload.events.<p>
     OR (table_schema = 'telemetry_stable'
-        AND REGEXP_CONTAINS(field_path, r'^payload\.(processes\.[a-z_]+\.events|events\.[a-z_]+)\.f[123]_$'))
+        AND REGEXP_CONTAINS(
+          field_path, r'^payload\.(processes\.[a-z_]+\.events|events\.[a-z_]+)\.f[123]_$'))
   )
 """
 
@@ -1753,11 +1923,18 @@ def stable_shapes(inventory, force=False):
     for mid, r in enumerate(inventory):
         for c in r["columns"] or []:
             table = f"{DEFAULT_PROJECT}.{c['table']}"
-            insert(shapes[table], c["path"].split("."),
-                   Leaf({mid: (0, f"{c['table']}:{c['path']}", False, True)}))
+            insert(
+                shapes[table],
+                c["path"].split("."),
+                Leaf({mid: (0, f"{c['table']}:{c['path']}", False, True)}),
+            )
     from .inventory import glean_apps
-    app_of = {f"{v['bq_dataset_family']}_stable": name
-              for name, app in glean_apps(False).items() for v in app["variants"]}
+
+    app_of = {
+        f"{v['bq_dataset_family']}_stable": name
+        for name, app in glean_apps(False).items()
+        for v in app["variants"]
+    }
     app_of["telemetry_stable"] = "telemetry"
     # lineage.py refreshes this; the scripts reading its tables reuse that copy
     for r in query(EVENT_FIELDS_SQL, force=force, name="event fields"):
@@ -1767,9 +1944,20 @@ def stable_shapes(inventory, force=False):
         table = f"{DEFAULT_PROJECT}.{r['dataset_id']}.{r['table_id']}"
         kind = r["field_path"].split(".")[-1]
         kind = LEGACY_EVENT_FIELD.get(kind, kind)
-        insert(shapes[table], r["field_path"].split("."),
-               Leaf({("ident", app, kind): (0, f"{r['dataset_id']}.{r['table_id']}:{r['field_path']}",
-                                            False, True)}))
+        insert(
+            shapes[table],
+            r["field_path"].split("."),
+            Leaf(
+                {
+                    ("ident", app, kind): (
+                        0,
+                        f"{r['dataset_id']}.{r['table_id']}:{r['field_path']}",
+                        False,
+                        True,
+                    )
+                }
+            ),
+        )
     # *_live tables have the same schema as their stable twin and are read by
     # the near-real-time queries
     for table in list(shapes):
@@ -1780,12 +1968,34 @@ def stable_shapes(inventory, force=False):
 
 
 COMMENT_RE = re.compile(r"/\*.*?\*/|--[^\n]*|#[^\n]*", re.S)
-GLEAN_TYPES = {"boolean", "counter", "custom_distribution", "datetime", "dual_labeled_counter",
-               "labeled_boolean", "labeled_counter", "labeled_custom_distribution",
-               "labeled_memory_distribution", "labeled_quantity", "labeled_string",
-               "labeled_timing_distribution", "memory_distribution", "object", "quantity",
-               "rate", "string", "string_list", "text", "timespan", "timing_distribution",
-               "url", "uuid", "jwe", "labeled_rate", "metrics"}
+GLEAN_TYPES = {
+    "boolean",
+    "counter",
+    "custom_distribution",
+    "datetime",
+    "dual_labeled_counter",
+    "labeled_boolean",
+    "labeled_counter",
+    "labeled_custom_distribution",
+    "labeled_memory_distribution",
+    "labeled_quantity",
+    "labeled_string",
+    "labeled_timing_distribution",
+    "memory_distribution",
+    "object",
+    "quantity",
+    "rate",
+    "string",
+    "string_list",
+    "text",
+    "timespan",
+    "timing_distribution",
+    "url",
+    "uuid",
+    "jwe",
+    "labeled_rate",
+    "metrics",
+}
 WORD_RE = re.compile(r"[a-z_][a-z0-9_]*")
 
 
@@ -1827,21 +2037,30 @@ def regex_refs(art, inventory_index, shapes):
                         # as resolve_legacy does: with 'install' quoted as a
                         # method, addonsManager.disable does not fit
                         legacy = e.get("legacy", []) if e else []
-                        m_q = {c: set().union(*[ms for cc, ms, _, _ in legacy if cc == c]) & quoted
-                               for c in {p[0] for p in legacy} & quoted}
-                        o_q = {c: set().union(*[os_ for cc, _, os_, _ in legacy if cc == c]) & quoted
-                               for c in m_q}
+                        m_q = {
+                            c: set().union(*[ms for cc, ms, _, _ in legacy if cc == c]) & quoted
+                            for c in {p[0] for p in legacy} & quoted
+                        }
+                        o_q = {
+                            c: set().union(*[os_ for cc, _, os_, _ in legacy if cc == c]) & quoted
+                            for c in m_q
+                        }
                         for cat, methods, objects, emid in legacy:
-                            if cat in m_q and (m_q[cat] or o_q[cat]) \
-                                    and (not m_q[cat] or methods & m_q[cat]) \
-                                    and (not o_q[cat] or objects & o_q[cat]):
-                                merge_into(found, Leaf({emid: (h, f"{tbl}:{'.'.join(path)}",
-                                                               True, True)}))
+                            if (
+                                cat in m_q
+                                and (m_q[cat] or o_q[cat])
+                                and (not m_q[cat] or methods & m_q[cat])
+                                and (not o_q[cat] or objects & o_q[cat])
+                            ):
+                                merge_into(
+                                    found, Leaf({emid: (h, f"{tbl}:{'.'.join(path)}", True, True)})
+                                )
                         for full, emid in (e["full"] if e else {}).items():
                             cat, _, name = full.rpartition(".")
                             if full in quoted or (cat in quoted and name in quoted):
-                                merge_into(found, Leaf({emid: (h, f"{tbl}:{'.'.join(path)}",
-                                                               True, True)}))
+                                merge_into(
+                                    found, Leaf({emid: (h, f"{tbl}:{'.'.join(path)}", True, True)})
+                                )
                     continue
                 merge_into(found, Leaf({mid: (h, f"{tbl}:{'.'.join(path)}", True, True)}))
     return found
@@ -1922,9 +2141,16 @@ def carried_shape(table_id, out):
     specific to a metric stays so."""
     shape = {}
     for path, leaf in output_paths(out):
-        insert(shape, list(path), Leaf({
-            m: (h + 1, f"{table_id}:{'.'.join(path)}", False, n)
-            for m, (h, v, t, n) in leaf.items()}))
+        insert(
+            shape,
+            list(path),
+            Leaf(
+                {
+                    m: (h + 1, f"{table_id}:{'.'.join(path)}", False, n)
+                    for m, (h, v, t, n) in leaf.items()
+                }
+            ),
+        )
     return shape
 
 
@@ -1938,19 +2164,28 @@ def output_paths(shape, prefix=()):
 
 
 def run(only=None, show=0):
-    inventory = query(f"""
+    inventory = query(
+        f"""
 SELECT app, metric, source, type, columns, event_category, event_name,
   event_methods, event_objects
 FROM `{DEST}.{PREFIX}metrics`
 ORDER BY app, metric
-""", tables=["metrics"], name="inventory")
+""",
+        tables=["metrics"],
+        name="inventory",
+    )
     events = event_index(inventory)
     shapes = stable_shapes(inventory, force=True)
     # Environment fields end in words like count, name and version, which would
     # match far too many column names to narrow a pack by.
-    leaves = {m: r["columns"][0]["path"].split(".")[-1]
-              if r["columns"] and r["type"] != "environment" else None
-              for m, r in enumerate(inventory)}
+    leaves = {
+        m: (
+            r["columns"][0]["path"].split(".")[-1]
+            if r["columns"] and r["type"] != "environment"
+            else None
+        )
+        for m, r in enumerate(inventory)
+    }
     log(f"  stable shapes for {len(shapes):,} tables")
 
     arts = corpus()
@@ -1979,8 +2214,13 @@ ORDER BY app, metric
             out, touched, unread = resolve(a, shapes, reads)
             note = partial_note(unread)
         except Exception as e:
-            return ({}, regex_refs(a, events, shapes),
-                    f"resolve failed, read by regex: {type(e).__name__}", None, 0)
+            return (
+                {},
+                regex_refs(a, events, shapes),
+                f"resolve failed, read by regex: {type(e).__name__}",
+                None,
+                0,
+            )
         out = resolve_events_in(out, events)
         touched = resolve_events(touched, events)
         cuts = 0
@@ -1997,10 +2237,14 @@ ORDER BY app, metric
     def signature(comp):
         """What a cycle's tables currently carry; hops and via left out, since
         only which metrics reach which columns decides convergence."""
-        return {a.id: frozenset((".".join(path), m, v[3])
-                                for path, leaf in output_paths(per_art[a.id][1])
-                                for m, v in leaf.items())
-                for a in comp}
+        return {
+            a.id: frozenset(
+                (".".join(path), m, v[3])
+                for path, leaf in output_paths(per_art[a.id][1])
+                for m, v in leaf.items()
+            )
+            for a in comp
+        }
 
     done, late = set(), collections.defaultdict(set)
     cycle_passes, capped = collections.Counter(), []
@@ -2036,29 +2280,42 @@ ORDER BY app, metric
         if cyclic:
             cycle_passes[passes] += 1
             if len(comp) > 1:
-                log(f"  cycle of {len(comp)} resolved in {passes} passes: "
-                    + ", ".join(sorted(a.id.split(".", 1)[1] for a in comp)))
+                log(
+                    f"  cycle of {len(comp)} resolved in {passes} passes: "
+                    + ", ".join(sorted(a.id.split(".", 1)[1] for a in comp))
+                )
     n_narrowed = sum(narrowed_by.values())
     global _LAST_SHAPES
-    _LAST_SHAPES = shapes             # for debugging a run from a REPL
+    _LAST_SHAPES = shapes  # for debugging a run from a REPL
 
-    log(f"  {sum(cycle_passes.values())} cycles (self-references included), by passes "
-        f"needed: " + ", ".join(f"{k}: {v}" for k, v in sorted(cycle_passes.items())))
+    log(
+        f"  {sum(cycle_passes.values())} cycles (self-references included), by passes "
+        f"needed: " + ", ".join(f"{k}: {v}" for k, v in sorted(cycle_passes.items()))
+    )
     for ids in capped:
-        log(f"  WARNING: cycle hit the {MAX_CYCLE_PASSES} pass cap without settling: "
-            + ", ".join(i.split(".", 1)[1] for i in ids))
+        log(
+            f"  WARNING: cycle hit the {MAX_CYCLE_PASSES} pass cap without settling: "
+            + ", ".join(i.split(".", 1)[1] for i in ids)
+        )
     if late:
         log(f"  WARNING: {len(late)} artifacts read a bigquery-etl table resolved after them:")
         for aid, ts in sorted(late.items())[:10]:
-            log(f"    {aid.split('.', 1)[1]} <- {', '.join(t.split('.', 1)[1] for t in sorted(ts))}")
+            log(
+                f"    {aid.split('.', 1)[1]} <- {', '.join(t.split('.', 1)[1] for t in sorted(ts))}"
+            )
     else:
         log("  no artifact read a bigquery-etl table resolved after it")
     external = collections.Counter(
-        t for a in arts for t in a.refs
-        if t not in by_id and "_stable." not in t and "_live." not in t)
-    log(f"  {len(external):,} referenced tables are not built by bigquery-etl, so lineage "
+        t
+        for a in arts
+        for t in a.refs
+        if t not in by_id and "_stable." not in t and "_live." not in t
+    )
+    log(
+        f"  {len(external):,} referenced tables are not built by bigquery-etl, so lineage "
         f"stops there; most referenced: "
-        + ", ".join(f"{t.split('.', 1)[1]} ({n})" for t, n in external.most_common(5)))
+        + ", ".join(f"{t.split('.', 1)[1]} ({n})" for t, n in external.most_common(5))
+    )
 
     for a, out, touched, note in per_art.values():
         notes[note] += 1
@@ -2080,11 +2337,18 @@ ORDER BY app, metric
                     app, metric = m[1], IDENTITY_METRIC[m[2]]
                 else:
                     app, metric = inventory[m]["app"], inventory[m]["metric"]
-                carries_rows.append({
-                    "table": a.id, "path": ".".join(path), "app": app,
-                    "metric": metric, "hops": h + 1,
-                    "transformed": t, "named": n, "via": via,
-                })
+                carries_rows.append(
+                    {
+                        "table": a.id,
+                        "path": ".".join(path),
+                        "app": app,
+                        "metric": metric,
+                        "hops": h + 1,
+                        "transformed": t,
+                        "named": n,
+                        "via": via,
+                    }
+                )
         for m, (h, via, t, n) in touched.items():
             if isinstance(m, tuple):
                 continue
@@ -2093,35 +2357,49 @@ ORDER BY app, metric
             if not outs and not n:
                 # read in bulk (SELECT * in a CTE) and then dropped: not a use
                 continue
-            ref_rows.append({
-                "app": r["app"], "metric": r["metric"],
-                "artifact_id": a.id, "artifact_kind": a.kind,
-                "role": "output" if outs else "filter",
-                "hops": h + 1,
-                "named": n,
-                "transformed": t or any(v[2] for _, v in outs),
-                "via": via,
-                "output_columns": sorted({p.replace("/", ".") for p, _ in outs})[:20],
-                "n_output_columns": len({p for p, _ in outs}),
-                "evidence": "parsed" if a.tree is not None else "regex",
-            })
+            ref_rows.append(
+                {
+                    "app": r["app"],
+                    "metric": r["metric"],
+                    "artifact_id": a.id,
+                    "artifact_kind": a.kind,
+                    "role": "output" if outs else "filter",
+                    "hops": h + 1,
+                    "named": n,
+                    "transformed": t or any(v[2] for _, v in outs),
+                    "via": via,
+                    "output_columns": sorted({p.replace("/", ".") for p, _ in outs})[:20],
+                    "n_output_columns": len({p for p, _ in outs}),
+                    "evidence": "parsed" if a.tree is not None else "regex",
+                }
+            )
 
-    art_rows = [{
-        "artifact_id": a.id, "kind": a.kind, "name": a.id.split(".", 1)[1],
-        "url": a.url, "owners": a.owners, "friendly_name": a.description,
-        "generated_by": a.generated_by, "note": note,
-        "n_metrics_named": sum(1 for m, v in touched.items() if v[3] and isinstance(m, int)),
-        "n_metrics_total": sum(1 for m in touched if isinstance(m, int)),
-    } for a, out, touched, note in per_art.values()]
+    art_rows = [
+        {
+            "artifact_id": a.id,
+            "kind": a.kind,
+            "name": a.id.split(".", 1)[1],
+            "url": a.url,
+            "owners": a.owners,
+            "friendly_name": a.description,
+            "generated_by": a.generated_by,
+            "note": note,
+            "n_metrics_named": sum(1 for m, v in touched.items() if v[3] and isinstance(m, int)),
+            "n_metrics_total": sum(1 for m in touched if isinstance(m, int)),
+        }
+        for a, out, touched, note in per_art.values()
+    ]
 
     log("\nartifacts by outcome:")
     for k, n in notes.most_common():
         log(f"  {n:6,}  {k}")
     named = sum(1 for r in ref_rows if r["named"])
     log(f"\n{n_narrowed:,} packed output columns narrowed by name")
-    log(f"{len(ref_rows):,} refs ({named:,} named, {len(ref_rows) - named:,} bulk), "
+    log(
+        f"{len(ref_rows):,} refs ({named:,} named, {len(ref_rows) - named:,} bulk), "
         f"{len(carries_rows):,} carried columns, "
-        f"{len({(r['app'], r['metric']) for r in ref_rows}):,} distinct metrics referenced")
+        f"{len({(r['app'], r['metric']) for r in ref_rows}):,} distinct metrics referenced"
+    )
 
     if show:
         for a, out, touched, note in per_art.values():
@@ -2129,29 +2407,42 @@ ORDER BY app, metric
                 continue
             log(f"\n{a.id}  [{note}]")
             for path, leaf in list(output_paths(out))[:show]:
-                names = [(f"{inventory[m]['app']}:{inventory[m]['metric']}" if isinstance(m, int)
-                          else str(m))
-                         + ("" if v[3] or touched.get(m, (0, 0, 0, False))[3] else " (bulk)")
-                         for m, v in leaf.items()]
-                log(f"    {'.'.join(path):<45} <- {', '.join(names[:3])}"
-                    + (f" (+{len(names) - 3})" if len(names) > 3 else ""))
-            filt = [f"{inventory[m]['app']}:{inventory[m]['metric']}"
-                    for m, v in touched.items()
-                    if isinstance(m, int) and v[3]
-                    and not any(m in lf for _, lf in output_paths(out))]
+                names = [
+                    (
+                        f"{inventory[m]['app']}:{inventory[m]['metric']}"
+                        if isinstance(m, int)
+                        else str(m)
+                    )
+                    + ("" if v[3] or touched.get(m, (0, 0, 0, False))[3] else " (bulk)")
+                    for m, v in leaf.items()
+                ]
+                log(
+                    f"    {'.'.join(path):<45} <- {', '.join(names[:3])}"
+                    + (f" (+{len(names) - 3})" if len(names) > 3 else "")
+                )
+            filt = [
+                f"{inventory[m]['app']}:{inventory[m]['metric']}"
+                for m, v in touched.items()
+                if isinstance(m, int) and v[3] and not any(m in lf for _, lf in output_paths(out))
+            ]
             if filt:
-                log(f"    filter/join only: {', '.join(filt[:8])}"
-                    + (f" (+{len(filt) - 8})" if len(filt) > 8 else ""))
+                log(
+                    f"    filter/join only: {', '.join(filt[:8])}"
+                    + (f" (+{len(filt) - 8})" if len(filt) > 8 else "")
+                )
     return carries_rows, ref_rows, art_rows
 
 
-SUFFIX = ("Prototype table maintained by the docker-etl metric-usage job, metric_usage/lineage.py "
-          "from the generated-sql branch; replaced on each run.")
+SUFFIX = (
+    "Prototype table maintained by the docker-etl metric-usage job, metric_usage/lineage.py "
+    "from the generated-sql branch; replaced on each run."
+)
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--only", help="substring of a target id, for --show")
     ap.add_argument("--show", type=int, default=0, help="print N output columns per target")
@@ -2164,19 +2455,39 @@ def main():
     runs.add_runs(arts)
     from google.cloud.bigquery import SchemaField as F
 
-    cs = [F("table", "STRING"), F("path", "STRING"), F("app", "STRING"),
-          F("metric", "STRING"), F("hops", "INT64"), F("transformed", "BOOL"),
-          F("named", "BOOL"), F("via", "STRING")]
-    write_table("carries", carries, cs,
-                "Which columns of which warehouse tables carry each metric, with "
-                "hops from the stable table. " + SUFFIX, clustering=["app", "metric"])
-    write_table("refs_bqetl", refs, ref_schema(),
-                "bigquery-etl queries and views that read each metric, as output "
-                "or filter, named or carried in bulk. " + SUFFIX,
-                clustering=["app", "metric"])
-    write_table("artifacts_bqetl", arts, artifact_schema(),
-                "One row per bigquery-etl table or view. " + SUFFIX,
-                clustering=["artifact_id"])
+    cs = [
+        F("table", "STRING"),
+        F("path", "STRING"),
+        F("app", "STRING"),
+        F("metric", "STRING"),
+        F("hops", "INT64"),
+        F("transformed", "BOOL"),
+        F("named", "BOOL"),
+        F("via", "STRING"),
+    ]
+    write_table(
+        "carries",
+        carries,
+        cs,
+        "Which columns of which warehouse tables carry each metric, with "
+        "hops from the stable table. " + SUFFIX,
+        clustering=["app", "metric"],
+    )
+    write_table(
+        "refs_bqetl",
+        refs,
+        ref_schema(),
+        "bigquery-etl queries and views that read each metric, as output "
+        "or filter, named or carried in bulk. " + SUFFIX,
+        clustering=["app", "metric"],
+    )
+    write_table(
+        "artifacts_bqetl",
+        arts,
+        artifact_schema(),
+        "One row per bigquery-etl table or view. " + SUFFIX,
+        clustering=["artifact_id"],
+    )
     union_views()
 
 

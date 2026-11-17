@@ -72,10 +72,28 @@ import re
 import sys
 import time
 
-from .common import (DEST, LONGEST, PREFIX, WINDOWS, ResolvedStore, ResolveTimeout,
-                     append_table, artifact_schema, client, days_within, log, pool_map, query,
-                     ref_schema, seen_within, time_limit, union_views, window_end,
-                     window_start, write_table)
+from .common import (
+    DEST,
+    LONGEST,
+    PREFIX,
+    WINDOWS,
+    ResolvedStore,
+    ResolveTimeout,
+    append_table,
+    artifact_schema,
+    client,
+    days_within,
+    log,
+    pool_map,
+    query,
+    ref_schema,
+    seen_within,
+    time_limit,
+    union_views,
+    window_end,
+    window_start,
+    write_table,
+)
 
 from . import metric_hub as MH
 from . import redash as R
@@ -96,10 +114,20 @@ PROJECTS = [
 ]
 
 EXCLUDE_ACCOUNTS_RE = r"redash|looker|airflow|bigeye|@system\.|datahub"
-DDL_TYPES = ("CREATE_VIEW", "CREATE_MATERIALIZED_VIEW", "CREATE_FUNCTION",
-             "CREATE_TABLE_FUNCTION", "CREATE_PROCEDURE", "CREATE_SCHEMA",
-             "CREATE_TABLE", "ALTER_TABLE", "ALTER_VIEW", "DROP_TABLE", "DROP_VIEW",
-             "CREATE_ROW_ACCESS_POLICY")
+DDL_TYPES = (
+    "CREATE_VIEW",
+    "CREATE_MATERIALIZED_VIEW",
+    "CREATE_FUNCTION",
+    "CREATE_TABLE_FUNCTION",
+    "CREATE_PROCEDURE",
+    "CREATE_SCHEMA",
+    "CREATE_TABLE",
+    "ALTER_TABLE",
+    "ALTER_VIEW",
+    "DROP_TABLE",
+    "DROP_VIEW",
+    "CREATE_ROW_ACCESS_POLICY",
+)
 # In every query this script runs, so a later run does not read its own jobs
 MARKER = "bigquery-metric-lineage:adhoc"
 
@@ -205,8 +233,9 @@ WHERE {jobs_where(start, end)}
   )
 GROUP BY key
 """
-    config = bigquery.QueryJobConfig(query_parameters=[
-        bigquery.ArrayQueryParameter("tables", "STRING", sorted(tables))])
+    config = bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ArrayQueryParameter("tables", "STRING", sorted(tables))]
+    )
     job = client().query(sql, job_config=config)
     out = {r["key"]: r["query"] for r in job.result(page_size=2000)}
     fetch_texts.bytes += job.total_bytes_processed or 0
@@ -217,8 +246,9 @@ def fetch_texts(project, start, end, keys):
     """{key: text} for the given query keys, in memory only."""
     from google.cloud import bigquery
 
-    config = bigquery.QueryJobConfig(query_parameters=[
-        bigquery.ArrayQueryParameter("keys", "STRING", sorted(keys))])
+    config = bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ArrayQueryParameter("keys", "STRING", sorted(keys))]
+    )
     job = client().query(texts_sql(project, start, end), job_config=config)
     out = {r["key"]: r["query"] for r in job.result(page_size=2000)}
     fetch_texts.bytes += job.total_bytes_processed or 0
@@ -268,16 +298,20 @@ def resolve_all(rows, end, store):
     newest = week_of(end.isoformat(), first)
     for k, day in last_days(rows).items():
         live = day >= first.isoformat()
-        got = store.get(f"{k[0]}:{k[1]}", may_expire=live and week_of(day, first) == newest,
-                        frozen=not live)
+        got = store.get(
+            f"{k[0]}:{k[1]}", may_expire=live and week_of(day, first) == newest, frozen=not live
+        )
         if got is not None:
             out[k] = got
         elif live:
             need[k] = day
         else:
             gone += 1
-    log(f"  resolving {len(need):,} queries ({len(out):,} reused"
-        + (f"; {gone:,} with no result and no text left to resolve" if gone else "") + ")")
+    log(
+        f"  resolving {len(need):,} queries ({len(out):,} reused"
+        + (f"; {gone:,} with no result and no text left to resolve" if gone else "")
+        + ")"
+    )
     if not need:
         return out
     R.L.persistent_udfs()  # parsed once here for the forked workers
@@ -303,8 +337,10 @@ def resolve_all(rows, end, store):
                 store.put(key, res, deps)
         del items
         done += n
-        log(f"    {project} from {b_start}: {n:,} queries; {done:,} of {len(need):,} "
-            f"after {(time.monotonic() - started) / 60:.1f} minutes")
+        log(
+            f"    {project} from {b_start}: {n:,} queries; {done:,} of {len(need):,} "
+            f"after {(time.monotonic() - started) / 60:.1f} minutes"
+        )
     return out
 
 
@@ -339,8 +375,10 @@ def text_batches(last, start, end):
         try:
             texts = fetch_texts(project, b_start, b_end, keys)
         except Forbidden as e:
-            log(f"    skipped the text of {project} from {b_start}: "
-                f"{getattr(e, 'message', None) or str(e).splitlines()[0]}")
+            log(
+                f"    skipped the text of {project} from {b_start}: "
+                f"{getattr(e, 'message', None) or str(e).splitlines()[0]}"
+            )
             texts = None
         yield project, b_start, keys, texts
 
@@ -365,11 +403,11 @@ def experiment_of(wrote, known):
         return None
     rest = m.group(1).lower()
     if rest.startswith("enrollments_"):
-        return rest[len("enrollments_"):]
+        return rest[len("enrollments_") :]
     cuts = [x.start() for x in SLUG_END_RE.finditer(rest)]
     if not cuts:
         return None
-    return next((rest[:c] for c in reversed(cuts) if rest[:c] in known), rest[:cuts[0]])
+    return next((rest[:c] for c in reversed(cuts) if rest[:c] in known), rest[: cuts[0]])
 
 
 def artifact_of(row, known):
@@ -398,10 +436,19 @@ def available(end):
 def history_schema():
     from google.cloud.bigquery import SchemaField as F
 
-    return [F("day", "DATE"), F("project", "STRING"),
-            F("key", "STRING", description="Query key (KEY_SQL); null marks a day captured "
-              "with no jobs, so it is not fetched again"),
-            F("account", "STRING"), F("wrote", "STRING"), F("jobs", "INT64")]
+    return [
+        F("day", "DATE"),
+        F("project", "STRING"),
+        F(
+            "key",
+            "STRING",
+            description="Query key (KEY_SQL); null marks a day captured "
+            "with no jobs, so it is not fetched again",
+        ),
+        F("account", "STRING"),
+        F("wrote", "STRING"),
+        F("jobs", "INT64"),
+    ]
 
 
 def read_history(sql):
@@ -420,8 +467,9 @@ def capture(projects, known, save):
 
     first, last = available(window_end())
     have = collections.defaultdict(set)
-    for r in read_history(f"SELECT DISTINCT project, day FROM `{DEST}.{PREFIX}{HISTORY}` "
-                          f"WHERE day >= '{first}'"):
+    for r in read_history(
+        f"SELECT DISTINCT project, day FROM `{DEST}.{PREFIX}{HISTORY}` " f"WHERE day >= '{first}'"
+    ):
         have[r["project"]].add(r["day"])
     days = [first + datetime.timedelta(days=i) for i in range((last - first).days + 1)]
     new = []
@@ -445,18 +493,31 @@ def capture(projects, known, save):
                 break
             seen = {r["day"] for r in got}
             new += [dict(r, project=project, day=r["day"].isoformat()) for r in got]
-            new += [{"day": d.isoformat(), "project": project, "key": None, "account": None,
-                     "wrote": None, "jobs": 0}
-                    for d in (a + datetime.timedelta(days=i) for i in range((b - a).days + 1))
-                    if d not in seen]
+            new += [
+                {
+                    "day": d.isoformat(),
+                    "project": project,
+                    "key": None,
+                    "account": None,
+                    "wrote": None,
+                    "jobs": 0,
+                }
+                for d in (a + datetime.timedelta(days=i) for i in range((b - a).days + 1))
+                if d not in seen
+            ]
     n_days = len({(r["project"], r["day"]) for r in new})
     log(f"  captured {n_days:,} project-days of jobs from JOBS_BY_PROJECT")
     if save and new:
-        append_table(HISTORY, new, history_schema(),
-                     "Ad hoc BigQuery jobs per (day, project, query key, account), kept "
-                     f"{LONGEST} days; no query text. Prototype table maintained by the docker-etl "
-                     "metric-usage job, metric_usage/adhoc.py.",
-                     partition="day", keep_days=LONGEST + 1)
+        append_table(
+            HISTORY,
+            new,
+            history_schema(),
+            "Ad hoc BigQuery jobs per (day, project, query key, account), kept "
+            f"{LONGEST} days; no query text. Prototype table maintained by the docker-etl "
+            "metric-usage job, metric_usage/adhoc.py.",
+            partition="day",
+            keep_days=LONGEST + 1,
+        )
     return new
 
 
@@ -474,16 +535,24 @@ def job_rows(projects, start, end, save=False):
     gets a shape for later is read only from the day it has one.
     """
     known = R.known_tables()
-    bqetl = {r["artifact_id"] for r in query(
-        f"SELECT artifact_id FROM `{DEST}.{PREFIX}artifacts_bqetl` WHERE kind = 'bqetl_table'",
-        name="bqetl tables", tables=["artifacts_bqetl"])}
+    bqetl = {
+        r["artifact_id"]
+        for r in query(
+            f"SELECT artifact_id FROM `{DEST}.{PREFIX}artifacts_bqetl` WHERE kind = 'bqetl_table'",
+            name="bqetl tables",
+            tables=["artifacts_bqetl"],
+        )
+    }
     listed = ", ".join(f"'{p}'" for p in projects)
     rows = [dict(r, day=r["day"].isoformat()) for r in read_history(f"""
 SELECT day, project, key, account, wrote, jobs FROM `{DEST}.{PREFIX}{HISTORY}`
 WHERE key IS NOT NULL AND day BETWEEN '{start}' AND '{end}' AND project IN ({listed})""")]
     log(f"  {len(rows):,} job rows held in {PREFIX}{HISTORY}")
-    rows += [r for r in capture(projects, known, save)
-             if r["key"] is not None and start.isoformat() <= r["day"] <= end.isoformat()]
+    rows += [
+        r
+        for r in capture(projects, known, save)
+        if r["key"] is not None and start.isoformat() <= r["day"] <= end.isoformat()
+    ]
     # a job writing a bigquery-etl table is that table's own query
     return [r for r in rows if r["wrote"] not in bqetl]
 
@@ -496,12 +565,18 @@ def run(projects, days, save):
     log(f"  jobs from {start} to {end}")
     inventory = R.load_shapes()
     R.digests()  # computed once here for the forked workers
-    store = ResolvedStore("resolved_adhoc", f"{RESOLVED_VERSION}:{R.L.resolver_digest()}",
-                          R.dependency_digest, inventory)
+    store = ResolvedStore(
+        "resolved_adhoc",
+        f"{RESOLVED_VERSION}:{R.L.resolver_digest()}",
+        R.dependency_digest,
+        inventory,
+    )
     rows = job_rows(projects, start, end, save)
-    log(f"  {sum(r['jobs'] for r in rows):,} jobs, "
+    log(
+        f"  {sum(r['jobs'] for r in rows):,} jobs, "
         f"{len({(r['project'], r['key']) for r in rows}):,} distinct queries, "
-        f"{len({r['account'] for r in rows}):,} accounts")
+        f"{len({r['account'] for r in rows}):,} accounts"
+    )
 
     try:
         results = resolve_all(rows, end, store)
@@ -522,8 +597,17 @@ def run(projects, days, save):
         if not named:
             continue
         aid, kind, name = artifact_of(r, exps)
-        a = arts.setdefault(aid, {"kind": kind, "name": name, "jobs": collections.Counter(),
-                                  "days": set(), "metrics": set(), "accounts": set()})
+        a = arts.setdefault(
+            aid,
+            {
+                "kind": kind,
+                "name": name,
+                "jobs": collections.Counter(),
+                "days": set(),
+                "metrics": set(),
+                "accounts": set(),
+            },
+        )
         a["jobs"][r["day"]] += r["jobs"]
         a["days"].add(r["day"])
         a["accounts"].add(r["account"])
@@ -532,8 +616,13 @@ def run(projects, days, save):
             held = refs.get((aid, m))
             if held is None:
                 refs[(aid, m)] = held = {
-                    "days": set(), "role": role, "hops": h, "via": via, "transformed": t,
-                    "evidence": "regex" if role == "unknown" else "parsed"}
+                    "days": set(),
+                    "role": role,
+                    "hops": h,
+                    "via": via,
+                    "transformed": t,
+                    "evidence": "regex" if role == "unknown" else "parsed",
+                }
             held["days"].add(r["day"])
             if ROLE_RANK[role] > ROLE_RANK[held["role"]]:
                 held["role"] = role
@@ -561,32 +650,53 @@ def run(projects, days, save):
             named = bool(c and c[0])
             if c and c[2]:
                 hops, via = c[1] + 1, c[2]
-        ref_rows.append({
-            "app": r["app"], "metric": r["metric"], "artifact_id": aid,
-            "artifact_kind": arts[aid]["kind"], "role": v["role"], "hops": hops,
-            "named": named, "transformed": v["transformed"], "via": via,
-            "output_columns": [], "n_output_columns": 0, "evidence": v["evidence"],
-            **days_within(v["days"], end), "seen_within": seen_within(max(v["days"]), end),
-            "last_observed": max(v["days"]),
-        })
+        ref_rows.append(
+            {
+                "app": r["app"],
+                "metric": r["metric"],
+                "artifact_id": aid,
+                "artifact_kind": arts[aid]["kind"],
+                "role": v["role"],
+                "hops": hops,
+                "named": named,
+                "transformed": v["transformed"],
+                "via": via,
+                "output_columns": [],
+                "n_output_columns": 0,
+                "evidence": v["evidence"],
+                **days_within(v["days"], end),
+                "seen_within": seen_within(max(v["days"]), end),
+                "last_observed": max(v["days"]),
+            }
+        )
     n_named = collections.Counter(r["artifact_id"] for r in ref_rows if r["named"])
     art_rows = []
     for aid, a in sorted(arts.items()):
         row = {
-            "artifact_id": aid, "kind": a["kind"], "name": a["name"],
+            "artifact_id": aid,
+            "kind": a["kind"],
+            "name": a["name"],
             "owners": [a["name"]] if a["kind"] != "jetstream_experiment" else [],
-            "n_metrics_named": n_named[aid], "n_metrics_total": len(a["metrics"]),
+            "n_metrics_named": n_named[aid],
+            "n_metrics_total": len(a["metrics"]),
             "last_run": max(a["days"]),
-            **{f"views_{w}d": sum(n for d, n in a["jobs"].items()
-                                  if d >= str(window_start(w, end))) for w in WINDOWS},
+            **{
+                f"views_{w}d": sum(
+                    n for d, n in a["jobs"].items() if d >= str(window_start(w, end))
+                )
+                for w in WINDOWS
+            },
             "note": f"{len(a['days'])} days with a query naming a metric",
         }
         e = exps.get(a["name"]) if a["kind"] == "jetstream_experiment" else None
         if e:
             row["name"] = e["normandy_slug"]
             row["url"] = MH.EXPERIMENTER.format(slug=e["experimenter_slug"] or e["normandy_slug"])
-            row["friendly_name"] = (f"{e['app_name']}, {e['start_date'] or '?'} to "
-                                    f"{e['end_date'] or 'now'}") if e["app_name"] else None
+            row["friendly_name"] = (
+                (f"{e['app_name']}, {e['start_date'] or '?'} to " f"{e['end_date'] or 'now'}")
+                if e["app_name"]
+                else None
+            )
         art_rows.append(row)
 
     log("\nqueries by outcome:")
@@ -594,17 +704,20 @@ def run(projects, days, save):
         log(f"  {n:7,}  {k}")
     by_kind = collections.Counter(a["kind"] for a in art_rows)
     unknown = sum(1 for a in art_rows if a["kind"] == "jetstream_experiment" and not a.get("url"))
-    log(f"\n{len(ref_rows):,} refs over {len({(r['app'], r['metric']) for r in ref_rows}):,} "
+    log(
+        f"\n{len(ref_rows):,} refs over {len({(r['app'], r['metric']) for r in ref_rows}):,} "
         f"metrics from {by_kind['person']:,} people, "
         f"{by_kind['service_account']:,} service accounts and "
         f"{by_kind['jetstream_experiment']:,} Jetstream experiments "
-        f"({unknown:,} not found in Experimenter)")
+        f"({unknown:,} not found in Experimenter)"
+    )
     return ref_rows, art_rows, store
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--project", action="append", help="read only this project (repeatable)")
     ap.add_argument("--days", type=int, default=LONGEST)
@@ -612,21 +725,33 @@ def main():
     if args.days > LONGEST:
         raise SystemExit(f"the longest window is {LONGEST} days")
     if (args.project or args.days != LONGEST) and not args.dry_run:
-        raise SystemExit("--project and --days are for --dry-run; the tables hold "
-                         f"every project over {LONGEST} days")
+        raise SystemExit(
+            "--project and --days are for --dry-run; the tables hold "
+            f"every project over {LONGEST} days"
+        )
     refs, arts, store = run(args.project or PROJECTS, args.days, save=not args.dry_run)
     if args.dry_run:
         return
-    suffix = ("Prototype table maintained by the docker-etl metric-usage job, metric_usage/adhoc.py; "
-              "replaced on each run.")
-    write_table("refs_adhoc", refs, ref_schema(),
-                f"Metrics named by ad hoc BigQuery queries over {LONGEST} days, per "
-                "account, from job history, with days per window. " + suffix,
-                clustering=["app", "metric"])
-    write_table("artifacts_adhoc", arts, artifact_schema(),
-                "People, service accounts and Jetstream experiments whose ad hoc queries "
-                "name a metric; views_<n>d is their jobs naming one. " + suffix,
-                clustering=["artifact_id"])
+    suffix = (
+        "Prototype table maintained by the docker-etl metric-usage job, metric_usage/adhoc.py; "
+        "replaced on each run."
+    )
+    write_table(
+        "refs_adhoc",
+        refs,
+        ref_schema(),
+        f"Metrics named by ad hoc BigQuery queries over {LONGEST} days, per "
+        "account, from job history, with days per window. " + suffix,
+        clustering=["app", "metric"],
+    )
+    write_table(
+        "artifacts_adhoc",
+        arts,
+        artifact_schema(),
+        "People, service accounts and Jetstream experiments whose ad hoc queries "
+        "name a metric; views_<n>d is their jobs naming one. " + suffix,
+        clustering=["artifact_id"],
+    )
     union_views()
     store.save()
 

@@ -6,12 +6,15 @@ import pytest
 from metric_usage import lineage as L
 from harness import events, regex, table
 
-PINGS = table("app.metrics", {
-    "client_info.client_id": "client_id",
-    "client_info.distribution.name": "distribution.name",
-    "metrics.counter.a_count": "a.count",
-    "metrics.uuid.legacy_client_id": "legacy.client_id",
-})
+PINGS = table(
+    "app.metrics",
+    {
+        "client_info.client_id": "client_id",
+        "client_info.distribution.name": "distribution.name",
+        "metrics.counter.a_count": "a.count",
+        "metrics.uuid.legacy_client_id": "legacy.client_id",
+    },
+)
 # a broken comma before FROM keeps these from parsing
 FROM = "FROM `moz-fx-data-shared-prod.app.metrics`"
 
@@ -35,22 +38,30 @@ def test_case_insensitive():
 def test_plain_nested_name_needs_its_parent():
     # every e.name = '...' would match client_info.distribution.name otherwise
     assert regex(f"SELECT e.name, {FROM}", PINGS) == {}
-    assert regex(f"SELECT client_info.distribution.name, {FROM}", PINGS) == \
-        {"distribution.name": True}
+    assert regex(f"SELECT client_info.distribution.name, {FROM}", PINGS) == {
+        "distribution.name": True
+    }
 
 
 def test_glean_type_container_is_not_a_metric():
     # events_stream's JSON metrics.labeled_counter holds every labeled counter
     tid, shape = table("app.events_stream", {"metrics.labeled_counter": "x.errors"})
-    assert regex("SELECT metrics.labeled_counter, FROM `moz-fx-data-shared-prod.app.events_stream`",
-                 (tid, shape)) == {}
+    assert (
+        regex(
+            "SELECT metrics.labeled_counter, FROM `moz-fx-data-shared-prod.app.events_stream`",
+            (tid, shape),
+        )
+        == {}
+    )
 
 
 def test_column_with_many_metrics_is_skipped():
     tid, shape = table("app_derived.rollup_v1")
     shape["total"] = L.Leaf({f"m{i}": (1, f"{tid}:total", True, False) for i in range(5)})
-    assert regex("SELECT total, FROM `moz-fx-data-shared-prod.app_derived.rollup_v1`",
-                 (tid, shape)) == {}
+    assert (
+        regex("SELECT total, FROM `moz-fx-data-shared-prod.app_derived.rollup_v1`", (tid, shape))
+        == {}
+    )
 
 
 def test_quoted_event_names():
@@ -74,20 +85,29 @@ def test_column_read_and_aliased_to_itself_counts():
     assert regex(f"SELECT client_info.client_id AS client_id, {FROM}", PINGS) == {"client_id": True}
 
 
-@pytest.mark.parametrize("name", [
-    "`mozdata`.`telemetry`.`main`",
-    "`moz-fx-data-shared-prod`.`telemetry`.main",
-    "telemetry.`main`",
-    "`telemetry`.`main`",
-    "`mozdata.telemetry.main`",
-])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "`mozdata`.`telemetry`.`main`",
+        "`moz-fx-data-shared-prod`.`telemetry`.main",
+        "telemetry.`main`",
+        "`telemetry`.`main`",
+        "`mozdata.telemetry.main`",
+    ],
+)
 def test_table_quoted_part_by_part_is_found(name):
     from metric_usage import redash as R
+
     want = {"moz-fx-data-shared-prod.telemetry.main"}
     assert R.table_refs(f"select * from {name}", "mozdata") == want
     assert L.text_table_refs(f"select * from {name}", "moz-fx-data-shared-prod") == want
 
 
 def test_quoted_words_are_not_tables():
-    assert L.text_table_refs("select `a` and `b` from t\nfrom google.cloud import bigquery",
-                             "moz-fx-data-shared-prod") == set()
+    assert (
+        L.text_table_refs(
+            "select `a` and `b` from t\nfrom google.cloud import bigquery",
+            "moz-fx-data-shared-prod",
+        )
+        == set()
+    )

@@ -14,25 +14,36 @@ def fixture(name):
     return (FIXTURES / f"{name}.sql").read_text()
 
 
-FENIX_EVENTS = table("org_mozilla_firefox.events", {
-    "client_info.client_id": "client_id",
-    "client_info.locale": "locale",
-    "ping_info.reason": "reason",
-    "metrics.string.region_home_region": "region.home_region",
-    "metrics.boolean.policies_is_enterprise": "policies.is_enterprise",
-    "metrics.labeled_counter.glean_error_invalid_label": "glean.error.invalid_label",
-    "metrics.labeled_counter.wallpapers_new_wallpaper_applied": "wallpapers.new_wallpaper_applied",
-    "metrics.url2.sample_page": "sample.page",
-}, events_app="fenix")
-FENIX_IDX = events("fenix", ("media.playback", "decode_error"),
-                   ("media.playback", "first_frame_loaded"), ("media", "error"),
-                   ("nav", "click"))
+FENIX_EVENTS = table(
+    "org_mozilla_firefox.events",
+    {
+        "client_info.client_id": "client_id",
+        "client_info.locale": "locale",
+        "ping_info.reason": "reason",
+        "metrics.string.region_home_region": "region.home_region",
+        "metrics.boolean.policies_is_enterprise": "policies.is_enterprise",
+        "metrics.labeled_counter.glean_error_invalid_label": "glean.error.invalid_label",
+        "metrics.labeled_counter.wallpapers_new_wallpaper_applied": (
+            "wallpapers.new_wallpaper_applied"
+        ),
+        "metrics.url2.sample_page": "sample.page",
+    },
+    events_app="fenix",
+)
+FENIX_IDX = events(
+    "fenix",
+    ("media.playback", "decode_error"),
+    ("media.playback", "first_frame_loaded"),
+    ("media", "error"),
+    ("nav", "click"),
+)
 
 
 @pytest.fixture(scope="module")
 def events_stream():
-    return resolve(fixture("org_mozilla_firefox_derived.events_stream_v1"), FENIX_EVENTS,
-                   events=FENIX_IDX)
+    return resolve(
+        fixture("org_mozilla_firefox_derived.events_stream_v1"), FENIX_EVENTS, events=FENIX_IDX
+    )
 
 
 def test_events_stream_keeps_metrics_at_their_json_paths(events_stream):
@@ -50,10 +61,12 @@ def test_events_stream_moves_url2_to_url(events_stream):
 
 def test_events_stream_keeps_each_labeled_counter(events_stream):
     r = events_stream
-    assert set(r.carried("metrics.labeled_counter.glean_error_invalid_label")) == \
-        {"glean.error.invalid_label"}
-    assert set(r.carried("metrics.labeled_counter.wallpapers_new_wallpaper_applied")) == \
-        {"wallpapers.new_wallpaper_applied"}
+    assert set(r.carried("metrics.labeled_counter.glean_error_invalid_label")) == {
+        "glean.error.invalid_label"
+    }
+    assert set(r.carried("metrics.labeled_counter.wallpapers_new_wallpaper_applied")) == {
+        "wallpapers.new_wallpaper_applied"
+    }
 
 
 def test_events_stream_client_columns(events_stream):
@@ -81,11 +94,15 @@ def test_events_stream_where_names_excluded_events(events_stream):
 
 def test_reading_events_stream_downstream(events_stream):
     t = events_stream.shape_for("org_mozilla_firefox_derived.events_stream_v1")
-    r = resolve("""
+    r = resolve(
+        """
         SELECT JSON_VALUE(metrics, '$.string.region_home_region') AS region, COUNT(*) AS n
         FROM `moz-fx-data-shared-prod.org_mozilla_firefox_derived.events_stream_v1`
         WHERE event = 'nav.click'
-        GROUP BY region""", t, events=FENIX_IDX)
+        GROUP BY region""",
+        t,
+        events=FENIX_IDX,
+    )
     assert set(r.carried("region")) == {"region.home_region"}
     assert r.uses["region.home_region"].named
     assert r.uses["nav.click"] == ("filter", True, True, r.uses["nav.click"].via)

@@ -24,7 +24,8 @@ reading only them counts them, summed over every table it is in and averaged
 over the last SIZE_DAYS days. A Glean metric's size covers all its channels and
 pings. A dry run counts a few bytes a row for a column even where it is empty,
 which would make every legacy probe look large, so each column is measured
-above the smallest column of its table that day. A table with no empty column is undercounted by its smallest one.
+above the smallest column of its table that day. A table with no empty column
+is undercounted by its smallest one.
 Events have none, since an event is a row of the events column rather than a
 column of its own. Among the same app's metrics with data, size_top_percent is
 the percent at least as large, so 1 is the top 1%, and size_percent is its share
@@ -84,8 +85,8 @@ WINDOWS_SQL = f"""
 CREATE OR REPLACE TABLE `{DEST}.{PREFIX}windows`
 OPTIONS (
   description = "The windows of use the metric usage app offers, in days, each ending on "
-    || "end_date. Prototype table maintained by the docker-etl metric-usage job, metric_usage/summary.py; "
-    || "replaced on each run."
+    || "end_date. Prototype table maintained by the docker-etl metric-usage job, "
+    || "metric_usage/summary.py; replaced on each run."
 )
 AS
 SELECT * FROM UNNEST([
@@ -301,11 +302,13 @@ fix AS (
   SELECT
     m.def_origin,
     m.metric AS def_metric,
-    COUNT(DISTINCT IF(r.named AND r.artifact_kind = 'bqetl_table', r.artifact_id, NULL)) AS n_tables,
+    COUNT(DISTINCT IF(r.named AND r.artifact_kind = 'bqetl_table', r.artifact_id, NULL))
+      AS n_tables,
     COUNT(DISTINCT IF(r.named AND r.artifact_kind = 'bqetl_view'
       AND IFNULL(r.generated_by, '') NOT IN ('stable_views', 'glean_usage'), r.artifact_id, NULL))
       AS n_views,
-    COUNT(DISTINCT IF(r.named AND r.artifact_kind = 'redash_query', r.artifact_id, NULL)) AS n_redash,
+    COUNT(DISTINCT IF(r.named AND r.artifact_kind = 'redash_query', r.artifact_id, NULL))
+      AS n_redash,
     COUNT(DISTINCT IF(r.named AND r.artifact_kind IN ('looker_dashboard', 'looker_look'),
       r.artifact_id, NULL)) AS n_looker,
     COUNT(DISTINCT IF(r.named AND r.artifact_kind = 'metric_hub_metric', r.artifact_id, NULL))

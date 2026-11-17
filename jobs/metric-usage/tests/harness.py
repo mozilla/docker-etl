@@ -32,32 +32,50 @@ def table(name, columns=None, events_app=None, events_path="events", legacy_path
     tid = table_id(name)
     shape = {}
     for path, metric in (columns or {}).items():
-        L.insert(shape, path.lower().split("."),
-                 L.Leaf({metric: (0, f"{tid}:{path}", False, True)}))
-    seeds = [(f"{events_path}.{kind}", kind) for kind in ("category", "name")] \
-        if events_app and not legacy_paths else []
-    seeds += [(f"{base}.{field}", L.LEGACY_EVENT_FIELD[field])
-              for base in legacy_paths for field in ("f1_", "f2_", "f3_")]
+        L.insert(
+            shape, path.lower().split("."), L.Leaf({metric: (0, f"{tid}:{path}", False, True)})
+        )
+    seeds = (
+        [(f"{events_path}.{kind}", kind) for kind in ("category", "name")]
+        if events_app and not legacy_paths
+        else []
+    )
+    seeds += [
+        (f"{base}.{field}", L.LEGACY_EVENT_FIELD[field])
+        for base in legacy_paths
+        for field in ("f1_", "f2_", "f3_")
+    ]
     for path, kind in seeds:
-        L.insert(shape, path.split("."),
-                 L.Leaf({("ident", events_app, kind): (0, f"{tid}:{path}", False, True)}))
+        L.insert(
+            shape,
+            path.split("."),
+            L.Leaf({("ident", events_app, kind): (0, f"{tid}:{path}", False, True)}),
+        )
     return tid, shape
 
 
 def events(app, *pairs):
     """An event index for resolve_events() over (category, name) pairs, and a
     map from its ids back to "category.name"."""
-    inventory = [{"app": app, "type": "event", "event_category": c, "event_name": n}
-                 for c, n in pairs]
+    inventory = [
+        {"app": app, "type": "event", "event_category": c, "event_name": n} for c, n in pairs
+    ]
     return L.event_index(inventory), {i: f"{c}.{n}" for i, (c, n) in enumerate(pairs)}
 
 
 def legacy_events(app, *probes):
     """An event index over legacy probes given as (name, category, methods,
     objects), and a map from its ids back to the names."""
-    inventory = [{"app": app, "source": "legacy", "event_category": c,
-                  "event_methods": list(ms), "event_objects": list(os_)}
-                 for _, c, ms, os_ in probes]
+    inventory = [
+        {
+            "app": app,
+            "source": "legacy",
+            "event_category": c,
+            "event_methods": list(ms),
+            "event_objects": list(os_),
+        }
+        for _, c, ms, os_ in probes
+    ]
     return L.event_index(inventory), {i: p[0] for i, p in enumerate(probes)}
 
 
@@ -76,9 +94,10 @@ class Result:
     @property
     def columns(self):
         """{output column path: {metric: Carried}}"""
-        return {".".join(path): {self.name(m): Carried(n, t, via)
-                                 for m, (h, via, t, n) in leaf.items()}
-                for path, leaf in L.output_paths(self.out)}
+        return {
+            ".".join(path): {self.name(m): Carried(n, t, via) for m, (h, via, t, n) in leaf.items()}
+            for path, leaf in L.output_paths(self.out)
+        }
 
     def carried(self, path):
         """{metric: Carried} for one output column, {} if it holds nothing."""
@@ -106,8 +125,9 @@ class Result:
             outs = reached.get(m, [])
             if not outs and not n:
                 continue
-            found[self.name(m)] = Use("output" if outs else "filter", n,
-                                      t or any(v[2] for v in outs), via)
+            found[self.name(m)] = Use(
+                "output" if outs else "filter", n, t or any(v[2] for v in outs), via
+            )
         return found
 
     def shape_for(self, name):
@@ -132,8 +152,9 @@ def resolve(sql, *tables, events=None, all_selects=False):
     prelude, tree, note = L.parse_script(sql)
     assert tree is not None, f"did not parse: {note}"
     shapes = dict(tables)
-    out, touched, stars, _ = L.resolve_script(prelude, tree, shapes, PROJECT,
-                                              all_selects=all_selects)
+    out, touched, stars, _ = L.resolve_script(
+        prelude, tree, shapes, PROJECT, all_selects=all_selects
+    )
     names = {}
     if events is not None:
         idx, names = events

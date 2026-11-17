@@ -30,9 +30,22 @@ import hashlib
 import re
 import sys
 
-from .common import (LONGEST, WINDOWS, ResolveTimeout, artifact_schema, client, log,
-                     pool_map, ref_schema, time_limit, union_views, window_end, window_sql,
-                     window_start, write_table)
+from .common import (
+    LONGEST,
+    WINDOWS,
+    ResolveTimeout,
+    artifact_schema,
+    client,
+    log,
+    pool_map,
+    ref_schema,
+    time_limit,
+    union_views,
+    window_end,
+    window_sql,
+    window_start,
+    write_table,
+)
 
 from . import lineage as L
 
@@ -82,9 +95,15 @@ ORDER BY
 
 
 def views_sql(end):
-    return window_sql("submission_date", end, views="SUM(IF({c}, views, 0))",
-                      users="COUNT(DISTINCT IF({c}, user_email, NULL))") + \
-        ",\n  MAX(IF(views > 0, submission_date, NULL)) AS last_used"
+    return (
+        window_sql(
+            "submission_date",
+            end,
+            views="SUM(IF({c}, views, 0))",
+            users="COUNT(DISTINCT IF({c}, user_email, NULL))",
+        )
+        + ",\n  MAX(IF(views > 0, submission_date, NULL)) AS last_used"
+    )
 
 
 def in_window(column, end):
@@ -136,8 +155,9 @@ GROUP BY v.query_id
 def usage(r):
     """views_<n>d, users_<n>d and last_used from a row of either query, 0
     and None for none."""
-    out = {f"{k}_{w}d": (r or {}).get(f"{k}_{w}d") or 0
-           for w in WINDOWS for k in ("views", "users")}
+    out = {
+        f"{k}_{w}d": (r or {}).get(f"{k}_{w}d") or 0 for w in WINDOWS for k in ("views", "users")
+    }
     last = (r or {}).get("last_used")
     out["last_used"] = last.isoformat() if last else None
     return out
@@ -198,7 +218,9 @@ def dependency_digest(table, names):
     has a shape for it at all counts too, so a result is redone once a table
     it names gets one."""
     cols = _DIGESTS.get(table)
-    material = ["absent"] if cols is None else ["present"] + [f"{n}={cols.get(n, '')}" for n in names]
+    material = (
+        ["absent"] if cols is None else ["present"] + [f"{n}={cols.get(n, '')}" for n in names]
+    )
     return hashlib.sha256("|".join(material).encode()).hexdigest()[:16]
 
 
@@ -238,12 +260,15 @@ def analyse(text, project=REDASH_PROJECT):
         # dotted names, credited only against tables the text names
         art = type("A", (), {"sql": text, "refs": refs})()
         found = L.regex_refs(art, _EVENTS, _SHAPES)
-        return ({m: ("unknown", h, v, True) for m, (h, v, t, n) in found.items()
-                 if isinstance(m, int)},
-                [], note or "regex")
+        return (
+            {m: ("unknown", h, v, True) for m, (h, v, t, n) in found.items() if isinstance(m, int)},
+            [],
+            note or "regex",
+        )
     try:
-        out, touched, star_tables, unread = L.resolve_script(prelude, tree, _SHAPES, project,
-                                                             all_selects=True)
+        out, touched, star_tables, unread = L.resolve_script(
+            prelude, tree, _SHAPES, project, all_selects=True
+        )
     except Exception as e:
         return {}, [], f"resolve failed: {type(e).__name__}"
     out = L.resolve_events_in(out, _EVENTS)
@@ -259,8 +284,7 @@ def analyse(text, project=REDASH_PROJECT):
         outs = outputs.get(m, [])
         if not n:
             continue
-        named[m] = ("output" if outs else "filter", h, via,
-                    t or any(v[2] for v in outs))
+        named[m] = ("output" if outs else "filter", h, via, t or any(v[2] for v in outs))
     return named, sorted(star_tables & _TABLES), L.partial_note(unread)
 
 
@@ -325,30 +349,46 @@ def run(limit=None):
         aid = f"redash:query:{q['id']}"
         for m, (role, h, via, t) in named.items():
             r = inventory[m]
-            ref_rows.append({
-                "app": r["app"], "metric": r["metric"], "artifact_id": aid,
-                "artifact_kind": "redash_query", "role": role, "hops": h + 1,
-                "named": True, "transformed": t, "via": via,
-                "output_columns": [], "n_output_columns": 0,
-                "evidence": "parsed" if role != "unknown" else "regex",
-            })
+            ref_rows.append(
+                {
+                    "app": r["app"],
+                    "metric": r["metric"],
+                    "artifact_id": aid,
+                    "artifact_kind": "redash_query",
+                    "role": role,
+                    "hops": h + 1,
+                    "named": True,
+                    "transformed": t,
+                    "via": via,
+                    "output_columns": [],
+                    "n_output_columns": 0,
+                    "evidence": "parsed" if role != "unknown" else "regex",
+                }
+            )
             for d in dash_of.get(q["id"], []):
                 held = dash_refs[d].get(m)
                 if held is None or h < held[0]:
                     dash_refs[d][m] = (h, aid)
         qv = query_views.get(q["id"], {})
-        art_rows.append({
-            "artifact_id": aid, "kind": "redash_query", "name": q["name"],
-            "url": f"{REDASH}/queries/{q['id']}",
-            "owners": [q["owner"]] if q["owner"] else [],
-            "note": note, "n_metrics_named": len(named), "n_metrics_total": len(named),
-            "is_draft": q["is_draft"], "is_scheduled": q["is_scheduled"],
-            "last_run": q["last_run"].isoformat() if q["last_run"] else None,
-            "updated_at": q["updated_at"].isoformat() if q["updated_at"] else None,
-            **usage(qv),
-            "parent_ids": [f"redash:dashboard:{d}" for d in dash_of.get(q["id"], [])],
-            "star_tables": stars,
-        })
+        art_rows.append(
+            {
+                "artifact_id": aid,
+                "kind": "redash_query",
+                "name": q["name"],
+                "url": f"{REDASH}/queries/{q['id']}",
+                "owners": [q["owner"]] if q["owner"] else [],
+                "note": note,
+                "n_metrics_named": len(named),
+                "n_metrics_total": len(named),
+                "is_draft": q["is_draft"],
+                "is_scheduled": q["is_scheduled"],
+                "last_run": q["last_run"].isoformat() if q["last_run"] else None,
+                "updated_at": q["updated_at"].isoformat() if q["updated_at"] else None,
+                **usage(qv),
+                "parent_ids": [f"redash:dashboard:{d}" for d in dash_of.get(q["id"], [])],
+                "star_tables": stars,
+            }
+        )
 
     # A dashboard depends on every metric its queries name. Its child_ids are
     # the queries that have an artifact here; queries on other data sources
@@ -358,53 +398,81 @@ def run(limit=None):
         did = f"redash:dashboard:{d}"
         for m, (h, via_query) in dash_refs.get(d, {}).items():
             r = inventory[m]
-            ref_rows.append({
-                "app": r["app"], "metric": r["metric"], "artifact_id": did,
-                "artifact_kind": "redash_dashboard", "role": "output", "hops": h + 2,
-                "named": True, "transformed": None, "via": via_query,
-                "output_columns": [], "n_output_columns": 0, "evidence": "parsed",
-            })
-        art_rows.append({
-            "artifact_id": did, "kind": "redash_dashboard", "name": info["dashboard_name"],
-            "url": info["dashboard_url"],
-            "owners": [info["dashboard_owner_email"]] if info["dashboard_owner_email"] else [],
-            "n_metrics_named": len(dash_refs.get(d, {})),
-            "n_metrics_total": len(dash_refs.get(d, {})),
-            "is_draft": info["dashboard_is_draft"],
-            **usage(info),
-            "child_ids": [f"redash:query:{q}" for q, ds in dash_of.items()
-                          if d in ds and q in query_ids],
-        })
+            ref_rows.append(
+                {
+                    "app": r["app"],
+                    "metric": r["metric"],
+                    "artifact_id": did,
+                    "artifact_kind": "redash_dashboard",
+                    "role": "output",
+                    "hops": h + 2,
+                    "named": True,
+                    "transformed": None,
+                    "via": via_query,
+                    "output_columns": [],
+                    "n_output_columns": 0,
+                    "evidence": "parsed",
+                }
+            )
+        art_rows.append(
+            {
+                "artifact_id": did,
+                "kind": "redash_dashboard",
+                "name": info["dashboard_name"],
+                "url": info["dashboard_url"],
+                "owners": [info["dashboard_owner_email"]] if info["dashboard_owner_email"] else [],
+                "n_metrics_named": len(dash_refs.get(d, {})),
+                "n_metrics_total": len(dash_refs.get(d, {})),
+                "is_draft": info["dashboard_is_draft"],
+                **usage(info),
+                "child_ids": [
+                    f"redash:query:{q}" for q, ds in dash_of.items() if d in ds and q in query_ids
+                ],
+            }
+        )
 
     log("\nqueries by outcome:")
     for k, n in notes.most_common():
         log(f"  {n:7,}  {k}")
     qrefs = [r for r in ref_rows if r["artifact_kind"] == "redash_query"]
-    log(f"\n{len(qrefs):,} query refs over "
+    log(
+        f"\n{len(qrefs):,} query refs over "
         f"{len({r['artifact_id'] for r in qrefs}):,} queries and "
         f"{len({(r['app'], r['metric']) for r in qrefs}):,} metrics; "
-        f"{len(ref_rows) - len(qrefs):,} dashboard refs")
+        f"{len(ref_rows) - len(qrefs):,} dashboard refs"
+    )
     return ref_rows, art_rows
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--limit", type=int)
     args = ap.parse_args()
     refs, arts = run(args.limit)
     if args.dry_run:
         return
-    suffix = ("Prototype table maintained by the docker-etl metric-usage job, metric_usage/redash.py; "
-              "replaced on each run.")
-    write_table("refs_redash", refs, ref_schema(),
-                "Metrics named by saved Redash queries and, through them, "
-                "dashboards. " + suffix, clustering=["app", "metric"])
-    write_table("artifacts_redash", arts, artifact_schema(),
-                "Redash queries and dashboards, with owners, schedule, last run "
-                f"and human views per window of {', '.join(map(str, WINDOWS))} days. " + suffix,
-                clustering=["artifact_id"])
+    suffix = (
+        "Prototype table maintained by the docker-etl metric-usage job, metric_usage/redash.py; "
+        "replaced on each run."
+    )
+    write_table(
+        "refs_redash",
+        refs,
+        ref_schema(),
+        "Metrics named by saved Redash queries and, through them, " "dashboards. " + suffix,
+        clustering=["app", "metric"],
+    )
+    write_table(
+        "artifacts_redash",
+        arts,
+        artifact_schema(),
+        "Redash queries and dashboards, with owners, schedule, last run "
+        f"and human views per window of {', '.join(map(str, WINDOWS))} days. " + suffix,
+        clustering=["artifact_id"],
+    )
     union_views()
 
 

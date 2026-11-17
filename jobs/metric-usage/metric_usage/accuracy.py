@@ -59,8 +59,7 @@ import csv
 import random
 import re
 
-from .common import (CACHE, DEST, LABELS, PREFIX, held_labels, log, query, run_deep,
-                     write_labels)
+from .common import CACHE, DEST, LABELS, PREFIX, held_labels, log, query, run_deep, write_labels
 
 from . import adhoc as AH
 from . import lineage as L
@@ -83,6 +82,7 @@ def source_of(artifact_id):
     if artifact_id.startswith(("adhoc:", "jetstream:")):
         return "adhoc"
     return "sql"
+
 
 # (source, column_status, bucket) -> how many to sample. A bucket is the number
 # of named bigquery-etl and Redash refs, from the summary table.
@@ -127,8 +127,18 @@ EVENT_SAMPLE = 12
 # check.py applies each group's labelled share to all of them.
 REVIEW_PER_GROUP = 8
 
-DIS_FIELDS = ["app", "metric", "column", "artifact_id", "side", "stands_for", "url",
-              "evidence", "verdict", "note"]
+DIS_FIELDS = [
+    "app",
+    "metric",
+    "column",
+    "artifact_id",
+    "side",
+    "stands_for",
+    "url",
+    "evidence",
+    "verdict",
+    "note",
+]
 
 
 def column_of(p):
@@ -144,8 +154,9 @@ def column_of(p):
         # recorded by category, one of its methods and one of its objects
         methods = ", ".join(sorted(p.get("event_methods") or []))
         objects = ", ".join(sorted(p.get("event_objects") or []))
-        return (f"event_category = '{p['event_category']}', event_method in ({methods})"
-                + (f", event_object in ({objects})" if objects else ""))
+        return f"event_category = '{p['event_category']}', event_method in ({methods})" + (
+            f", event_object in ({objects})" if objects else ""
+        )
     return f"event_category = '{p['event_category']}', event_name = '{p['event_name']}'"
 
 
@@ -157,7 +168,8 @@ def save_sample(path, picked):
 
 
 def sample(seed, extra, resample=False):
-    rows = query(f"""
+    rows = query(
+        f"""
 SELECT
   s.app, s.metric, s.source, s.column_status,
   s.n_tables + s.n_views + s.n_redash_all AS n,
@@ -166,13 +178,19 @@ SELECT
 FROM `{DEST}.{PREFIX}summary` AS s
 JOIN `{DEST}.{PREFIX}metrics` AS m USING (app, metric)
 WHERE NOT s.app_deprecated AND s.in_source
-""", tables=["summary", "metrics"], name="candidates")
+""",
+        tables=["summary", "metrics"],
+        name="candidates",
+    )
     index = {(r["app"], r["metric"]): r for r in rows}
     path = LABELS / "sample.csv"
     if path.exists() and not resample:
         held = list(csv.DictReader(open(path)))
-        picked = [dict(index[(h["app"], h["metric"])], stratum=h["stratum"])
-                  for h in held if (h["app"], h["metric"]) in index]
+        picked = [
+            dict(index[(h["app"], h["metric"])], stratum=h["stratum"])
+            for h in held
+            if (h["app"], h["metric"]) in index
+        ]
         log(f"  reusing {path.name} ({len(picked)} metrics)")
         # strata added to STRATA after the sample was drawn are drawn now and
         # appended, so the existing metrics and their labels stay
@@ -188,8 +206,10 @@ WHERE NOT s.app_deprecated AND s.in_source
             rng = random.Random(seed + 2)
             for key in missing:
                 pool = sorted(by.get(key, []), key=lambda r: (r["app"], r["metric"]))
-                picked += [dict(r, stratum="/".join(key))
-                           for r in rng.sample(pool, min(STRATA[key], len(pool)))]
+                picked += [
+                    dict(r, stratum="/".join(key))
+                    for r in rng.sample(pool, min(STRATA[key], len(pool)))
+                ]
             save_sample(path, picked)
             log(f"  added strata {', '.join('/'.join(k) for k in missing)} to {path.name}")
     else:
@@ -199,9 +219,16 @@ WHERE NOT s.app_deprecated AND s.in_source
     have = {(p["app"], p["metric"]) for p in picked}
     n_events = sum(1 for p in picked if p["column_status"] == "event" and p["source"] == "glean")
     if n_events < EVENT_SAMPLE:
-        pool = sorted((r for r in rows if r["column_status"] == "event" and r["source"] == "glean"
-                       and (r["app"], r["metric"]) not in have),
-                      key=lambda r: (r["app"], r["metric"]))
+        pool = sorted(
+            (
+                r
+                for r in rows
+                if r["column_status"] == "event"
+                and r["source"] == "glean"
+                and (r["app"], r["metric"]) not in have
+            ),
+            key=lambda r: (r["app"], r["metric"]),
+        )
         more = random.Random(seed + 1).sample(pool, min(EVENT_SAMPLE - n_events, len(pool)))
         picked += [dict(r, stratum="glean/event/any") for r in more]
         save_sample(path, picked)
@@ -248,16 +275,22 @@ def terms_for(picked):
     for p in picked:
         for c in p["cols"] or []:
             table, path = c.split(":", 1)
-            terms[f"{L.DEFAULT_PROJECT}.{table}"].add(((p["app"], p["metric"]), path.split(".")[-1]))
+            terms[f"{L.DEFAULT_PROJECT}.{table}"].add(
+                ((p["app"], p["metric"]), path.split(".")[-1])
+            )
     where = " OR ".join(f"(app = '{a}' AND metric = '{m}')" for a, m in keys)
-    for r in query(f"""
+    for r in query(
+        f"""
 SELECT `table`, path, app, metric
 FROM (
   SELECT *, COUNT(*) OVER (PARTITION BY `table`, path) AS n_metrics
   FROM `{DEST}.{PREFIX}carries`
 )
 WHERE n_metrics < {L.NARROW_MIN} AND ({where})
-""", tables=["carries"], name="carried columns"):
+""",
+        tables=["carries"],
+        name="carried columns",
+    ):
         leaf = r["path"].split(".")[-1]
         terms[r["table"]].add(((r["app"], r["metric"]), leaf))
     # the live tables share their stable twin's columns
@@ -277,32 +310,54 @@ def events_for(picked):
     so a hit only counts if the text reads a table holding this app's events:
     its ping tables, or a table carries says holds its event identity.
     """
-    keys = {(p["app"], p["metric"]): (p["event_category"], p["event_name"])
-            for p in picked if p["column_status"] == "event" and p["source"] == "glean"
-            and p["event_category"] and p["event_name"]}
+    keys = {
+        (p["app"], p["metric"]): (p["event_category"], p["event_name"])
+        for p in picked
+        if p["column_status"] == "event"
+        and p["source"] == "glean"
+        and p["event_category"]
+        and p["event_name"]
+    }
     # a legacy event is found by its category and any of its methods
-    keys.update({(p["app"], p["metric"]): (p["event_category"], tuple(p.get("event_methods") or []))
-                 for p in picked if p["column_status"] == "event" and p["source"] == "legacy"
-                 and p["event_category"] and p.get("event_methods")})
+    keys.update(
+        {
+            (p["app"], p["metric"]): (p["event_category"], tuple(p.get("event_methods") or []))
+            for p in picked
+            if p["column_status"] == "event"
+            and p["source"] == "legacy"
+            and p["event_category"]
+            and p.get("event_methods")
+        }
+    )
     apps = {k[0] for k in keys}
     if not apps:
         return {}
     tables = collections.defaultdict(set)
     where = ", ".join(f"'{a}'" for a in apps)
-    for r in query(f"""
+    for r in query(
+        f"""
 SELECT DISTINCT app, `table` FROM `{DEST}.{PREFIX}carries`
 WHERE metric = '(event category)' AND app IN ({where})
-""", tables=["carries"], name="event identity tables"):
+""",
+        tables=["carries"],
+        name="event identity tables",
+    ):
         tables[r["app"]].add(r["table"])
     from .inventory import glean_apps
-    app_of = {f"{v['bq_dataset_family']}_stable": name
-              for name, app in glean_apps(False).items() for v in app["variants"]}
+
+    app_of = {
+        f"{v['bq_dataset_family']}_stable": name
+        for name, app in glean_apps(False).items()
+        for v in app["variants"]
+    }
     app_of["telemetry_stable"] = "telemetry"
     for r in query(L.EVENT_FIELDS_SQL, name="event fields"):
         app = app_of.get(r["dataset_id"])
         if app in apps:
             tables[app].add(f"{L.DEFAULT_PROJECT}.{r['dataset_id']}.{r['table_id']}")
-            tables[app].add(f"{L.DEFAULT_PROJECT}.{r['dataset_id'][:-len('_stable')]}_live.{r['table_id']}")
+            tables[app].add(
+                f"{L.DEFAULT_PROJECT}.{r['dataset_id'][:-len('_stable')]}_live.{r['table_id']}"
+            )
     return {k: (c, n, tables[k[0]]) for k, (c, n) in keys.items()}
 
 
@@ -377,8 +432,14 @@ def looker_hits(terms, events):
         if not sql:
             continue
         for qid in qids:
-            values = sorted({lit for v in queries[qid]["filters"].values() if v
-                             for lit, _ in LK.filter_values(v)})
+            values = sorted(
+                {
+                    lit
+                    for v in queries[qid]["filters"].values()
+                    if v
+                    for lit, _ in LK.filter_values(v)
+                }
+            )
             k = (key, tuple(values))
             if k not in texts:
                 texts[k] = sql + "".join(f"\n'{v}'" for v in values)
@@ -390,8 +451,10 @@ def looker_hits(terms, events):
         for qid in sorted(qids, key=str):
             for k, line in per_query.get(qid, {}).items():
                 hits.setdefault(k + (aid,), line)
-    log(f"  searched Looker: {len(done):,} SQL and filter combinations over "
-        f"{len(of):,} artifacts")
+    log(
+        f"  searched Looker: {len(done):,} SQL and filter combinations over "
+        f"{len(of):,} artifacts"
+    )
     return hits
 
 
@@ -416,8 +479,9 @@ def adhoc_hits(terms, events):
     hits, n = {}, 0
     for project in AH.PROJECTS:
         texts = AH.texts_reading(project, start, end, tables)
-        items = [((project, key), t, project) for key, t in texts.items()
-                 if (project, key) in accounts]
+        items = [
+            ((project, key), t, project) for key, t in texts.items() if (project, key) in accounts
+        ]
         del texts
         for pk, found in sorted(search_all(items, terms, events).items()):
             for aid in sorted(accounts[pk]):
@@ -425,19 +489,26 @@ def adhoc_hits(terms, events):
                     hits.setdefault(k + (aid,), line)
         n += len(items)
         del items
-    log(f"  searched {n:,} ad hoc queries over {len({a for v in accounts.values() for a in v}):,} "
-        "accounts and experiments")
+    log(
+        f"  searched {n:,} ad hoc queries over {len({a for v in accounts.values() for a in v}):,} "
+        "accounts and experiments"
+    )
     return hits
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--seed", type=int, default=20261013)
-    ap.add_argument("--metric", action="append", default=[],
-                    help="app:metric to include as well, repeatable")
-    ap.add_argument("--resample", action="store_true",
-                    help="draw a new sample; existing labels for metrics in it are kept")
+    ap.add_argument(
+        "--metric", action="append", default=[], help="app:metric to include as well, repeatable"
+    )
+    ap.add_argument(
+        "--resample",
+        action="store_true",
+        help="draw a new sample; existing labels for metrics in it are kept",
+    )
     args = ap.parse_args()
     extra = [tuple(m.split(":", 1)) for m in args.metric]
 
@@ -450,7 +521,8 @@ def main():
 
     # parser side
     where = " OR ".join(f"(r.app = '{a}' AND r.metric = '{m}')" for a, m in keys)
-    refs = query(f"""
+    refs = query(
+        f"""
 SELECT r.app, r.metric, r.artifact_id, r.artifact_kind, r.named, r.role, r.via,
   r.output_columns, r.evidence, a.url, a.generated_by
 FROM `{DEST}.{PREFIX}refs` AS r
@@ -460,19 +532,28 @@ WHERE r.artifact_kind IN ('bqetl_table', 'bqetl_view', 'glean_ping_view', 'redas
                           'person', 'service_account', 'jetstream_experiment',
                           'metric_hub_metric')
   AND ({where})
-""", tables=["refs", "artifacts"], name="parsed refs")
+""",
+        tables=["refs", "artifacts"],
+        name="parsed refs",
+    )
     # A Jetstream experiment's ref is not named when only its platform's
     # defaults compute the metric, which says nothing about whether the SQL
     # read it, so here it counts either way.
-    parsed = {(r["app"], r["metric"], r["artifact_id"]): r for r in refs
-              if r["named"] or r["artifact_kind"] == "jetstream_experiment"}
+    parsed = {
+        (r["app"], r["metric"], r["artifact_id"]): r
+        for r in refs
+        if r["named"] or r["artifact_kind"] == "jetstream_experiment"
+    }
     # for Looker, the explores that only expose the metric as a field; an
     # explore whose queries name it has an exposed ref too, for the page's
     # shorter windows, which is not counted here
-    bulk = collections.Counter((r["app"], r["metric"], source_of(r["artifact_id"]))
-                               for r in refs if not r["named"]
-                               and r["artifact_kind"] != "jetstream_experiment"
-                               and (r["app"], r["metric"], r["artifact_id"]) not in parsed)
+    bulk = collections.Counter(
+        (r["app"], r["metric"], source_of(r["artifact_id"]))
+        for r in refs
+        if not r["named"]
+        and r["artifact_kind"] != "jetstream_experiment"
+        and (r["app"], r["metric"], r["artifact_id"]) not in parsed
+    )
 
     # text side: bigquery-etl
     text = {}
@@ -502,7 +583,9 @@ WHERE r.artifact_kind IN ('bqetl_table', 'bqetl_view', 'glean_ping_view', 'redas
     for key, hit in adhoc_hits(terms, events).items():
         text[key] = hit
     # text side: metric-hub, the SQL each definition stands for
-    items = [(aid, info["sql"], MH.PROJECT) for aid, info in MH.model().metrics.items() if info["sql"]]
+    items = [
+        (aid, info["sql"], MH.PROJECT) for aid, info in MH.model().metrics.items() if info["sql"]
+    ]
     for aid, found in search_all(items, terms, events).items():
         for key, hit in found.items():
             text[key + (aid,)] = hit
@@ -513,12 +596,17 @@ WHERE r.artifact_kind IN ('bqetl_table', 'bqetl_view', 'glean_ping_view', 'redas
     # Labels from earlier runs, keyed on what they judged. A labelled row that
     # is still a disagreement stays in the review set, so reviewing is never
     # undone by a rerun.
-    held = held_labels("disagreements",
-                       lambda r: (r["app"], r["metric"], r["artifact_id"], r["side"]))
+    held = held_labels(
+        "disagreements", lambda r: (r["app"], r["metric"], r["artifact_id"], r["side"])
+    )
     summary, dis = [], []
     # one random stream per source, so Looker's draws leave the others' alone
-    rngs = {"sql": random.Random(args.seed), "looker": random.Random(args.seed + 3),
-            "adhoc": random.Random(args.seed + 5), "metrichub": random.Random(args.seed + 7)}
+    rngs = {
+        "sql": random.Random(args.seed),
+        "looker": random.Random(args.seed + 3),
+        "adhoc": random.Random(args.seed + 5),
+        "metrichub": random.Random(args.seed + 7),
+    }
 
     def pick(arts, side, k, rng):
         """Labelled ones first, then a seeded sample of the rest."""
@@ -526,39 +614,63 @@ WHERE r.artifact_kind IN ('bqetl_table', 'bqetl_view', 'glean_ping_view', 'redas
         rest = [a for a in arts if k + (a, side) not in held]
         n = max(0, min(REVIEW_PER_GROUP, len(arts)) - len(done))
         return done + rng.sample(rest, min(n, len(rest)))
+
     for p, source in ((p, s) for p in picked for s in SOURCES):
         k = (p["app"], p["metric"])
         column = column_of(p)
         ps = {a for (ap_, m, a) in parsed if (ap_, m) == k and source_of(a) == source}
         ts = {a for (ap_, m, a) in text if (ap_, m) == k and source_of(a) == source}
-        summary.append({
-            "app": p["app"], "metric": p["metric"], "source": source, "stratum": p["stratum"],
-            "parsed": len(ps), "text": len(ts), "both": len(ps & ts),
-            "parser_only": len(ps - ts), "text_only": len(ts - ps),
-            "bulk": bulk[k + (source,)],
-        })
+        summary.append(
+            {
+                "app": p["app"],
+                "metric": p["metric"],
+                "source": source,
+                "stratum": p["stratum"],
+                "parsed": len(ps),
+                "text": len(ts),
+                "both": len(ps & ts),
+                "parser_only": len(ps - ts),
+                "text_only": len(ts - ps),
+                "bulk": bulk[k + (source,)],
+            }
+        )
         po, to = sorted(ps - ts), sorted(ts - ps)
         po_pick = pick(po, "parser_only", k, rngs[source])
         to_pick = pick(to, "text_only", k, rngs[source])
         for a in po_pick:
             r = parsed[k + (a,)]
             v, note = held.get(k + (a, "parser_only"), ("", ""))
-            dis.append({
-                "app": k[0], "metric": k[1], "column": column, "artifact_id": a, "side": "parser_only",
-                "stands_for": round(len(po) / len(po_pick), 2),
-                "url": r["url"] or urls.get(a, ""),
-                "evidence": f"role={r['role']} via={r['via']} "
-                            f"cols={','.join((r['output_columns'] or [])[:3])} {r['evidence']}",
-                "verdict": v, "note": note,
-            })
+            dis.append(
+                {
+                    "app": k[0],
+                    "metric": k[1],
+                    "column": column,
+                    "artifact_id": a,
+                    "side": "parser_only",
+                    "stands_for": round(len(po) / len(po_pick), 2),
+                    "url": r["url"] or urls.get(a, ""),
+                    "evidence": f"role={r['role']} via={r['via']} "
+                    f"cols={','.join((r['output_columns'] or [])[:3])} {r['evidence']}",
+                    "verdict": v,
+                    "note": note,
+                }
+            )
         for a in to_pick:
             v, note = held.get(k + (a, "text_only"), ("", ""))
-            dis.append({
-                "app": k[0], "metric": k[1], "column": column, "artifact_id": a, "side": "text_only",
-                "stands_for": round(len(to) / len(to_pick), 2),
-                "url": urls.get(a, ""), "evidence": text[k + (a,)],
-                "verdict": v, "note": note,
-            })
+            dis.append(
+                {
+                    "app": k[0],
+                    "metric": k[1],
+                    "column": column,
+                    "artifact_id": a,
+                    "side": "text_only",
+                    "stands_for": round(len(to) / len(to_pick), 2),
+                    "url": urls.get(a, ""),
+                    "evidence": text[k + (a,)],
+                    "verdict": v,
+                    "note": note,
+                }
+            )
 
     with open(OUT / "summary.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(summary[0]) if summary else ["empty"])
@@ -572,9 +684,11 @@ WHERE r.artifact_kind IN ('bqetl_table', 'bqetl_view', 'glean_ping_view', 'redas
             if s["source"] == source:
                 for c in ("parsed", "text", "both", "parser_only", "text_only"):
                     tot[c] += s[c]
-        log(f"\n{len(picked)} metrics, {source}: parser {tot['parsed']:,} artifacts, "
+        log(
+            f"\n{len(picked)} metrics, {source}: parser {tot['parsed']:,} artifacts, "
             f"text {tot['text']:,}, both {tot['both']:,}, parser only {tot['parser_only']:,}, "
-            f"text only {tot['text_only']:,}")
+            f"text only {tot['text_only']:,}"
+        )
     log(f"wrote {OUT / 'summary.csv'} and {dis_path} (and a timestamped copy)")
 
 

@@ -34,7 +34,7 @@ jobs:
         run: docker build jobs/metric-usage/ -t app:build
 
       - name: Test Code
-        run: docker run app:build python -m pytest
+        run: docker run app:build sh -c "black --check . && flake8 . && python -m pytest"
 
   deploy-to-gar-metric-usage:
     name: Deploy metric-usage to GAR

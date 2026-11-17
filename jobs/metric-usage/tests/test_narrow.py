@@ -4,8 +4,14 @@ name says it holds."""
 
 from metric_usage import lineage as L
 
-LEAVES = {"a": "tab_open", "b": "tab_close", "c": "uri_count", "d": "total_uri_count",
-          "e": "search_count", "f": "ad_click"}
+LEAVES = {
+    "a": "tab_open",
+    "b": "tab_close",
+    "c": "uri_count",
+    "d": "total_uri_count",
+    "e": "search_count",
+    "f": "ad_click",
+}
 
 
 def pack(*mids):

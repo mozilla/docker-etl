@@ -46,8 +46,9 @@ DEST = os.environ.get("METRIC_USAGE_DATASET", "mozdata.analysis")
 # shared analysis dataset it has to be this job's own.
 PREFIX = os.environ.get("METRIC_USAGE_PREFIX", "benwu_metrics_usage_")
 if DEST == "mozdata.analysis" and not PREFIX.startswith("benwu_metrics_usage_"):
-    raise SystemExit("METRIC_USAGE_PREFIX has to start with benwu_metrics_usage_ "
-                     "in mozdata.analysis")
+    raise SystemExit(
+        "METRIC_USAGE_PREFIX has to start with benwu_metrics_usage_ " "in mozdata.analysis"
+    )
 
 # The windows of use the page offers, in days, each ending yesterday, the last
 # whole day. Sources read the longest once and count each window within it, so
@@ -129,8 +130,10 @@ def pool_map(work, items, chunksize=1, initializer=None):
 
     ctx = multiprocessing.get_context("fork")
     with ProcessPoolExecutor(mp_context=ctx, initializer=initializer) as pool:
-        futures = [pool.submit(_run_chunk, work, items[i:i + chunksize])
-                   for i in range(0, len(items), chunksize)]
+        futures = [
+            pool.submit(_run_chunk, work, items[i : i + chunksize])
+            for i in range(0, len(items), chunksize)
+        ]
         for f in as_completed(futures):
             yield from f.result()
 
@@ -161,8 +164,9 @@ def seen_within(last, end):
 def days_within(days, end):
     """{observed_days_<n>d: how many of days fall in each window}."""
     days = [datetime.date.fromisoformat(str(d)) for d in days]
-    return {f"observed_days_{w}d": sum(1 for d in days if d >= window_start(w, end))
-            for w in WINDOWS}
+    return {
+        f"observed_days_{w}d": sum(1 for d in days if d >= window_start(w, end)) for w in WINDOWS
+    }
 
 
 def window_sql(day, end, **aggs):
@@ -171,8 +175,9 @@ def window_sql(day, end, **aggs):
     template with {c} for the window's condition, as in
     views="SUM(IF({c}, views, 0))", which gives views_30d, views_90d and so on."""
     conds = {w: f"{day} >= '{window_start(w, end)}'" for w in WINDOWS}
-    return ",\n  ".join(f"{agg.format(c=conds[w])} AS {name}_{w}d"
-                        for name, agg in aggs.items() for w in WINDOWS)
+    return ",\n  ".join(
+        f"{agg.format(c=conds[w])} AS {name}_{w}d" for name, agg in aggs.items() for w in WINDOWS
+    )
 
 
 def _cache_file(kind, key):
@@ -235,8 +240,11 @@ def get_json_if_found(url, force=False):
 def label_copies(name):
     """labels/<name>.csv and its timestamped copies, oldest first, with the
     working copy last since that is the one edited by hand."""
-    copies = sorted(p for p in LABELS.glob(f"{name}_*.csv")
-                    if re.fullmatch(rf"{re.escape(name)}_\d{{14}}", p.stem))
+    copies = sorted(
+        p
+        for p in LABELS.glob(f"{name}_*.csv")
+        if re.fullmatch(rf"{re.escape(name)}_\d{{14}}", p.stem)
+    )
     path = LABELS / f"{name}.csv"
     return copies + ([path] if path.exists() else [])
 
@@ -312,8 +320,9 @@ def table_versions(tables):
     """When each DEST.PREFIX<table> was last written, as one string. A view
     counts too: every source recreates the refs and artifacts views after it
     writes its tables."""
-    return "|".join(f"{t}@{client().get_table(f'{DEST}.{PREFIX}{t}').modified.isoformat()}"
-                    for t in tables)
+    return "|".join(
+        f"{t}@{client().get_table(f'{DEST}.{PREFIX}{t}').modified.isoformat()}" for t in tables
+    )
 
 
 def query(sql, force=False, name="query", tables=()):
@@ -334,8 +343,7 @@ def query(sql, force=False, name="query", tables=()):
         rows = json.loads(held)
         log(f"  {name}: {len(rows):,} rows (cached)")
         return rows
-    rows = [{k: _jsonable(v) for k, v in dict(r).items()}
-            for r in client().query(sql).result()]
+    rows = [{k: _jsonable(v) for k, v in dict(r).items()} for r in client().query(sql).result()]
     write_cache(path, json.dumps(rows).encode())
     if tables and DISK_CACHE:
         for old in CACHE.glob(f"{stem}_*.json"):
@@ -380,7 +388,8 @@ def append_table(name, rows, schema, description, partition, keep_days):
         write_disposition="WRITE_APPEND",
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
         time_partitioning=bigquery.TimePartitioning(
-            field=partition, expiration_ms=keep_days * 24 * 3600 * 1000),
+            field=partition, expiration_ms=keep_days * 24 * 3600 * 1000
+        ),
     )
     client().load_table_from_json(rows, table_id, job_config=config).result()
     table = client().get_table(table_id)
@@ -427,8 +436,10 @@ class ResolvedStore:
         except NotFound:
             pass
         old = sum(r["version"] != version for r in self.held.values())
-        log(f"  {len(self.held):,} resolved queries held in {PREFIX}{name}, "
-            f"{old:,} from an earlier resolver version")
+        log(
+            f"  {len(self.held):,} resolved queries held in {PREFIX}{name}, "
+            f"{old:,} from an earlier resolver version"
+        )
 
     def get(self, key, may_expire=True, frozen=False):
         """(named refs by metric id, star tables, note) for key, or None when
@@ -445,7 +456,8 @@ class ResolvedStore:
             if r["version"] != self.version:
                 return None
             lifetime = self.MIN_AGE + int(hashlib.sha256(key.encode()).hexdigest(), 16) % (
-                self.MAX_AGE - self.MIN_AGE + 1)
+                self.MAX_AGE - self.MIN_AGE + 1
+            )
             age = (self.today - datetime.date.fromisoformat(str(r["resolved_on"]))).days
             if may_expire and age >= lifetime:
                 return None
@@ -467,13 +479,26 @@ class ResolvedStore:
         the tables its query names."""
         named, stars, note = result
         self.kept[key] = {
-            "key": key, "version": self.version, "resolved_on": self.today.isoformat(),
-            "deps": [{"table": t, "names": names, "digest": self.digest_of(t, names)}
-                     for t, names in sorted(deps.items())],
-            "refs": [{"app": self.inventory[m]["app"], "metric": self.inventory[m]["metric"],
-                      "role": role, "hops": h, "via": via, "transformed": t}
-                     for m, (role, h, via, t) in named.items()],
-            "stars": list(stars), "note": note,
+            "key": key,
+            "version": self.version,
+            "resolved_on": self.today.isoformat(),
+            "deps": [
+                {"table": t, "names": names, "digest": self.digest_of(t, names)}
+                for t, names in sorted(deps.items())
+            ],
+            "refs": [
+                {
+                    "app": self.inventory[m]["app"],
+                    "metric": self.inventory[m]["metric"],
+                    "role": role,
+                    "hops": h,
+                    "via": via,
+                    "transformed": t,
+                }
+                for m, (role, h, via, t) in named.items()
+            ],
+            "stars": list(stars),
+            "note": note,
         }
 
     def save(self, complete=True):
@@ -486,21 +511,41 @@ class ResolvedStore:
             r["resolved_on"] = str(r["resolved_on"])
         s, rep = "STRING", "REPEATED"
         schema = [
-            F("key", s), F("version", s, description="lineage.resolver_digest() it was resolved with"),
+            F("key", s),
+            F("version", s, description="lineage.resolver_digest() it was resolved with"),
             F("resolved_on", "DATE"),
-            F("deps", "RECORD", mode=rep, fields=[F("table", s), F("names", s, mode=rep),
-                                                  F("digest", s)],
-              description="Each table the query names, the columns of it the query "
-              "mentions, and their digest then"),
-            F("refs", "RECORD", mode=rep, fields=[
-                F("app", s), F("metric", s), F("role", s), F("hops", "INT64"), F("via", s),
-                F("transformed", "BOOL")]),
-            F("stars", s, mode=rep), F("note", s),
+            F(
+                "deps",
+                "RECORD",
+                mode=rep,
+                fields=[F("table", s), F("names", s, mode=rep), F("digest", s)],
+                description="Each table the query names, the columns of it the query "
+                "mentions, and their digest then",
+            ),
+            F(
+                "refs",
+                "RECORD",
+                mode=rep,
+                fields=[
+                    F("app", s),
+                    F("metric", s),
+                    F("role", s),
+                    F("hops", "INT64"),
+                    F("via", s),
+                    F("transformed", "BOOL"),
+                ],
+            ),
+            F("stars", s, mode=rep),
+            F("note", s),
         ]
-        write_table(self.name, list(rows.values()), schema,
-                    "Resolved queries the docker-etl metric-usage job keeps between runs, by "
-                    "query key; no query text. Prototype table, replaced on each run.",
-                    clustering=["key"])
+        write_table(
+            self.name,
+            list(rows.values()),
+            schema,
+            "Resolved queries the docker-etl metric-usage job keeps between runs, by "
+            "query key; no query text. Prototype table, replaced on each run.",
+            clustering=["key"],
+        )
 
 
 def snakecase(s):
@@ -528,30 +573,58 @@ def ref_schema():
 
     s, b, i = "STRING", "BOOL", "INT64"
     return [
-        F("app", s), F("metric", s),
-        F("artifact_id", s), F("artifact_kind", s),
-        F("role", s, description="output: reaches an output column; filter: named "
-          "but only used in WHERE, JOIN, GROUP BY or an aggregate that drops it; "
-          "viewed: opened in a tool such as GLAM"),
+        F("app", s),
+        F("metric", s),
+        F("artifact_id", s),
+        F("artifact_kind", s),
+        F(
+            "role",
+            s,
+            description="output: reaches an output column; filter: named "
+            "but only used in WHERE, JOIN, GROUP BY or an aggregate that drops it; "
+            "viewed: opened in a tool such as GLAM",
+        ),
         F("hops", i, description="Tables between the stable table and this artifact, plus one"),
-        F("named", b, description="The SQL names the metric, rather than carrying it "
-          "through a star or a whole struct"),
+        F(
+            "named",
+            b,
+            description="The SQL names the metric, rather than carrying it "
+            "through a star or a whole struct",
+        ),
         F("transformed", b),
         F("via", s, description="table:column the artifact read it from"),
         F("output_columns", s, mode="REPEATED"),
         F("n_output_columns", i),
         F("evidence", s, description="parsed, regex, or observed (from use, not code)"),
-        F("observed_days", i, description="Days in the source's own window with a use, "
-          "for GLAM, whose window is a year; windowed sources use observed_days_<n>d"),
-        *[F(f"observed_days_{w}d", i, description=f"Days in the {w} days ending on the "
-            "window end with a use") for w in WINDOWS],
-        F("seen_within", i, description="For a ref that exists only because of use (an "
-          "ad hoc query, an experiment, a Looker query, an OpMon project), the shortest "
-          f"window of {', '.join(map(str, WINDOWS))} days that has it; null for refs from "
-          "code or saved content, which hold in every window"),
+        F(
+            "observed_days",
+            i,
+            description="Days in the source's own window with a use, "
+            "for GLAM, whose window is a year; windowed sources use observed_days_<n>d",
+        ),
+        *[
+            F(
+                f"observed_days_{w}d",
+                i,
+                description=f"Days in the {w} days ending on the " "window end with a use",
+            )
+            for w in WINDOWS
+        ],
+        F(
+            "seen_within",
+            i,
+            description="For a ref that exists only because of use (an "
+            "ad hoc query, an experiment, a Looker query, an OpMon project), the shortest "
+            f"window of {', '.join(map(str, WINDOWS))} days that has it; null for refs from "
+            "code or saved content, which hold in every window",
+        ),
         F("last_observed", "DATE"),
-        F("top_percent", "FLOAT64", description="Percent of the metrics used in the same "
-          "place (a GLAM product) that were used on at least as many days; 1 is the top 1%"),
+        F(
+            "top_percent",
+            "FLOAT64",
+            description="Percent of the metrics used in the same "
+            "place (a GLAM product) that were used on at least as many days; 1 is the top 1%",
+        ),
     ]
 
 
@@ -560,17 +633,38 @@ def artifact_schema():
 
     s, b, i, rep = "STRING", "BOOL", "INT64", "REPEATED"
     return [
-        F("artifact_id", s), F("kind", s), F("name", s), F("url", s),
-        F("owners", s, mode=rep), F("friendly_name", s), F("generated_by", s),
-        F("note", s), F("n_metrics_named", i), F("n_metrics_total", i),
-        F("is_draft", b), F("is_scheduled", b),
-        F("last_run", "DATE"), F("updated_at", "DATE"),
-        F("last_used", "DATE", description="Last day in the longest window somebody "
-          "viewed or ran it: a Redash view, a Looker run"),
-        *[f for w in WINDOWS for f in (
-            F(f"views_{w}d", i, description=f"Views, runs or jobs in the {w} days ending on "
-              "the window end"),
-            F(f"users_{w}d", i, description=f"Distinct people or accounts behind views_{w}d"))],
+        F("artifact_id", s),
+        F("kind", s),
+        F("name", s),
+        F("url", s),
+        F("owners", s, mode=rep),
+        F("friendly_name", s),
+        F("generated_by", s),
+        F("note", s),
+        F("n_metrics_named", i),
+        F("n_metrics_total", i),
+        F("is_draft", b),
+        F("is_scheduled", b),
+        F("last_run", "DATE"),
+        F("updated_at", "DATE"),
+        F(
+            "last_used",
+            "DATE",
+            description="Last day in the longest window somebody "
+            "viewed or ran it: a Redash view, a Looker run",
+        ),
+        *[
+            f
+            for w in WINDOWS
+            for f in (
+                F(
+                    f"views_{w}d",
+                    i,
+                    description=f"Views, runs or jobs in the {w} days ending on " "the window end",
+                ),
+                F(f"users_{w}d", i, description=f"Distinct people or accounts behind views_{w}d"),
+            )
+        ],
         F("parent_ids", s, mode=rep, description="For a Redash query, the dashboards showing it"),
         F("child_ids", s, mode=rep, description="For a Redash dashboard, its queries on BigQuery"),
         F("star_tables", s, mode=rep, description="Tables it reads with SELECT *"),
@@ -596,8 +690,7 @@ WHERE table_name IN (
     for kind, fields in (("refs", ref_schema()), ("artifacts", artifact_schema())):
         # exactly refs_<source> / artifacts_<source>, so a scratch copy such
         # as refs_bqetl_prev is not read
-        parts = sorted(t for t in columns
-                       if re.fullmatch(rf"{PREFIX}{kind}_[a-z0-9]+", t))
+        parts = sorted(t for t in columns if re.fullmatch(rf"{PREFIX}{kind}_[a-z0-9]+", t))
         if not parts:
             continue
 
@@ -609,6 +702,7 @@ WHERE table_name IN (
 
         body = "\nUNION ALL\n".join(
             f"SELECT {', '.join(col(f, columns[t]) for f in fields)} FROM `{DEST}.{t}`"
-            for t in parts)
+            for t in parts
+        )
         client().query(f"CREATE OR REPLACE VIEW `{DEST}.{PREFIX}{kind}` AS\n{body}").result()
         log(f"  view {DEST}.{PREFIX}{kind} over {', '.join(parts)}")

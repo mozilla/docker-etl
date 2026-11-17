@@ -25,8 +25,7 @@ import os
 BASE_URL = "https://mozilla.cloud.looker.com"
 TIMEOUT = 300
 
-_SERVICES = {"client_id": "looker-api-client-id",
-             "client_secret": "looker-api-client-secret"}
+_SERVICES = {"client_id": "looker-api-client-id", "client_secret": "looker-api-client-secret"}
 
 
 def _from_keyring(service):
@@ -44,12 +43,12 @@ def _from_keyring(service):
 def _credentials():
     creds = {}
     for key, service in _SERVICES.items():
-        value = (_from_keyring(service)
-                 or os.environ.get(f"LOOKERSDK_{key.upper()}"))
+        value = _from_keyring(service) or os.environ.get(f"LOOKERSDK_{key.upper()}")
         if not value:
             raise RuntimeError(
-                f"No Looker {key}: set it with `keyring set {service} \"$USER\"`"
-                f" or in LOOKERSDK_{key.upper()}")
+                f'No Looker {key}: set it with `keyring set {service} "$USER"`'
+                f" or in LOOKERSDK_{key.upper()}"
+            )
         creds[key] = value
     return creds
 
@@ -62,7 +61,11 @@ def sdk():
         # AuthSession calls read_config at each login rather than keeping the
         # secret on the settings object, so the credentials come from here.
         def read_config(self):
-            return {"base_url": BASE_URL, "verify_ssl": "true",
-                    "timeout": str(TIMEOUT), **_credentials()}
+            return {
+                "base_url": BASE_URL,
+                "verify_ssl": "true",
+                "timeout": str(TIMEOUT),
+                **_credentials(),
+            }
 
     return looker_sdk.init40(config_settings=Settings())

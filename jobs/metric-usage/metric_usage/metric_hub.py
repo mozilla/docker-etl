@@ -48,9 +48,25 @@ import tomllib
 import jinja2
 from jinja2.sandbox import SandboxedEnvironment
 
-from .common import (CACHE, DEST, DISK_CACHE, LONGEST, PREFIX, WINDOWS, artifact_schema, client,
-                     log, query, read_cache, ref_schema, union_views, window_end, window_start,
-                     write_cache, write_table)
+from .common import (
+    CACHE,
+    DEST,
+    DISK_CACHE,
+    LONGEST,
+    PREFIX,
+    WINDOWS,
+    artifact_schema,
+    client,
+    log,
+    query,
+    read_cache,
+    ref_schema,
+    union_views,
+    window_end,
+    window_start,
+    write_cache,
+    write_table,
+)
 
 from . import redash as R
 
@@ -66,9 +82,11 @@ RESOLVED_VERSION = 1
 def tool_configs(hub):
     """{(tool, slug): config} for the Jetstream and OpMon configs, keyed by tool
     too since an experiment can have both under the same slug."""
-    return {(rel.split("/")[0], norm(rel.split("/")[-1][:-5])): hub.get(rel)
-            for rel in hub.files
-            if rel.count("/") == 1 and rel.split("/")[0] in ("jetstream", "opmon")}
+    return {
+        (rel.split("/")[0], norm(rel.split("/")[-1][:-5])): hub.get(rel)
+        for rel in hub.files
+        if rel.count("/") == 1 and rel.split("/")[0] in ("jetstream", "opmon")
+    }
 
 
 def norm(slug):
@@ -108,9 +126,11 @@ class _Placeholder(jinja2.ChainableUndefined):
 
 class Hub:
     def __init__(self, root=HUB):
-        self.files = {p.relative_to(root).as_posix(): Source(p)
-                      for p in sorted(root.glob("**/*.toml"))
-                      if "lib/" not in p.relative_to(root).as_posix()}
+        self.files = {
+            p.relative_to(root).as_posix(): Source(p)
+            for p in sorted(root.glob("**/*.toml"))
+            if "lib/" not in p.relative_to(root).as_posix()
+        }
         self.functions = {}
         for src in self.files.values():
             for name, f in src.section("functions").items():
@@ -122,16 +142,21 @@ class Hub:
         return self.files.get(rel)
 
     def platforms(self):
-        return sorted(r.split("/", 1)[1][:-5] for r in self.files
-                      if r.startswith("definitions/") and r != "definitions/functions.toml")
+        return sorted(
+            r.split("/", 1)[1][:-5]
+            for r in self.files
+            if r.startswith("definitions/") and r != "definitions/functions.toml"
+        )
 
     def render(self, text, dataset=None):
         if dataset:
             text = text.replace("{dataset}", dataset)
         if "{{" not in text and "{%" not in text:
             return text
-        helpers = {n: (lambda d: lambda expr="": d.replace("{select_expr}", str(expr)))(d)
-                   for n, d in self.functions.items()}
+        helpers = {
+            n: (lambda d: lambda expr="": d.replace("{select_expr}", str(expr)))(d)
+            for n, d in self.functions.items()
+        }
         try:
             return self.env.from_string(text).render(**helpers)
         except jinja2.TemplateError:
@@ -162,7 +187,10 @@ class Hub:
         frm = self.render(ds["from_expression"], dataset).strip()
         if not frm.startswith("(") and " " not in frm and "`" not in frm:
             frm = f"`{frm}`"
-        return f"SELECT {self.render(metric['select_expression'], dataset)} AS value\nFROM {frm}", None
+        return (
+            f"SELECT {self.render(metric['select_expression'], dataset)} AS value\nFROM {frm}",
+            None,
+        )
 
 
 def contexts_for(hub, platform, *first):
@@ -176,9 +204,10 @@ def contexts_for(hub, platform, *first):
 
 
 def snapshot():
-    return "|".join([str(RESOLVED_VERSION)]
-                    + [str(client().get_table(f"{DEST}.{PREFIX}{t}").modified)
-                       for t in ("metrics", "carries")])
+    return "|".join(
+        [str(RESOLVED_VERSION)]
+        + [str(client().get_table(f"{DEST}.{PREFIX}{t}").modified) for t in ("metrics", "carries")]
+    )
 
 
 class Resolved:
@@ -186,7 +215,10 @@ class Resolved:
     the shapes come from and cached until it is rebuilt."""
 
     def __init__(self):
-        self.path = CACHE / f"metric_hub_resolved_{hashlib.sha256(snapshot().encode()).hexdigest()[:16]}.json"
+        self.path = (
+            CACHE
+            / f"metric_hub_resolved_{hashlib.sha256(snapshot().encode()).hexdigest()[:16]}.json"
+        )
         self.held = json.loads(read_cache(self.path) or b"{}")
         self.loaded = False
         self.new = 0
@@ -240,19 +272,27 @@ def resolve_metric(hub, resolved, name, contexts, seen=()):
 
 # Files holding metric definitions shared beyond one experiment or project,
 # besides definitions/<platform>.toml, with how the page names them
-TOOL_FILES = (("jetstream/definitions", "Jetstream"), ("jetstream/defaults", "Jetstream defaults"),
-              ("jetstream/outcomes", "Jetstream outcome"), ("opmon/definitions", "OpMon"),
-              ("opmon/defaults", "OpMon defaults"), ("looker/definitions", "Looker"))
+TOOL_FILES = (
+    ("jetstream/definitions", "Jetstream"),
+    ("jetstream/defaults", "Jetstream defaults"),
+    ("jetstream/outcomes", "Jetstream outcome"),
+    ("opmon/definitions", "OpMon"),
+    ("opmon/defaults", "OpMon defaults"),
+    ("looker/definitions", "Looker"),
+)
 
 
 def experiments(end):
     """{slug as it appears in a table name: experiment} from Experimenter's
     copy in moz-fx-data-experiments.monitoring. The SQL names the day, so the
     cached result is refreshed daily."""
-    rows = query(f"""-- as of {end}
+    rows = query(
+        f"""-- as of {end}
 SELECT normandy_slug, experimenter_slug, app_name, start_date, end_date, outcomes
 FROM `moz-fx-data-experiments.monitoring.experimenter_experiments_v1`
-""", name="experiments")
+""",
+        name="experiments",
+    )
     return {norm(r["normandy_slug"]): r for r in rows if r["normandy_slug"]}
 
 
@@ -265,7 +305,9 @@ def metric_lists(src):
     for v in (src.data.get("metrics") or {}).values():
         if isinstance(v, list):
             out.update(x for x in v if isinstance(x, str))
-    out.update(x for x in (src.data.get("project") or {}).get("metrics") or [] if isinstance(x, str))
+    out.update(
+        x for x in (src.data.get("project") or {}).get("metrics") or [] if isinstance(x, str)
+    )
     return out
 
 
@@ -276,13 +318,18 @@ class Model:
     def __init__(self):
         self.hub = Hub()
         self.resolved = Resolved()
-        self.metrics = {}   # artifact id -> info
-        self.ids = {}       # (file, metric name) -> artifact id
+        self.metrics = {}  # artifact id -> info
+        self.ids = {}  # (file, metric name) -> artifact id
         for platform in self.hub.platforms():
             src = self.hub.get(f"definitions/{platform}.toml")
             for name in src.section("metrics"):
-                self._add(f"metric-hub:{platform}.{name}", f"{platform}.{name}", src, name,
-                          contexts_for(self.hub, platform))
+                self._add(
+                    f"metric-hub:{platform}.{name}",
+                    f"{platform}.{name}",
+                    src,
+                    name,
+                    contexts_for(self.hub, platform),
+                )
         for prefix, label in TOOL_FILES:
             for rel, src in self.files_under(prefix):
                 platform = self.platform_of(rel)
@@ -296,9 +343,18 @@ class Model:
                     if bd is not None and self.hub.sql(bd, [base])[0] == self.hub.sql(d, ctx)[0]:
                         self.ids[(rel, name)] = f"metric-hub:{platform}.{name}"
                         continue
-                    what = f"{label} {rel.split('/')[-1][:-5]}" if prefix == "jetstream/outcomes" else label
-                    self._add(f"metric-hub:{rel[:-5]}.{name}", f"{platform}.{name} ({what})",
-                              src, name, ctx)
+                    what = (
+                        f"{label} {rel.split('/')[-1][:-5]}"
+                        if prefix == "jetstream/outcomes"
+                        else label
+                    )
+                    self._add(
+                        f"metric-hub:{rel[:-5]}.{name}",
+                        f"{platform}.{name} ({what})",
+                        src,
+                        name,
+                        ctx,
+                    )
         self.resolved.save()
         self.configs = tool_configs(self.hub)
 
@@ -315,9 +371,14 @@ class Model:
     def _add(self, aid, name, src, metric, contexts):
         refs, note, _, d = resolve_metric(self.hub, self.resolved, metric, contexts)
         self.ids[(src.rel, metric)] = aid
-        self.metrics[aid] = {"name": name, "refs": refs, "note": note, "def": d or {},
-                             "url": src.url("metrics", metric),
-                             "sql": "\n".join(self.sqls(metric, contexts))}
+        self.metrics[aid] = {
+            "name": name,
+            "refs": refs,
+            "note": note,
+            "def": d or {},
+            "url": src.url("metrics", metric),
+            "sql": "\n".join(self.sqls(metric, contexts)),
+        }
 
     def sqls(self, name, contexts, seen=()):
         """The SQL a metric stands for, through depends_on, for accuracy.py."""
@@ -326,8 +387,12 @@ class Model:
             return []
         if "select_expression" in d:
             return [s for s in [self.hub.sql(d, contexts)[0]] if s]
-        return [s for dep in d.get("depends_on") or [] if dep not in seen
-                for s in self.sqls(dep, contexts, seen + (name,))]
+        return [
+            s
+            for dep in d.get("depends_on") or []
+            if dep not in seen
+            for s in self.sqls(dep, contexts, seen + (name,))
+        ]
 
     def via(self, src, name):
         """The artifact id a name resolves to, or None for a metric an
@@ -340,8 +405,11 @@ class Model:
         for name in sorted(names):
             src, _ = self.hub.find(contexts, "metrics", name)
             aid = self.via(src, name)
-            refs = self.metrics[aid]["refs"] if aid in self.metrics else \
-                resolve_metric(self.hub, self.resolved, name, contexts)[0]
+            refs = (
+                self.metrics[aid]["refs"]
+                if aid in self.metrics
+                else resolve_metric(self.hub, self.resolved, name, contexts)[0]
+            )
             for m, (role, h, via, t) in refs.items():
                 if m not in out or h + 1 < out[m][0]:
                     out[m] = (h + 1 if aid else h, aid or via)
@@ -355,22 +423,40 @@ class Model:
         via is the metric-hub metric when there is one."""
         platform = (experiment or {}).get("app_name") or "firefox_desktop"
         config = self.configs.get(("jetstream", slug))
-        outcomes = [o for o in (self.hub.get(f"jetstream/outcomes/{platform}/{x}.toml")
-                                for x in (experiment or {}).get("outcomes") or []) if o]
+        outcomes = [
+            o
+            for o in (
+                self.hub.get(f"jetstream/outcomes/{platform}/{x}.toml")
+                for x in (experiment or {}).get("outcomes") or []
+            )
+            if o
+        ]
         defaults = self.hub.get(f"jetstream/defaults/{platform}.toml")
-        ctx = contexts_for(self.hub, platform, config, *outcomes, defaults,
-                           self.hub.get(f"jetstream/definitions/{platform}.toml"))
+        ctx = contexts_for(
+            self.hub,
+            platform,
+            config,
+            *outcomes,
+            defaults,
+            self.hub.get(f"jetstream/definitions/{platform}.toml"),
+        )
         names = set()
         if config is not None:
-            names = metric_lists(config) | {n for n, d in config.section("metrics").items()
-                                            if "select_expression" in d or "depends_on" in d}
+            names = metric_lists(config) | {
+                n
+                for n, d in config.section("metrics").items()
+                if "select_expression" in d or "depends_on" in d
+            }
         for o in outcomes:
             names |= set(o.section("metrics"))
         chosen = self.refs_for(names, ctx)
         if config is not None:
             exp = config.data.get("experiment") or {}
-            extra = [self.hub.sql(exp["exposure_signal"], ctx)[0]] if isinstance(
-                exp.get("exposure_signal"), dict) else []
+            extra = (
+                [self.hub.sql(exp["exposure_signal"], ctx)[0]]
+                if isinstance(exp.get("exposure_signal"), dict)
+                else []
+            )
             if exp.get("enrollment_query"):
                 extra.append(self.hub.render(exp["enrollment_query"]))
             for sql in filter(None, extra):
@@ -389,15 +475,21 @@ class Model:
         registry, with the metric names each summarizes and seen_within, the
         shortest window its dates overlap."""
         start = window_start(LONGEST, end)
-        rows = query(f"""-- as of {end}
+        rows = query(
+            f"""-- as of {end}
 SELECT slug, name, start_date, end_date,
   ARRAY(SELECT DISTINCT s.metric FROM UNNEST(summaries) AS s WHERE s.metric IS NOT NULL) AS metrics
 FROM `moz-fx-data-shared-prod.operational_monitoring_derived.projects_v1`
 WHERE (end_date IS NULL OR end_date >= '{start}') AND (start_date IS NULL OR start_date <= '{end}')
-""", name="opmon projects")
+""",
+            name="opmon projects",
+        )
         for r in rows:
-            r["seen_within"] = next(w for w in WINDOWS if r["end_date"] is None
-                                    or r["end_date"] >= str(window_start(w, end)))
+            r["seen_within"] = next(
+                w
+                for w in WINDOWS
+                if r["end_date"] is None or r["end_date"] >= str(window_start(w, end))
+            )
         return {norm(r["slug"]): r for r in rows}
 
     def opmon_refs(self, slug, names, platform):
@@ -405,10 +497,17 @@ WHERE (end_date IS NULL OR end_date >= '{start}') AND (start_date IS NULL OR sta
         OpMon project: named when the project's own config lists or defines
         the metric, not named when it comes from OpMon's defaults."""
         config = self.opmon_config(slug)
-        platform = ((config.data.get("project") or {}).get("platform") if config else None) or platform
-        ctx = contexts_for(self.hub, platform, config, self.hub.get(f"opmon/defaults/{platform}.toml"),
-                           self.hub.get("opmon/defaults/rollout.toml"),
-                           self.hub.get(f"opmon/definitions/{platform}.toml"))
+        platform = (
+            (config.data.get("project") or {}).get("platform") if config else None
+        ) or platform
+        ctx = contexts_for(
+            self.hub,
+            platform,
+            config,
+            self.hub.get(f"opmon/defaults/{platform}.toml"),
+            self.hub.get("opmon/defaults/rollout.toml"),
+            self.hub.get(f"opmon/definitions/{platform}.toml"),
+        )
         own = metric_lists(config) | (set(config.section("metrics")) if config else set())
         out = {}
         for name in sorted(names):
@@ -443,25 +542,47 @@ def run(show=None):
 
     def ref(aid, kind, m, named, role, h, via, t=None):
         r = inventory[m]
-        return {"app": r["app"], "metric": r["metric"], "artifact_id": aid,
-                "artifact_kind": kind, "role": role, "hops": h + 1, "named": named,
-                "transformed": t, "via": via, "output_columns": [], "n_output_columns": 0,
-                "evidence": "parsed"}
+        return {
+            "app": r["app"],
+            "metric": r["metric"],
+            "artifact_id": aid,
+            "artifact_kind": kind,
+            "role": role,
+            "hops": h + 1,
+            "named": named,
+            "transformed": t,
+            "via": via,
+            "output_columns": [],
+            "n_output_columns": 0,
+            "evidence": "parsed",
+        }
 
     notes = collections.Counter()
     for aid, info in sorted(mdl.metrics.items()):
         d = info["def"]
-        notes[info["note"].split(":")[0] if info["refs"] or info["note"] != "ok" else "reads no metric"] += 1
+        notes[
+            (
+                info["note"].split(":")[0]
+                if info["refs"] or info["note"] != "ok"
+                else "reads no metric"
+            )
+        ] += 1
         for m, (role, h, via, t) in sorted(info["refs"].items()):
             ref_rows.append(ref(aid, "metric_hub_metric", m, True, role, h, via, t))
         owners = d.get("owner") or []
-        art_rows.append({
-            "artifact_id": aid, "kind": "metric_hub_metric", "name": info["name"],
-            "url": info["url"], "owners": [owners] if isinstance(owners, str) else list(owners),
-            "friendly_name": d.get("friendly_name"),
-            "note": "deprecated" if d.get("deprecated") else None,
-            "n_metrics_named": len(info["refs"]), "n_metrics_total": len(info["refs"]),
-        })
+        art_rows.append(
+            {
+                "artifact_id": aid,
+                "kind": "metric_hub_metric",
+                "name": info["name"],
+                "url": info["url"],
+                "owners": [owners] if isinstance(owners, str) else list(owners),
+                "friendly_name": d.get("friendly_name"),
+                "note": "deprecated" if d.get("deprecated") else None,
+                "n_metrics_named": len(info["refs"]),
+                "n_metrics_total": len(info["refs"]),
+            }
+        )
 
     projects = mdl.opmon_projects(end)
     for slug, p in sorted(projects.items()):
@@ -470,17 +591,25 @@ def run(show=None):
         aid = f"opmon:{slug}"
         for m, (named, h, via) in sorted(refs.items()):
             # last_observed is the project's last day in the window
-            ref_rows.append(dict(ref(aid, "opmon_project", m, named, "output", h, via),
-                                 seen_within=p["seen_within"],
-                                 last_observed=min(p["end_date"] or str(end), str(end))))
-        art_rows.append({
-            "artifact_id": aid, "kind": "opmon_project", "name": p["name"] or p["slug"],
-            "url": OPMON_DASHBOARD.format(slug=slug),
-            "friendly_name": f"{p['start_date'] or '?'} to {p['end_date'] or 'now'}",
-            "note": "config in metric-hub" if mdl.opmon_config(slug) else None,
-            "n_metrics_named": sum(1 for v in refs.values() if v[0]),
-            "n_metrics_total": len(refs),
-        })
+            ref_rows.append(
+                dict(
+                    ref(aid, "opmon_project", m, named, "output", h, via),
+                    seen_within=p["seen_within"],
+                    last_observed=min(p["end_date"] or str(end), str(end)),
+                )
+            )
+        art_rows.append(
+            {
+                "artifact_id": aid,
+                "kind": "opmon_project",
+                "name": p["name"] or p["slug"],
+                "url": OPMON_DASHBOARD.format(slug=slug),
+                "friendly_name": f"{p['start_date'] or '?'} to {p['end_date'] or 'now'}",
+                "note": "config in metric-hub" if mdl.opmon_config(slug) else None,
+                "n_metrics_named": sum(1 for v in refs.values() if v[0]),
+                "n_metrics_total": len(refs),
+            }
+        )
 
     if show:
         for aid, info in mdl.metrics.items():
@@ -491,14 +620,17 @@ def run(show=None):
     log("\nmetric-hub metrics by outcome:")
     for k, n in notes.most_common():
         log(f"  {n:6,}  {k}")
-    log(f"\n{len(mdl.metrics):,} metric-hub metrics, {len(projects):,} OpMon projects; "
-        f"{len(ref_rows):,} refs over {len({(r['app'], r['metric']) for r in ref_rows}):,} metrics")
+    log(
+        f"\n{len(mdl.metrics):,} metric-hub metrics, {len(projects):,} OpMon projects; "
+        f"{len(ref_rows):,} refs over {len({(r['app'], r['metric']) for r in ref_rows}):,} metrics"
+    )
     return ref_rows, art_rows
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--show", help="print the refs of metric-hub metrics whose id contains this")
     args = ap.parse_args()
@@ -507,14 +639,24 @@ def main():
     refs, arts = run(args.show)
     if args.dry_run:
         return
-    suffix = ("Prototype table maintained by the docker-etl metric-usage job, metric_usage/metric_hub.py; "
-              "replaced on each run.")
-    write_table("refs_metrichub", refs, ref_schema(),
-                "Metrics metric-hub definitions and OpMon projects are built from. " + suffix,
-                clustering=["app", "metric"])
-    write_table("artifacts_metrichub", arts, artifact_schema(),
-                "metric-hub metric definitions and active OpMon projects. " + suffix,
-                clustering=["artifact_id"])
+    suffix = (
+        "Prototype table maintained by the docker-etl metric-usage job, "
+        "metric_usage/metric_hub.py; replaced on each run."
+    )
+    write_table(
+        "refs_metrichub",
+        refs,
+        ref_schema(),
+        "Metrics metric-hub definitions and OpMon projects are built from. " + suffix,
+        clustering=["app", "metric"],
+    )
+    write_table(
+        "artifacts_metrichub",
+        arts,
+        artifact_schema(),
+        "metric-hub metric definitions and active OpMon projects. " + suffix,
+        clustering=["artifact_id"],
+    )
     union_views()
 
 

@@ -4,26 +4,35 @@ from metric_usage import lineage as L
 
 from harness import resolve, table
 
-METRICS = table("app_stable.metrics_v1", {
-    "metrics.counter.a_count": "a.count",
-    "metrics.counter.b_count": "b.count",
-})
+METRICS = table(
+    "app_stable.metrics_v1",
+    {
+        "metrics.counter.a_count": "a.count",
+        "metrics.counter.b_count": "b.count",
+    },
+)
 TBL = "`moz-fx-data-shared-prod.app_stable.metrics_v1`"
 
 
 def test_temp_tables_resolve_in_order():
-    r = resolve(f"""
+    r = resolve(
+        f"""
         CREATE TEMP TABLE t1 AS (SELECT metrics.counter.a_count AS a FROM {TBL});
         CREATE TEMP TABLE t2 AS SELECT a AS a2 FROM t1;
-        SELECT a2 FROM t2""", METRICS)
+        SELECT a2 FROM t2""",
+        METRICS,
+    )
     assert set(r.carried("a2")) == {"a.count"}
 
 
 def test_declare_and_set_are_stripped():
-    r = resolve(f"""
+    r = resolve(
+        f"""
         DECLARE d DATE DEFAULT CURRENT_DATE();
         SET d = DATE_SUB(d, INTERVAL 1 DAY);
-        SELECT metrics.counter.a_count AS a FROM {TBL}""", METRICS)
+        SELECT metrics.counter.a_count AS a FROM {TBL}""",
+        METRICS,
+    )
     assert set(r.carried("a")) == {"a.count"}
 
 

@@ -27,26 +27,41 @@ class FakeClient:
             rows = [r for d, r in self.jobs.items() if start <= d < stop]
         else:
             n = (END - FIRST).days + 1
-            rows = [{"project": "p", "day": FIRST + datetime.timedelta(days=i)} for i in range(n)
-                    if FIRST + datetime.timedelta(days=i) not in self.missing]
+            rows = [
+                {"project": "p", "day": FIRST + datetime.timedelta(days=i)}
+                for i in range(n)
+                if FIRST + datetime.timedelta(days=i) not in self.missing
+            ]
         return type("Job", (), {"result": lambda self: rows})()
 
 
 def test_capture_fetches_missing_days_in_runs_and_marks_empty_ones(monkeypatch):
-    job = {"key": "t1", "account": "a@example.com", "day": day("2026-11-15"),
-           "wrote": None, "jobs": 3}
-    fake = FakeClient(missing=[day("2026-10-01"), day("2026-11-14"), day("2026-11-15"),
-                               day("2026-11-16")],
-                      jobs={day("2026-11-15"): job})
+    job = {
+        "key": "t1",
+        "account": "a@example.com",
+        "day": day("2026-11-15"),
+        "wrote": None,
+        "jobs": 3,
+    }
+    fake = FakeClient(
+        missing=[day("2026-10-01"), day("2026-11-14"), day("2026-11-15"), day("2026-11-16")],
+        jobs={day("2026-11-15"): job},
+    )
     appended = []
     monkeypatch.setattr(AH, "client", lambda: fake)
     monkeypatch.setattr(AH, "window_end", lambda: END)
     monkeypatch.setattr(AH, "append_table", lambda name, rows, *a, **k: appended.append(rows))
     new = AH.capture(["p"], known=set(), save=True)
-    assert fake.job_lists == [(day("2026-10-01"), day("2026-10-01")),
-                              (day("2026-11-14"), day("2026-11-16"))]
+    assert fake.job_lists == [
+        (day("2026-10-01"), day("2026-10-01")),
+        (day("2026-11-14"), day("2026-11-16")),
+    ]
     assert {(r["day"], r["key"]) for r in new} == {
-        ("2026-10-01", None), ("2026-11-14", None), ("2026-11-15", "t1"), ("2026-11-16", None)}
+        ("2026-10-01", None),
+        ("2026-11-14", None),
+        ("2026-11-15", "t1"),
+        ("2026-11-16", None),
+    }
     assert appended == [new]
 
 
@@ -72,9 +87,11 @@ class FakeStore:
 def test_query_past_jobs_by_project_is_frozen_and_never_fetched(monkeypatch):
     old = (FIRST - datetime.timedelta(days=30)).isoformat()
     result = ({}, [], "ok")
-    rows = [{"project": "p", "key": "old", "day": old},
-            {"project": "p", "key": "gone", "day": old},
-            {"project": "p", "key": "live", "day": END.isoformat()}]
+    rows = [
+        {"project": "p", "key": "old", "day": old},
+        {"project": "p", "key": "gone", "day": old},
+        {"project": "p", "key": "live", "day": END.isoformat()},
+    ]
     store = FakeStore({"p:old": result, "p:live": result})
     monkeypatch.setattr(AH, "text_batches", lambda *a: (_ for _ in ()).throw(AssertionError))
     out = AH.resolve_all(rows, END, store)

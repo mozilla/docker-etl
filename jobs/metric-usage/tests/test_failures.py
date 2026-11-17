@@ -41,13 +41,16 @@ def test_other_http_errors_raise(monkeypatch):
 
 def test_partial_note():
     assert L.partial_note([]) == "ok"
-    assert L.partial_note(["KeyError", "KeyError", "TypeError"]) == \
-        "partial: 3 scopes unread (KeyError, TypeError)"
+    assert (
+        L.partial_note(["KeyError", "KeyError", "TypeError"])
+        == "partial: 3 scopes unread (KeyError, TypeError)"
+    )
 
 
 def test_text_of_a_project_without_access_is_none(monkeypatch):
     def denied(*a):
         raise Forbidden("Access Denied")
+
     monkeypatch.setattr(AH, "fetch_texts", denied)
     start = datetime.date(2026, 11, 1)
     got = list(AH.text_batches({("p", "k"): "2026-11-03"}, start, datetime.date(2026, 11, 16)))
@@ -61,6 +64,7 @@ def test_utc_today_is_utc(monkeypatch):
         @classmethod
         def now(cls, tz=None):
             return late.astimezone(tz) if tz else late.astimezone().replace(tzinfo=None)
+
     monkeypatch.setattr(common.datetime, "datetime", Clock)
     assert common.utc_today() == datetime.date(2026, 11, 17)
     assert common.window_end() == datetime.date(2026, 11, 16)
@@ -68,7 +72,17 @@ def test_utc_today_is_utc(monkeypatch):
 
 def test_jetstream_and_opmon_configs_share_a_slug():
     from metric_usage import metric_hub as MH
-    hub = type("Hub", (), {"files": {"jetstream/my-rollout.toml": 1, "opmon/my-rollout.toml": 2,
-                                     "jetstream/outcomes/x/y.toml": 3},
-                           "get": lambda self, rel: self.files[rel]})()
+
+    hub = type(
+        "Hub",
+        (),
+        {
+            "files": {
+                "jetstream/my-rollout.toml": 1,
+                "opmon/my-rollout.toml": 2,
+                "jetstream/outcomes/x/y.toml": 3,
+            },
+            "get": lambda self, rel: self.files[rel],
+        },
+    )()
     assert MH.tool_configs(hub) == {("jetstream", "my_rollout"): 1, ("opmon", "my_rollout"): 2}
