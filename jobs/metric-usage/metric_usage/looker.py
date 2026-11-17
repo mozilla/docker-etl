@@ -730,7 +730,9 @@ def resolve_all(items):
     L.persistent_udfs()
     # what was resolved is kept even if a worker dies, so a rerun picks up there
     try:
-        for n, (key, res, secs) in enumerate(pool_map(_work, todo, initializer=_init), 1):
+        for n, (key, res, secs) in enumerate(
+            pool_map(_work, todo, initializer=_init, on_crash=_crashed), 1
+        ):
             out[key] = res
             held[digest[key]] = [{str(m): list(v) for m, v in res[0].items()}, res[1], res[2]]
             timings.append((secs, key))
@@ -759,6 +761,11 @@ def resolve_all(items):
             f"{(API_CACHE / 'timeouts.json').relative_to(CACHE.parent)}"
         )
     return out
+
+
+def _crashed(item):
+    """_work()'s result for a group whose SQL killed its worker."""
+    return item[0], ({}, {}, "resolve failed: worker died"), 0.0
 
 
 def _init():

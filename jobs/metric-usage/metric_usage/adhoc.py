@@ -261,6 +261,13 @@ fetch_texts.bytes = 0
 # ------------------------------------------------------------------ resolving
 
 
+def _crashed(item):
+    """_work()'s result for a query that killed its worker. It is kept like
+    any other, so the query is not resolved again until the entry expires."""
+    key, project, text = item
+    return key, ({}, [], "resolve failed: worker died"), R.dependencies(text, project)
+
+
 def _init():
     sys.setrecursionlimit(20000)
 
@@ -329,7 +336,9 @@ def resolve_all(rows, end, store):
             continue
         items = [(f"{project}:{key}", project, t) for key, t in texts.items()]
         del texts
-        for key, res, deps in pool_map(_work, items, chunksize=16, initializer=_init):
+        for key, res, deps in pool_map(
+            _work, items, chunksize=16, initializer=_init, on_crash=_crashed
+        ):
             out[tuple(key.split(":", 1))] = res
             # a timeout says how fast the resolver was, not what the SQL reads,
             # so it is tried again next run rather than kept

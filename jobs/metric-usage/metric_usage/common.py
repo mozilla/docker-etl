@@ -15,12 +15,14 @@ import datetime
 import decimal
 import hashlib
 import json
+import math
 import multiprocessing
 import os
 import pathlib
 import re
 import signal
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 
@@ -114,28 +116,107 @@ def time_limit(seconds):
         signal.alarm(0)
 
 
-def _run_chunk(work, chunk):
-    return [work(item) for item in chunk]
+def worker_count():
+    """Worker processes for pool_map(): METRIC_USAGE_WORKERS if set, else the
+    CPUs this process may run on, capped by the cgroup CPU quota. os.cpu_count()
+    counts the node's cores, which in a pod with a CPU limit is far too many."""
+    if os.environ.get("METRIC_USAGE_WORKERS"):
+        return max(1, int(os.environ["METRIC_USAGE_WORKERS"]))
+    n = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
+    n = n or 1
+    # cgroup v2, then v1; "max" or -1 is no quota
+    for quota_file, period_file in (
+        ("/sys/fs/cgroup/cpu.max", None),
+        ("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", "/sys/fs/cgroup/cpu/cpu.cfs_period_us"),
+    ):
+        try:
+            if period_file is None:
+                quota, period = pathlib.Path(quota_file).read_text().split()[:2]
+            else:
+                quota = pathlib.Path(quota_file).read_text().strip()
+                period = pathlib.Path(period_file).read_text().strip()
+        except (OSError, ValueError):
+            continue
+        if quota not in ("max", "-1"):
+            n = min(n, max(1, math.ceil(int(quota) / int(period))))
+        break
+    return n
 
 
-def pool_map(work, items, chunksize=1, initializer=None):
+def _run_chunk(work, chunk, marks):
+    """[(index, work(item))] for a chunk of (index, item), noting in marks the
+    index of the item this worker is on, so that pool_map() can tell which
+    items were running when a worker died."""
+    mark = os.path.join(marks, str(os.getpid()))
+    out = []
+    for i, item in chunk:
+        with open(mark, "w") as f:
+            f.write(str(i))
+        out.append((i, work(item)))
+    return out
+
+
+def pool_map(work, items, chunksize=1, initializer=None, on_crash=None):
     """work(item) for each of items in forked worker processes, yielded as each
-    chunk finishes.
+    chunk finishes, in no particular order.
 
     Forked, so the workers share the shapes loaded before. multiprocessing.Pool
     waits forever on a task whose worker died (killed for memory, a crash in
     C), so this uses ProcessPoolExecutor, which raises BrokenProcessPool.
+
+    When a worker dies, the items that were running then are each run again
+    alone, and the rest again in a new pool. An item that kills its worker
+    when run alone yields on_crash(item), so one bad query does not fail every
+    run that meets it; with no on_crash, BrokenProcessPool is raised.
     """
     from concurrent.futures import ProcessPoolExecutor, as_completed
+    from concurrent.futures.process import BrokenProcessPool
 
     ctx = multiprocessing.get_context("fork")
-    with ProcessPoolExecutor(mp_context=ctx, initializer=initializer) as pool:
-        futures = [
-            pool.submit(_run_chunk, work, items[i : i + chunksize])
-            for i in range(0, len(items), chunksize)
-        ]
-        for f in as_completed(futures):
-            yield from f.result()
+    todo = list(enumerate(items))
+    while todo:
+        done = set()
+        with tempfile.TemporaryDirectory() as marks:
+            broke = False
+            with ProcessPoolExecutor(
+                max_workers=worker_count(), mp_context=ctx, initializer=initializer
+            ) as pool:
+                futures = [
+                    pool.submit(_run_chunk, work, todo[i : i + chunksize], marks)
+                    for i in range(0, len(todo), chunksize)
+                ]
+                for f in as_completed(futures):
+                    try:
+                        got = f.result()
+                    except BrokenProcessPool:
+                        broke = True
+                        continue
+                    for i, res in got:
+                        done.add(i)
+                        yield res
+            if not broke:
+                return
+            running = {int(p.read_text()) for p in pathlib.Path(marks).iterdir()} - done
+        if not done and not running:
+            # a worker died before starting any item, as in its initializer;
+            # running the pool again would do the same
+            raise BrokenProcessPool("a worker died before starting any item")
+        log(
+            f"  a worker died; running {len(running)} items alone, then the other "
+            f"{len(todo) - len(done) - len(running):,} again"
+        )
+        for i in sorted(running):
+            with ProcessPoolExecutor(1, mp_context=ctx, initializer=initializer) as one:
+                try:
+                    res = one.submit(work, items[i]).result()
+                except BrokenProcessPool:
+                    if on_crash is None:
+                        raise
+                    log(f"  item {i} killed its worker when run alone; recorded as failed")
+                    res = on_crash(items[i])
+            done.add(i)
+            yield res
+        todo = [(i, item) for i, item in todo if i not in done]
 
 
 def utc_today():

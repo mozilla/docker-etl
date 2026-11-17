@@ -86,3 +86,38 @@ def test_jetstream_and_opmon_configs_share_a_slug():
         },
     )()
     assert MH.tool_configs(hub) == {("jetstream", "my_rollout"): 1, ("opmon", "my_rollout"): 2}
+
+
+def _square_or_die(x):
+    import os
+
+    if x == 7:
+        os._exit(1)  # as a segfault or an OOM kill would end the worker
+    return x * x
+
+
+def test_a_worker_that_dies_fails_only_its_item(monkeypatch):
+    monkeypatch.setenv("METRIC_USAGE_WORKERS", "3")
+    got = list(
+        common.pool_map(
+            _square_or_die, list(range(20)), chunksize=4, on_crash=lambda x: ("crashed", x)
+        )
+    )
+    assert sorted(got, key=str) == sorted(
+        [x * x for x in range(20) if x != 7] + [("crashed", 7)], key=str
+    )
+
+
+def test_a_worker_that_dies_raises_without_on_crash(monkeypatch):
+    from concurrent.futures.process import BrokenProcessPool
+
+    monkeypatch.setenv("METRIC_USAGE_WORKERS", "2")
+    with pytest.raises(BrokenProcessPool):
+        list(common.pool_map(_square_or_die, list(range(10))))
+
+
+def test_worker_count_follows_the_environment(monkeypatch):
+    monkeypatch.setenv("METRIC_USAGE_WORKERS", "5")
+    assert common.worker_count() == 5
+    monkeypatch.delenv("METRIC_USAGE_WORKERS")
+    assert common.worker_count() >= 1

@@ -299,6 +299,11 @@ def _work(item):
         return key, ({}, [], "resolve failed: RecursionError")
 
 
+def _crashed(item):
+    """_work()'s result for a query that killed its worker."""
+    return item[0], ({}, [], "resolve failed: worker died")
+
+
 def _init():
     sys.setrecursionlimit(20000)
 
@@ -323,7 +328,9 @@ def run(limit=None):
     results = {}
     L.persistent_udfs()  # parsed once here for the forked workers
     items = list(enumerate(by_text))
-    for n, (i, res) in enumerate(pool_map(_work, items, chunksize=64, initializer=_init)):
+    for n, (i, res) in enumerate(
+        pool_map(_work, items, chunksize=64, initializer=_init, on_crash=_crashed)
+    ):
         results[items[i][1]] = res
         if n and n % 5000 == 0:
             log(f"    parsed {n:,}")
