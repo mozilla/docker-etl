@@ -32,16 +32,14 @@ import concurrent.futures
 import datetime
 import hashlib
 import json
-import multiprocessing
 import re
-import signal
 import sys
 import threading
 import time
 
-from .common import (CACHE, DEST, LONGEST, PREFIX, WINDOWS, artifact_schema, client, log,
-                     ref_schema, seen_within, union_views, window_end, window_start,
-                     write_atomic, write_table)
+from .common import (CACHE, DEST, LONGEST, PREFIX, WINDOWS, ResolveTimeout, artifact_schema,
+                     client, log, pool_map, read_cache, ref_schema, seen_within, time_limit,
+                     union_views, window_end, window_start, write_cache, write_table)
 
 from . import lineage as L
 from . import looker_api
@@ -90,17 +88,17 @@ def sdk():
 
 
 def _cached(kind, key, fetch, daily=True, refresh=False):
-    """fetch() cached on disk by key; daily keys expire at midnight. A value
-    marked transient is returned but not cached."""
-    API_CACHE.mkdir(parents=True, exist_ok=True)
+    """fetch() cached by key (common.read_cache()); daily keys expire at
+    midnight. A value marked transient is returned but not cached."""
     if daily:
         key = f"{datetime.date.today()}:{key}"
     path = API_CACHE / f"{kind}_{hashlib.sha256(key.encode()).hexdigest()[:16]}.json"
-    if path.exists() and not refresh:
-        return json.loads(path.read_text())
+    held = None if refresh else read_cache(path)
+    if held is not None:
+        return json.loads(held)
     value = fetch()
     if not (isinstance(value, dict) and value.get("transient")):
-        write_atomic(path, json.dumps(value).encode())
+        write_cache(path, json.dumps(value).encode())
     return value
 
 
@@ -359,9 +357,15 @@ def _json(v, default):
 
 
 def query_of(r):
+    """The query on a System Activity row, or None when System Activity cut
+    off its field or filter list, which leaves JSON that does not parse."""
+    try:
+        fields, filters = _json(r["query.fields"], []), _json(r["query.filters"], {})
+    except json.JSONDecodeError:
+        return None
     return {
         "id": r["query.id"], "model": r["query.model"], "view": r["query.view"],
-        "fields": _json(r["query.fields"], []), "filters": _json(r["query.filters"], {}),
+        "fields": fields, "filters": filters,
         "dynamic_fields": r["query.dynamic_fields"] or "",
     }
 
@@ -514,28 +518,16 @@ def resolve_group(sql):
     return named, idents, "ok"
 
 
-class _Timeout(BaseException):
-    # not an Exception, so parse and resolve error handling cannot swallow it
-    pass
-
-
-def _alarm(signum, frame):
-    raise _Timeout()
-
-
 def _work(item):
     key, sql = item
     start = time.monotonic()
-    signal.signal(signal.SIGALRM, _alarm)
-    signal.alarm(RESOLVE_TIMEOUT)
     try:
-        res = resolve_group(sql)
-    except _Timeout:
+        with time_limit(RESOLVE_TIMEOUT):
+            res = resolve_group(sql)
+    except ResolveTimeout:
         res = ({}, {}, "timeout")
     except RecursionError:
         res = ({}, {}, "resolve failed: RecursionError")
-    finally:
-        signal.alarm(0)
     return key, res, time.monotonic() - start
 
 
@@ -557,7 +549,7 @@ def resolve_all(items):
     resolved against the same lineage snapshot."""
     fp = snapshot()
     path = API_CACHE / f"resolved_{hashlib.sha256(fp.encode()).hexdigest()[:16]}.json"
-    held = json.loads(path.read_text()) if path.exists() else {}
+    held = json.loads(read_cache(path) or b"{}")
     digest = {k: hashlib.sha256(sql.encode()).hexdigest() for k, sql in items}
     out, todo = {}, []
     for k, sql in items:
@@ -573,15 +565,16 @@ def resolve_all(items):
     # parsed once here for the forked workers, rather than in each one inside
     # its first item's time limit
     L.persistent_udfs()
-    ctx = multiprocessing.get_context("fork")
-    with ctx.Pool(initializer=_init) as pool:
-        for n, (key, res, secs) in enumerate(pool.imap_unordered(_work, todo, chunksize=1), 1):
+    # what was resolved is kept even if a worker dies, so a rerun picks up there
+    try:
+        for n, (key, res, secs) in enumerate(pool_map(_work, todo, initializer=_init), 1):
             out[key] = res
             held[digest[key]] = [{str(m): list(v) for m, v in res[0].items()}, res[1], res[2]]
             timings.append((secs, key))
             if n % 1000 == 0:
                 log(f"    resolved {n:,} of {len(todo):,}")
-    path.write_text(json.dumps(held))
+    finally:
+        write_cache(path, json.dumps(held).encode())
     timings.sort(reverse=True)
     if timings:
         log(f"  slowest groups (total {sum(t for t, _ in timings) / 60:.1f} CPU minutes):")
@@ -593,6 +586,7 @@ def resolve_all(items):
     slow = [k for k, v in out.items() if v[2] == "timeout"]
     (API_CACHE / "timeouts.json").unlink(missing_ok=True)
     if slow:
+        API_CACHE.mkdir(parents=True, exist_ok=True)
         (API_CACHE / "timeouts.json").write_text(json.dumps({k: dict(items)[k] for k in slow}))
         log(f"  {len(slow)} groups timed out after {RESOLVE_TIMEOUT}s; SQL in "
             f"{(API_CACHE / 'timeouts.json').relative_to(CACHE.parent)}")
@@ -640,7 +634,8 @@ def query_refs(q, group):
                 ks = {k for k, _, _ in kinds}
                 _, h, via = kinds[0]
                 kind = "full" if len(ks) >= 2 else next(iter(ks))
-                lits[("lit", app, kind, lit, mode)] = (h, via, True, True)
+                # a query's filters hold together, so no branches
+                lits[("lit", app, kind, lit, mode, frozenset())] = (h, via, True, True)
     for m, (h, via, t, n) in L.resolve_events(lits, _EVENTS).items():
         if isinstance(m, int) and n and m not in refs:
             refs[m] = ("filter", h, via, True)
@@ -715,14 +710,21 @@ def load(end=None):
         h["history.dashboard_id"] = linked.get(d, d) if d not in (None, "") else None
     log(f"  {len(hist):,} history rows, {len(tiles):,} dashboard tiles, {len(looks):,} Looks")
 
-    queries = {}
+    queries, cut = {}, set()
     for r in hist + tiles + looks:
-        if r.get("query.id") and in_scope(r["query.model"]):
-            queries.setdefault(r["query.id"], query_of(r))
+        qid = r.get("query.id")
+        if qid and in_scope(r["query.model"]) and qid not in queries and qid not in cut:
+            q = query_of(r)
+            if q is None:
+                cut.add(qid)
+            else:
+                queries[qid] = q
     groups = collections.defaultdict(list)
     for q in queries.values():
         groups[group_key(q)].append(q["id"])
     log(f"  {len(queries):,} queries in scope, {len(groups):,} groups")
+    if cut:
+        log(f"  {len(cut):,} queries left out: System Activity cut off their field lists")
     return hist, tiles, looks, linked, queries, groups
 
 
@@ -844,6 +846,7 @@ def run(refresh_sql=False, measure_only=False, with_exposure=True):
     if with_exposure:
         exposed_keys, exposed_items, exposed_failed = exposure()
         if exposed_failed:
+            API_CACHE.mkdir(parents=True, exist_ok=True)
             (API_CACHE / "exposure_failed.json").write_text(json.dumps(exposed_failed))
     resolved = resolve_all(list(dict(items + exposed_items).items()))
     notes = collections.Counter(r[2].split(":")[0] for r in resolved.values())

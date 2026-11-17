@@ -26,12 +26,13 @@ per window (common.WINDOWS). object_views_daily starts on 2025-09-17.
 
 import argparse
 import collections
-import multiprocessing
+import hashlib
 import re
 import sys
 
-from .common import (LONGEST, WINDOWS, artifact_schema, client, log, ref_schema,
-                     union_views, window_end, window_sql, window_start, write_table)
+from .common import (LONGEST, WINDOWS, ResolveTimeout, artifact_schema, client, log,
+                     pool_map, ref_schema, time_limit, union_views, window_end, window_sql,
+                     window_start, write_table)
 
 from . import lineage as L
 
@@ -40,6 +41,9 @@ REDASH = "https://sql.telemetry.mozilla.org"
 
 # Redash's own project for unqualified dataset.table references
 REDASH_PROJECT = "mozdata"
+
+# A query the resolver takes longer than this on is left unresolved
+RESOLVE_TIMEOUT = 60
 
 PARAM_RE = re.compile(r"\{\{\s*[^{}]*?\s*\}\}")
 
@@ -148,20 +152,54 @@ def rows(sql):
 # Workers are forked after the shapes are built, so each one reads the same
 # shapes without copying them.
 
+_INVENTORY = None
 _SHAPES = None
 _TABLES = None
 _EVENTS = None
+_DIGESTS = None
 
 
 def load_shapes():
     """Load lineage's shapes for analyse(), before workers fork. Returns the
     inventory, whose positions are the metric ids analyse() hands back."""
-    global _SHAPES, _TABLES, _EVENTS
-    inventory, _SHAPES = L.shapes_from_tables()
+    global _INVENTORY, _SHAPES, _TABLES, _EVENTS, _DIGESTS
+    _INVENTORY, _SHAPES = L.shapes_from_tables()
     _TABLES = set(_SHAPES)
-    _EVENTS = L.event_index(inventory)
+    _EVENTS = L.event_index(_INVENTORY)
+    _DIGESTS = None
     log(f"  shapes for {len(_SHAPES):,} tables")
-    return inventory
+    return _INVENTORY
+
+
+def digests():
+    """lineage.shape_digests() for the loaded shapes, computed once, before
+    workers fork so that dependencies() can read them."""
+    global _DIGESTS
+    if _DIGESTS is None:
+        _DIGESTS = L.shape_digests(_INVENTORY, _SHAPES)
+    return _DIGESTS
+
+
+WORD_RE = re.compile(r"[a-z0-9_]+")
+
+
+def dependencies(text, project=REDASH_PROJECT):
+    """{table: column names} for every table a query names, the names being
+    those of the table's columns the text mentions: what its analyse() result
+    holds for (see lineage.shape_digests()). Only schema names are kept, never
+    a word that is the author's own."""
+    low = PARAM_RE.sub("0", text).lower()
+    words = set(WORD_RE.findall(low))
+    return {t: sorted(words & (_DIGESTS.get(t) or {}).keys()) for t in table_refs(low, project)}
+
+
+def dependency_digest(table, names):
+    """One digest for what dependencies() lists for a table. Whether lineage
+    has a shape for it at all counts too, so a result is redone once a table
+    it names gets one."""
+    cols = _DIGESTS.get(table)
+    material = ["absent"] if cols is None else ["present"] + [f"{n}={cols.get(n, '')}" for n in names]
+    return hashlib.sha256("|".join(material).encode()).hexdigest()[:16]
 
 
 def known_tables():
@@ -229,7 +267,10 @@ def analyse(text, project=REDASH_PROJECT):
 def _work(item):
     key, text = item
     try:
-        return key, analyse(text)
+        with time_limit(RESOLVE_TIMEOUT):
+            return key, analyse(text)
+    except ResolveTimeout:
+        return key, ({}, [], "timeout")
     except RecursionError:
         return key, ({}, [], "resolve failed: RecursionError")
 
@@ -257,13 +298,11 @@ def run(limit=None):
 
     results = {}
     L.persistent_udfs()  # parsed once here for the forked workers
-    ctx = multiprocessing.get_context("fork")
-    with ctx.Pool(initializer=_init) as pool:
-        items = list(enumerate(by_text))
-        for n, (i, res) in enumerate(pool.imap_unordered(_work, items, chunksize=64)):
-            results[items[i][1]] = res
-            if n and n % 5000 == 0:
-                log(f"    parsed {n:,}")
+    items = list(enumerate(by_text))
+    for n, (i, res) in enumerate(pool_map(_work, items, chunksize=64, initializer=_init)):
+        results[items[i][1]] = res
+        if n and n % 5000 == 0:
+            log(f"    parsed {n:,}")
     text_of = {qid: t for t, ids in by_text.items() for qid in ids}
     del by_text
 

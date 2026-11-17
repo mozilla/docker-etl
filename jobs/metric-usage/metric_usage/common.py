@@ -9,20 +9,29 @@ underneath the same key.
 """
 
 import collections
+import contextlib
 import csv
 import datetime
 import decimal
 import hashlib
 import json
+import multiprocessing
 import os
 import pathlib
 import re
+import signal
 import sys
 import urllib.request
 
 # The job's directory, which holds the cache and the labels, outside the package
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CACHE = ROOT / ".cache"
+# METRIC_USAGE_CACHE=0 keeps the cache in memory for the process instead of
+# on disk, for a container that runs once, where it would only take up disk:
+# within a step a value is still fetched once, but a later step fetches it
+# again. The generated-sql and metric-hub clones live under .cache either way.
+DISK_CACHE = os.environ.get("METRIC_USAGE_CACHE", "1") != "0"
+_MEMORY = {}
 # Hand-labelled accuracy samples. Not in git, since they hold snippets of query
 # text; see write_labels().
 LABELS = ROOT / "labels"
@@ -79,6 +88,49 @@ def run_deep(main):
         raise failed[0]
 
 
+class ResolveTimeout(BaseException):
+    # not an Exception, so parse and resolve error handling cannot swallow it
+    pass
+
+
+def _alarm(signum, frame):
+    raise ResolveTimeout()
+
+
+@contextlib.contextmanager
+def time_limit(seconds):
+    """Raise ResolveTimeout in the block after seconds. Uses SIGALRM, so only
+    in a process's main thread, as in a pool_map() worker."""
+    signal.signal(signal.SIGALRM, _alarm)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+
+
+def _run_chunk(work, chunk):
+    return [work(item) for item in chunk]
+
+
+def pool_map(work, items, chunksize=1, initializer=None):
+    """work(item) for each of items in forked worker processes, yielded as each
+    chunk finishes.
+
+    Forked, so the workers share the shapes loaded before. multiprocessing.Pool
+    waits forever on a task whose worker died (killed for memory, a crash in
+    C), so this uses ProcessPoolExecutor, which raises BrokenProcessPool.
+    """
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    ctx = multiprocessing.get_context("fork")
+    with ProcessPoolExecutor(mp_context=ctx, initializer=initializer) as pool:
+        futures = [pool.submit(_run_chunk, work, items[i:i + chunksize])
+                   for i in range(0, len(items), chunksize)]
+        for f in as_completed(futures):
+            yield from f.result()
+
+
 def window_end():
     return datetime.date.today() - datetime.timedelta(days=1)
 
@@ -113,7 +165,6 @@ def window_sql(day, end, **aggs):
 
 
 def _cache_file(kind, key):
-    CACHE.mkdir(exist_ok=True)
     digest = hashlib.sha256(key.encode()).hexdigest()[:16]
     return CACHE / f"{kind}_{digest}.json"
 
@@ -126,17 +177,36 @@ def write_atomic(path, data):
     tmp.replace(path)
 
 
+def read_cache(path):
+    """The bytes cached at path, or None. In memory with METRIC_USAGE_CACHE=0,
+    where bytes rather than values are kept, so each read is a fresh copy as
+    it is from disk."""
+    if not DISK_CACHE:
+        return _MEMORY.get(path)
+    return path.read_bytes() if path.exists() else None
+
+
+def write_cache(path, data):
+    """Cache bytes at path, atomically on disk or in memory."""
+    if not DISK_CACHE:
+        _MEMORY[path] = data
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_atomic(path, data)
+
+
 def get_json(url, force=False):
-    """GET a URL as JSON, cached on disk by URL. A body that is not JSON
-    raises before it is cached."""
+    """GET a URL as JSON, cached by URL. A body that is not JSON raises before
+    it is cached."""
     path = _cache_file("http", url)
-    if path.exists() and not force:
-        return json.loads(path.read_text())
+    held = None if force else read_cache(path)
+    if held is not None:
+        return json.loads(held)
     req = urllib.request.Request(url, headers={"Accept-Encoding": "identity"})
     with urllib.request.urlopen(req, timeout=120) as r:
         body = r.read()
     value = json.loads(body)
-    write_atomic(path, body)
+    write_cache(path, body)
     return value
 
 
@@ -225,27 +295,27 @@ def table_versions(tables):
 
 
 def query(sql, force=False, name="query", tables=()):
-    """Rows of a query as dicts, cached on disk by the SQL text.
+    """Rows of a query as dicts, cached by the SQL text.
 
     tables names the DEST.PREFIX tables the query reads, which are rewritten
     in place under the same SQL: the result is then cached until one of them
     is written again, and the copy for an older version is removed.
     """
     if tables:
-        CACHE.mkdir(exist_ok=True)
         stem = f"bq_{hashlib.sha256(sql.encode()).hexdigest()[:16]}"
         version = hashlib.sha256(table_versions(tables).encode()).hexdigest()[:8]
         path = CACHE / f"{stem}_{version}.json"
     else:
         path = _cache_file("bq", sql)
-    if path.exists() and not force:
-        rows = json.loads(path.read_text())
+    held = None if force else read_cache(path)
+    if held is not None:
+        rows = json.loads(held)
         log(f"  {name}: {len(rows):,} rows (cached)")
         return rows
     rows = [{k: _jsonable(v) for k, v in dict(r).items()}
             for r in client().query(sql).result()]
-    write_atomic(path, json.dumps(rows).encode())
-    if tables:
+    write_cache(path, json.dumps(rows).encode())
+    if tables and DISK_CACHE:
         for old in CACHE.glob(f"{stem}_*.json"):
             if old != path:
                 old.unlink()
@@ -274,6 +344,105 @@ def write_table(name, rows, schema, description, clustering=None):
     table.description = description
     client().update_table(table, ["description"])
     log(f"  wrote {table_id}: {table.num_rows:,} rows")
+
+
+class ResolvedStore:
+    """Resolved queries kept between runs in DEST.PREFIX<name>, since the job
+    runs with no disk that outlives it.
+
+    An entry is a query's named refs, by app and metric, with what they were
+    resolved against: the resolver's digest (lineage.resolver_digest()) and,
+    for every table the query names, the columns of it the query mentions and
+    their digest (redash.dependencies()). It is reused while those match, so a
+    run resolves only the queries that are new or whose columns changed. An
+    entry is also redone after MIN_AGE to MAX_AGE days, spread by its key, to
+    bound what a missed dependency could leave stale. Only a query's key and
+    schema names are kept, never its text. save() keeps the entries this run
+    used, so queries that left the window drop out.
+    """
+
+    MIN_AGE, MAX_AGE = 15, 30
+
+    def __init__(self, name, version, digest_of, inventory):
+        """digest_of(table, names) is the current digest of a table's
+        columns, redash.dependency_digest()."""
+        self.name, self.version, self.digest_of = name, version, digest_of
+        self.today = datetime.date.today()
+        self.inventory = inventory
+        self.ids = {(r["app"], r["metric"]): i for i, r in enumerate(inventory)}
+        self.held, self.kept = {}, {}
+        from google.api_core.exceptions import NotFound
+
+        try:
+            for r in client().query(f"SELECT * FROM `{DEST}.{PREFIX}{name}` "
+                                    f"WHERE version = '{version}'").result():
+                self.held[r["key"]] = dict(r)
+        except NotFound:
+            pass
+        log(f"  {len(self.held):,} resolved queries held in {PREFIX}{name}")
+
+    def get(self, key, may_expire=True):
+        """(named refs by metric id, star tables, note) for key, or None when
+        it has to be resolved again. may_expire=False keeps an entry past its
+        age, for a caller that would pay more than a resolve to redo it."""
+        r = self.held.get(key)
+        if r is None:
+            return None
+        lifetime = self.MIN_AGE + int(hashlib.sha256(key.encode()).hexdigest(), 16) % (
+            self.MAX_AGE - self.MIN_AGE + 1)
+        age = (self.today - datetime.date.fromisoformat(str(r["resolved_on"]))).days
+        if may_expire and age >= lifetime:
+            return None
+        if any(self.digest_of(d["table"], d["names"]) != d["digest"] for d in r["deps"]):
+            return None
+        named = {}
+        for x in r["refs"]:
+            m = self.ids.get((x["app"], x["metric"]))
+            if m is None:
+                return None
+            named[m] = (x["role"], x["hops"], x["via"], x["transformed"])
+        self.kept[key] = r
+        return named, list(r["stars"]), r["note"]
+
+    def put(self, key, result, deps):
+        """Keep a result just resolved, with deps, {table: column names} for
+        the tables its query names."""
+        named, stars, note = result
+        self.kept[key] = {
+            "key": key, "version": self.version, "resolved_on": self.today.isoformat(),
+            "deps": [{"table": t, "names": names, "digest": self.digest_of(t, names)}
+                     for t, names in sorted(deps.items())],
+            "refs": [{"app": self.inventory[m]["app"], "metric": self.inventory[m]["metric"],
+                      "role": role, "hops": h, "via": via, "transformed": t}
+                     for m, (role, h, via, t) in named.items()],
+            "stars": list(stars), "note": note,
+        }
+
+    def save(self, complete=True):
+        """Write the entries back. After a run that stopped early, those it did
+        not get to are kept too, for the rerun to check."""
+        from google.cloud.bigquery import SchemaField as F
+
+        rows = self.kept if complete else {**self.held, **self.kept}
+        for r in rows.values():
+            r["resolved_on"] = str(r["resolved_on"])
+        s, rep = "STRING", "REPEATED"
+        schema = [
+            F("key", s), F("version", s, description="lineage.resolver_digest() it was resolved with"),
+            F("resolved_on", "DATE"),
+            F("deps", "RECORD", mode=rep, fields=[F("table", s), F("names", s, mode=rep),
+                                                  F("digest", s)],
+              description="Each table the query names, the columns of it the query "
+              "mentions, and their digest then"),
+            F("refs", "RECORD", mode=rep, fields=[
+                F("app", s), F("metric", s), F("role", s), F("hops", "INT64"), F("via", s),
+                F("transformed", "BOOL")]),
+            F("stars", s, mode=rep), F("note", s),
+        ]
+        write_table(self.name, list(rows.values()), schema,
+                    "Resolved queries the docker-etl metric-usage job keeps between runs, by "
+                    "query key; no query text. Prototype table, replaced on each run.",
+                    clustering=["key"])
 
 
 def snakecase(s):

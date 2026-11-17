@@ -47,9 +47,9 @@ import tomllib
 
 import jinja2
 
-from .common import (CACHE, DEST, LONGEST, PREFIX, WINDOWS, artifact_schema, client, log,
-                     query, ref_schema, union_views, window_end, window_start, write_atomic,
-                     write_table)
+from .common import (CACHE, DEST, DISK_CACHE, LONGEST, PREFIX, WINDOWS, artifact_schema, client,
+                     log, query, read_cache, ref_schema, union_views, window_end, window_start,
+                     write_cache, write_table)
 
 from . import redash as R
 
@@ -178,7 +178,7 @@ class Resolved:
 
     def __init__(self):
         self.path = CACHE / f"metric_hub_resolved_{hashlib.sha256(snapshot().encode()).hexdigest()[:16]}.json"
-        self.held = json.loads(self.path.read_text()) if self.path.exists() else {}
+        self.held = json.loads(read_cache(self.path) or b"{}")
         self.loaded = False
         self.new = 0
 
@@ -199,10 +199,11 @@ class Resolved:
 
     def save(self):
         if self.new:
-            for old in CACHE.glob("metric_hub_resolved_*.json"):
-                if old != self.path:
-                    old.unlink()
-            write_atomic(self.path, json.dumps(self.held).encode())
+            if DISK_CACHE:
+                for old in CACHE.glob("metric_hub_resolved_*.json"):
+                    if old != self.path:
+                        old.unlink()
+            write_cache(self.path, json.dumps(self.held).encode())
 
 
 def resolve_metric(hub, resolved, name, contexts, seen=()):

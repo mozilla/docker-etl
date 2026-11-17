@@ -82,13 +82,28 @@ Tables are written to `mozdata.analysis` with the prefix
 `benwu_metrics_usage_`. `METRIC_USAGE_PREFIX` gives a working copy its own
 set, and has to start with that prefix.
 
-Everything fetched is cached under `.cache`, so a rerun only asks for what
-changed. HTTP responses and query results are keyed on the URL or the SQL and
-kept until a step is run with `--force`; a query of the job's own tables is
-kept until one of them is rewritten. Looker's System Activity is kept for the
-day, its generated SQL until `--refresh-sql`, and each source's resolved
-results until lineage is rebuilt. A container that starts with an empty cache
-fetches and resolves everything again.
+The job runs with no disk that outlives it, so what is worth keeping between
+runs is kept in BigQuery. `adhoc.py` is the step that needs it, since a cold
+run resolves every distinct query in 180 days of job history and most of
+them are the same from one day to the next. It keeps them in
+`resolved_adhoc`: each entry there is a query's key, its refs, and for each
+table it names the columns of it the query mentions with their digest, and it
+is reused while those digests and the resolver's own hold. A metric added
+elsewhere in a table leaves it alone. An entry is also redone after 15 to 30
+days if its query still runs, in case a dependency was missed. No query text
+is kept, only keys and schema names. `inventory`, `lineage`, `metric_hub`,
+`redash` and `glam` take a few minutes each from nothing, so they keep
+nothing between runs.
+
+Locally, `.cache` keeps what each step fetched from run to run: HTTP
+responses and query results are keyed on the URL or the SQL and kept until a
+step is run with `--force`, and a query of the job's own tables is kept until
+one of them is rewritten. Looker's System Activity is kept for the day and its
+generated SQL until `--refresh-sql`. The image sets `METRIC_USAGE_CACHE=0`,
+which keeps the same cache in memory for each step instead, since a container
+that runs once would only fill its disk with it; a later step then fetches
+again what an earlier one did, which costs a few BigQuery reads. Either way
+`.cache` holds the generated-sql and metric-hub clones.
 
 ## Handling query text
 
@@ -97,8 +112,9 @@ are read in full to be parsed. None of it is written to BigQuery. Only
 metric ids from the inventory and artifact ids reach the tables, never column
 aliases or string literals from a query. Redash and ad hoc text stays in
 memory and is never cached; ad hoc text never passes through
-`common.query()`, which caches results. Looker's generated SQL is cached
-under `.cache`.
+`common.query()`, which caches results. `resolved_adhoc` holds each ad hoc
+query's key (a hash of its text) and the schema columns it mentions, never
+the text. Looker's generated SQL is cached under `.cache`.
 
 `adhoc.py` stores the email of each account whose own queries named a metric,
 since knowing who reads a metric is what lets someone ask before changing it.

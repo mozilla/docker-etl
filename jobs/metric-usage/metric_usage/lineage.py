@@ -63,6 +63,9 @@ Known limits, counted rather than hidden:
 
 import argparse
 import collections
+import hashlib
+import json
+import pathlib
 import re
 
 import yaml
@@ -105,8 +108,11 @@ JSON_EXTRACT_FUNCS = ("JSONExtract", "JSONExtractScalar", "JSONExtractArray",
 # seeded at events.category / events.name in every ping table and carried
 # through queries like a metric, so events_stream.event_category is known to
 # hold desktop's event categories. A comparison of such a column to a literal
-# adds ("lit", app, kind, literal, mode); resolve_events() turns those into
-# event metrics once a whole expression or query has been read.
+# adds ("lit", app, kind, literal, mode, branches); resolve_events() turns
+# those into event metrics once a whole expression or query has been read.
+# branches says which side of each OR, CASE branch, select item or set
+# operation above it the comparison is on (literal_branches()), so that
+# literals in different ones are not taken as picking out one event together.
 IDENTITY_METRIC = {"category": "(event category)", "name": "(event name)",
                    # legacy telemetry events are category, method and object
                    "method": "(event method)", "object": "(event object)"}
@@ -636,11 +642,12 @@ class Resolver:
         if not idents:
             return None
         out = Leaf(colshape)
+        branches = literal_branches(node)
         for app, kinds in idents.items():
             kind = "full" if len(kinds) >= 2 else next(iter(kinds))
             h, via, t, n = next(iter(kinds.values()))
             for lit in lits:
-                out[("lit", app, kind, lit.lower(), mode)] = (h, via, True, True)
+                out[("lit", app, kind, lit.lower(), mode, branches)] = (h, via, True, True)
         if isinstance(node, exp.Case):
             for i in node.args.get("ifs") or []:
                 merge_into(out, flatten(self.shape(i.args.get("true"), scope)))
@@ -1017,14 +1024,41 @@ def like_re(pattern):
     return re.compile("^" + re.escape(pattern).replace("%", ".*").replace("_", ".") + "$")
 
 
+def literal_branches(node):
+    """(id of a node, which branch) for each node above node whose branches
+    hold for different rows or columns: the two sides of an OR, the WHENs of a
+    CASE, the items of a select list and the two sides of a UNION, EXCEPT or
+    INTERSECT. A WHERE, JOIN or GROUP BY holds for every item of its select,
+    so it adds nothing for it."""
+    out = []
+    child, parent = node, node.parent
+    while parent is not None:
+        if isinstance(parent, (exp.Or, exp.SetOperation)):
+            out.append((id(parent), child is parent.this))
+        elif isinstance(parent, exp.Case) and child.arg_key == "ifs":
+            out.append((id(parent), child.index))
+        elif isinstance(parent, exp.Select) and child.arg_key == "expressions":
+            out.append((id(parent), child.index))
+        child, parent = parent, parent.parent
+    return frozenset(out)
+
+
+def apart(a, b):
+    """Whether two literals' branches put them on different sides of one node."""
+    sides = dict(a)
+    return any(k in sides and sides[k] != side for k, side in b)
+
+
 def resolve_events(leaf, events):
     """The Leaf with its ("lit", ...) keys turned into the event metrics they
     pick out, and the literal keys dropped. Identity keys are kept so the column
     still carries them downstream.
 
     A full name, or a category and a name that exist together, names the event.
-    A name alone names it when only one category has it. A category alone, or a
-    LIKE pattern, reaches every event it matches without naming any of them.
+    A category and a name pair up unless apart() puts them in different
+    branches, so a name or category nothing pairs with counts as alone. A name
+    alone names its event when only one category has it. A category alone, or
+    a LIKE pattern, reaches every event it matches without naming any of them.
     """
     if not any(isinstance(k, tuple) and k[0] == "lit" for k in leaf):
         return leaf
@@ -1032,8 +1066,8 @@ def resolve_events(leaf, events):
     by_app = collections.defaultdict(lambda: collections.defaultdict(list))
     for k, v in leaf.items():
         if isinstance(k, tuple) and k[0] == "lit":
-            _, app, kind, lit, mode = k
-            by_app[app][(kind, mode)].append((lit, v))
+            _, app, kind, lit, mode, branches = k
+            by_app[app][(kind, mode)].append((lit, v, branches))
     for app, groups in by_app.items():
         e = events.get(app)
         if not e:
@@ -1046,33 +1080,38 @@ def resolve_events(leaf, events):
                 found[mid] = (v[0], v[1], True, named)
 
         if e.get("legacy"):
-            resolve_legacy(e["legacy"], groups, hit)
+            resolve_legacy(e["legacy"], {g: [(lit, v) for lit, v, _ in items]
+                                         for g, items in groups.items()}, hit)
             merge_into(out, Leaf(found))
             continue
         cats = groups.get(("category", "eq"), [])
         names = groups.get(("name", "eq"), [])
-        for lit, v in groups.get(("full", "eq"), []):
+        for lit, v, _ in groups.get(("full", "eq"), []):
             if lit in e["full"]:
                 hit(e["full"][lit], v, True)
-        if cats and names:
-            for c, v in cats:
-                for n, _ in names:
-                    if f"{c}.{n}" in e["full"]:
-                        hit(e["full"][f"{c}.{n}"], v, True)
-        if names and not cats:
-            for n, v in names:
+        paired_cats, paired_names = set(), set()
+        for i, (c, v, cb) in enumerate(cats):
+            for j, (n, _, nb) in enumerate(names):
+                if apart(cb, nb):
+                    continue
+                paired_cats.add(i)
+                paired_names.add(j)
+                if f"{c}.{n}" in e["full"]:
+                    hit(e["full"][f"{c}.{n}"], v, True)
+        for j, (n, v, _) in enumerate(names):
+            if j not in paired_names:
                 mids = e["name"].get(n, [])
                 for mid in mids:
                     hit(mid, v, len(mids) == 1)
-        if cats and not names:
-            for c, v in cats:
+        for i, (c, v, _) in enumerate(cats):
+            if i not in paired_cats:
                 for mid in e["cat"].get(c, []):
                     hit(mid, v, False)
         for (kind, mode), items in groups.items():
             if mode != "like":
                 continue
             space = e["full"] if kind == "full" else e["cat"] if kind == "category" else e["name"]
-            for pat, v in items:
+            for pat, v, _ in items:
                 rx = like_re(pat)
                 for key, mids in space.items():
                     if rx.match(key):
@@ -1520,6 +1559,62 @@ def shapes_from_tables():
         insert(shapes.setdefault(r["table"], {}), r["path"].split("."),
                Leaf({m: (r["hops"], f"{r['table']}:{r['path']}", False, bool(r["named"]))}))
     return inventory, shapes
+
+
+def shape_digests(inventory, shapes):
+    """{table: {column name: digest}}, the column name being the last segment
+    of a path, with a digest of every leaf under that name in the table.
+
+    A named ref needs the query to name the column, so a query's result holds
+    while the digests of the names it mentions do (see redash.dependencies()),
+    and a metric added elsewhere in the table leaves it alone. A leaf is
+    written with app:metric rather than its id, since ids are inventory
+    positions and move as metrics are added, and a column carrying an app's
+    event identity takes in the app's events, which resolve_events() matches
+    literals against.
+    """
+    names = [f"{r['app']}:{r['metric']}" for r in inventory]
+    events = collections.defaultdict(list)
+    for r in inventory:
+        if r.get("event_category"):
+            events[r["app"]].append([r["event_category"], r.get("event_name"),
+                                     sorted(r.get("event_methods") or []),
+                                     sorted(r.get("event_objects") or [])])
+    event_digest = {app: hashlib.sha256(json.dumps(sorted(v)).encode()).hexdigest()
+                    for app, v in events.items()}
+
+    out = {}
+    for table, shape in shapes.items():
+        by_name = collections.defaultdict(list)
+        stack = [((), shape)]
+        while stack:
+            path, s = stack.pop()
+            if not isinstance(s, Leaf):
+                stack.extend((path + (k,), v) for k, v in s.items())
+                continue
+            items = []
+            for k, v in s.items():
+                if isinstance(k, tuple):
+                    items.append([":".join(map(str, k)), list(v), event_digest.get(k[1], "")])
+                else:
+                    items.append([names[k], list(v)])
+            by_name[path[-1] if path else ""].append([".".join(path), sorted(items)])
+        out[table] = {n: hashlib.sha256(json.dumps(sorted(v)).encode()).hexdigest()[:12]
+                      for n, v in by_name.items()}
+    return out
+
+
+def resolver_digest():
+    """What every resolved result depends on besides the tables it names: the
+    resolver's code, sqlglot, and bigquery-etl's persistent UDFs."""
+    h = hashlib.sha256(sqlglot.__version__.encode())
+    here = pathlib.Path(__file__).parent
+    for name in ("lineage.py", "redash.py"):
+        h.update((here / name).read_bytes())
+    for f in sorted(SQL_ROOT.glob("*/*/*/udf.sql")):
+        h.update(str(f.relative_to(SQL_ROOT)).encode())
+        h.update(f.read_bytes())
+    return h.hexdigest()[:16]
 
 
 def corpus():

@@ -1,7 +1,6 @@
 FROM python:3.11-slim-bookworm
 LABEL maintainer="bewu@mozilla.com"
 
-# https://github.com/mozilla-services/Dockerflow/blob/master/docs/building-container.md
 ARG USER_ID="10001"
 ARG GROUP_ID="app"
 ARG HOME="/app"
@@ -25,6 +24,8 @@ COPY . .
 
 # script/run_all.sh defaults to a local .venv
 ENV PY=python
+# A container runs once, so the cache stays in memory rather than on disk
+ENV METRIC_USAGE_CACHE=0
 
 # Drop root and change ownership of the application folder to the user
 RUN chown -R ${USER_ID}:${GROUP_ID} ${HOME}

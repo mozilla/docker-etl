@@ -97,3 +97,44 @@ def test_category_and_name_paired_across_scopes():
     assert r.uses["nav.click"].named
     assert r.uses["nav.open"].named
     assert "search.open" not in r.uses
+
+
+def test_or_keeps_each_pair_to_its_side():
+    r = run(f"SELECT COUNT(*) AS n {FROM} WHERE (e.category = 'nav' AND e.name = 'click') "
+            "OR (e.category = 'search' AND e.name = 'open')")
+    assert r.uses["nav.click"].named
+    assert r.uses["search.open"].named
+    assert "nav.open" not in r.uses
+
+
+def test_case_branches_pair_on_their_own():
+    r = run(f"SELECT CASE WHEN e.category = 'nav' AND e.name = 'click' THEN 1 "
+            f"WHEN e.category = 'search' AND e.name = 'open' THEN 2 END AS k {FROM}")
+    assert r.uses["nav.click"].named
+    assert r.uses["search.open"].named
+    assert "nav.open" not in r.uses
+
+
+def test_select_items_pair_on_their_own():
+    r = run(f"SELECT COUNTIF(e.category = 'nav' AND e.name = 'click') AS clicks, "
+            f"COUNTIF(e.category = 'search' AND e.name = 'open') AS opens {FROM}")
+    assert r.uses["nav.click"].named
+    assert r.uses["search.open"].named
+    assert "nav.open" not in r.uses
+
+
+def test_union_branches_pair_on_their_own():
+    r = run(f"SELECT 1 AS x {FROM} WHERE e.category = 'nav' AND e.name = 'click' "
+            f"UNION ALL SELECT 2 {FROM} WHERE e.category = 'search' AND e.name = 'open'")
+    assert r.uses["nav.click"].named
+    assert r.uses["search.open"].named
+    assert "nav.open" not in r.uses
+
+
+def test_name_nothing_pairs_with_is_alone():
+    # open is in two categories, so on its own it names neither
+    r = run(f"SELECT COUNT(*) AS n {FROM} WHERE (e.category = 'nav' AND e.name = 'click') "
+            "OR e.name = 'open'")
+    assert r.uses["nav.click"].named
+    assert r.reached["nav.open"] is False
+    assert r.reached["search.open"] is False

@@ -46,9 +46,11 @@ time range, while an event a panel filters on stays the same from run to run.
 Query text stays in memory. These are people's own queries, whose literals can
 hold client ids and emails, so unlike other sources' text it is not written to
 .cache either, and its rows never go through common.query(), which
-caches what it returns. What is cached is the job list, which has accounts and
-query keys but no text, and the resolved refs per fingerprint until lineage
-is rebuilt, so a rerun fetches text only for queries it has not resolved.
+caches what it returns. The job list, which has accounts and query keys but no
+text, is cached under .cache for the day. Each query's resolved refs are kept
+between runs in the resolved_adhoc table (common.ResolvedStore), by query key
+and with the digest of every table it names, so a run fetches and resolves
+only the queries that are new or whose tables changed.
 Only metric ids from the inventory reach the tables, never a literal, a column
 alias or a table name from the text.
 
@@ -61,17 +63,14 @@ changing it.
 import argparse
 import collections
 import datetime
-import hashlib
-import json
-import multiprocessing
 import re
-import signal
 import sys
 import time
 
-from .common import (CACHE, DEST, LONGEST, PREFIX, WINDOWS, artifact_schema, client,
-                     days_within, log, query, ref_schema, seen_within, union_views,
-                     window_end, window_start, write_table, write_atomic)
+from .common import (DEST, LONGEST, PREFIX, WINDOWS, ResolvedStore, ResolveTimeout,
+                     artifact_schema, client, days_within, log, pool_map, query, ref_schema,
+                     seen_within, time_limit, union_views, window_end, window_start,
+                     write_table)
 
 from . import metric_hub as MH
 from . import redash as R
@@ -105,8 +104,9 @@ BATCH_DAYS = 7
 # left unparsed rather than given a worker for a minute
 MAX_TEXT = 1_000_000
 
-# Bumped when what a cached result means changes
-RESOLVED_VERSION = 1
+# Bumped when what a kept result means changes outside the resolver, which
+# lineage.resolver_digest() covers
+RESOLVED_VERSION = 2
 
 # An account's ref takes the strongest role any of its queries gave it;
 # unknown is a query only read by name (regex)
@@ -222,106 +222,87 @@ fetch_texts.bytes = 0
 # ------------------------------------------------------------------ resolving
 
 
-class _Timeout(BaseException):
-    # not an Exception, so parse and resolve error handling cannot swallow it
-    pass
-
-
-def _alarm(signum, frame):
-    raise _Timeout()
-
-
 def _init():
     sys.setrecursionlimit(20000)
-    signal.signal(signal.SIGALRM, _alarm)
 
 
 def _work(item):
     key, project, text = item
+    deps = R.dependencies(text, project)
     if len(text) > MAX_TEXT:
-        return key, ({}, [], "too long")
-    signal.alarm(RESOLVE_TIMEOUT)
+        return key, ({}, [], "too long"), deps
     try:
-        named, stars, note = R.analyse(text, project)
-    except _Timeout:
+        with time_limit(RESOLVE_TIMEOUT):
+            named, stars, note = R.analyse(text, project)
+    except ResolveTimeout:
         named, stars, note = {}, [], "timeout"
     except RecursionError:
         named, stars, note = {}, [], "resolve failed: RecursionError"
-    finally:
-        signal.alarm(0)
-    return key, (named, stars, note)
+    return key, (named, stars, note), deps
 
 
-def snapshot():
-    """Resolved results hold while the metrics and carries tables are the ones
-    they were resolved against."""
-    return "|".join([str(RESOLVED_VERSION)]
-                    + [str(client().get_table(f"{DEST}.{PREFIX}{t}").modified)
-                       for t in ("metrics", "carries")])
-
-
-def resolve_all(rows, start, end):
+def resolve_all(rows, start, end, store):
     """{(project, key): (named, stars, note)} for every query in rows, reusing
-    what was resolved against the same lineage.
+    what store holds for it.
 
-    The rest are fetched and resolved a week at a time, each from the week it
-    first ran, so one week's text is in memory at once and the job history
-    is scanned once. What is resolved is saved after each week, so an
-    interrupted run picks up where it stopped.
+    The rest are fetched and resolved a week at a time (text_batches()), so
+    one week's text is in memory at once and the job history is scanned once.
+    Only a query that ran in the newest week is redone for its age, since its
+    text is read from that week anyway: one that stopped running keeps its
+    result until it leaves the window or a column it names changes, rather
+    than costing a scan of an older week.
     """
-    path = CACHE / f"adhoc_resolved_{hashlib.sha256(snapshot().encode()).hexdigest()[:16]}.json"
-    held = json.loads(path.read_text()) if path.exists() else {}
-    for old in CACHE.glob("adhoc_resolved_*.json"):
-        if old != path:
-            old.unlink()
     out, need = {}, {}
-    for k, day in first_days(rows).items():
-        h = held.get(f"{k[0]}:{k[1]}")
-        # a timeout says how fast the resolver was, not what the SQL reads, so
-        # it is tried again rather than reused
-        if h is None or h[2] == "timeout":
+    newest = week_of(end.isoformat(), start)
+    for k, day in last_days(rows).items():
+        got = store.get(f"{k[0]}:{k[1]}", may_expire=week_of(day, start) == newest)
+        if got is None:
             need[k] = day
         else:
-            out[k] = ({int(m): tuple(v) for m, v in h[0].items()}, h[1], h[2])
-    log(f"  resolving {len(need):,} queries ({len(out):,} reused from this lineage snapshot)")
+            out[k] = got
+    log(f"  resolving {len(need):,} queries ({len(out):,} reused)")
     if not need:
         return out
     R.L.persistent_udfs()  # parsed once here for the forked workers
-    ctx = multiprocessing.get_context("fork")
     started, done = time.monotonic(), 0
-    with ctx.Pool(initializer=_init) as pool:
-        for project, b_start, n, texts in text_batches(need, start, end):
-            items = [(f"{project}:{key}", project, t) for key, t in texts.items()]
-            del texts
-            for key, res in pool.imap_unordered(_work, items, chunksize=16):
-                out[tuple(key.split(":", 1))] = res
-                held[key] = [{str(m): list(v) for m, v in res[0].items()}, res[1], res[2]]
-            del items
-            write_atomic(path, json.dumps(held).encode())
-            done += n
-            log(f"    {project} from {b_start}: {n:,} queries; {done:,} of {len(need):,} "
-                f"after {(time.monotonic() - started) / 60:.1f} minutes")
+    for project, b_start, n, texts in text_batches(need, start, end):
+        items = [(f"{project}:{key}", project, t) for key, t in texts.items()]
+        del texts
+        for key, res, deps in pool_map(_work, items, chunksize=16, initializer=_init):
+            out[tuple(key.split(":", 1))] = res
+            # a timeout says how fast the resolver was, not what the SQL reads,
+            # so it is tried again next run rather than kept
+            if res[2] != "timeout":
+                store.put(key, res, deps)
+        del items
+        done += n
+        log(f"    {project} from {b_start}: {n:,} queries; {done:,} of {len(need):,} "
+            f"after {(time.monotonic() - started) / 60:.1f} minutes")
     return out
 
 
-def first_days(rows):
-    """{(project, key): the first day it ran} over the job list."""
-    first = {}
+def last_days(rows):
+    """{(project, key): the last day it ran} over the job list."""
+    last = {}
     for r in rows:
         k = (r["project"], r["key"])
-        if k not in first or r["day"] < first[k]:
-            first[k] = r["day"]
-    return first
+        if k not in last or r["day"] > last[k]:
+            last[k] = r["day"]
+    return last
 
 
-def text_batches(first, start, end):
+def week_of(day, start):
+    return (datetime.date.fromisoformat(day) - start).days // BATCH_DAYS
+
+
+def text_batches(last, start, end):
     """(project, week start, number of queries, {key: text}) a week at a time,
-    each query's text from the first week it ran. first is first_days(), or
-    the part of it to fetch."""
+    each query's text from the last week it ran, so that a query still running
+    is read from the newest week, which most of the queries a run needs share.
+    last is last_days(), or the part of it to fetch."""
     batches = collections.defaultdict(set)
-    for (project, key), day in first.items():
-        week = (datetime.date.fromisoformat(day) - start).days // BATCH_DAYS
-        batches[(project, week)].add(key)
+    for (project, key), day in last.items():
+        batches[(project, week_of(day, start))].add(key)
     for (project, week), keys in sorted(batches.items()):
         b_start = start + datetime.timedelta(days=week * BATCH_DAYS)
         b_end = min(end, b_start + datetime.timedelta(days=BATCH_DAYS - 1))
@@ -402,16 +383,26 @@ def job_rows(projects, start, end):
     return [r for r in rows if r["wrote"] not in bqetl]
 
 
-def run(projects, days):
+def run(projects, days, save):
+    """(refs, artifacts, store). save says whether the store may be written:
+    on a full run only, and here only if resolving stops early."""
     start, end = window(days)
     log(f"  jobs from {start} to {end}")
     inventory = R.load_shapes()
+    R.digests()  # computed once here for the forked workers
+    store = ResolvedStore("resolved_adhoc", f"{RESOLVED_VERSION}:{R.L.resolver_digest()}",
+                          R.dependency_digest, inventory)
     rows = job_rows(projects, start, end)
     log(f"  {sum(r['jobs'] for r in rows):,} jobs, "
         f"{len({(r['project'], r['key']) for r in rows}):,} distinct queries, "
         f"{len({r['account'] for r in rows}):,} accounts")
 
-    results = resolve_all(rows, start, end)
+    try:
+        results = resolve_all(rows, start, end, store)
+    except BaseException:
+        if save:
+            store.save(complete=False)
+        raise
     if fetch_texts.bytes:
         log(f"  query text read: {fetch_texts.bytes / 2**30:.1f} GiB processed")
 
@@ -441,7 +432,9 @@ def run(projects, days):
             if ROLE_RANK[role] > ROLE_RANK[held["role"]]:
                 held["role"] = role
                 held["evidence"] = "parsed"
-            if h < held["hops"]:
+            # ties on hops take the smallest via, so a run picks the same one
+            # whatever order BigQuery returns the job list in
+            if (h, via or "") < (held["hops"], held["via"] or ""):
                 held["hops"], held["via"] = h, via
             held["transformed"] = held["transformed"] or t
 
@@ -500,7 +493,7 @@ def run(projects, days):
         f"{by_kind['service_account']:,} service accounts and "
         f"{by_kind['jetstream_experiment']:,} Jetstream experiments "
         f"({unknown:,} not found in Experimenter)")
-    return ref_rows, art_rows
+    return ref_rows, art_rows, store
 
 
 def main():
@@ -512,12 +505,12 @@ def main():
     args = ap.parse_args()
     if args.days > 180:
         raise SystemExit("JOBS_BY_PROJECT keeps 180 days")
-    refs, arts = run(args.project or PROJECTS, args.days)
-    if args.dry_run:
-        return
-    if args.project or args.days != LONGEST:
+    if (args.project or args.days != LONGEST) and not args.dry_run:
         raise SystemExit("--project and --days are for --dry-run; the tables hold "
                          f"every project over {LONGEST} days")
+    refs, arts, store = run(args.project or PROJECTS, args.days, save=not args.dry_run)
+    if args.dry_run:
+        return
     suffix = ("Prototype table maintained by the docker-etl metric-usage job, metric_usage/adhoc.py; "
               "replaced on each run.")
     write_table("refs_adhoc", refs, ref_schema(),
@@ -529,6 +522,7 @@ def main():
                 "name a metric; views_<n>d is their jobs naming one. " + suffix,
                 clustering=["artifact_id"])
     union_views()
+    store.save()
 
 
 if __name__ == "__main__":
