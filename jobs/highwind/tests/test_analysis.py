@@ -407,6 +407,8 @@ def publish(storage, experiments, refused, results_by_slug, run_log):
         results_by_slug,
         {},
         {},
+        {},
+        {},
         run_log,
         outputs,
         2,
@@ -538,6 +540,280 @@ class UnitCountFailingClient:
         return table
 
 
+TEST_SEGMENT_SOURCES = {
+    "clients_last_seen": segments.SegmentSource(
+        name="clients_last_seen",
+        from_expression="mozdata.telemetry.clients_last_seen",
+        window_start=0,
+        window_end=0,
+        client_id_column="client_id",
+        group_id_column="profile_group_id",
+        submission_date_column="submission_date",
+    ),
+    "newtab": segments.SegmentSource(
+        name="newtab",
+        from_expression="mozdata.telemetry.newtab_clients_daily",
+        window_start=-7,
+        window_end=-1,
+        client_id_column="client_id",
+        group_id_column="profile_group_id",
+        submission_date_column="submission_date",
+    ),
+}
+TEST_RESOLVED_SEGMENTS = {
+    "regular_user": segments.Segment(
+        name="regular_user",
+        source="clients_last_seen",
+        select_expression="COALESCE(LOGICAL_OR(is_regular_user_v3), FALSE)",
+    ),
+    "suggest_user": segments.Segment(
+        name="suggest_user",
+        source="newtab",
+        select_expression="COALESCE(LOGICAL_OR(uses_suggest), FALSE)",
+    ),
+}
+
+
+class UnitSegmentsFailingClient:
+    """Stands in for a BigQuery client whose cohort and metric queries succeed and whose unit
+    segments materialization fails."""
+
+    ROW = UnitCountFailingClient.ROW
+
+    def __init__(self):
+        self.cohort_table = None
+
+    def query(self, sql, job_config=None):
+        if job_config is not None and job_config.destination is not None:
+            if "highwind_unit_segments" in str(job_config.destination):
+                raise RuntimeError("the unit segments write failed")
+            self.cohort_table = job_config.destination
+            return FakeQueryJob([])
+        if "MIN(enrollment_date)" in sql:
+            return FakeQueryJob([])
+        return FakeQueryJob([self.ROW])
+
+    def get_table(self, table):
+        return types.SimpleNamespace(expires=None)
+
+    def update_table(self, table, fields):
+        return table
+
+
+def test_a_failed_segment_source_marks_only_its_own_segments_cells_as_error(caplog):
+    caplog.set_level(logging.ERROR)
+    resolved_metrics = {"active_hours": TEST_METRICS[0]}
+    segment_names_by_slug = {"a-slug": ("regular_user",)}
+    run = sql_generation.Run(
+        [EXPERIMENT],
+        {"a-slug": analysis.run_windows(EXPERIMENT, AS_OF, TEST_METRICS)},
+        AS_OF,
+        analysis.COVARIATE_DAYS,
+        segments_by_slug=segment_names_by_slug,
+    )
+
+    (
+        cells_by_slug, units_by_slug, extra_segment_units_by_slug, returned_segment_names,
+        timings, failure, source_failures,
+    ) = analysis.gather_sufficient_statistics(
+        UnitSegmentsFailingClient(), run, resolved_metrics, TEST_SOURCES,
+        TEST_RESOLVED_SEGMENTS, TEST_SEGMENT_SOURCES, segment_names_by_slug, AS_OF, False,
+    )
+
+    assert failure is None
+    # The segment's name is kept, not dropped: its failure shows on its own cells instead.
+    assert returned_segment_names == segment_names_by_slug
+    assert extra_segment_units_by_slug == {}
+    assert list(cells_by_slug["a-slug"]) == [("a-metric", "week:1", "all_enrolled", "control")]
+    assert set(source_failures) == {("clients_last_seen", "client_id")}
+    clients_last_seen_error = source_failures[("clients_last_seen", "client_id")]
+    assert "the unit segments write failed" in str(clients_last_seen_error)
+    assert timings
+    assert "segment source 'clients_last_seen'" in caplog.text
+
+    segment_failures = analysis.segment_failures_for_experiment(
+        EXPERIMENT, returned_segment_names, TEST_RESOLVED_SEGMENTS, source_failures
+    )
+    windows = analysis.run_windows(EXPERIMENT, AS_OF, TEST_METRICS)
+    _, results = analysis.analyze_experiment(
+        EXPERIMENT, windows, TEST_METRICS, cells_by_slug["a-slug"], failure,
+        analysis.experiment_segment_names(EXPERIMENT, returned_segment_names),
+        segment_failures,
+    )
+
+    states_by_segment = {result["segment"]: result["state"] for result in results}
+    assert states_by_segment["regular_user"] == ERROR
+    assert states_by_segment["all_enrolled"] != ERROR
+
+
+class TwoSegmentSourcesOneFailingClient:
+    """Stands in for a BigQuery client with two segment sources, one of which fails; the cohort
+    and metric queries succeed."""
+
+    ALL_ENROLLED_ROW = UnitCountFailingClient.ROW
+    REGULAR_USER_ROW = dict(UnitCountFailingClient.ROW, segment="regular_user")
+
+    def __init__(self):
+        self.cohort_table = None
+        self.unit_segment_queries = []
+
+    def query(self, sql, job_config=None):
+        if job_config is not None and job_config.destination is not None:
+            destination = str(job_config.destination)
+            if "highwind_unit_segments" in destination:
+                self.unit_segment_queries.append(sql)
+                if "newtab" in sql:
+                    raise RuntimeError("the newtab segment source failed")
+                return FakeQueryJob([])
+            self.cohort_table = job_config.destination
+            return FakeQueryJob([])
+        if "MIN(enrollment_date)" in sql or "COUNT(*) AS units" in sql:
+            return FakeQueryJob([])
+        return FakeQueryJob([self.ALL_ENROLLED_ROW, self.REGULAR_USER_ROW])
+
+    def get_table(self, table):
+        return types.SimpleNamespace(expires=None)
+
+    def update_table(self, table, fields):
+        return table
+
+
+def test_one_failing_segment_source_leaves_the_runs_other_segment_intact(caplog):
+    caplog.set_level(logging.ERROR)
+    resolved_metrics = {"active_hours": TEST_METRICS[0]}
+    segment_names_by_slug = {"a-slug": ("regular_user", "suggest_user")}
+    run = sql_generation.Run(
+        [EXPERIMENT],
+        {"a-slug": analysis.run_windows(EXPERIMENT, AS_OF, TEST_METRICS)},
+        AS_OF,
+        analysis.COVARIATE_DAYS,
+        segments_by_slug=segment_names_by_slug,
+    )
+
+    (
+        cells_by_slug, units_by_slug, extra_segment_units_by_slug, returned_segment_names,
+        timings, failure, source_failures,
+    ) = analysis.gather_sufficient_statistics(
+        TwoSegmentSourcesOneFailingClient(), run, resolved_metrics, TEST_SOURCES,
+        TEST_RESOLVED_SEGMENTS, TEST_SEGMENT_SOURCES, segment_names_by_slug, AS_OF, False,
+    )
+
+    assert failure is None
+    assert set(source_failures) == {("newtab", "client_id")}
+    assert set(cells_by_slug["a-slug"]) == {
+        ("a-metric", "week:1", "all_enrolled", "control"),
+        ("a-metric", "week:1", "regular_user", "control"),
+    }
+    assert "segment source 'newtab'" in caplog.text
+
+    segment_failures = analysis.segment_failures_for_experiment(
+        EXPERIMENT, returned_segment_names, TEST_RESOLVED_SEGMENTS, source_failures
+    )
+    windows = analysis.run_windows(EXPERIMENT, AS_OF, TEST_METRICS)
+    _, results = analysis.analyze_experiment(
+        EXPERIMENT, windows, TEST_METRICS, cells_by_slug["a-slug"], failure,
+        analysis.experiment_segment_names(EXPERIMENT, returned_segment_names),
+        segment_failures,
+    )
+
+    states_by_segment = {result["segment"]: result["state"] for result in results}
+    assert states_by_segment["suggest_user"] == ERROR
+    assert states_by_segment["regular_user"] != ERROR
+    assert states_by_segment["all_enrolled"] != ERROR
+
+
+def test_segment_failures_for_experiment_scopes_by_source_and_analysis_unit():
+    error = RuntimeError("boom")
+    source_failures = {("clients_last_seen", "client_id"): error}
+
+    failures = analysis.segment_failures_for_experiment(
+        EXPERIMENT,
+        {"a-slug": ("regular_user", "suggest_user")},
+        TEST_RESOLVED_SEGMENTS,
+        source_failures,
+    )
+
+    assert failures == {"regular_user": error}
+
+
+def test_cohort_enrollment_bounds_by_slug_is_none_without_a_materialized_cohort():
+    run = sql_generation.Run(
+        [EXPERIMENT],
+        {"a-slug": analysis.run_windows(EXPERIMENT, AS_OF, TEST_METRICS)},
+        AS_OF,
+        analysis.COVARIATE_DAYS,
+        segments_by_slug={"a-slug": ("regular_user",)},
+    )
+
+    assert analysis.cohort_enrollment_bounds_by_slug(object(), run, None) is None
+
+
+def test_cohort_enrollment_bounds_by_slug_is_none_when_nothing_selects_a_segment():
+    run = sql_generation.Run(
+        [EXPERIMENT],
+        {"a-slug": analysis.run_windows(EXPERIMENT, AS_OF, TEST_METRICS)},
+        AS_OF,
+        analysis.COVARIATE_DAYS,
+    )
+
+    assert analysis.cohort_enrollment_bounds_by_slug(object(), run, "a.cohort_table") is None
+
+
+class CohortEnrollmentBoundsClient:
+    def __init__(self, rows):
+        self.rows = rows
+        self.queries = []
+
+    def query(self, sql, job_config=None):
+        self.queries.append(sql)
+        return FakeQueryJob(self.rows)
+
+
+def test_cohort_enrollment_bounds_by_slug_reads_the_materialized_cohort():
+    run = sql_generation.Run(
+        [EXPERIMENT],
+        {"a-slug": analysis.run_windows(EXPERIMENT, AS_OF, TEST_METRICS)},
+        AS_OF,
+        analysis.COVARIATE_DAYS,
+        segments_by_slug={"a-slug": ("regular_user",)},
+    )
+    client = CohortEnrollmentBoundsClient(
+        [
+            {
+                "slug": "a-slug",
+                "earliest": datetime.date(2026, 7, 5),
+                "latest": datetime.date(2026, 7, 9),
+            }
+        ]
+    )
+
+    bounds = analysis.cohort_enrollment_bounds_by_slug(client, run, "a.cohort_table")
+
+    assert bounds == {"a-slug": (datetime.date(2026, 7, 5), datetime.date(2026, 7, 9))}
+    [sql] = client.queries
+    assert "'a-slug'" in sql
+
+
+def test_cohort_enrollment_bounds_by_slug_falls_back_to_none_when_the_query_fails(caplog):
+    caplog.set_level(logging.ERROR)
+    run = sql_generation.Run(
+        [EXPERIMENT],
+        {"a-slug": analysis.run_windows(EXPERIMENT, AS_OF, TEST_METRICS)},
+        AS_OF,
+        analysis.COVARIATE_DAYS,
+        segments_by_slug={"a-slug": ("regular_user",)},
+    )
+
+    class FailingClient:
+        def query(self, sql, job_config=None):
+            raise RuntimeError("the bounds query failed")
+
+    bounds = analysis.cohort_enrollment_bounds_by_slug(FailingClient(), run, "a.cohort_table")
+
+    assert bounds is None
+    assert "the cohort enrollment bounds query failed" in caplog.text
+
+
 def test_a_failed_unit_count_keeps_the_cells_the_shared_scan_computed(caplog):
     # The unit counts are display-only, so losing them must not turn every experiment's computed
     # statistics into an error grid.
@@ -549,16 +825,19 @@ def test_a_failed_unit_count_keeps_the_cells_the_shared_scan_computed(caplog):
         analysis.COVARIATE_DAYS,
     )
 
-    cells_by_slug, units_by_slug, timings, failure = (
-        analysis.gather_sufficient_statistics(
-            UnitCountFailingClient(), run, resolved_metrics, TEST_SOURCES, AS_OF, False
-        )
+    (
+        cells_by_slug, units_by_slug, extra_segment_units_by_slug, segment_names_by_slug,
+        timings, failure, source_failures,
+    ) = analysis.gather_sufficient_statistics(
+        UnitCountFailingClient(), run, resolved_metrics, TEST_SOURCES, {}, {}, {}, AS_OF, False
     )
 
     assert failure is None
     assert units_by_slug == {}
     assert list(cells_by_slug) == ["a-slug"]
     assert cells_by_slug["a-slug"][("a-metric", "week:1", "all_enrolled", "control")]["n"] == 10
+    assert segment_names_by_slug == {}
+    assert source_failures == {}
     assert timings
     assert "the branch unit count failed" in caplog.text
 
@@ -647,3 +926,19 @@ def test_a_resolving_parser_fills_segment_names_and_warns_only_about_what_did_no
         f"{segments.NOT_RESOLVED_REASON}" in caplog.text
     )
     assert "regular_user' not computed" not in caplog.text
+
+
+def test_experiment_segment_names_puts_all_enrolled_first():
+    experiment = experiment_selecting(["regular_user"])
+
+    names = analysis.experiment_segment_names(
+        experiment, {"a-slug": ("regular_user", "new_profile")}
+    )
+
+    assert names == ("all_enrolled", "regular_user", "new_profile")
+
+
+def test_experiment_segment_names_is_just_all_enrolled_for_an_unlisted_slug():
+    experiment = experiment_selecting(["regular_user"])
+
+    assert analysis.experiment_segment_names(experiment, {}) == ("all_enrolled",)

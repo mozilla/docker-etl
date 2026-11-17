@@ -540,6 +540,7 @@ def build(
     results=(),
     cells=None,
     units=None,
+    extra_segment_units=None,
     segment_names=(discovery.ALL_ENROLLED,),
     problems=(),
 ):
@@ -550,6 +551,7 @@ def build(
         list(results),
         cells or {},
         units or {},
+        extra_segment_units or {},
         segment_names,
         list(problems),
     )
@@ -719,6 +721,109 @@ def test_a_full_blob_with_winsorize_fields_validates_against_the_published_schem
     )
 
     assert HighwindAnalysis.model_validate_json(analysis.model_dump_json()) == analysis
+
+
+def test_a_blob_with_a_resolved_segment_round_trips_and_carries_both(caplog):
+    segmented = Experiment(
+        slug="an-experiment",
+        start_date=datetime.date(2026, 7, 1),
+        end_date=None,
+        reference_branch="control",
+        treatment_branches=("treatment",),
+        unit=units.resolve("firefox_desktop", "normandy_id"),
+        segments={
+            "regular_user": discovery.SegmentDisplay(
+                friendly_name="Regular user", description="Active on 14+ of 28 days."
+            )
+        },
+    )
+    analysis = build(
+        experiment=segmented,
+        metrics=[CUMULATIVE_METRIC],
+        segment_names=("all_enrolled", "regular_user"),
+        extra_segment_units={"regular_user": {"control": 30, "treatment": 28}},
+        results=[
+            result(
+                "active_hours", 1, "cumulative", "confident", segment="all_enrolled", point=5.0,
+                lower=1.0, upper=9.0, n_reference=40, n_treatment=41, theta=0.1,
+            ),
+            result(
+                "active_hours", 1, "cumulative", "forming", segment="regular_user", point=2.0,
+                lower=-1.0, upper=5.0, n_reference=30, n_treatment=28, theta=0.1,
+            ),
+        ],
+        cells={
+            ("active_hours", "cumu:1", "all_enrolled", "control"): aggregates(40),
+            ("active_hours", "cumu:1", "regular_user", "control"): aggregates(30),
+        },
+    )
+
+    assert HighwindAnalysis.model_validate_json(analysis.model_dump_json()) == analysis
+    assert [segment.slug for segment in analysis.segments] == ["all_enrolled", "regular_user"]
+    regular_user_segment = analysis.segments[1]
+    assert regular_user_segment.friendly_name == "Regular user"
+    assert regular_user_segment.description == "Active on 14+ of 28 days."
+    assert [(branch.branch, branch.units) for branch in regular_user_segment.branches] == [
+        ("control", 30),
+        ("treatment", 28),
+    ]
+    [metric] = analysis.metrics
+    assert [segment.segment for segment in metric.segments] == ["all_enrolled", "regular_user"]
+    all_enrolled_point = metric.segments[0].windows[0].comparisons[0].relative.point
+    regular_user_point = metric.segments[1].windows[0].comparisons[0].relative.point
+    assert all_enrolled_point == pytest.approx(5.0)
+    assert regular_user_point == pytest.approx(2.0)
+
+
+def test_each_segments_window_reads_its_own_winsorize_cell():
+    segmented = Experiment(
+        slug="an-experiment",
+        start_date=datetime.date(2026, 7, 1),
+        end_date=None,
+        reference_branch="control",
+        treatment_branches=("treatment",),
+        unit=units.resolve("firefox_desktop", "normandy_id"),
+        segments={
+            "regular_user": discovery.SegmentDisplay(
+                friendly_name="Regular user", description="Active on 14+ of 28 days."
+            )
+        },
+    )
+    analysis = build(
+        experiment=segmented,
+        metrics=[CUMULATIVE_METRIC],
+        segment_names=("all_enrolled", "regular_user"),
+        extra_segment_units={"regular_user": {"control": 30, "treatment": 28}},
+        results=[
+            result(
+                "active_hours", 1, "cumulative", "confident", segment="all_enrolled", point=5.0,
+                lower=1.0, upper=9.0, n_reference=40, n_treatment=41, theta=0.1,
+            ),
+            result(
+                "active_hours", 1, "cumulative", "forming", segment="regular_user", point=2.0,
+                lower=-1.0, upper=5.0, n_reference=30, n_treatment=28, theta=0.1,
+            ),
+        ],
+        cells={
+            ("active_hours", "cumu:1", "all_enrolled", "control"): winsorized_cell(
+                40, "quantile", post_winsorize_threshold=500.0, pre_winsorize_threshold=2000.0,
+                clipped_share=0.01,
+            ),
+            ("active_hours", "cumu:1", "regular_user", "control"): winsorized_cell(
+                30, "off", clipped_share=0.0
+            ),
+        },
+    )
+    [metric] = analysis.metrics
+    all_enrolled_window = metric.segments[0].windows[0]
+    regular_user_window = metric.segments[1].windows[0]
+
+    assert all_enrolled_window.winsorize_mode == HighwindWinsorizeMode.FRACTION
+    assert all_enrolled_window.post_winsorize_threshold == 500.0
+    assert all_enrolled_window.pre_winsorize_threshold == 2000.0
+    assert regular_user_window.winsorize_mode == HighwindWinsorizeMode.OFF
+    assert regular_user_window.post_winsorize_threshold is None
+    assert regular_user_window.pre_winsorize_threshold is None
 
 
 def test_the_metadata_describes_the_experiment_reference_branch_first():

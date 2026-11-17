@@ -7,7 +7,7 @@ import pytest
 from metric_config_parser.aggregation import BucketedAggregation, Combine
 from metric_config_parser.aggregation_plan import AggregationSource
 
-from highwind import discovery, metrics, sql_generation, units
+from highwind import discovery, metrics, segments, sql_generation, units
 from highwind.discovery import Experiment, Window
 
 AS_OF = datetime.date(2026, 8, 1)
@@ -121,7 +121,13 @@ def disjoint_windows(count):
     ]
 
 
-def run_of(windows_by_slug, sample_percent=None, units_by_slug=None, metric_names_by_slug=None):
+def run_of(
+    windows_by_slug,
+    sample_percent=None,
+    units_by_slug=None,
+    metric_names_by_slug=None,
+    segments_by_slug=None,
+):
     units_by_slug = units_by_slug or {}
     metric_names_by_slug = metric_names_by_slug or {}
     experiments = [
@@ -134,7 +140,12 @@ def run_of(windows_by_slug, sample_percent=None, units_by_slug=None, metric_name
         for slug in windows_by_slug
     ]
     return sql_generation.Run(
-        experiments, windows_by_slug, AS_OF, COVARIATE_DAYS, sample_percent
+        experiments,
+        windows_by_slug,
+        AS_OF,
+        COVARIATE_DAYS,
+        sample_percent,
+        segments_by_slug=segments_by_slug,
     )
 
 
@@ -879,10 +890,67 @@ def test_a_source_with_mixed_winsorize_settings_clips_each_metric_on_its_own_ter
     assert "metric_off" not in quantiles
 
 
-def test_unit_windows_cte_tags_every_unit_all_enrolled():
-    sql = sql_generation.unit_windows_cte([named("active_hours")])
+CLIENTS_LAST_SEEN_SOURCE = segments.SegmentSource(
+    name="clients_last_seen",
+    from_expression="mozdata.telemetry.clients_last_seen",
+    window_start=0,
+    window_end=0,
+    client_id_column="client_id",
+    group_id_column="profile_group_id",
+    submission_date_column="submission_date",
+)
+NEWTAB_SOURCE = segments.SegmentSource(
+    name="newtab",
+    from_expression="mozdata.telemetry.newtab_clients_daily",
+    window_start=-7,
+    window_end=-1,
+    client_id_column="client_id",
+    group_id_column="profile_group_id",
+    submission_date_column="submission_date",
+)
+
+REGULAR_USER = segments.Segment(
+    name="regular_user",
+    source="clients_last_seen",
+    select_expression="COALESCE(LOGICAL_OR(is_regular_user_v3), FALSE)",
+)
+NEW_PROFILE = segments.Segment(
+    name="new_profile",
+    source="clients_last_seen",
+    select_expression="COALESCE(LOGICAL_OR(is_new_profile), FALSE)",
+)
+SUGGEST_USER = segments.Segment(
+    name="suggest_user",
+    source="newtab",
+    select_expression="COALESCE(LOGICAL_OR(uses_suggest), FALSE)",
+)
+
+
+def test_unit_windows_cte_defaults_every_unit_to_just_all_enrolled_when_dark():
+    sql = sql_generation.unit_windows_cte([named("active_hours")], needs_segments=False)
 
     assert "['all_enrolled'] AS segments" in sql
+    assert "unit_segments" not in sql
+    assert "grid.unit_id" in sql
+
+
+def test_unit_windows_cte_joins_unit_segments_when_a_run_resolved_one():
+    sql = sql_generation.unit_windows_cte([named("active_hours")], needs_segments=True)
+
+    assert "ARRAY_CONCAT(['all_enrolled'], COALESCE(unit_segments.extra_segments, []))" in sql
+    assert "LEFT JOIN unit_segments" in sql
+    assert "ON unit_segments.slug = grid.slug AND unit_segments.unit_id = grid.unit_id" in sql
+
+
+def test_a_unit_matching_no_resolved_segment_still_carries_all_enrolled():
+    # The LEFT JOIN leaves `unit_segments.extra_segments` NULL for a unit that matched none of the
+    # run's resolved segments; COALESCE to an empty array before the CONCAT is what keeps
+    # `all_enrolled` in its `segments` array regardless, rather than that unit vanishing from the
+    # breakdown it would get if the array were NULL and UNNEST dropped the row.
+    sql = sql_generation.unit_windows_cte([named("active_hours")], needs_segments=True)
+
+    assert "COALESCE(unit_segments.extra_segments, [])" in sql
+    assert sql.index("['all_enrolled']") < sql.index("COALESCE(unit_segments.extra_segments")
 
 
 def test_rollup_select_always_unnests_a_segment_and_groups_by_it():
@@ -893,3 +961,284 @@ def test_rollup_select_always_unnests_a_segment_and_groups_by_it():
     assert "UNNEST(unit_windows.segments) AS segment" in sql
     assert "GROUP BY slug, branch, segment, metric_row.window_label, metric_row.metric" in sql
     assert "  segment,\n" in sql
+
+
+def test_unit_segments_source_is_an_empty_literal_without_a_table():
+    sql = sql_generation.unit_segments_source(None)
+
+    assert "UNNEST(ARRAY<STRUCT<slug STRING, unit_id STRING, segment STRING>>[])" in sql
+
+
+def test_unit_segments_source_reads_the_materialized_table():
+    sql = sql_generation.unit_segments_source("a.dataset.a_unit_segments_table")
+
+    assert "FROM `a.dataset.a_unit_segments_table`" in sql
+
+
+def test_segment_source_query_guards_membership_by_the_selecting_experiments():
+    # Two experiments share the clients_last_seen source; only one selected regular_user, so the
+    # other's units must never report membership in it even though the join covers both.
+    run = run_of(
+        {"selects-it": cumulative_windows(1), "does-not": cumulative_windows(1)},
+        segments_by_slug={"selects-it": ("regular_user",)},
+    )
+
+    sql = sql_generation.segment_source_query(
+        run, [REGULAR_USER], CLIENTS_LAST_SEEN_SOURCE, "a.cohort_table", CLIENT_UNIT
+    )
+
+    assert "IF(e.slug IN ('selects-it'), " in sql
+    assert "'does-not'" not in sql
+    assert "STRUCT('regular_user' AS name" in sql
+    assert "GROUP BY e.slug, e.unit_id" in sql
+    assert "WHERE matched.member" in sql
+
+
+def test_segment_source_query_follows_mozanalysiss_window_join_shape():
+    # A resolved segment's select_expression can reference mozanalysis's `e`/`ds` aliases directly.
+    run = run_of({"a-slug": cumulative_windows(1)}, segments_by_slug={"a-slug": ("suggest_user",)})
+
+    sql = sql_generation.segment_source_query(
+        run, [SUGGEST_USER], NEWTAB_SOURCE, "a.cohort_table", CLIENT_UNIT
+    )
+
+    assert "LEFT JOIN mozdata.telemetry.newtab_clients_daily AS ds" in sql
+    assert "ON ds.client_id = e.unit_id" in sql
+    assert "DATE_ADD(e.enrollment_date, INTERVAL -7 DAY)" in sql
+    assert "DATE_ADD(e.enrollment_date, INTERVAL -1 DAY)" in sql
+
+
+def test_segment_source_query_also_bounds_the_join_by_a_static_date_range():
+    # A source like clients_last_seen requires a partition filter on submission_date, and a
+    # condition that only ever references the other side of the join (e.enrollment_date) does not
+    # qualify as one. The static bound, keyed off the run's own extent rather than a per-row value,
+    # is what lets BigQuery eliminate partitions; mozanalysis's own query carries both.
+    run = run_of({"a-slug": cumulative_windows(1)}, segments_by_slug={"a-slug": ("suggest_user",)})
+
+    sql = sql_generation.segment_source_query(
+        run, [SUGGEST_USER], NEWTAB_SOURCE, "a.cohort_table", CLIENT_UNIT
+    )
+
+    assert f"DATE_ADD(DATE '{run.earliest_start()}'," in sql
+    assert f"DATE_ADD(DATE '{run.as_of}'," in sql
+    assert sql.count("BETWEEN") == 2
+
+
+def test_segment_source_query_bounds_only_by_the_selecting_experiments_enrollment_dates():
+    # Without the cohort's own enrollment dates (the fallback path, as under --validate-sql), an
+    # experiment that never selects a segment from this source must still not widen the scan to
+    # its own (possibly much older) start date.
+    old_experiment = experiment("old-and-not-selecting", AS_OF - datetime.timedelta(days=200))
+    new_experiment = experiment("new-and-selecting", AS_OF - datetime.timedelta(days=10))
+    run = sql_generation.Run(
+        [old_experiment, new_experiment],
+        {
+            "old-and-not-selecting": cumulative_windows(1),
+            "new-and-selecting": cumulative_windows(1),
+        },
+        AS_OF,
+        COVARIATE_DAYS,
+        segments_by_slug={"new-and-selecting": ("suggest_user",)},
+    )
+
+    sql = sql_generation.segment_source_query(
+        run, [SUGGEST_USER], NEWTAB_SOURCE, "a.cohort_table", CLIENT_UNIT
+    )
+
+    assert f"DATE_ADD(DATE '{new_experiment.start_date}'," in sql
+    assert f"DATE_ADD(DATE '{old_experiment.start_date}'," not in sql
+
+
+def test_segment_source_query_caps_the_latest_bound_at_a_selecting_experiments_end_date():
+    # Still the fallback path (no enrollment_bounds_by_slug): a still-live experiment reads
+    # through as_of, and an ended one is capped at its own declared end date.
+    ended = dataclasses.replace(
+        experiment("ended", AS_OF - datetime.timedelta(days=100)),
+        end_date=AS_OF - datetime.timedelta(days=30),
+    )
+    run = sql_generation.Run(
+        [ended],
+        {"ended": cumulative_windows(1)},
+        AS_OF,
+        COVARIATE_DAYS,
+        segments_by_slug={"ended": ("suggest_user",)},
+    )
+
+    sql = sql_generation.segment_source_query(
+        run, [SUGGEST_USER], NEWTAB_SOURCE, "a.cohort_table", CLIENT_UNIT
+    )
+
+    assert f"DATE_ADD(DATE '{ended.end_date}'," in sql
+    assert f"DATE_ADD(DATE '{AS_OF}'," not in sql
+
+
+def test_segment_source_query_bounds_by_the_cohorts_own_enrollment_dates_when_known():
+    # The cohort's actual MIN/MAX(enrollment_date) is the real population a segment source's
+    # window should cover; a still-live experiment's declared end date reaches well past its last
+    # real enrollment, so the cohort's own dates win over the fallback whenever they are known.
+    run = run_of({"a-slug": cumulative_windows(1)}, segments_by_slug={"a-slug": ("suggest_user",)})
+    enrollment_bounds_by_slug = {"a-slug": (datetime.date(2026, 5, 1), datetime.date(2026, 5, 20))}
+
+    sql = sql_generation.segment_source_query(
+        run, [SUGGEST_USER], NEWTAB_SOURCE, "a.cohort_table", CLIENT_UNIT,
+        enrollment_bounds_by_slug,
+    )
+
+    assert "DATE_ADD(DATE '2026-05-01'," in sql
+    assert "DATE_ADD(DATE '2026-05-20'," in sql
+    assert f"DATE_ADD(DATE '{run.earliest_start()}'," not in sql
+
+
+def test_segment_source_query_caps_the_cohorts_own_latest_date_at_as_of():
+    run = run_of({"a-slug": cumulative_windows(1)}, segments_by_slug={"a-slug": ("suggest_user",)})
+    past_as_of = AS_OF + datetime.timedelta(days=5)
+    enrollment_bounds_by_slug = {"a-slug": (datetime.date(2026, 5, 1), past_as_of)}
+
+    sql = sql_generation.segment_source_query(
+        run, [SUGGEST_USER], NEWTAB_SOURCE, "a.cohort_table", CLIENT_UNIT,
+        enrollment_bounds_by_slug,
+    )
+
+    assert f"DATE_ADD(DATE '{AS_OF}'," in sql
+    assert f"DATE_ADD(DATE '{past_as_of}'," not in sql
+
+
+def test_segment_source_query_ignores_a_selecting_slug_missing_from_the_known_bounds():
+    # A slug the cohort query did not cover (nothing enrolled) falls back to its own declared
+    # dates rather than crashing on a missing key.
+    run = run_of({"a-slug": cumulative_windows(1)}, segments_by_slug={"a-slug": ("suggest_user",)})
+
+    sql = sql_generation.segment_source_query(
+        run, [SUGGEST_USER], NEWTAB_SOURCE, "a.cohort_table", CLIENT_UNIT,
+        {"some-other-slug": (datetime.date(2026, 5, 1), datetime.date(2026, 5, 20))},
+    )
+
+    assert f"DATE_ADD(DATE '{run.earliest_start()}'," in sql
+
+
+def test_cohort_enrollment_bounds_query_filters_to_the_given_slugs_and_groups_by_slug():
+    sql = sql_generation.cohort_enrollment_bounds_query("a.cohort_table", {"a-slug", "b-slug"})
+
+    assert "FROM `a.cohort_table`" in sql
+    assert "MIN(enrollment_date) AS earliest" in sql
+    assert "MAX(enrollment_date) AS latest" in sql
+    assert "'a-slug'" in sql
+    assert "'b-slug'" in sql
+    assert "GROUP BY slug" in sql
+
+
+def test_segment_source_query_applies_the_runs_sample_to_the_source_side():
+    run = run_of(
+        {"a-slug": cumulative_windows(1)},
+        segments_by_slug={"a-slug": ("suggest_user",)},
+        sample_percent=10,
+    )
+
+    sql = sql_generation.segment_source_query(
+        run, [SUGGEST_USER], NEWTAB_SOURCE, "a.cohort_table", CLIENT_UNIT
+    )
+
+    assert "AND sample_id < 10" in sql
+
+
+def test_segment_source_query_is_unsampled_without_a_run_sample():
+    run = run_of({"a-slug": cumulative_windows(1)}, segments_by_slug={"a-slug": ("suggest_user",)})
+
+    sql = sql_generation.segment_source_query(
+        run, [SUGGEST_USER], NEWTAB_SOURCE, "a.cohort_table", CLIENT_UNIT
+    )
+
+    assert "sample_id <" not in sql
+    assert "safe_sample_id" not in sql
+
+
+def test_segment_source_queries_is_empty_when_no_experiment_resolved_a_segment():
+    run = run_of({"a-slug": cumulative_windows(1)})
+
+    assert sql_generation.segment_source_queries(run, {}, {}, "a.cohort_table") == {}
+
+
+def test_segment_source_queries_has_one_query_per_source_and_unit():
+    run = run_of(
+        {"grouped": cumulative_windows(1), "by-client": cumulative_windows(1)},
+        units_by_slug={"grouped": GROUP_UNIT},
+        segments_by_slug={
+            "grouped": ("regular_user",),
+            "by-client": ("regular_user", "suggest_user"),
+        },
+    )
+    resolved_segments = {
+        "regular_user": REGULAR_USER,
+        "suggest_user": SUGGEST_USER,
+    }
+    segment_sources = {"clients_last_seen": CLIENTS_LAST_SEEN_SOURCE, "newtab": NEWTAB_SOURCE}
+
+    queries = sql_generation.segment_source_queries(
+        run, resolved_segments, segment_sources, "a.cohort"
+    )
+
+    assert set(queries) == {
+        ("clients_last_seen", GROUP_UNIT.kind),
+        ("clients_last_seen", CLIENT_UNIT.kind),
+        ("newtab", CLIENT_UNIT.kind),
+    }
+    assert "'grouped'" in queries[("clients_last_seen", GROUP_UNIT.kind)]
+    assert "'by-client'" in queries[("clients_last_seen", CLIENT_UNIT.kind)]
+    assert "'by-client'" in queries[("newtab", CLIENT_UNIT.kind)]
+
+
+def test_segment_source_queries_skips_a_source_no_selected_segment_needs():
+    run = run_of(
+        {"a-slug": cumulative_windows(1)}, segments_by_slug={"a-slug": ("regular_user",)}
+    )
+    resolved_segments = {"regular_user": REGULAR_USER, "suggest_user": SUGGEST_USER}
+    segment_sources = {"clients_last_seen": CLIENTS_LAST_SEEN_SOURCE, "newtab": NEWTAB_SOURCE}
+
+    queries = sql_generation.segment_source_queries(
+        run, resolved_segments, segment_sources, "a.cohort"
+    )
+
+    assert set(queries) == {("clients_last_seen", CLIENT_UNIT.kind)}
+
+
+def test_build_source_query_adds_no_unit_segments_cte_when_the_run_is_dark():
+    run = run_of({"a-slug": cumulative_windows(2)})
+
+    sql = sql_generation.build_source_query(
+        run, "clients_daily", [named("active_hours")], CLIENTS_DAILY_SOURCE, "a.cohort_table",
+        CLIENT_UNIT,
+    )
+
+    assert "unit_segments AS (" not in sql
+
+
+def test_build_source_query_adds_the_unit_segments_cte_when_the_run_resolved_one():
+    run = run_of(
+        {"a-slug": cumulative_windows(2)}, segments_by_slug={"a-slug": ("regular_user",)}
+    )
+
+    sql = sql_generation.build_source_query(
+        run, "clients_daily", [named("active_hours")], CLIENTS_DAILY_SOURCE, "a.cohort_table",
+        CLIENT_UNIT, "a.unit_segments_table",
+    )
+
+    assert "unit_segments AS (" in sql
+    assert sql.index("unit_segments AS (") < sql.index("unit_windows AS (")
+    assert "a.unit_segments_table" in sql
+
+
+def test_segment_units_query_joins_cohort_to_unit_segments():
+    sql = sql_generation.segment_units_query("a.cohort_table", "a.unit_segments_table")
+
+    assert "FROM `a.cohort_table` AS cohort" in sql
+    assert "JOIN `a.unit_segments_table` AS seg" in sql
+    assert "ON seg.slug = cohort.slug AND seg.unit_id = cohort.unit_id" in sql
+    assert "GROUP BY cohort.slug, cohort.branch, seg.segment" in sql
+
+
+def test_a_run_needs_segments_only_when_one_of_its_own_experiments_resolved_one():
+    dark = run_of({"a-slug": cumulative_windows(1)})
+    lit = run_of({"a-slug": cumulative_windows(1)}, segments_by_slug={"a-slug": ("regular_user",)})
+
+    assert dark.needs_segments is False
+    assert lit.needs_segments is True
