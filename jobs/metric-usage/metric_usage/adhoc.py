@@ -1,6 +1,6 @@
 """Metric references in ad hoc BigQuery queries, read from job history.
 
-    python -m metric_usage.adhoc                          # 180 days of jobs, write tables
+    python -m metric_usage.adhoc                          # capture new days, write tables
     python -m metric_usage.adhoc --dry-run                # everything but writing
     python -m metric_usage.adhoc --project mozdata --days 7 --dry-run   # a quick look
 
@@ -21,11 +21,16 @@ have run first; each query goes through the same resolver as a Redash query
 Reads INFORMATION_SCHEMA.JOBS_BY_PROJECT in each project in PROJECTS, which
 needs bigquery.jobs.listAll there; a project the account cannot read is logged
 and skipped. Nothing here is tied to a person, so a service account with that
-access can run it. JOBS_BY_PROJECT keeps 180 days, which is the longest
-window (common.WINDOWS) and caps --days; its first day is cut at the time of
-day the run starts. Each ref has its days per window and seen_within, the
-shortest window with a query naming the metric, and each account and
-experiment its jobs per window.
+access can run it. JOBS_BY_PROJECT keeps JOBS_KEPT days, less than the longest
+window (common.WINDOWS), so the job list is kept in the adhoc_jobs table, a
+partition a day: each run adds the days JOBS_BY_PROJECT has whole that the
+table does not (capture()), the first one all of them, and the refs are built
+from the table over the longest window. Its partitions are kept for the
+longest window and then dropped, since they hold accounts. A query whose last
+run is older than JOBS_BY_PROJECT keeps the result it was resolved to while
+its text was there, frozen: it cannot be resolved again. Each ref has its days
+per window and seen_within, the shortest window with a query naming the
+metric, and each account and experiment its jobs per window.
 
 Left out, because another source covers them or because they are not somebody
 using a metric: Redash and Looker (redash.py and looker.py), Airflow (its jobs
@@ -46,11 +51,11 @@ time range, while an event a panel filters on stays the same from run to run.
 Query text stays in memory. These are people's own queries, whose literals can
 hold client ids and emails, so unlike other sources' text it is not written to
 .cache either, and its rows never go through common.query(), which
-caches what it returns. The job list, which has accounts and query keys but no
-text, is cached under .cache for the day. Each query's resolved refs are kept
-between runs in the resolved_adhoc table (common.ResolvedStore), by query key
-and with the digest of every table it names, so a run fetches and resolves
-only the queries that are new or whose tables changed.
+caches what it returns. The job list in adhoc_jobs has accounts and query keys
+but no text. Each query's resolved refs are kept between runs in the
+resolved_adhoc table (common.ResolvedStore), by query key and with the digest
+of the columns it mentions, so a run fetches and resolves only the queries
+that are new or whose columns changed.
 Only metric ids from the inventory reach the tables, never a literal, a column
 alias or a table name from the text.
 
@@ -68,9 +73,9 @@ import sys
 import time
 
 from .common import (DEST, LONGEST, PREFIX, WINDOWS, ResolvedStore, ResolveTimeout,
-                     artifact_schema, client, days_within, log, pool_map, query, ref_schema,
-                     seen_within, time_limit, union_views, window_end, window_start,
-                     write_table)
+                     append_table, artifact_schema, client, days_within, log, pool_map, query,
+                     ref_schema, seen_within, time_limit, union_views, window_end,
+                     window_start, write_table)
 
 from . import metric_hub as MH
 from . import redash as R
@@ -97,6 +102,10 @@ DDL_TYPES = ("CREATE_VIEW", "CREATE_MATERIALIZED_VIEW", "CREATE_FUNCTION",
              "CREATE_ROW_ACCESS_POLICY")
 # In every query this script runs, so a later run does not read its own jobs
 MARKER = "bigquery-metric-lineage:adhoc"
+
+# Days INFORMATION_SCHEMA.JOBS_BY_PROJECT keeps, back from the time of the query
+JOBS_KEPT = 180
+HISTORY = "adhoc_jobs"
 
 RESOLVE_TIMEOUT = 60
 BATCH_DAYS = 7
@@ -241,7 +250,7 @@ def _work(item):
     return key, (named, stars, note), deps
 
 
-def resolve_all(rows, start, end, store):
+def resolve_all(rows, end, store):
     """{(project, key): (named, stars, note)} for every query in rows, reusing
     what store holds for it.
 
@@ -250,22 +259,30 @@ def resolve_all(rows, start, end, store):
     Only a query that ran in the newest week is redone for its age, since its
     text is read from that week anyway: one that stopped running keeps its
     result until it leaves the window or a column it names changes, rather
-    than costing a scan of an older week.
+    than costing a scan of an older week. One whose last run JOBS_BY_PROJECT
+    no longer has keeps what store holds, frozen, and is left out if it holds
+    nothing.
     """
-    out, need = {}, {}
-    newest = week_of(end.isoformat(), start)
+    first, _ = available(end)
+    out, need, gone = {}, {}, 0
+    newest = week_of(end.isoformat(), first)
     for k, day in last_days(rows).items():
-        got = store.get(f"{k[0]}:{k[1]}", may_expire=week_of(day, start) == newest)
-        if got is None:
+        live = day >= first.isoformat()
+        got = store.get(f"{k[0]}:{k[1]}", may_expire=live and week_of(day, first) == newest,
+                        frozen=not live)
+        if got is not None:
+            out[k] = got
+        elif live:
             need[k] = day
         else:
-            out[k] = got
-    log(f"  resolving {len(need):,} queries ({len(out):,} reused)")
+            gone += 1
+    log(f"  resolving {len(need):,} queries ({len(out):,} reused"
+        + (f"; {gone:,} with no result and no text left to resolve" if gone else "") + ")")
     if not need:
         return out
     R.L.persistent_udfs()  # parsed once here for the forked workers
     started, done = time.monotonic(), 0
-    for project, b_start, n, texts in text_batches(need, start, end):
+    for project, b_start, n, texts in text_batches(need, first, end):
         items = [(f"{project}:{key}", project, t) for key, t in texts.items()]
         del texts
         for key, res, deps in pool_map(_work, items, chunksize=16, initializer=_init):
@@ -353,52 +370,117 @@ def window(days=LONGEST):
     return window_start(days, end), end
 
 
-def job_rows(projects, start, end):
+def available(end):
+    """(first, last) of the days JOBS_BY_PROJECT has whole: it keeps JOBS_KEPT
+    days back from the time of the query, so the oldest of them is cut."""
+    return end - datetime.timedelta(days=JOBS_KEPT - 2), end
+
+
+def history_schema():
+    from google.cloud.bigquery import SchemaField as F
+
+    return [F("day", "DATE"), F("project", "STRING"),
+            F("key", "STRING", description="Query key (KEY_SQL); null marks a day captured "
+              "with no jobs, so it is not fetched again"),
+            F("account", "STRING"), F("wrote", "STRING"), F("jobs", "INT64")]
+
+
+def read_history(sql):
+    from google.api_core.exceptions import NotFound
+
+    try:
+        return [dict(r) for r in client().query(sql).result()]
+    except NotFound:
+        return []
+
+
+def capture(projects, known, save):
+    """The job list for the days JOBS_BY_PROJECT has whole that adhoc_jobs
+    does not, per project, appended to it when save. Rows as in job_rows()."""
+    first, last = available(window_end())
+    have = collections.defaultdict(set)
+    for r in read_history(f"SELECT DISTINCT project, day FROM `{DEST}.{PREFIX}{HISTORY}` "
+                          f"WHERE day >= '{first}'"):
+        have[r["project"]].add(r["day"])
+    days = [first + datetime.timedelta(days=i) for i in range((last - first).days + 1)]
+    new = []
+    for project in projects:
+        missing = [d for d in days if d not in have[project]]
+        # contiguous runs of missing days, one query each
+        runs = []
+        for d in missing:
+            if runs and d == runs[-1][1] + datetime.timedelta(days=1):
+                runs[-1][1] = d
+            else:
+                runs.append([d, d])
+        for a, b in runs:
+            try:
+                got = [dict(r) for r in client().query(job_list_sql(project, a, b, known)).result()]
+            except Exception as e:
+                log(f"  skipped {project}: {getattr(e, 'message', None) or str(e).splitlines()[0]}")
+                break
+            seen = {r["day"] for r in got}
+            new += [dict(r, project=project, day=r["day"].isoformat()) for r in got]
+            new += [{"day": d.isoformat(), "project": project, "key": None, "account": None,
+                     "wrote": None, "jobs": 0}
+                    for d in (a + datetime.timedelta(days=i) for i in range((b - a).days + 1))
+                    if d not in seen]
+    n_days = len({(r["project"], r["day"]) for r in new})
+    log(f"  captured {n_days:,} project-days of jobs from JOBS_BY_PROJECT")
+    if save and new:
+        append_table(HISTORY, new, history_schema(),
+                     "Ad hoc BigQuery jobs per (day, project, query key, account), kept "
+                     f"{LONGEST} days; no query text. Prototype table maintained by the docker-etl "
+                     "metric-usage job, metric_usage/adhoc.py.",
+                     partition="day", keep_days=LONGEST + 1)
+    return new
+
+
+def job_rows(projects, start, end, save=False):
     """The job list, one row per (project, query key, account, day, table
-    written), without jobs writing a bigquery-etl table.
+    written), without jobs writing a bigquery-etl table: adhoc_jobs over the
+    days from start to end, after capture() adds the days it lacks.
 
     Only jobs reading a table lineage has a shape for can name a metric, so
     the rest are dropped before any text is fetched: Jetstream reading its
     own tables in mozanalysis, metadata lookups, logs. That is most distinct
     queries. referenced_tables lists the base tables under any view, which is
     what the shapes are keyed on. A job with none recorded is kept, since that
-    is also how a cache hit and a script's parent job look.
+    is also how a cache hit and a script's parent job look. A table lineage
+    gets a shape for later is read only from the day it has one.
     """
     known = R.known_tables()
     bqetl = {r["artifact_id"] for r in query(
         f"SELECT artifact_id FROM `{DEST}.{PREFIX}artifacts_bqetl` WHERE kind = 'bqetl_table'",
         name="bqetl tables", tables=["artifacts_bqetl"])}
-
-    rows = []
-    for project in projects:
-        try:
-            got = query(job_list_sql(project, start, end, known), name=f"jobs in {project}")
-        except Exception as e:
-            log(f"  skipped {project}: {getattr(e, 'message', None) or str(e).splitlines()[0]}")
-            continue
-        for r in got:
-            r["project"] = project
-        rows += got
+    listed = ", ".join(f"'{p}'" for p in projects)
+    rows = [dict(r, day=r["day"].isoformat()) for r in read_history(f"""
+SELECT day, project, key, account, wrote, jobs FROM `{DEST}.{PREFIX}{HISTORY}`
+WHERE key IS NOT NULL AND day BETWEEN '{start}' AND '{end}' AND project IN ({listed})""")]
+    log(f"  {len(rows):,} job rows held in {PREFIX}{HISTORY}")
+    rows += [r for r in capture(projects, known, save)
+             if r["key"] is not None and start.isoformat() <= r["day"] <= end.isoformat()]
     # a job writing a bigquery-etl table is that table's own query
     return [r for r in rows if r["wrote"] not in bqetl]
 
 
 def run(projects, days, save):
-    """(refs, artifacts, store). save says whether the store may be written:
-    on a full run only, and here only if resolving stops early."""
+    """(refs, artifacts, store). save says whether adhoc_jobs and the store may
+    be written: on a full run only. The store is written here only if resolving
+    stops early."""
     start, end = window(days)
     log(f"  jobs from {start} to {end}")
     inventory = R.load_shapes()
     R.digests()  # computed once here for the forked workers
     store = ResolvedStore("resolved_adhoc", f"{RESOLVED_VERSION}:{R.L.resolver_digest()}",
                           R.dependency_digest, inventory)
-    rows = job_rows(projects, start, end)
+    rows = job_rows(projects, start, end, save)
     log(f"  {sum(r['jobs'] for r in rows):,} jobs, "
         f"{len({(r['project'], r['key']) for r in rows}):,} distinct queries, "
         f"{len({r['account'] for r in rows}):,} accounts")
 
     try:
-        results = resolve_all(rows, start, end, store)
+        results = resolve_all(rows, end, store)
     except BaseException:
         if save:
             store.save(complete=False)
@@ -503,8 +585,8 @@ def main():
     ap.add_argument("--project", action="append", help="read only this project (repeatable)")
     ap.add_argument("--days", type=int, default=LONGEST)
     args = ap.parse_args()
-    if args.days > 180:
-        raise SystemExit("JOBS_BY_PROJECT keeps 180 days")
+    if args.days > LONGEST:
+        raise SystemExit(f"the longest window is {LONGEST} days")
     if (args.project or args.days != LONGEST) and not args.dry_run:
         raise SystemExit("--project and --days are for --dry-run; the tables hold "
                          f"every project over {LONGEST} days")

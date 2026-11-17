@@ -36,21 +36,24 @@ _MEMORY = {}
 # text; see write_labels().
 LABELS = ROOT / "labels"
 
-# Where the app's tables live. quick.query can read mozdata, and so can anybody
-# with warehouse access, so this is also where the tables are useful outside the
-# app.
-DEST = "mozdata.analysis"
+# Where the app's tables live, project.dataset. quick.query can read mozdata, and
+# so can anybody with warehouse access, so this is also where the tables are
+# useful outside the app. METRIC_USAGE_DATASET moves them.
+DEST = os.environ.get("METRIC_USAGE_DATASET", "mozdata.analysis")
 # METRIC_USAGE_PREFIX gives a working copy its own set of tables, so a branch
-# can be rebuilt without touching the ones the deployed page reads.
+# can be rebuilt without touching the ones the deployed page reads. In the
+# shared analysis dataset it has to be this job's own.
 PREFIX = os.environ.get("METRIC_USAGE_PREFIX", "benwu_metrics_usage_")
-if not PREFIX.startswith("benwu_metrics_usage_"):
-    raise SystemExit("METRIC_USAGE_PREFIX has to start with benwu_metrics_usage_")
+if DEST == "mozdata.analysis" and not PREFIX.startswith("benwu_metrics_usage_"):
+    raise SystemExit("METRIC_USAGE_PREFIX has to start with benwu_metrics_usage_ "
+                     "in mozdata.analysis")
 
 # The windows of use the page offers, in days, each ending yesterday, the last
 # whole day. Sources read the longest once and count each window within it, so
-# switching windows on the page needs no rebuild. The longest is capped by
-# JOBS_BY_PROJECT, which keeps 180 days of job history (adhoc.py).
-WINDOWS = (30, 90, 180)
+# switching windows on the page needs no rebuild. Looker's System Activity keeps
+# a year, which bounds the longest. Ad hoc queries go back only as far as
+# adhoc.py's history does, since JOBS_BY_PROJECT keeps 180 days.
+WINDOWS = (30, 90, 180, 365)
 LONGEST = max(WINDOWS)
 
 PROBEINFO = "https://probeinfo.telemetry.mozilla.org"
@@ -327,7 +330,8 @@ def write_table(name, rows, schema, description, clustering=None):
     """Replace DEST.PREFIX<name> with rows.
 
     schema is a list of bigquery.SchemaField. The table is replaced wholesale on
-    every run, and the dataset's 180 day default expiration is left in place.
+    every run. One created in a dataset with a default expiration (analysis has
+    180 days) takes it from when it was created, and a rewrite does not renew it.
     """
     from google.cloud import bigquery
 
@@ -344,6 +348,27 @@ def write_table(name, rows, schema, description, clustering=None):
     table.description = description
     client().update_table(table, ["description"])
     log(f"  wrote {table_id}: {table.num_rows:,} rows")
+
+
+def append_table(name, rows, schema, description, partition, keep_days):
+    """Append rows to DEST.PREFIX<name>, creating it partitioned by day on the
+    DATE field partition, with each partition kept keep_days days."""
+    from google.cloud import bigquery
+
+    table_id = f"{DEST}.{PREFIX}{name}"
+    config = bigquery.LoadJobConfig(
+        schema=schema,
+        write_disposition="WRITE_APPEND",
+        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+        time_partitioning=bigquery.TimePartitioning(
+            field=partition, expiration_ms=keep_days * 24 * 3600 * 1000),
+    )
+    client().load_table_from_json(rows, table_id, job_config=config).result()
+    table = client().get_table(table_id)
+    if table.description != description:
+        table.description = description
+        client().update_table(table, ["description"])
+    log(f"  appended {len(rows):,} rows to {table_id}")
 
 
 class ResolvedStore:
@@ -381,24 +406,30 @@ class ResolvedStore:
             pass
         log(f"  {len(self.held):,} resolved queries held in {PREFIX}{name}")
 
-    def get(self, key, may_expire=True):
+    def get(self, key, may_expire=True, frozen=False):
         """(named refs by metric id, star tables, note) for key, or None when
         it has to be resolved again. may_expire=False keeps an entry past its
-        age, for a caller that would pay more than a resolve to redo it."""
+        age, for a caller that would pay more than a resolve to redo it.
+        frozen=True is for a query that cannot be resolved again, its text
+        being gone: the entry is kept as it was resolved, whatever changed
+        since, less any metric no longer in the inventory."""
         r = self.held.get(key)
         if r is None:
             return None
-        lifetime = self.MIN_AGE + int(hashlib.sha256(key.encode()).hexdigest(), 16) % (
-            self.MAX_AGE - self.MIN_AGE + 1)
-        age = (self.today - datetime.date.fromisoformat(str(r["resolved_on"]))).days
-        if may_expire and age >= lifetime:
-            return None
-        if any(self.digest_of(d["table"], d["names"]) != d["digest"] for d in r["deps"]):
-            return None
+        if not frozen:
+            lifetime = self.MIN_AGE + int(hashlib.sha256(key.encode()).hexdigest(), 16) % (
+                self.MAX_AGE - self.MIN_AGE + 1)
+            age = (self.today - datetime.date.fromisoformat(str(r["resolved_on"]))).days
+            if may_expire and age >= lifetime:
+                return None
+            if any(self.digest_of(d["table"], d["names"]) != d["digest"] for d in r["deps"]):
+                return None
         named = {}
         for x in r["refs"]:
             m = self.ids.get((x["app"], x["metric"]))
             if m is None:
+                if frozen:
+                    continue
                 return None
             named[m] = (x["role"], x["hops"], x["via"], x["transformed"])
         self.kept[key] = r

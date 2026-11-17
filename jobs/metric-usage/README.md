@@ -15,8 +15,56 @@ BigQuery tables that a page reads per metric.
 | metric-hub           | Metric definitions, the OpMon projects using them, and the Jetstream experiments that chose them                                                        |
 | BigQuery job history | Queries people and tools ran themselves, from `INFORMATION_SCHEMA.JOBS_BY_PROJECT` in nine projects, per account                                        |
 
-Use is counted over windows of 30, 90 and 180 days ending yesterday. 180 is
-the longest because `JOBS_BY_PROJECT` keeps no more.
+Use is counted over windows of 30, 90, 180 and 365 days ending yesterday; see
+[Time windows](#time-windows) for what each source counts in them.
+
+## Time windows
+
+Every window ends yesterday, the last whole day (`common.WINDOWS`). Each source
+reads the longest window once and counts each window within it, so the page
+switches windows without a rebuild. 365 is the longest because Looker's System
+Activity keeps no more. Every step ends its windows on the day before it runs,
+so all of them should run on the same day; `summary` writes the days each
+window covers to `windows`.
+
+A ref, a metric used by an artifact, is one of two kinds. One from code or
+saved content (a bigquery-etl query, a saved Redash query, a dashboard tile, a
+metric-hub definition) holds in every window, whether or not anything ran it,
+and its `seen_within` is null. One that exists only because of use (an ad hoc
+query, a Looker query that was run, an experiment, an OpMon project) has
+`seen_within`, the shortest window it was seen in, and counts in that window
+and the longer ones. Use is counted apart from refs: an artifact's
+`views_<n>d` and `users_<n>d` are its use in each window, and a ref's
+`observed_days_<n>d` the days in each window with a use.
+
+| Source | Refs | Use per window | Notes |
+|---|---|---|---|
+| bigquery-etl | From code, in every window | Each table's reads and readers per window, and its last successful write (`last_run`) and whether Airflow wrote it (`is_scheduled`) in the longest, from `jobs_by_organization_v1` | Views have no run history, since the view deploy rewrites every view weekly. Tables in `moz-fx-data-experiments` have none either, since `jobs_by_organization_v1` does not cover that project |
+| Redash | From saved queries, in every window; a dashboard's from its queries | Views and distinct viewers per window from `object_views_daily`, which starts on 2025-09-17; `last_used` is the last day in the longest window with a view | `last_run` (the latest result) and `is_scheduled` (a schedule not past its end) are as of the run, not per window |
+| Looker | From dashboard tiles and saved Looks, in every window. From a query run on a dashboard, Look or explore, from the shortest window with a run of one naming the metric. An explore's fields, as refs that are not named, in every window | Runs and users per window from System Activity history; `last_run` and `is_scheduled` in the longest | History keeps 365 days back from the time of the run, so the oldest day of the longest window can be partial |
+| GLAM | One per metric opened in GLAM | Days with a fetch per window (`observed_days_<n>d`) and over the year (`observed_days`); `top_percent` ranks the year | The usage log is read for the 365 days ending yesterday, UTC |
+| metric-hub | Definitions, in every window. An OpMon project's from the shortest window its start and end dates overlap, so one still running is in all of them | Projects whose dates overlap the longest window | A project's `last_observed` is its end date, capped at the window's end, or the window's end if it has none |
+| BigQuery job history | Per account and per Jetstream experiment, from the shortest window with a query naming the metric | Days per window with such a query, and jobs per window (`views_<n>d`) | Covers only the days in `adhoc_jobs`; see below |
+
+`JOBS_BY_PROJECT` keeps only 180 days, so `adhoc.py` keeps the job list itself
+in `adhoc_jobs`, a partition per day, kept for the longest window. Every run
+adds the days `JOBS_BY_PROJECT` has whole that the table lacks, so the first
+run fills the last 179 days, a daily run adds yesterday, and a run after a gap
+fills it, as long as the gap is under 179 days. Ad hoc use goes back only as
+far as the table does, so until it holds a year its 365-day counts are its
+180-day ones. A query whose last run is older than `JOBS_BY_PROJECT` keeps the
+result it was resolved to while its text was there, since it cannot be
+resolved again. To capture days again, delete their partitions from
+`adhoc_jobs` and run the step; only days still in `JOBS_BY_PROJECT` can be.
+
+In `summary`, a metric's counts for a window take every ref that holds in it.
+`definitions` counts a metric as used in a window by an ad hoc query from a
+person or service account, a Jetstream experiment or OpMon project that chose
+it, a Looker dashboard, Look or explore query or saved Redash query that names
+it and was viewed or run in the window, or a GLAM page opened in the window.
+Its counts of saved content that would need fixing (tables, views, Redash
+queries, Looker content, metric-hub metrics) and its `last_used` are over the
+longest window, the same in every window.
 
 ## Layout
 
@@ -73,18 +121,21 @@ FETCH=0 script/run_all.sh                            # same, without refreshing 
 
 The job needs Google application default credentials that can read the
 warehouse and the tables above, `bigquery.jobs.listAll` in the projects
-`adhoc.py` lists, and write access to `mozdata.analysis`. The Looker API key
+`adhoc.py` lists, and write access to the dataset it writes. The Looker API key
 is read from the system keyring as `looker-api-client-id` and
 `looker-api-client-secret`, or from `LOOKERSDK_CLIENT_ID` and
 `LOOKERSDK_CLIENT_SECRET` where there is no keyring, as in the container.
 
 Tables are written to `mozdata.analysis` with the prefix
-`benwu_metrics_usage_`. `METRIC_USAGE_PREFIX` gives a working copy its own
-set, and has to start with that prefix.
+`benwu_metrics_usage_`. `METRIC_USAGE_DATASET` (as `project.dataset`) moves
+them, and `METRIC_USAGE_PREFIX` gives a working copy its own set; in
+`mozdata.analysis` the prefix has to start with `benwu_metrics_usage_`. A
+table created in a dataset with a default expiration (180 days in analysis)
+takes it from its creation, and rewriting it does not renew it.
 
 The job runs with no disk that outlives it, so what is worth keeping between
 runs is kept in BigQuery. `adhoc.py` is the step that needs it, since a cold
-run resolves every distinct query in 180 days of job history and most of
+run resolves every distinct query in the job history and most of
 them are the same from one day to the next. It keeps them in
 `resolved_adhoc`: each entry there is a query's key, its refs, and for each
 table it names the columns of it the query mentions with their digest, and it
