@@ -339,8 +339,8 @@ WHERE table_name IN (
 """).result():
         columns[r["table_name"]].add(r["column_name"])
     for kind, fields in (("refs", ref_schema()), ("artifacts", artifact_schema())):
-        # exactly refs_<source> / artifacts_<source>: a scratch copy such as
-        # refs_bqetl_prev once matched the prefix and leaked stale refs in
+        # exactly refs_<source> / artifacts_<source>, so a scratch copy such
+        # as refs_bqetl_prev is not read
         parts = sorted(t for t in columns
                        if re.fullmatch(rf"{PREFIX}{kind}_[a-z0-9]+", t))
         if not parts:

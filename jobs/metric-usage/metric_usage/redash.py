@@ -187,7 +187,8 @@ def analyse(text, project=REDASH_PROJECT):
     an unqualified dataset.table lives: mozdata for Redash, the job's own
     project for adhoc.py.
 
-    named refs maps a metric id to (role, hops, via, transformed, output columns).
+    named refs maps a metric id to (role, hops, via, transformed). The output
+    columns are the author's own aliases, so they are not kept.
     """
     text = PARAM_RE.sub("0", text)
     refs = table_refs(text.lower(), project)
@@ -199,7 +200,7 @@ def analyse(text, project=REDASH_PROJECT):
         # dotted names, credited only against tables the text names
         art = type("A", (), {"sql": text, "refs": refs})()
         found = L.regex_refs(art, _EVENTS, _SHAPES)
-        return ({m: ("unknown", h, v, True, []) for m, (h, v, t, n) in found.items()
+        return ({m: ("unknown", h, v, True) for m, (h, v, t, n) in found.items()
                  if isinstance(m, int)},
                 [], note or "regex")
     try:
@@ -210,9 +211,9 @@ def analyse(text, project=REDASH_PROJECT):
     out = L.resolve_events_in(out, _EVENTS)
     touched = L.resolve_events(touched, _EVENTS)
     outputs = collections.defaultdict(list)
-    for path, leaf in L.output_paths(out):
+    for _, leaf in L.output_paths(out):
         for m, val in leaf.items():
-            outputs[m].append((".".join(path), val))
+            outputs[m].append(val)
     named = {}
     for m, (h, via, t, n) in touched.items():
         if isinstance(m, tuple):
@@ -221,7 +222,7 @@ def analyse(text, project=REDASH_PROJECT):
         if not n:
             continue
         named[m] = ("output" if outs else "filter", h, via,
-                    t or any(v[2] for _, v in outs), sorted({p for p, _ in outs})[:20])
+                    t or any(v[2] for v in outs))
     return named, sorted(star_tables & _TABLES), "ok"
 
 
@@ -283,13 +284,13 @@ def run(limit=None):
         named, stars, note = results[text_of[q["id"]]]
         notes[note.split(":")[0]] += 1
         aid = f"redash:query:{q['id']}"
-        for m, (role, h, via, t, outs) in named.items():
+        for m, (role, h, via, t) in named.items():
             r = inventory[m]
             ref_rows.append({
                 "app": r["app"], "metric": r["metric"], "artifact_id": aid,
                 "artifact_kind": "redash_query", "role": role, "hops": h + 1,
                 "named": True, "transformed": t, "via": via,
-                "output_columns": outs, "n_output_columns": len(outs),
+                "output_columns": [], "n_output_columns": 0,
                 "evidence": "parsed" if role != "unknown" else "regex",
             })
             for d in dash_of.get(q["id"], []):

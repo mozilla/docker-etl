@@ -22,10 +22,9 @@ Both tables carry each metric's size, from monitoring_derived.column_size_v1:
 the bytes its columns hold in a day's partition, as a dry run of a query
 reading only them counts them, summed over every table it is in and averaged
 over the last SIZE_DAYS days. A Glean metric's size covers all its channels and
-pings. A dry run counts a few bytes a row for a column even where it is empty
-(1.08 GB a day for any column of main_v5), which would make every legacy probe
-look large, so each column is measured above the smallest column of its table
-that day. A table with no empty column is undercounted by its smallest one.
+pings. A dry run counts a few bytes a row for a column even where it is empty,
+which would make every legacy probe look large, so each column is measured
+above the smallest column of its table that day. A table with no empty column is undercounted by its smallest one.
 Events have none, since an event is a row of the events column rather than a
 column of its own. Among the same app's metrics with data, size_top_percent is
 the percent at least as large, so 1 is the top 1%, and size_percent is its share

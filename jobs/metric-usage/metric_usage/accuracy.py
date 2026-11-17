@@ -39,9 +39,8 @@ filter values added as quoted strings, since a filter on an event's category
 and name is how Looker names an event and the generated SQL leaves values out.
 A group Looker answers from an aggregate table is read against the base
 tables on both sides (looker.unroll()). The two persistent derived tables in
-looker_tmp carry no metric. Looker is a source of its own in summary.csv and in the review
-groups, and check.py scores it on its own line, so adding it left the
-bigquery-etl and Redash groups as they were.
+looker_tmp carry no metric. Looker is a source of its own in summary.csv and
+in the review groups, and check.py scores it on its own line.
 
 Ad hoc queries are searched per account and Jetstream experiment, over the
 text of the queries in adhoc.py's job list that read a table the search looks
@@ -70,9 +69,8 @@ from . import redash as R
 
 OUT = CACHE / "accuracy"
 
-# Review groups and summary rows are per source: Looker, ad hoc queries, or
-# the warehouse SQL of bigquery-etl and Redash, which were one group before
-# Looker was added.
+# Review groups and summary rows are per source: Looker, ad hoc queries,
+# metric-hub, or the warehouse SQL of bigquery-etl and Redash.
 SOURCES = ("sql", "looker", "adhoc", "metrichub")
 
 
@@ -102,7 +100,7 @@ STRATA = {
     ("glean", "event", "1-5"): 4,
     ("glean", "event", "6-50"): 4,
     ("glean", "event", ">50"): 2,
-    # legacy events, matched by category and method since 2026-10-14
+    # legacy events, matched by category and method
     ("legacy", "event", "1-5"): 3,
     ("legacy", "event", "6-50"): 3,
     ("legacy", "event", ">50"): 1,

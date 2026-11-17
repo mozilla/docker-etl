@@ -81,8 +81,7 @@ def main():
     by_source = collections.defaultdict(lambda: [0.0] * 5)
     by_stratum = collections.defaultdict(lambda: [0.0] * 5)
     for s in summary:
-        # a summary.csv from before Looker was added has no source column
-        source = s.get("source") or "sql"
+        source = s["source"]
         k = (s["app"], s["metric"], source)
         both, po, to = int(s["both"]), int(s["parser_only"]), int(s["text_only"])
         p_po = rate(groups[k + ("parser_only",)])

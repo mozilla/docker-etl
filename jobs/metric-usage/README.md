@@ -125,7 +125,7 @@ query text for review and is not in git.
 
 ## Scope
 
-Event extra keys are not matched, by decision. A query on an extra is
+Event extra keys are not matched. A query on an extra is
 credited to the event it names, which it nearly always does, but the key
 itself is not recorded. Extras are part of their event's definition, so the
 event's page already answers who uses them.

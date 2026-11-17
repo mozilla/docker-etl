@@ -62,8 +62,8 @@ def test_quoted_event_names():
 
 def test_alias_is_not_a_column():
     # an unparseable query read metrics.uuid.*_client_id AS client_id and was
-    # credited with client_info.client_id (found in the AI review). That query
-    # uses the alias again later, so it is still credited.
+    # credited with client_info.client_id. That query uses the alias again
+    # later, so it is still credited.
     found = regex(f"SELECT metrics.uuid.legacy_client_id AS client_id, {FROM}", PINGS)
     assert found == {"legacy.client_id": True}
 

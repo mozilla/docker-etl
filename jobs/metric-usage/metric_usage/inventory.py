@@ -14,9 +14,8 @@ gecko, the android-components libraries) are listed under every app that depends
 on the library, because a fenix query reading a gecko metric is about fenix.
 
 The warehouse side comes from INFORMATION_SCHEMA.COLUMN_FIELD_PATHS over the
-*_stable datasets, which lists every nested field that exists. column_size_v1 was
-the source in query_graph and it is incomplete: 1,030 tables and 169k Glean field
-paths against 1,144 and 278k here, because it only measures what had data.
+*_stable datasets, which lists every nested field that exists. column_size_v1 is
+incomplete for this, because it only measures fields that had data.
 
 Each metric is resolved to the columns that hold it. Three outcomes:
 

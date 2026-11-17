@@ -140,8 +140,8 @@ def system_activity(view, fields, filters=None, sorts=None, limit=500000):
     pipeline asks Looker for is logged as an api4 run, and would come back on
     the next run as ad hoc queries naming every metric an explore exposes.
     Bigeye's lineage crawl is left out for the same reason, as in adhoc.py:
-    in May 2026 it ran queries selecting every field of the metrics and
-    use_counters explores, whose field lists System Activity cuts off.
+    it runs queries selecting every field of the metrics and use_counters
+    explores, whose field lists System Activity cuts off.
     """
     from looker_sdk import models40 as M
 

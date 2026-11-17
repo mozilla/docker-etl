@@ -25,11 +25,10 @@ Writes three tables:
 How a query is read
 -------------------
 
-query_graph/lineage_pass.py resolves columns by name, which turns
-metrics.counter.foo into "metrics" and every metric in the table into one node.
-This keeps the shape instead. Every expression evaluates to either a Leaf, the
-set of metrics it depends on, or a Struct, a mapping of field names to shapes. A
-table's shape is a tree built from the columns known to carry a metric, so
+Resolving columns by name would turn metrics.counter.foo into "metrics" and
+every metric in the table into one node, so this keeps the shape instead.
+Every expression evaluates to either a Leaf, the set of metrics it depends on,
+or a Struct, a mapping of field names to shapes. A table's shape is a tree built from the columns known to carry a metric, so
 `metrics.*`, `STRUCT(...)`, `SELECT AS STRUCT` and `* EXCEPT / REPLACE` forward
 individual metrics with their paths intact, and anything else (a function, an
 operator, an aggregate) collapses its arguments into one Leaf.

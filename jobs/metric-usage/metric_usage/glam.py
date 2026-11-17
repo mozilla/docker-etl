@@ -26,8 +26,8 @@ more precise than this is; a rank holds up when every metric is over- or
 under-counted by about the same factor.
 
 Legacy desktop GLAM (product firefox) is decommissioned and left out. Requests
-not shaped like the web page's (a script sweeping every metric on 2026-10-13
-sent app_id and channel and no versions) are left out too.
+not shaped like the web page's (a script sweeping every metric, which sends
+app_id and channel and no versions) are left out too.
 """
 
 import argparse

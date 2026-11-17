@@ -192,7 +192,7 @@ class Resolved:
                 named, _, note = R.analyse(sql, PROJECT)
             except RecursionError:
                 named, note = {}, "resolve failed: RecursionError"
-            self.held[h] = [{str(m): list(v[:4]) for m, v in named.items()}, note]
+            self.held[h] = [{str(m): list(v) for m, v in named.items()}, note]
             self.new += 1
         named, note = self.held[h]
         return {int(m): tuple(v) for m, v in named.items()}, note

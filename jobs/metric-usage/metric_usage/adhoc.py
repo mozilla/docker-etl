@@ -41,8 +41,7 @@ Each distinct query is resolved once. A person's query is keyed on its exact
 text, since two that differ only in an event name are different questions. A
 service account's is keyed on BigQuery's literal-normalized hash: its SQL is
 generated, and the literals that vary are parameters such as a Grafana panel's
-time range (one day in mozdata had 6,236 distinct Grafana texts), while an
-event a panel filters on stays the same from run to run.
+time range, while an event a panel filters on stays the same from run to run.
 
 Query text stays in memory. These are people's own queries, whose literals can
 hold client ids and emails, so unlike other sources' text it is not written to
@@ -53,7 +52,7 @@ is rebuilt, so a rerun fetches text only for queries it has not resolved.
 Only metric ids from the inventory reach the tables, never a literal, a column
 alias or a table name from the text.
 
-Emails are stored and shown (decided 2026-10-19):
+Emails are stored and shown, since
 monitoring_derived.jobs_by_organization_v1 already publishes user_email to the
 same audience, and knowing who reads a metric is what lets somebody ask before
 changing it.
@@ -77,9 +76,9 @@ from .common import (CACHE, DEST, LONGEST, PREFIX, WINDOWS, artifact_schema, cli
 from . import metric_hub as MH
 from . import redash as R
 
-# The projects query_graph/snapshot.py reads, chosen there from
-# jobs_by_organization_v1 by jobs touching stable tables. bq-batch-prod,
-# shredder and glam-prod are left out there for the same reasons as here.
+# The projects whose jobs touch stable tables, chosen from
+# jobs_by_organization_v1. bq-batch-prod, shredder and glam-prod are left out,
+# since their jobs are pipelines rather than somebody using a metric.
 PROJECTS = [
     "mozdata",
     "moz-fx-data-shared-prod",
@@ -250,8 +249,7 @@ def _work(item):
         named, stars, note = {}, [], "resolve failed: RecursionError"
     finally:
         signal.alarm(0)
-    # output column names are the author's own aliases: not kept
-    return key, ({m: v[:4] for m, v in named.items()}, stars, note)
+    return key, (named, stars, note)
 
 
 def snapshot():
@@ -267,11 +265,9 @@ def resolve_all(rows, start, end):
     what was resolved against the same lineage.
 
     The rest are fetched and resolved a week at a time, each from the week it
-    first ran, so one week's text is in memory at once (90 days was 477k
-    distinct queries before job_rows' filter, most of them Jetstream's) and
-    the job history is scanned
-    once. What is resolved is saved after each week, so an interrupted run
-    picks up where it stopped.
+    first ran, so one week's text is in memory at once and the job history
+    is scanned once. What is resolved is saved after each week, so an
+    interrupted run picks up where it stopped.
     """
     path = CACHE / f"adhoc_resolved_{hashlib.sha256(snapshot().encode()).hexdigest()[:16]}.json"
     held = json.loads(path.read_text()) if path.exists() else {}
@@ -382,11 +378,10 @@ def job_rows(projects, start, end):
 
     Only jobs reading a table lineage has a shape for can name a metric, so
     the rest are dropped before any text is fetched: Jetstream reading its
-    own tables in mozanalysis, metadata lookups, logs. That was 448k of 477k
-    distinct queries over 90 days. referenced_tables lists the base tables
-    under any view, which is what the shapes are keyed on. A job with none
-    recorded is kept, since that is also how a cache hit and a script's parent
-    job look.
+    own tables in mozanalysis, metadata lookups, logs. That is most distinct
+    queries. referenced_tables lists the base tables under any view, which is
+    what the shapes are keyed on. A job with none recorded is kept, since that
+    is also how a cache hit and a script's parent job look.
     """
     known = R.known_tables()
     bqetl = {r["artifact_id"] for r in query(
