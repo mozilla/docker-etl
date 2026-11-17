@@ -132,8 +132,8 @@ def resolve(sql, *tables, events=None, all_selects=False):
     prelude, tree, note = L.parse_script(sql)
     assert tree is not None, f"did not parse: {note}"
     shapes = dict(tables)
-    out, touched, stars = L.resolve_script(prelude, tree, shapes, PROJECT,
-                                           all_selects=all_selects)
+    out, touched, stars, _ = L.resolve_script(prelude, tree, shapes, PROJECT,
+                                              all_selects=all_selects)
     names = {}
     if events is not None:
         idx, names = events

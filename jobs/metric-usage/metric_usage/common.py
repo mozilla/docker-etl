@@ -21,6 +21,7 @@ import pathlib
 import re
 import signal
 import sys
+import urllib.error
 import urllib.request
 
 # The job's directory, which holds the cache and the labels, outside the package
@@ -134,8 +135,15 @@ def pool_map(work, items, chunksize=1, initializer=None):
             yield from f.result()
 
 
+def utc_today():
+    """Today in UTC, the day BigQuery's DATE(timestamp) and CURRENT_DATE()
+    use, so a run on a machine in another timezone ends its windows on the
+    same day as one in the container."""
+    return datetime.datetime.now(datetime.timezone.utc).date()
+
+
 def window_end():
-    return datetime.date.today() - datetime.timedelta(days=1)
+    return utc_today() - datetime.timedelta(days=1)
 
 
 def window_start(days, end):
@@ -211,6 +219,17 @@ def get_json(url, force=False):
     value = json.loads(body)
     write_cache(path, body)
     return value
+
+
+def get_json_if_found(url, force=False):
+    """get_json(), or None when the URL is not found. Any other error raises,
+    so a step does not replace its tables with what it could not fetch."""
+    try:
+        return get_json(url, force)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
 
 
 def label_copies(name):
@@ -381,9 +400,11 @@ class ResolvedStore:
     their digest (redash.dependencies()). It is reused while those match, so a
     run resolves only the queries that are new or whose columns changed. An
     entry is also redone after MIN_AGE to MAX_AGE days, spread by its key, to
-    bound what a missed dependency could leave stale. Only a query's key and
-    schema names are kept, never its text. save() keeps the entries this run
-    used, so queries that left the window drop out.
+    bound what a missed dependency could leave stale. A frozen entry is the
+    exception: its text is gone, so it is kept whatever resolver version it
+    was resolved with, and a change to the resolver does not drop it. Only a
+    query's key and schema names are kept, never its text. save() keeps the
+    entries this run used, so queries that left the window drop out.
     """
 
     MIN_AGE, MAX_AGE = 15, 30
@@ -392,19 +413,22 @@ class ResolvedStore:
         """digest_of(table, names) is the current digest of a table's
         columns, redash.dependency_digest()."""
         self.name, self.version, self.digest_of = name, version, digest_of
-        self.today = datetime.date.today()
+        self.today = utc_today()
         self.inventory = inventory
         self.ids = {(r["app"], r["metric"]): i for i, r in enumerate(inventory)}
         self.held, self.kept = {}, {}
         from google.api_core.exceptions import NotFound
 
+        # every version is read, since a frozen entry is kept across versions;
+        # get() checks the version of the rest
         try:
-            for r in client().query(f"SELECT * FROM `{DEST}.{PREFIX}{name}` "
-                                    f"WHERE version = '{version}'").result():
+            for r in client().query(f"SELECT * FROM `{DEST}.{PREFIX}{name}`").result():
                 self.held[r["key"]] = dict(r)
         except NotFound:
             pass
-        log(f"  {len(self.held):,} resolved queries held in {PREFIX}{name}")
+        old = sum(r["version"] != version for r in self.held.values())
+        log(f"  {len(self.held):,} resolved queries held in {PREFIX}{name}, "
+            f"{old:,} from an earlier resolver version")
 
     def get(self, key, may_expire=True, frozen=False):
         """(named refs by metric id, star tables, note) for key, or None when
@@ -412,11 +436,14 @@ class ResolvedStore:
         age, for a caller that would pay more than a resolve to redo it.
         frozen=True is for a query that cannot be resolved again, its text
         being gone: the entry is kept as it was resolved, whatever changed
-        since, less any metric no longer in the inventory."""
+        since (the resolver included), less any metric no longer in the
+        inventory."""
         r = self.held.get(key)
         if r is None:
             return None
         if not frozen:
+            if r["version"] != self.version:
+                return None
             lifetime = self.MIN_AGE + int(hashlib.sha256(key.encode()).hexdigest(), 16) % (
                 self.MAX_AGE - self.MIN_AGE + 1)
             age = (self.today - datetime.date.fromisoformat(str(r["resolved_on"]))).days

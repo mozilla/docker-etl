@@ -38,8 +38,7 @@ import json
 import urllib.parse
 
 from .common import (DEST, PREFIX, artifact_schema, days_within, get_json, log, query,
-                     ref_schema, window_end,
-                     snakecase, union_views, write_table)
+                     ref_schema, snakecase, union_views, utc_today, window_end, write_table)
 
 GLAM = "https://glam.telemetry.mozilla.org"
 EVENTS = "moz-fx-data-shared-prod.glam_derived.events_stream_v1"
@@ -148,7 +147,7 @@ def classify(t, product, probe, loads, anything):
 
 
 def run():
-    end = datetime.datetime.now(datetime.timezone.utc).date()
+    end = utc_today()
     start = end - datetime.timedelta(days=WINDOW_DAYS)
     if start < EVENTS_START:
         log(f"  warning: the window starts {start}, before GLAM's telemetry ({EVENTS_START}); "

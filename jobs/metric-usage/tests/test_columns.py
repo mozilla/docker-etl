@@ -264,3 +264,24 @@ def test_glean_type_container_with_one_metric_is_still_a_container():
                 "TO_JSON_STRING(metrics.datetime) AS j FROM `moz-fx-data-shared-prod.app.crash`",
                 (tid, shape))
     assert not r.uses["crash.time"].named
+
+
+def test_order_by_only_is_a_filter():
+    r = resolve(f"SELECT client_info.client_id FROM {TBL} ORDER BY metrics.counter.a_count",
+                METRICS)
+    assert r.uses["a.count"].role == "filter"
+
+
+def test_named_window_is_read():
+    r = resolve(f"SELECT client_info.client_id, ROW_NUMBER() OVER w AS rn FROM {TBL} "
+                "WINDOW w AS (PARTITION BY metrics.counter.b_count "
+                "ORDER BY metrics.counter.a_count)", METRICS)
+    assert r.uses["a.count"].role == "filter"
+    assert r.uses["b.count"].role == "filter"
+
+
+def test_order_by_an_alias_reads_the_select():
+    # a_count here is the SELECT's, which holds b.count, not the table's a_count
+    r = resolve(f"SELECT metrics.counter.b_count AS a_count FROM {TBL} ORDER BY a_count",
+                METRICS)
+    assert "a.count" not in r.uses

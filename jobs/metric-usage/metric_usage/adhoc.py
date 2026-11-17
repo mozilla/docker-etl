@@ -282,7 +282,17 @@ def resolve_all(rows, end, store):
         return out
     R.L.persistent_udfs()  # parsed once here for the forked workers
     started, done = time.monotonic(), 0
-    for project, b_start, n, texts in text_batches(need, first, end):
+    for project, b_start, keys, texts in text_batches(need, first, end):
+        n = len(keys)
+        if texts is None:
+            # the text can no longer be read, so these keep what they were
+            # resolved to, as a query whose text has rotated out does
+            for key in keys:
+                got = store.get(f"{project}:{key}", frozen=True)
+                if got is not None:
+                    out[(project, key)] = got
+            done += n
+            continue
         items = [(f"{project}:{key}", project, t) for key, t in texts.items()]
         del texts
         for key, res, deps in pool_map(_work, items, chunksize=16, initializer=_init):
@@ -313,17 +323,26 @@ def week_of(day, start):
 
 
 def text_batches(last, start, end):
-    """(project, week start, number of queries, {key: text}) a week at a time,
-    each query's text from the last week it ran, so that a query still running
-    is read from the newest week, which most of the queries a run needs share.
-    last is last_days(), or the part of it to fetch."""
+    """(project, week start, query keys, {key: text}) a week at a time, each
+    query's text from the last week it ran, so that a query still running is
+    read from the newest week, which most of the queries a run needs share.
+    The texts are None for a project the account can no longer read. last is
+    last_days(), or the part of it to fetch."""
+    from google.api_core.exceptions import Forbidden
+
     batches = collections.defaultdict(set)
     for (project, key), day in last.items():
         batches[(project, week_of(day, start))].add(key)
     for (project, week), keys in sorted(batches.items()):
         b_start = start + datetime.timedelta(days=week * BATCH_DAYS)
         b_end = min(end, b_start + datetime.timedelta(days=BATCH_DAYS - 1))
-        yield project, b_start, len(keys), fetch_texts(project, b_start, b_end, keys)
+        try:
+            texts = fetch_texts(project, b_start, b_end, keys)
+        except Forbidden as e:
+            log(f"    skipped the text of {project} from {b_start}: "
+                f"{getattr(e, 'message', None) or str(e).splitlines()[0]}")
+            texts = None
+        yield project, b_start, keys, texts
 
 
 # ---------------------------------------------------------------------- main
@@ -397,6 +416,8 @@ def read_history(sql):
 def capture(projects, known, save):
     """The job list for the days JOBS_BY_PROJECT has whole that adhoc_jobs
     does not, per project, appended to it when save. Rows as in job_rows()."""
+    from google.api_core.exceptions import Forbidden
+
     first, last = available(window_end())
     have = collections.defaultdict(set)
     for r in read_history(f"SELECT DISTINCT project, day FROM `{DEST}.{PREFIX}{HISTORY}` "
@@ -416,7 +437,10 @@ def capture(projects, known, save):
         for a, b in runs:
             try:
                 got = [dict(r) for r in client().query(job_list_sql(project, a, b, known)).result()]
-            except Exception as e:
+            except Forbidden as e:
+                # only a project the account cannot read is skipped; any other
+                # error stops the step, since a day not captured within
+                # JOBS_BY_PROJECT's 180 days is lost for good
                 log(f"  skipped {project}: {getattr(e, 'message', None) or str(e).splitlines()[0]}")
                 break
             seen = {r["day"] for r in got}

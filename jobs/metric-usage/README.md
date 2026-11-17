@@ -45,8 +45,8 @@ partitions from `adhoc_jobs` and run `adhoc`.
 ## Tables
 
 All are written to `mozdata.analysis` with the prefix `benwu_metrics_usage_`
-(see [Settings](#settings)). Each step replaces its tables on every run, except
-`adhoc_jobs`, which is appended to.
+(see [Settings](#settings)). Each step replaces its tables on every run, except `adhoc_jobs`,
+which is appended to. These tables are temporary and will be put in a bigquery-etl dataset later.
 
 | Table                                   | One row per                                                    |
 |-----------------------------------------|----------------------------------------------------------------|
@@ -115,10 +115,10 @@ resolves new queries.
 
 ## Handling query text
 
-Redash queries, ad hoc queries and the SQL Looker generates are read to be
-parsed, but none of it is written to BigQuery: only metric and artifact ids
-reach the tables, never column aliases or literals. Redash and ad hoc text is
-never cached, and `resolved_adhoc` holds a hash of each query, not its text.
+Redash queries, ad hoc queries, and the SQL that Looker generates are read to be
+parsed, but none of it is written to BigQuery: only metric and artifact ids, and
+job metadata reach the tables, never column aliases or literals. Redash and ad hoc
+text is never cached, and `resolved_adhoc` holds a hash of each query, not its text.
 
 ## Tests and accuracy
 

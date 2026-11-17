@@ -72,10 +72,12 @@ import yaml
 
 import jinja2
 import sqlglot
+from jinja2.sandbox import SandboxedEnvironment
 from sqlglot import exp
 from sqlglot.optimizer.scope import ScopeType, build_scope
 
-from .common import (CACHE, DEST, PREFIX, PROBEINFO, artifact_schema, get_json, log,
+from .common import (CACHE, DEST, PREFIX, PROBEINFO, artifact_schema, get_json,
+                     get_json_if_found, log,
                      query, ref_schema, run_deep, snakecase, union_views, write_table)
 
 from . import runs
@@ -300,6 +302,7 @@ class Resolver:
         self.udfs = udfs or {}        # SQL function name -> (params, body)
         self.frames = []              # per computation in progress: half-built keys it hit
         self.waiting = {}             # half-built key -> provisional results to drop
+        self.pending = {}             # provisional result -> half-built keys it waits on
         self._orphans = []
         self.bindings = []            # parameter shapes while a UDF body is evaluated
         self.binding_ids = []         # a unique number per UDF call, for cache keys
@@ -800,10 +803,13 @@ class Resolver:
     # every later read (the events_stream and main_events_v1 UNNESTs both came
     # out empty that way). Not caching it at all made some queries recompute
     # without end. So such a result is cached provisionally, tagged with the
-    # half-built keys it hit, and dropped when those finish.
+    # half-built keys it hit, and dropped when those finish. Reading a
+    # provisional result makes the reader provisional on the same keys.
 
     def _guarded(self, key, compute):
         if key in self.memo:
+            for frame in self.frames:
+                frame.update(self.pending.get(key, ()))
             return self.memo[key]
         if key in self.active:
             for frame in self.frames:
@@ -815,14 +821,17 @@ class Resolver:
             out = compute()
         finally:
             self.active.discard(key)
-            hit = self.frames.pop() - {key}
+            # a key that finished while this ran was read whole
+            hit = self.frames.pop() & self.active
         self.memo[key] = out
         if hit:
+            self.pending[key] = hit
             for k in hit:
                 self.waiting.setdefault(k, []).append(key)
         # anything that was waiting on this key is stale now that it is done
         for k in self.waiting.pop(key, []):
             self.memo.pop(k, None)
+            self.pending.pop(k, None)
         return out
 
     def outputs(self, scope):
@@ -875,11 +884,17 @@ class Resolver:
             val = self.projection(proj, scope)
             out[name] = merge_shapes(out.get(name), val) if name in out else val
 
-        # columns used anywhere else in the select (WHERE, JOIN, GROUP BY, and
-        # inside subqueries) still count as touched
-        for clause in ("where", "joins", "group", "having", "qualify"):
+        # columns used anywhere else in the select (WHERE, JOIN, GROUP BY,
+        # ORDER BY, a named WINDOW, and inside subqueries) still count as touched
+        for clause in ("where", "joins", "group", "having", "qualify", "order", "windows"):
             arg = select.args.get(clause)
             nodes = arg if isinstance(arg, list) else [arg]
+            if clause == "order" and arg is not None:
+                # ORDER BY total means the SELECT's total, read above, as in
+                # GROUP BY
+                nodes = [o.this for o in arg.expressions
+                         if not (isinstance(o.this, exp.Column) and not o.this.table
+                                 and o.this.name.lower() in out)]
             if clause == "group" and arg is not None:
                 # GROUP BY install_source means the SELECT's install_source
                 # when there is one, even if a FROM table has a column of that
@@ -1399,10 +1414,25 @@ class Artifact:
         return text_table_refs(self.sql or "", self.project)
 
 
+# A dotted name with at least one part in backticks, as in
+# `mozdata`.`telemetry`.`main` or telemetry.`main`.
+_QUOTED_PARTS_RE = re.compile(r"(?:`[^`\s]+`|[a-z0-9_*-]+)(?:\.(?:`[^`\s]+`|[a-z0-9_*-]+))+", re.I)
+
+
+def merge_quoted(text):
+    """text with each name quoted part by part quoted whole instead, so that
+    `a`.`b`.c reads as `a.b.c`. TABLE_TEXT_RE and TABLE_REF_RE take a
+    backtick only around a whole name."""
+    def whole(m):
+        name = m.group(0)
+        return f"`{name.replace('`', '')}`" if "`" in name else name
+    return _QUOTED_PARTS_RE.sub(whole, text)
+
+
 def text_table_refs(text, project):
     """Table ids named in text that could not be parsed, by TABLE_REF_RE."""
     out = set()
-    for m in TABLE_REF_RE.finditer(COMMENT_RE.sub(" ", text)):
+    for m in TABLE_REF_RE.finditer(merge_quoted(COMMENT_RE.sub(" ", text))):
         parts = (m.group(1) or m.group(2)).lower().split(".")
         if len(parts) == 3:
             out.add(norm_table(tuple(parts), project))
@@ -1414,7 +1444,7 @@ def text_table_refs(text, project):
 # bigquery-etl's templates are almost all `{% if is_init() %}`, which picks the
 # incremental query over the one that builds the table from scratch; anything
 # else undefined renders empty.
-_JINJA = jinja2.Environment(undefined=jinja2.ChainableUndefined)
+_JINJA = SandboxedEnvironment(undefined=jinja2.ChainableUndefined)
 _JINJA.globals["is_init"] = lambda: False
 
 
@@ -1490,7 +1520,9 @@ class Prelude(list):
 
 
 def resolve_script(prelude, tree, shapes, project, reads=None, all_selects=False):
-    """(outputs, touched, star_tables), resolving temp tables in order first.
+    """(outputs, touched, star_tables, unread), resolving temp tables in order
+    first. unread holds the exception type of each scope touch_all() could
+    not evaluate.
 
     reads, if given, collects every table id the resolver looked up. With
     all_selects the SELECTs before the last statement are read too and their
@@ -1500,13 +1532,14 @@ def resolve_script(prelude, tree, shapes, project, reads=None, all_selects=False
     tables = collections.ChainMap({}, shapes)
     touched = Leaf()
     stars = set()
+    unread = []
     for name, sel in prelude:
         root = build_scope(sel)
         if root is None:
             continue
         r = Resolver(tables, project, reads, {**persistent_udfs(), **getattr(prelude, "udfs", {})})
         tables.maps[0][name] = r.outputs(root)
-        touch_all(r, root)
+        unread += touch_all(r, root)
         merge_into(touched, r.touched)
         stars |= r.star_tables
     extra = []
@@ -1516,19 +1549,19 @@ def resolve_script(prelude, tree, shapes, project, reads=None, all_selects=False
             continue
         r = Resolver(tables, project, reads, {**persistent_udfs(), **getattr(prelude, "udfs", {})})
         extra.append(r.outputs(root))
-        touch_all(r, root)
+        unread += touch_all(r, root)
         merge_into(touched, r.touched)
         stars |= r.star_tables
     root = build_scope(tree)
     if root is None:
-        return {}, touched, stars
+        return {}, touched, stars, unread
     r = Resolver(tables, project, reads, {**persistent_udfs(), **getattr(prelude, "udfs", {})})
     out = r.outputs(root)
-    touch_all(r, root)
+    unread += touch_all(r, root)
     merge_into(touched, r.touched)
     for e in extra:
         out = merge_shapes(e, out)
-    return out, touched, stars | r.star_tables
+    return out, touched, stars | r.star_tables, unread
 
 
 def shapes_from_tables():
@@ -1691,10 +1724,8 @@ def ping_pages():
         sources += [libraries[d]["v1_name"] for d in app["dependencies"] if d in libraries]
         pings = set()
         for v1 in sources:
-            try:
-                pings |= set(get_json(f"{PROBEINFO}/glean/{v1}/pings"))
-            except Exception:
-                continue
+            # not found is a variant with no pings; anything else raises
+            pings |= set(get_json_if_found(f"{PROBEINFO}/glean/{v1}/pings") or ())
         datasets = {app_name} | {v["bq_dataset_family"] for v in app["variants"]}
         for ping in pings:
             for ds in datasets:
@@ -1817,9 +1848,9 @@ def regex_refs(art, inventory_index, shapes):
 
 
 def resolve(art, shapes, reads=None):
-    """(output Struct, touched Leaf) for one artifact."""
-    out, touched, _ = resolve_script(art.prelude, art.tree, shapes, art.project, reads)
-    return out, touched
+    """(output Struct, touched Leaf, unread scopes) for one artifact."""
+    out, touched, _, unread = resolve_script(art.prelude, art.tree, shapes, art.project, reads)
+    return out, touched, unread
 
 
 def narrow(path, leaf, leaves):
@@ -1847,6 +1878,15 @@ def narrow(path, leaf, leaves):
     return Leaf({best[0]: leaf[best[0]]}), True
 
 
+def partial_note(unread):
+    """The note for a resolved query: ok, or how many scopes touch_all() could
+    not read, since a metric named only in one of those is missing."""
+    if not unread:
+        return "ok"
+    kinds = ", ".join(sorted(set(unread)))
+    return f"partial: {len(unread)} scopes unread ({kinds})"
+
+
 def touch_all(r, root):
     """Evaluate every scope, including ones the final SELECT never reaches.
 
@@ -1854,13 +1894,18 @@ def touch_all(r, root):
     resolver cannot follow should still count as named, as a filter at worst,
     rather than disappear. Scopes already evaluated are memoized, so this costs
     little.
+
+    Returns the exception type of each scope that could not be evaluated, so
+    the caller can say the result is partial rather than ok.
     """
+    unread = []
     for sc in root.traverse():
         if isinstance(sc.expression, (exp.Select, exp.SetOperation)):
             try:
                 r.outputs(sc)
-            except Exception:
-                pass
+            except Exception as e:
+                unread.append(type(e).__name__)
+    return unread
 
 
 def resolve_events_in(shape, events):
@@ -1931,8 +1976,8 @@ ORDER BY app, metric
         if a.tree is None:
             return {}, regex_refs(a, events, shapes), a.note, None, 0
         try:
-            out, touched = resolve(a, shapes, reads)
-            note = "ok"
+            out, touched, unread = resolve(a, shapes, reads)
+            note = partial_note(unread)
         except Exception as e:
             return ({}, regex_refs(a, events, shapes),
                     f"resolve failed, read by regex: {type(e).__name__}", None, 0)

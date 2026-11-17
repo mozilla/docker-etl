@@ -1,6 +1,8 @@
 """The regex fallback, for SQL that does not parse: a metric counts when the
 text names a table holding it and, as a word, that table's column for it."""
 
+import pytest
+
 from metric_usage import lineage as L
 from harness import events, regex, table
 
@@ -70,3 +72,22 @@ def test_alias_is_not_a_column():
 
 def test_column_read_and_aliased_to_itself_counts():
     assert regex(f"SELECT client_info.client_id AS client_id, {FROM}", PINGS) == {"client_id": True}
+
+
+@pytest.mark.parametrize("name", [
+    "`mozdata`.`telemetry`.`main`",
+    "`moz-fx-data-shared-prod`.`telemetry`.main",
+    "telemetry.`main`",
+    "`telemetry`.`main`",
+    "`mozdata.telemetry.main`",
+])
+def test_table_quoted_part_by_part_is_found(name):
+    from metric_usage import redash as R
+    want = {"moz-fx-data-shared-prod.telemetry.main"}
+    assert R.table_refs(f"select * from {name}", "mozdata") == want
+    assert L.text_table_refs(f"select * from {name}", "moz-fx-data-shared-prod") == want
+
+
+def test_quoted_words_are_not_tables():
+    assert L.text_table_refs("select `a` and `b` from t\nfrom google.cloud import bigquery",
+                             "moz-fx-data-shared-prod") == set()

@@ -44,7 +44,7 @@ import collections
 import re
 import sys
 
-from .common import PROBEINFO, get_json, log, query, snakecase, write_table
+from .common import PROBEINFO, get_json, get_json_if_found, log, query, snakecase, write_table
 
 GLEAN_ALL_PINGS = ("all-pings", "all_pings", "glean_client_info", "glean_internal_info")
 
@@ -177,12 +177,14 @@ def glean_inventory(force, glean_idx, info_idx):
         sources += [(libraries[d]["v1_name"], libraries[d]["library_name"])
                     for d in sorted(app["dependencies"]) if d in libraries]
         for v1_name, origin in sources:
-            try:
-                metrics = get_json(f"{PROBEINFO}/glean/{v1_name}/metrics", force)
-                pings |= set(get_json(f"{PROBEINFO}/glean/{v1_name}/pings", force))
-            except Exception as e:
-                log(f"  {app_name}: skipped {v1_name}: {e}")
+            # a variant probeinfo does not list is skipped; any other error
+            # stops the step rather than write metrics with some missing
+            metrics = get_json_if_found(f"{PROBEINFO}/glean/{v1_name}/metrics", force)
+            got = get_json_if_found(f"{PROBEINFO}/glean/{v1_name}/pings", force)
+            if metrics is None or got is None:
+                log(f"  {app_name}: skipped {v1_name}: not in probeinfo")
                 continue
+            pings |= set(got)
             for name, d in metrics.items():
                 held = defs.get(name)
                 if held is None or latest(d["history"])["dates"]["last"] > \

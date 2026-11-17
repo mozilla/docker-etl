@@ -39,7 +39,8 @@ import time
 
 from .common import (CACHE, DEST, LONGEST, PREFIX, WINDOWS, ResolveTimeout, artifact_schema,
                      client, log, pool_map, read_cache, ref_schema, seen_within, time_limit,
-                     union_views, window_end, window_start, write_cache, write_table)
+                     union_views, utc_today, window_end, window_start, write_cache,
+                     write_table)
 
 from . import lineage as L
 from . import looker_api
@@ -76,6 +77,11 @@ PERMANENT_ERROR_RE = re.compile("|".join([
     r"^Variable not found",
 ]))
 RETRY_DELAYS = (5, 20)  # seconds before the second and third attempts
+# Share of groups, or of exposure chunks, whose SQL may fail for passing
+# reasons before the step stops rather than replace its tables. Past this the
+# Looker API was likely down for part of the run, and the refs it would write
+# would show metrics as unused that are not.
+MAX_TRANSIENT = 0.01
 
 _LOCAL = threading.local()
 
@@ -91,7 +97,7 @@ def _cached(kind, key, fetch, daily=True, refresh=False):
     """fetch() cached by key (common.read_cache()); daily keys expire at
     midnight. A value marked transient is returned but not cached."""
     if daily:
-        key = f"{datetime.date.today()}:{key}"
+        key = f"{utc_today()}:{key}"
     path = API_CACHE / f"{kind}_{hashlib.sha256(key.encode()).hexdigest()[:16]}.json"
     held = None if refresh else read_cache(path)
     if held is not None:
@@ -100,6 +106,14 @@ def _cached(kind, key, fetch, daily=True, refresh=False):
     if not (isinstance(value, dict) and value.get("transient")):
         write_cache(path, json.dumps(value).encode())
     return value
+
+
+def check_transient(n_failed, n_total, what):
+    """Stop the step when more than MAX_TRANSIENT of n_total failed for
+    passing reasons, so the tables keep the last complete run."""
+    if n_total and n_failed / n_total > MAX_TRANSIENT:
+        raise SystemExit(f"{n_failed:,} of {n_total:,} {what} failed for passing reasons, "
+                         f"over {MAX_TRANSIENT:.0%}; not writing. Rerun once Looker recovers.")
 
 
 def first_line(e, width):
@@ -141,6 +155,7 @@ def system_activity(view, fields, filters=None, sorts=None, limit=500000):
     it runs queries selecting every field of the metrics and use_counters
     explores, whose field lists System Activity cuts off.
     """
+    from looker_sdk import error as E
     from looker_sdk import models40 as M
 
     expr = None
@@ -148,11 +163,19 @@ def system_activity(view, fields, filters=None, sorts=None, limit=500000):
         expr = (f'NOT (${{user.id}} = {api_user_id()} AND ${{history.source}} = "api4") '
                 'AND NOT contains(${user.email}, "bigeye")')
 
-    def fetch():
+    def run():
         q = M.WriteQuery(model="system__activity", view=view, fields=fields,
                          filters=filters or {}, filter_expression=expr, sorts=sorts,
                          limit=str(limit))
         return json.loads(sdk().run_inline_query("json", q))
+
+    def fetch():
+        # retried like generated SQL, but nothing here can be done without it,
+        # so an error that persists stops the step
+        got = with_retries(run, E.SDKError, 200)
+        if "error" in got:
+            raise RuntimeError(f"System Activity {view}: {got['error']}")
+        return got["value"]
 
     rows = _cached("sa", json.dumps([view, fields, filters, expr, sorts, limit], sort_keys=True),
                    fetch)
@@ -204,7 +227,7 @@ def content():
 
 def usage(days, end):
     """Runs, users and last use per dashboard, Look and ad hoc explore in one
-    window, and the scheduled runs in it."""
+    window."""
     when = window(days, end)
     # history.dashboard_id is a string field, which a NOT NULL filter matches
     # nothing on; dashboard.id is the number
@@ -226,11 +249,9 @@ def usage(days, end):
         "history.most_recent_query_date",
     ], dict(when, **{"history.source": ",".join(sorted(ADHOC_SOURCES)),
                        "history.dashboard_id": "NULL", "history.look_id": "NULL"}))
-    scheduled = system_activity("history", ["history.dashboard_id", "history.look_id"],
-                                dict(when, **{"history.source": "scheduled_task"}))
     for r in lookml_dash:
         r["dashboard.id"] = r.pop("history.dashboard_id")
-    return dash + lookml_dash, look, explore, scheduled
+    return dash + lookml_dash, look, explore
 
 
 def lookml_dashboards():
@@ -344,6 +365,8 @@ def exposure():
         log(f"  exposure: {len(transient)} explores' metadata and {len(skipped)} chunks "
             f"({sum(n for _, _, n, _ in skipped):,} fields) failed for passing reasons; "
             f"asked again next run")
+    check_transient(len(transient), len(explores), "explores' metadata")
+    check_transient(len(skipped), len(jobs), "exposure chunks")
     return keys, items, failed
 
 
@@ -499,7 +522,8 @@ def resolve_group(sql):
     if tree is None:
         return {}, {}, note or "unparsed"
     try:
-        out, touched, _ = L.resolve_script(prelude, tree, _SHAPES, PROJECT, all_selects=True)
+        out, touched, _, unread = L.resolve_script(prelude, tree, _SHAPES, PROJECT,
+                                                   all_selects=True)
     except Exception as e:
         return {}, {}, f"resolve failed: {type(e).__name__}"
     idents = {}
@@ -515,7 +539,7 @@ def resolve_group(sql):
     in_output = {m for _, leaf in L.output_paths(out) for m in leaf}
     named = {m: ("output" if m in in_output else "filter", h, via, t)
              for m, (h, via, t, n) in touched.items() if isinstance(m, int) and n}
-    return named, idents, "ok"
+    return named, idents, L.partial_note(unread)
 
 
 def _work(item):
@@ -794,7 +818,7 @@ def usage_by_window(end, linked):
     scheduled run anywhere in the longest window."""
     out = {}
     for w in WINDOWS:
-        dash_use, look_use, explore_use, scheduled = usage(w, end)
+        dash_use, look_use, explore_use = usage(w, end)
         dash_u = {}
         for r in dash_use:
             d = linked.get(str(r["dashboard.id"]), str(r["dashboard.id"]))
@@ -809,9 +833,8 @@ def usage_by_window(end, linked):
                 r.get("history.most_recent_query_date") or "") or None
         out[w] = (dash_u, {r["history.look_id"]: r for r in look_use},
                   {(r["query.model"], r["query.view"]): r for r in explore_use})
-        if w == LONGEST:
-            sched = scheduled
-    scheduled = sched
+    scheduled = system_activity("history", ["history.dashboard_id", "history.look_id"],
+                                dict(window(LONGEST, end), **{"history.source": "scheduled_task"}))
     sched_d = {linked.get(r["history.dashboard_id"], r["history.dashboard_id"])
                for r in scheduled if r["history.dashboard_id"]}
     sched_l = {r["history.look_id"] for r in scheduled if r["history.look_id"]}
@@ -834,6 +857,7 @@ def run(refresh_sql=False, measure_only=False, with_exposure=True):
         + (f" ({passing:,} for passing reasons, asked again next run)" if passing else ""))
     for e, n in errors.most_common(5):
         log(f"    {n:5,}  {e}")
+    check_transient(passing, len(sqls), "groups")
 
     inventory, _SHAPES = L.shapes_from_tables()
     _EVENTS = L.event_index(inventory)

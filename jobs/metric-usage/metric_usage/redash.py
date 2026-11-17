@@ -211,7 +211,7 @@ def known_tables():
 
 def table_refs(text, project=REDASH_PROJECT):
     out = set()
-    for m in L.TABLE_TEXT_RE.finditer(text):
+    for m in L.TABLE_TEXT_RE.finditer(L.merge_quoted(text)):
         parts = m.group(1).split(".")
         if len(parts) == 3:
             out.add(L.norm_table(tuple(parts), project))
@@ -242,8 +242,8 @@ def analyse(text, project=REDASH_PROJECT):
                  if isinstance(m, int)},
                 [], note or "regex")
     try:
-        out, touched, star_tables = L.resolve_script(prelude, tree, _SHAPES, project,
-                                                     all_selects=True)
+        out, touched, star_tables, unread = L.resolve_script(prelude, tree, _SHAPES, project,
+                                                             all_selects=True)
     except Exception as e:
         return {}, [], f"resolve failed: {type(e).__name__}"
     out = L.resolve_events_in(out, _EVENTS)
@@ -261,7 +261,7 @@ def analyse(text, project=REDASH_PROJECT):
             continue
         named[m] = ("output" if outs else "filter", h, via,
                     t or any(v[2] for v in outs))
-    return named, sorted(star_tables & _TABLES), "ok"
+    return named, sorted(star_tables & _TABLES), L.partial_note(unread)
 
 
 def _work(item):

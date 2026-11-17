@@ -46,6 +46,7 @@ import re
 import tomllib
 
 import jinja2
+from jinja2.sandbox import SandboxedEnvironment
 
 from .common import (CACHE, DEST, DISK_CACHE, LONGEST, PREFIX, WINDOWS, artifact_schema, client,
                      log, query, read_cache, ref_schema, union_views, window_end, window_start,
@@ -60,6 +61,14 @@ OPMON_DASHBOARD = "https://mozilla.cloud.looker.com/dashboards/operational_monit
 # where an unqualified dataset.table in metric-hub SQL lives
 PROJECT = "mozdata"
 RESOLVED_VERSION = 1
+
+
+def tool_configs(hub):
+    """{(tool, slug): config} for the Jetstream and OpMon configs, keyed by tool
+    too since an experiment can have both under the same slug."""
+    return {(rel.split("/")[0], norm(rel.split("/")[-1][:-5])): hub.get(rel)
+            for rel in hub.files
+            if rel.count("/") == 1 and rel.split("/")[0] in ("jetstream", "opmon")}
 
 
 def norm(slug):
@@ -107,7 +116,7 @@ class Hub:
             for name, f in src.section("functions").items():
                 if "definition" in f:
                     self.functions[name] = f["definition"]
-        self.env = jinja2.Environment(undefined=_Placeholder)
+        self.env = SandboxedEnvironment(undefined=_Placeholder)
 
     def get(self, rel):
         return self.files.get(rel)
@@ -291,8 +300,7 @@ class Model:
                     self._add(f"metric-hub:{rel[:-5]}.{name}", f"{platform}.{name} ({what})",
                               src, name, ctx)
         self.resolved.save()
-        self.configs = {norm(p.split("/")[-1][:-5]): self.hub.get(p) for p in self.hub.files
-                        if p.count("/") == 1 and p.split("/")[0] in ("jetstream", "opmon")}
+        self.configs = tool_configs(self.hub)
 
     def files_under(self, prefix):
         return [(rel, src) for rel, src in self.hub.files.items() if rel.startswith(prefix + "/")]
@@ -346,9 +354,7 @@ class Model:
         Glean metric, not named when only its platform's default metrics do.
         via is the metric-hub metric when there is one."""
         platform = (experiment or {}).get("app_name") or "firefox_desktop"
-        config = self.configs.get(slug)
-        if config is not None and not config.rel.startswith("jetstream/"):
-            config = None
+        config = self.configs.get(("jetstream", slug))
         outcomes = [o for o in (self.hub.get(f"jetstream/outcomes/{platform}/{x}.toml")
                                 for x in (experiment or {}).get("outcomes") or []) if o]
         defaults = self.hub.get(f"jetstream/defaults/{platform}.toml")
@@ -376,8 +382,7 @@ class Model:
         return out
 
     def opmon_config(self, slug):
-        config = self.configs.get(slug)
-        return config if config is not None and config.rel.startswith("opmon/") else None
+        return self.configs.get(("opmon", slug))
 
     def opmon_projects(self, end):
         """OpMon projects whose dates overlap the longest window, from OpMon's

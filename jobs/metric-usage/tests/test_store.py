@@ -104,6 +104,22 @@ def test_store_keeps_an_old_entry_that_may_not_expire(store):
     assert store.get("k", may_expire=False) is not None
 
 
+def test_store_redoes_an_entry_from_another_version(store):
+    store.version = "v2"
+    assert store.get("k") is None
+
+
+def test_store_keeps_a_frozen_entry_from_another_version(store, monkeypatch):
+    # its text is gone, so dropping it on a resolver change would lose it for good
+    store.version = "v2"
+    assert store.get("k", frozen=True) is not None
+    written = {}
+    monkeypatch.setattr(common, "write_table",
+                        lambda name, rows, *a, **k: written.update(rows=rows))
+    store.save()
+    assert [(r["key"], r["version"]) for r in written["rows"]] == [("k", "v1")]
+
+
 def test_memory_cache_writes_nothing_to_disk(monkeypatch, tmp_path):
     monkeypatch.setattr(common, "DISK_CACHE", False)
     monkeypatch.setattr(common, "_MEMORY", {})

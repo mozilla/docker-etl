@@ -320,7 +320,7 @@ def text_hits(text, project, terms, events):
     """{metric key: matching line} for one artifact's text, comments excluded."""
     low = strip_comments(text.lower())
     tables = set()
-    for m in L.TABLE_TEXT_RE.finditer(low):
+    for m in L.TABLE_TEXT_RE.finditer(L.merge_quoted(low)):
         parts = m.group(1).split(".")
         if len(parts) == 3:
             tables.add(L.norm_table(tuple(parts), project))
