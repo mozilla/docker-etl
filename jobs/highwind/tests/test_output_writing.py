@@ -7,7 +7,7 @@ import pathlib
 
 import pytest
 from google.cloud import bigquery
-from mozilla_nimbus_schemas.highwind import HighwindAnalysis
+from mozilla_nimbus_schemas.highwind import HighwindAnalysis, HighwindWinsorizeMode
 
 from gbstats.frequentist.tests import sequential_interval_halfwidth
 
@@ -589,6 +589,118 @@ def test_the_blob_round_trips_through_the_published_schema():
         results=[result("active_hours", 1, "cumulative", "confident", point=5.0, lower=1.0,
                         upper=9.0, n_reference=40, n_treatment=41, theta=0.1)],
         cells={("active_hours", "cumu:1", "control"): aggregates(40)},
+    )
+
+    assert HighwindAnalysis.model_validate_json(analysis.model_dump_json()) == analysis
+
+
+def winsorized_cell(
+    n, mode, post_winsorize_threshold=None, pre_winsorize_threshold=None, clipped_share=None
+):
+    return dict(
+        aggregates(n),
+        winsorize_mode=mode,
+        post_winsorize_threshold=post_winsorize_threshold,
+        pre_winsorize_threshold=pre_winsorize_threshold,
+        clipped_share=clipped_share,
+    )
+
+
+def test_a_quantile_metrics_window_carries_its_thresholds_and_clipped_share():
+    # The job's own mode is "quantile", but it maps onto the published schema's unchanged
+    # FRACTION label (see output_writing.WINSORIZE_MODE_BY_JOB_VALUE).
+    analysis = build(
+        results=[result("active_hours", 1, "cumulative", "confident", point=5.0, lower=1.0,
+                        upper=9.0, n_reference=40, n_treatment=41, theta=0.1)],
+        cells={
+            ("active_hours", "cumu:1", "control"): winsorized_cell(
+                40, "quantile", post_winsorize_threshold=500.0, pre_winsorize_threshold=2000.0,
+                clipped_share=0.01,
+            ),
+            ("active_hours", "cumu:1", "treatment"): winsorized_cell(
+                41, "quantile", post_winsorize_threshold=500.0, pre_winsorize_threshold=2000.0,
+                clipped_share=0.02,
+            ),
+        },
+    )
+    window = windows_of(analysis, "active_hours")[0]
+
+    assert window.winsorize_mode == HighwindWinsorizeMode.FRACTION
+    assert window.post_winsorize_threshold == 500.0
+    assert window.pre_winsorize_threshold == 2000.0
+    assert {branch.branch: branch.clipped_share for branch in window.branches} == {
+        "control": 0.01,
+        "treatment": 0.02,
+    }
+
+
+def test_an_off_metrics_window_carries_mode_off_and_null_thresholds():
+    analysis = build(
+        results=[result("active_hours", 1, "cumulative", "confident", point=5.0, lower=1.0,
+                        upper=9.0, n_reference=40, n_treatment=41, theta=0.1)],
+        cells={
+            ("active_hours", "cumu:1", "control"): winsorized_cell(40, "off", clipped_share=0.0),
+            ("active_hours", "cumu:1", "treatment"): winsorized_cell(
+                41, "off", clipped_share=0.0
+            ),
+        },
+    )
+    window = windows_of(analysis, "active_hours")[0]
+
+    assert window.winsorize_mode == HighwindWinsorizeMode.OFF
+    assert window.post_winsorize_threshold is None
+    assert window.pre_winsorize_threshold is None
+
+
+def test_a_too_few_units_window_is_mapped_to_skipped():
+    analysis = build(
+        results=[result("active_hours", 1, "cumulative", "confident", point=5.0, lower=1.0,
+                        upper=9.0, n_reference=40, n_treatment=41, theta=0.1)],
+        cells={
+            ("active_hours", "cumu:1", "control"): winsorized_cell(40, "skipped_too_few"),
+            ("active_hours", "cumu:1", "treatment"): winsorized_cell(41, "skipped_too_few"),
+        },
+    )
+    window = windows_of(analysis, "active_hours")[0]
+
+    assert window.winsorize_mode == HighwindWinsorizeMode.SKIPPED
+
+
+def test_an_unrecognised_winsorize_mode_is_refused():
+    with pytest.raises(ValueError, match="bogus-mode"):
+        output_writing.winsorize_mode_schema("bogus-mode")
+
+
+def test_a_cell_with_no_winsorize_fields_leaves_the_window_fields_unset():
+    analysis = build(
+        results=[result("active_hours", 1, "cumulative", "confident", point=5.0, lower=1.0,
+                        upper=9.0, n_reference=40, n_treatment=41, theta=0.1)],
+        cells={("active_hours", "cumu:1", "control"): aggregates(40)},
+    )
+    window = windows_of(analysis, "active_hours")[0]
+
+    assert window.winsorize_mode is None
+    assert window.post_winsorize_threshold is None
+    assert window.pre_winsorize_threshold is None
+    assert all(branch.clipped_share is None for branch in window.branches)
+
+
+def test_a_full_blob_with_winsorize_fields_validates_against_the_published_schema():
+    # --validate-sql never writes a blob, so this is the only place a QUANTILE-mode blob is
+    # actually built and checked against the published models before it reaches Experimenter.
+    analysis = build(
+        results=[result("active_hours", 1, "cumulative", "confident", point=5.0, lower=1.0,
+                        upper=9.0, n_reference=40, n_treatment=41, theta=0.1)],
+        cells={
+            ("active_hours", "cumu:1", "control"): winsorized_cell(
+                40, "quantile", post_winsorize_threshold=500.0, pre_winsorize_threshold=2000.0,
+                clipped_share=0.01,
+            ),
+            ("active_hours", "cumu:1", "treatment"): winsorized_cell(
+                41, "quantile", post_winsorize_threshold=500.0, pre_winsorize_threshold=2000.0,
+                clipped_share=0.02,
+            ),
+        },
     )
 
     assert HighwindAnalysis.model_validate_json(analysis.model_dump_json()) == analysis
