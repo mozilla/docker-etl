@@ -9,8 +9,8 @@ from metric_config_parser.aggregation import BucketedAggregation, Combine
 from metric_config_parser.aggregation_plan import AggregationSource
 from mozilla_nimbus_schemas.highwind import HighwindAnalysis
 
-from highwind import analysis, output_writing, sql_generation, units
-from highwind.discovery import Experiment, MetricDisplay
+from highwind import analysis, output_writing, segments, sql_generation, units
+from highwind.discovery import Experiment, MetricDisplay, SegmentDisplay
 from highwind.gbstats_compute import (
     CONFIDENT,
     ERROR,
@@ -561,3 +561,89 @@ def test_a_failed_unit_count_keeps_the_cells_the_shared_scan_computed(caplog):
     assert cells_by_slug["a-slug"][("a-metric", "week:1", "all_enrolled", "control")]["n"] == 10
     assert timings
     assert "the branch unit count failed" in caplog.text
+
+
+def experiment_selecting(segment_names):
+    return Experiment(
+        slug="a-slug",
+        start_date=datetime.date(2026, 7, 1),
+        end_date=None,
+        reference_branch="control",
+        treatment_branches=("treatment",),
+        unit=units.resolve("firefox_desktop", "normandy_id"),
+        segments={
+            name: SegmentDisplay(friendly_name=None, description=None)
+            for name in segment_names
+        },
+    )
+
+
+def test_todays_parser_resolves_no_segment_and_warns_about_each_one_selected(caplog):
+    # The real installed metric-config-parser in this image has no segment_plan(), so this
+    # exercises the actual dark path rather than a simulation of it.
+    caplog.set_level(logging.WARNING)
+    experiment = experiment_selecting(["regular_user"])
+
+    segment_names_by_slug, resolved_segments, segment_sources = analysis.resolve_run_segments(
+        [experiment], configs=object()
+    )
+
+    assert segment_names_by_slug == {"a-slug": ()}
+    assert resolved_segments == {}
+    assert segment_sources == {}
+    assert (
+        "a-slug: segment 'regular_user' not computed: "
+        f"{segments.NOT_AVAILABLE_REASON}" in caplog.text
+    )
+
+
+def test_an_experiment_that_selects_no_segment_resolves_an_empty_tuple():
+    experiment = experiment_selecting([])
+
+    segment_names_by_slug, _, _ = analysis.resolve_run_segments([experiment], configs=object())
+
+    assert segment_names_by_slug == {"a-slug": ()}
+
+
+def test_a_resolving_parser_fills_segment_names_and_warns_only_about_what_did_not_resolve(
+    monkeypatch, caplog
+):
+    caplog.set_level(logging.WARNING)
+
+    class FakeSegmentMetric:
+        def __init__(self, name, data_source, select_expression):
+            self.name = name
+            self.data_source = data_source
+            self.select_expression = select_expression
+
+    class FakePlan:
+        def __init__(self, sources, segments, missing):
+            self.sources = sources
+            self.segments = segments
+            self.missing = missing
+
+    def fake_segment_plan(configs, app_name, names):
+        return FakePlan(
+            sources={},
+            segments={
+                "regular_user": FakeSegmentMetric(
+                    "regular_user", "clients_last_seen", "COALESCE(LOGICAL_OR(p), FALSE)"
+                )
+            },
+            missing=[name for name in names if name != "regular_user"],
+        )
+
+    monkeypatch.setattr(segments, "_segment_plan", fake_segment_plan)
+    experiment = experiment_selecting(["regular_user", "an_inline_segment"])
+
+    segment_names_by_slug, resolved_segments, _ = analysis.resolve_run_segments(
+        [experiment], configs=object()
+    )
+
+    assert segment_names_by_slug == {"a-slug": ("regular_user",)}
+    assert set(resolved_segments) == {"regular_user"}
+    assert (
+        "a-slug: segment 'an_inline_segment' not computed: "
+        f"{segments.NOT_RESOLVED_REASON}" in caplog.text
+    )
+    assert "regular_user' not computed" not in caplog.text

@@ -112,6 +112,14 @@ def metric_config(name, friendly_name=None, description=None, bigger_is_better=N
     }
 
 
+def segment_config(name, friendly_name=None, description=None):
+    return {
+        "name": name,
+        "friendly_name": friendly_name,
+        "description": description,
+    }
+
+
 def mirror_row(**overrides):
     """One row of the mirror, in the shape `discover` reads."""
     return types.SimpleNamespace(
@@ -124,6 +132,7 @@ def mirror_row(**overrides):
             "reference_branch": "control",
             "branch_slugs": ["control", "treatment"],
             "metric_configs": [],
+            "segment_configs": [],
             **overrides,
         }
     )
@@ -188,6 +197,35 @@ def test_a_rollout_with_no_metric_config_carries_no_metrics():
 
     (experiment,) = experiments
     assert experiment.metric_names == ()
+
+
+def test_an_experiment_carries_its_own_selected_segment_names():
+    experiments, _ = discovery.discover(
+        FakeClient(
+            [
+                mirror_row(
+                    segment_configs=[
+                        segment_config("regular_user", friendly_name="Regular user"),
+                        segment_config("new_profile", friendly_name="New profile"),
+                    ]
+                )
+            ]
+        ),
+        AS_OF,
+    )
+
+    (experiment,) = experiments
+    assert experiment.segment_names == ("new_profile", "regular_user")
+    assert experiment.segments["regular_user"].friendly_name == "Regular user"
+
+
+def test_an_experiment_with_no_segment_config_carries_no_segments():
+    experiments, _ = discovery.discover(
+        FakeClient([mirror_row(segment_configs=[])]), AS_OF
+    )
+
+    (experiment,) = experiments
+    assert experiment.segment_names == ()
 
 
 def test_a_randomization_unit_with_no_analysis_unit_is_skipped_not_defaulted():

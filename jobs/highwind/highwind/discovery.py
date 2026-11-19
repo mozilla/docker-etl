@@ -68,7 +68,17 @@ SELECT
       metric.description,
       metric.bigger_is_better
     FROM UNNEST(metric_config.metrics) AS metric
-  ) AS metric_configs
+  ) AS metric_configs,
+  -- The experiment's own selected shared segments, resolved the same way its metrics are:
+  -- `segments.py` maps a name onto metric-hub's `nimbus/` segment definitions, and a name with
+  -- none (an inline-only segment) is reported unresolved rather than computed.
+  ARRAY(
+    SELECT AS STRUCT
+      segment.name,
+      segment.friendly_name,
+      segment.description
+    FROM UNNEST(metric_config.segments) AS segment
+  ) AS segment_configs
 FROM (
   SELECT
     mirror.* EXCEPT (end_date),
@@ -111,6 +121,18 @@ class MetricDisplay:
 
 
 @dataclass(frozen=True)
+class SegmentDisplay:
+    """The display text the mirror carried for one of an experiment's selected segments.
+
+    Mirrors `MetricDisplay`: read off the mirror's own `metric_config.segments` rather than
+    hard-coded, so the text matches whatever metric-hub says for the experiment that selected it.
+    """
+
+    friendly_name: str | None
+    description: str | None
+
+
+@dataclass(frozen=True)
 class Experiment:
     """One recipe to analyse, with everything the SQL needs and nothing it does not."""
 
@@ -124,6 +146,11 @@ class Experiment:
     # name against metric-hub's `nimbus/` definitions is `metrics.py`'s job, not discovery's: this
     # is only ever what the mirror's own resolved Jetstream metric set names.
     metrics: dict[str, MetricDisplay] = field(default_factory=dict)
+    # The experiment's own selected segment names, keyed to their display text the same way
+    # `metrics` is. `all_enrolled` is never in here: every experiment gets it regardless of what
+    # it selected, so it is never read off the mirror. Resolving a name against metric-hub's
+    # `nimbus/` segment definitions is `segments.py`'s job, not discovery's.
+    segments: dict[str, SegmentDisplay] = field(default_factory=dict)
 
     @property
     def branches(self):
@@ -134,6 +161,11 @@ class Experiment:
     def metric_names(self):
         """Return the experiment's own metric names, sorted for a deterministic order."""
         return tuple(sorted(self.metrics))
+
+    @property
+    def segment_names(self):
+        """Return the experiment's own selected segment names, sorted for a deterministic order."""
+        return tuple(sorted(self.segments))
 
     def ended(self, as_of):
         return self.end_date is not None and self.end_date <= as_of
@@ -166,6 +198,21 @@ def metric_display(metric_configs):
             bigger_is_better=metric["bigger_is_better"],
         )
         for metric in metric_configs
+    }
+
+
+def segment_display(segment_configs):
+    """Turn the mirror's per-experiment segment rows into a name-keyed display map.
+
+    `metric_config.segments` holds one entry per selected segment (see `DISCOVERY_SQL`), the same
+    repeated-RECORD shape as `metric_config.metrics`, read by key for the same reason.
+    """
+    return {
+        segment["name"]: SegmentDisplay(
+            friendly_name=segment["friendly_name"],
+            description=segment["description"],
+        )
+        for segment in segment_configs
     }
 
 
@@ -219,6 +266,7 @@ def discover(client, as_of, limit=None, only_slugs=None):
             treatment_branches=others,
             unit=unit,
             metrics=metric_display(row.metric_configs),
+            segments=segment_display(row.segment_configs),
         )
         if experiment.too_old(as_of):
             skipped.append(
