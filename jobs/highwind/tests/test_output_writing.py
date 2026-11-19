@@ -28,6 +28,7 @@ EXPERIMENT = Experiment(
 
 CONFIDENT_CELL = dict(
     metric="active_hours",
+    segment="all_enrolled",
     window="cumu:1",
     window_kind="cumulative",
     window_start=0,
@@ -46,6 +47,7 @@ CONFIDENT_CELL = dict(
 # The state that makes an inferred schema unusable: no point, lower, upper or theta at all.
 ERROR_CELL = dict(
     metric="active_hours",
+    segment="all_enrolled",
     window="cumu:2",
     window_kind="cumulative",
     window_start=0,
@@ -129,7 +131,7 @@ def write_one_run(client, outputs=None):
         client,
         AS_OF,
         {"an-experiment": [CONFIDENT_CELL, ERROR_CELL]},
-        {"an-experiment": {("active_hours", "cumu:1", "control"): AGGREGATES}},
+        {"an-experiment": {("active_hours", "cumu:1", "all_enrolled", "control"): AGGREGATES}},
         outputs or output_writing.Outputs(),
     )
 
@@ -300,7 +302,11 @@ def test_a_clipped_cells_winsorize_columns_flow_through_to_the_written_row():
         client,
         AS_OF,
         {"an-experiment": [CONFIDENT_CELL]},
-        {"an-experiment": {("active_hours", "cumu:1", "control"): clipped_aggregates}},
+        {
+            "an-experiment": {
+                ("active_hours", "cumu:1", "all_enrolled", "control"): clipped_aggregates
+            }
+        },
         output_writing.Outputs(),
     )
     stats_row = client.loads[1][1][0]
@@ -507,10 +513,11 @@ class UploadingStorage:
         return UploadingBucket(self.uploads)
 
 
-def result(metric, index, kind, state, branch="treatment", **extra):
+def result(metric, index, kind, state, branch="treatment", segment=discovery.ALL_ENROLLED, **extra):
     window = discovery.window_at({"kind": kind, "length": 7}, index)
     return dict(
         metric=metric,
+        segment=segment,
         window=window.label,
         window_kind=window.kind,
         window_start=window.start,
@@ -533,6 +540,7 @@ def build(
     results=(),
     cells=None,
     units=None,
+    segment_names=(discovery.ALL_ENROLLED,),
     problems=(),
 ):
     return output_writing.build_analysis(
@@ -542,6 +550,7 @@ def build(
         list(results),
         cells or {},
         units or {},
+        segment_names,
         list(problems),
     )
 
@@ -588,7 +597,7 @@ def test_the_blob_round_trips_through_the_published_schema():
     analysis = build(
         results=[result("active_hours", 1, "cumulative", "confident", point=5.0, lower=1.0,
                         upper=9.0, n_reference=40, n_treatment=41, theta=0.1)],
-        cells={("active_hours", "cumu:1", "control"): aggregates(40)},
+        cells={("active_hours", "cumu:1", "all_enrolled", "control"): aggregates(40)},
     )
 
     assert HighwindAnalysis.model_validate_json(analysis.model_dump_json()) == analysis
@@ -613,11 +622,11 @@ def test_a_quantile_metrics_window_carries_its_thresholds_and_clipped_share():
         results=[result("active_hours", 1, "cumulative", "confident", point=5.0, lower=1.0,
                         upper=9.0, n_reference=40, n_treatment=41, theta=0.1)],
         cells={
-            ("active_hours", "cumu:1", "control"): winsorized_cell(
+            ("active_hours", "cumu:1", "all_enrolled", "control"): winsorized_cell(
                 40, "quantile", post_winsorize_threshold=500.0, pre_winsorize_threshold=2000.0,
                 clipped_share=0.01,
             ),
-            ("active_hours", "cumu:1", "treatment"): winsorized_cell(
+            ("active_hours", "cumu:1", "all_enrolled", "treatment"): winsorized_cell(
                 41, "quantile", post_winsorize_threshold=500.0, pre_winsorize_threshold=2000.0,
                 clipped_share=0.02,
             ),
@@ -639,8 +648,10 @@ def test_an_off_metrics_window_carries_mode_off_and_null_thresholds():
         results=[result("active_hours", 1, "cumulative", "confident", point=5.0, lower=1.0,
                         upper=9.0, n_reference=40, n_treatment=41, theta=0.1)],
         cells={
-            ("active_hours", "cumu:1", "control"): winsorized_cell(40, "off", clipped_share=0.0),
-            ("active_hours", "cumu:1", "treatment"): winsorized_cell(
+            ("active_hours", "cumu:1", "all_enrolled", "control"): winsorized_cell(
+                40, "off", clipped_share=0.0
+            ),
+            ("active_hours", "cumu:1", "all_enrolled", "treatment"): winsorized_cell(
                 41, "off", clipped_share=0.0
             ),
         },
@@ -657,8 +668,12 @@ def test_a_too_few_units_window_is_mapped_to_skipped():
         results=[result("active_hours", 1, "cumulative", "confident", point=5.0, lower=1.0,
                         upper=9.0, n_reference=40, n_treatment=41, theta=0.1)],
         cells={
-            ("active_hours", "cumu:1", "control"): winsorized_cell(40, "skipped_too_few"),
-            ("active_hours", "cumu:1", "treatment"): winsorized_cell(41, "skipped_too_few"),
+            ("active_hours", "cumu:1", "all_enrolled", "control"): winsorized_cell(
+                40, "skipped_too_few"
+            ),
+            ("active_hours", "cumu:1", "all_enrolled", "treatment"): winsorized_cell(
+                41, "skipped_too_few"
+            ),
         },
     )
     window = windows_of(analysis, "active_hours")[0]
@@ -675,7 +690,7 @@ def test_a_cell_with_no_winsorize_fields_leaves_the_window_fields_unset():
     analysis = build(
         results=[result("active_hours", 1, "cumulative", "confident", point=5.0, lower=1.0,
                         upper=9.0, n_reference=40, n_treatment=41, theta=0.1)],
-        cells={("active_hours", "cumu:1", "control"): aggregates(40)},
+        cells={("active_hours", "cumu:1", "all_enrolled", "control"): aggregates(40)},
     )
     window = windows_of(analysis, "active_hours")[0]
 
@@ -692,11 +707,11 @@ def test_a_full_blob_with_winsorize_fields_validates_against_the_published_schem
         results=[result("active_hours", 1, "cumulative", "confident", point=5.0, lower=1.0,
                         upper=9.0, n_reference=40, n_treatment=41, theta=0.1)],
         cells={
-            ("active_hours", "cumu:1", "control"): winsorized_cell(
+            ("active_hours", "cumu:1", "all_enrolled", "control"): winsorized_cell(
                 40, "quantile", post_winsorize_threshold=500.0, pre_winsorize_threshold=2000.0,
                 clipped_share=0.01,
             ),
-            ("active_hours", "cumu:1", "treatment"): winsorized_cell(
+            ("active_hours", "cumu:1", "all_enrolled", "treatment"): winsorized_cell(
                 41, "quantile", post_winsorize_threshold=500.0, pre_winsorize_threshold=2000.0,
                 clipped_share=0.02,
             ),
@@ -724,7 +739,7 @@ def test_the_metadata_describes_the_experiment_reference_branch_first():
 def test_there_is_one_all_enrolled_segment_counting_units_per_branch_reference_first():
     analysis = build(
         experiment=THREE_ARMS,
-        cells={("active_hours", "cumu:1", "control"): aggregates(7)},
+        cells={("active_hours", "cumu:1", "all_enrolled", "control"): aggregates(7)},
         units={"treatment-a": 48, "control": 50, "another-slugs-branch": 9},
     )
 
@@ -896,7 +911,7 @@ def test_every_metric_has_exactly_one_summary_window_per_segment():
 def test_a_matured_window_with_no_data_is_insufficient_rather_than_not_started():
     analysis = build(
         results=[result("active_hours", 1, "cumulative", "not_started")],
-        cells={("active_hours", "cumu:1", "control"): aggregates(12)},
+        cells={("active_hours", "cumu:1", "all_enrolled", "control"): aggregates(12)},
     )
 
     [comparison] = windows_of(analysis, "active_hours")[0].comparisons
@@ -908,8 +923,8 @@ def test_each_branch_carries_its_units_for_the_window():
     analysis = build(
         experiment=THREE_ARMS,
         cells={
-            ("active_hours", "cumu:1", "control"): aggregates(50),
-            ("active_hours", "cumu:1", "treatment-b"): aggregates(47),
+            ("active_hours", "cumu:1", "all_enrolled", "control"): aggregates(50),
+            ("active_hours", "cumu:1", "all_enrolled", "treatment-b"): aggregates(47),
         },
     )
 
@@ -931,9 +946,9 @@ def test_a_branch_value_is_its_mean_when_the_covariate_carries_no_adjustment():
             for branch in ("treatment-a", "treatment-b")
         ],
         cells={
-            ("active_hours", "cumu:1", "control"): unit_cell(100, 2.0),
-            ("active_hours", "cumu:1", "treatment-a"): unit_cell(100, 3.0),
-            ("active_hours", "cumu:1", "treatment-b"): unit_cell(1, 5.0),
+            ("active_hours", "cumu:1", "all_enrolled", "control"): unit_cell(100, 2.0),
+            ("active_hours", "cumu:1", "all_enrolled", "treatment-a"): unit_cell(100, 3.0),
+            ("active_hours", "cumu:1", "all_enrolled", "treatment-b"): unit_cell(1, 5.0),
         },
     )
 
@@ -949,8 +964,8 @@ def test_a_branch_value_is_adjusted_by_the_windows_pooled_covariate_slope():
         results=[result("active_hours", 1, "cumulative", "forming", point=0.0, lower=-1.0,
                         upper=1.0)],
         cells={
-            ("active_hours", "cumu:1", "control"): covariate_cell(),
-            ("active_hours", "cumu:1", "treatment"): covariate_cell(),
+            ("active_hours", "cumu:1", "all_enrolled", "control"): covariate_cell(),
+            ("active_hours", "cumu:1", "all_enrolled", "treatment"): covariate_cell(),
         },
     )
 
@@ -970,8 +985,8 @@ def test_a_branch_value_stays_on_the_metrics_scale_when_the_pre_periods_differ()
         results=[result("active_hours", 1, "cumulative", "forming", point=0.0, lower=-1.0,
                         upper=1.0)],
         cells={
-            ("active_hours", "cumu:1", "control"): baseline,
-            ("active_hours", "cumu:1", "treatment"): shifted,
+            ("active_hours", "cumu:1", "all_enrolled", "control"): baseline,
+            ("active_hours", "cumu:1", "all_enrolled", "treatment"): shifted,
         },
     )
 
@@ -982,7 +997,7 @@ def test_a_branch_value_stays_on_the_metrics_scale_when_the_pre_periods_differ()
 
 def test_an_errored_comparison_leaves_its_branch_without_a_value():
     cells = {
-        ("active_hours", "cumu:1", branch): unit_cell(100, mean)
+        ("active_hours", "cumu:1", "all_enrolled", branch): unit_cell(100, mean)
         for branch, mean in (("control", 2.0), ("treatment-a", 3.0), ("treatment-b", 4.0))
     }
     three = build(
@@ -997,8 +1012,8 @@ def test_an_errored_comparison_leaves_its_branch_without_a_value():
     two = build(
         results=[result("active_hours", 1, "cumulative", "error", error="boom")],
         cells={
-            ("active_hours", "cumu:1", "control"): unit_cell(100, 2.0),
-            ("active_hours", "cumu:1", "treatment"): unit_cell(100, 3.0),
+            ("active_hours", "cumu:1", "all_enrolled", "control"): unit_cell(100, 2.0),
+            ("active_hours", "cumu:1", "all_enrolled", "treatment"): unit_cell(100, 3.0),
         },
     )
 
@@ -1173,8 +1188,8 @@ def branch_interval(n):
         results=[result("active_hours", 1, "cumulative", "forming", point=1.0, lower=-1.0,
                         upper=3.0)],
         cells={
-            ("active_hours", "cumu:1", "control"): unit_cell(n, 2.0),
-            ("active_hours", "cumu:1", "treatment"): unit_cell(n, 3.0),
+            ("active_hours", "cumu:1", "all_enrolled", "control"): unit_cell(n, 2.0),
+            ("active_hours", "cumu:1", "all_enrolled", "treatment"): unit_cell(n, 3.0),
         },
     )
     return windows_of(analysis, "active_hours")[0].branches[0].value

@@ -205,6 +205,7 @@ def publish_analyses(
                 results_by_slug.get(experiment.slug, []),
                 cells_by_slug.get(experiment.slug, {}),
                 units_by_slug.get(experiment.slug, {}),
+                (discovery.ALL_ENROLLED,),
                 run_log.problems_for(experiment.slug),
             )
 

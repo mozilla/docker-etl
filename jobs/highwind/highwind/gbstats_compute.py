@@ -58,8 +58,14 @@ class GbstatsError(Exception):
     """
 
 
-def compute_statistics(experiment, metrics, windows, cells, failure=None):
-    """One result per (metric, window, treatment branch), covering the whole expected grid.
+def compute_statistics(
+    experiment, metrics, windows, cells, failure=None, segments=(discovery.ALL_ENROLLED,)
+):
+    """One result per (metric, window, segment, treatment branch), covering the whole expected grid.
+
+    `segments` is the experiment's own segment set, `all_enrolled` first: every declared segment
+    gets the full grid of cells, the same full-grid invariant that already applies to metrics and
+    windows, so a segment's query failing is as visible as a metric's.
 
     `failure` short-circuits every cell to `error`, which is how a query-level failure is recorded
     against the experiment's declared cells rather than vanishing.
@@ -67,18 +73,19 @@ def compute_statistics(experiment, metrics, windows, cells, failure=None):
     results = []
     for metric in metrics:
         for window in windows_for_metric(metric, windows):
-            theta = window_theta(experiment, metric, window, cells)
-            for treatment in experiment.treatment_branches:
-                results.append(
-                    compute_cell(
-                        experiment, metric, window, treatment, cells, theta, failure
+            for segment in segments:
+                theta = window_theta(experiment, metric, window, cells, segment)
+                for treatment in experiment.treatment_branches:
+                    results.append(
+                        compute_cell(
+                            experiment, metric, window, segment, treatment, cells, theta, failure
+                        )
                     )
-                )
     return results
 
 
-def window_theta(experiment, metric, window, cells):
-    """Fit one CUPED slope for a (metric, window), pooled over every branch that reported.
+def window_theta(experiment, metric, window, cells, segment=discovery.ALL_ENROLLED):
+    """Fit one CUPED slope for a (metric, window, segment), pooled over every branch that reported.
 
     One theta per group rather than one per contrast. Every branch's adjusted mean is then shifted
     by the same coefficient, so the contrasts of an experiment with three or more branches stay
@@ -89,17 +96,18 @@ def window_theta(experiment, metric, window, cells):
     sharpen.
     """
     reported = [
-        cells[(metric.name, window.label, branch)]
+        cells[(metric.name, window.label, segment, branch)]
         for branch in experiment.branches
-        if (metric.name, window.label, branch) in cells
+        if (metric.name, window.label, segment, branch) in cells
     ]
     return pooled_theta(reported)
 
 
-def compute_cell(experiment, metric, window, treatment, cells, theta, failure):
+def compute_cell(experiment, metric, window, segment, treatment, cells, theta, failure):
     """One cell: its state, and its interval when it has one."""
     identity = dict(
         metric=metric.name,
+        segment=segment,
         window=window.label,
         window_kind=window.kind,
         window_start=window.start,
@@ -110,8 +118,8 @@ def compute_cell(experiment, metric, window, treatment, cells, theta, failure):
     if failure:
         return dict(identity, state=ERROR, error=str(failure)[:500])
 
-    reference = cells.get((metric.name, window.label, experiment.reference_branch))
-    candidate = cells.get((metric.name, window.label, treatment))
+    reference = cells.get((metric.name, window.label, segment, experiment.reference_branch))
+    candidate = cells.get((metric.name, window.label, segment, treatment))
     if reference is None or candidate is None:
         return dict(identity, state=NOT_STARTED)
     if min(reference["n"], candidate["n"]) < MIN_UNITS:
@@ -130,7 +138,7 @@ def compute_cell(experiment, metric, window, treatment, cells, theta, failure):
             extra={
                 "experiment_slug": experiment.slug,
                 "metric": metric.name,
-                "segment": discovery.ALL_ENROLLED,
+                "segment": segment,
                 "window": window,
             },
         )

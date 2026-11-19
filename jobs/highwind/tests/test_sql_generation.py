@@ -599,7 +599,7 @@ def test_an_off_metric_leaves_the_rollup_exactly_as_it_was_before_winsorization(
     assert "reference_quantiles" not in sql
     assert "'off' AS winsorize_mode" in sql
     assert "WHERE bucket >= 0" in sql
-    assert "GROUP BY slug, branch, metric_row.window_label, metric_row.metric" in sql
+    assert "GROUP BY slug, branch, segment, metric_row.window_label, metric_row.metric" in sql
 
 
 def test_a_yes_no_metric_is_never_clipped_in_the_rollup():
@@ -819,7 +819,7 @@ def test_build_source_query_assembles_every_stage_for_a_multi_metric_source():
     assert "STRUCT('retained' AS metric" in sql
     assert "'off' AS winsorize_mode" in sql
     assert sql.rstrip().endswith(
-        "GROUP BY unit_windows.slug, unit_windows.branch, metric_row.window_label, "
+        "GROUP BY unit_windows.slug, unit_windows.branch, segment, metric_row.window_label, "
         "metric_row.metric"
     )
 
@@ -877,3 +877,19 @@ def test_a_source_with_mixed_winsorize_settings_clips_each_metric_on_its_own_ter
     assert "metric_quantile__cumulative__post_winsorize_quantile" in quantiles
     assert "metric_fixed" not in quantiles
     assert "metric_off" not in quantiles
+
+
+def test_unit_windows_cte_tags_every_unit_all_enrolled():
+    sql = sql_generation.unit_windows_cte([named("active_hours")])
+
+    assert "['all_enrolled'] AS segments" in sql
+
+
+def test_rollup_select_always_unnests_a_segment_and_groups_by_it():
+    run = run_of({"a-slug": cumulative_windows(1)})
+
+    sql = sql_generation.rollup_select([off_metric()], run)
+
+    assert "UNNEST(unit_windows.segments) AS segment" in sql
+    assert "GROUP BY slug, branch, segment, metric_row.window_label, metric_row.metric" in sql
+    assert "  segment,\n" in sql
