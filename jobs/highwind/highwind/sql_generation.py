@@ -44,7 +44,7 @@ import datetime
 import math
 import textwrap
 
-from . import metrics
+from . import discovery, metrics
 from .metrics import WinsorizeMode, winsorize_mode
 
 # The bucket a unit's pre-enrollment rows land in. The covariate is one fixed window rather than
@@ -711,6 +711,9 @@ def unit_windows_cte(metrics):
     The metric's threshold is applied HERE, to the combined raw value, and only here. The covariate
     is the pre bucket's raw value read across the partition, so it is one value per unit rather than
     one per unit per window.
+
+    `segments` is an array literal every unit carries, read back by `rollup_select`'s own UNNEST to
+    key its breakdown. Always `['all_enrolled']`, the one segment every unit belongs to.
     """
     kinds = sorted({rule["kind"] for metric in metrics for rule in metric.window_rules})
     labels = "".join(
@@ -733,7 +736,8 @@ def unit_windows_cte(metrics):
           grid.slug,
           grid.branch,
           grid.bucket,
-        {labels}  {values}
+        {labels}  {values},
+          ['{discovery.ALL_ENROLLED}'] AS segments
         FROM unit_buckets AS grid
         LEFT JOIN bucket_totals AS bucket_total
           ON bucket_total.slug = grid.slug
@@ -863,7 +867,8 @@ def _struct_entry(metric, rule, run):
 
 
 def rollup_select(metrics, run):
-    """STAGE C: per-branch sufficient statistics, one row per (slug, branch, window, metric).
+    """STAGE C: per-branch sufficient statistics, one row per (slug, branch, segment, window,
+    metric).
 
     The six aggregates are everything a covariate-adjusted mean comparison needs, which is the
     reason no per-unit row has to travel. Metrics are unpivoted through a struct array so the metric
@@ -883,6 +888,12 @@ def rollup_select(metrics, run):
 
     A NULL label is a bucket that completes no window of that metric's kind, and the covariate
     bucket is every metric's NULL, so the filter drops both.
+
+    `segment` unpivots `unit_windows.segments` the same way `metric_row` unpivots the metric
+    struct, and joins the two arrays as a second CROSS JOIN rather than folding segment into the
+    metric struct: the breakdown is a property of the unit, not of the metric, so every metric in
+    this source shares the same segment array per unit. Always `all_enrolled`, the one value
+    `unit_windows.segments` ever carries.
     """
     needs_quantiles = bool(_quantile_mode_metrics(metrics))
     prefix = "unit_windows." if needs_quantiles else ""
@@ -899,6 +910,7 @@ def rollup_select(metrics, run):
         SELECT
           {prefix}slug,
           {prefix}branch,
+          segment,
           metric_row.window_label,
           metric_row.metric,
           COUNT(*) AS n,
@@ -912,10 +924,11 @@ def rollup_select(metrics, run):
           ANY_VALUE(metric_row.pre_winsorize_threshold) AS pre_winsorize_threshold,
           SAFE_DIVIDE(SUM(metric_row.was_clipped), COUNT(*)) AS clipped_share
         FROM unit_windows{join_clause},
-             UNNEST([{structs}]) AS metric_row
+             UNNEST([{structs}]) AS metric_row,
+             UNNEST(unit_windows.segments) AS segment
         WHERE {prefix}bucket >= 0
           AND metric_row.window_label IS NOT NULL
-        GROUP BY {prefix}slug, {prefix}branch, metric_row.window_label, metric_row.metric
+        GROUP BY {prefix}slug, {prefix}branch, segment, metric_row.window_label, metric_row.metric
     """).strip()
 
 

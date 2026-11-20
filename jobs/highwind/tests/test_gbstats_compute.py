@@ -62,15 +62,18 @@ def test_the_grid_is_one_cell_per_metric_window_and_treatment_branch():
         EXPERIMENT, [CONTINUOUS, BINARY], WINDOWS, cells={}
     )
 
-    cells = {(result["metric"], result["window"], result["branch"]) for result in results}
+    cells = {
+        (result["metric"], result["window"], result["segment"], result["branch"])
+        for result in results
+    }
     assert len(results) == 6
     assert cells == {
-        ("active_hours", "cumu:1", "treatment-a"),
-        ("active_hours", "cumu:1", "treatment-b"),
-        ("retained_dau", "week:1", "treatment-a"),
-        ("retained_dau", "week:1", "treatment-b"),
-        ("retained_dau", "week:2", "treatment-a"),
-        ("retained_dau", "week:2", "treatment-b"),
+        ("active_hours", "cumu:1", "all_enrolled", "treatment-a"),
+        ("active_hours", "cumu:1", "all_enrolled", "treatment-b"),
+        ("retained_dau", "week:1", "all_enrolled", "treatment-a"),
+        ("retained_dau", "week:1", "all_enrolled", "treatment-b"),
+        ("retained_dau", "week:2", "all_enrolled", "treatment-a"),
+        ("retained_dau", "week:2", "all_enrolled", "treatment-b"),
     }
 
 
@@ -99,8 +102,8 @@ def test_a_failure_marks_every_declared_cell_an_error_so_the_run_can_see_it():
 
 def test_a_branch_below_the_minimum_units_is_insufficient_data_not_an_error():
     cells = {
-        ("active_hours", "cumu:1", "control"): branch(400, 1.0, 2.0, 1.5),
-        ("active_hours", "cumu:1", "treatment-a"): branch(1, 1.0, 2.0, 1.5),
+        ("active_hours", "cumu:1", "all_enrolled", "control"): branch(400, 1.0, 2.0, 1.5),
+        ("active_hours", "cumu:1", "all_enrolled", "treatment-a"): branch(1, 1.0, 2.0, 1.5),
     }
     results = {
         result["branch"]: result
@@ -118,8 +121,8 @@ def test_a_branch_below_the_minimum_units_is_insufficient_data_not_an_error():
 
 def test_a_populated_pair_produces_a_relative_interval_around_the_difference():
     cells = {
-        ("active_hours", "cumu:1", "control"): branch(1000, 1.0, 2.0, 1.5),
-        ("active_hours", "cumu:1", "treatment-a"): branch(1000, 1.1, 2.42, 1.65),
+        ("active_hours", "cumu:1", "all_enrolled", "control"): branch(1000, 1.0, 2.0, 1.5),
+        ("active_hours", "cumu:1", "all_enrolled", "treatment-a"): branch(1000, 1.1, 2.42, 1.65),
     }
     results = {
         result["branch"]: result
@@ -137,8 +140,8 @@ def test_a_populated_pair_produces_a_relative_interval_around_the_difference():
 
 def test_the_absolute_interval_is_the_relative_one_rescaled_by_the_reference_mean():
     cells = {
-        ("active_hours", "cumu:1", "control"): branch(1000, 1.0, 2.0, 1.5),
-        ("active_hours", "cumu:1", "treatment-a"): branch(1000, 1.1, 2.42, 1.65),
+        ("active_hours", "cumu:1", "all_enrolled", "control"): branch(1000, 1.0, 2.0, 1.5),
+        ("active_hours", "cumu:1", "all_enrolled", "treatment-a"): branch(1000, 1.1, 2.42, 1.65),
     }
     results = {
         result["branch"]: result
@@ -198,8 +201,8 @@ def test_the_marginal_cases_straddle_zero_the_same_way_on_both_scales():
 
 def test_cells_with_no_interval_carry_no_absolute_interval_either():
     cells = {
-        ("active_hours", "cumu:1", "control"): branch(400, 1.0, 2.0, 1.5),
-        ("active_hours", "cumu:1", "treatment-a"): branch(1, 1.0, 2.0, 1.5),
+        ("active_hours", "cumu:1", "all_enrolled", "control"): branch(400, 1.0, 2.0, 1.5),
+        ("active_hours", "cumu:1", "all_enrolled", "treatment-a"): branch(1, 1.0, 2.0, 1.5),
     }
     results = gbstats_compute.compute_statistics(EXPERIMENT, [CONTINUOUS], WINDOWS, cells)
 
@@ -293,13 +296,13 @@ def branch_moments(units, post_mean, post_variance, pre_mean, pre_variance, cova
 def three_branch_cells(window="cumu:1"):
     """One (metric, window) whose three branches have visibly different covariate slopes."""
     return {
-        ("active_hours", window, "control"): branch_moments(
+        ("active_hours", window, "all_enrolled", "control"): branch_moments(
             1000, 1.0, 1.0, 1.0, 1.0, 0.5
         ),
-        ("active_hours", window, "treatment-a"): branch_moments(
+        ("active_hours", window, "all_enrolled", "treatment-a"): branch_moments(
             1000, 1.5, 1.2, 1.3, 1.4, 0.9
         ),
-        ("active_hours", window, "treatment-b"): branch_moments(
+        ("active_hours", window, "all_enrolled", "treatment-b"): branch_moments(
             1000, 0.9, 0.8, 0.7, 0.6, 0.2
         ),
     }
@@ -319,7 +322,7 @@ def test_three_branches_pool_a_different_theta_than_either_pair_would():
     # The assertion that pins the change: pooling over all branches is not the same number as
     # pooling over the pair being compared, so a run's intervals move rather than being relabelled.
     cells = three_branch_cells()
-    reference = cells[("active_hours", "cumu:1", "control")]
+    reference = cells[("active_hours", "cumu:1", "all_enrolled", "control")]
     results = {
         result["branch"]: result
         for result in gbstats_compute.compute_statistics(
@@ -328,7 +331,7 @@ def test_three_branches_pool_a_different_theta_than_either_pair_would():
     }
 
     for treatment in ("treatment-a", "treatment-b"):
-        candidate = cells[("active_hours", "cumu:1", treatment)]
+        candidate = cells[("active_hours", "cumu:1", "all_enrolled", treatment)]
         pairwise = gbstats_compute.pooled_theta([reference, candidate])
         per_pair = gbstats_compute.sequential_interval(reference, candidate, pairwise)
 
@@ -341,7 +344,7 @@ def test_three_branches_pool_a_different_theta_than_either_pair_would():
 def test_theta_pools_only_the_arms_that_reported_the_window():
     # A branch with no cell for this window contributes nothing rather than crashing the group.
     cells = three_branch_cells()
-    del cells[("active_hours", "cumu:1", "treatment-b")]
+    del cells[("active_hours", "cumu:1", "all_enrolled", "treatment-b")]
     window = next(window for window in WINDOWS if window.label == "cumu:1")
 
     assert gbstats_compute.window_theta(
@@ -349,8 +352,8 @@ def test_theta_pools_only_the_arms_that_reported_the_window():
     ) == pytest.approx(
         gbstats_compute.pooled_theta(
             [
-                cells[("active_hours", "cumu:1", "control")],
-                cells[("active_hours", "cumu:1", "treatment-a")],
+                cells[("active_hours", "cumu:1", "all_enrolled", "control")],
+                cells[("active_hours", "cumu:1", "all_enrolled", "treatment-a")],
             ]
         )
     )
@@ -361,8 +364,8 @@ def test_a_cell_whose_statistics_raise_is_an_error_with_a_log_record_naming_it(c
     caplog.set_level(logging.ERROR)
     unusable = dict(branch(400, 1.0, 2.0, 1.5), sum_squares=None)
     cells = {
-        ("active_hours", "cumu:1", "control"): branch(400, 1.0, 2.0, 1.5),
-        ("active_hours", "cumu:1", "treatment-a"): unusable,
+        ("active_hours", "cumu:1", "all_enrolled", "control"): branch(400, 1.0, 2.0, 1.5),
+        ("active_hours", "cumu:1", "all_enrolled", "treatment-a"): unusable,
     }
 
     results = {
@@ -388,8 +391,8 @@ def test_a_cell_whose_statistics_raise_is_an_error_with_a_log_record_naming_it(c
 def compute_pair(reference, candidate):
     """The treatment-a result for one (metric, window) holding only the given pair."""
     cells = {
-        ("active_hours", "cumu:1", "control"): reference,
-        ("active_hours", "cumu:1", "treatment-a"): candidate,
+        ("active_hours", "cumu:1", "all_enrolled", "control"): reference,
+        ("active_hours", "cumu:1", "all_enrolled", "treatment-a"): candidate,
     }
     results = gbstats_compute.compute_statistics(EXPERIMENT, [CONTINUOUS], WINDOWS, cells)
     return next(result for result in results if result["branch"] == "treatment-a")
