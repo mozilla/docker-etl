@@ -16,9 +16,9 @@ here.
 
 The job analyses Firefox Desktop experiments only and recomputes every result on each run. Each
 experiment's metrics are the list the Experimenter mirror resolves for it (`discovery.py`), computed
-from their metric-hub `nimbus/` definitions (`metrics.py`). Each experiment's own selected shared
-segments are resolved the same way (`segments.py`); a name that does not resolve is reported in a
-warning.
+from their metric-hub `nimbus/` definitions (`metrics.py`). Every experiment also gets its own
+selected shared segments the same way (`segments.py`), broken down alongside `all_enrolled`, which
+every experiment gets regardless of what else resolved.
 """
 
 import contextlib
@@ -98,17 +98,28 @@ def run_daily_job(
 
         configs = load_metric_hub()
         metrics_by_slug, resolved_metrics, sources = resolve_run_metrics(experiments, configs)
-        resolve_run_segments(experiments, configs)
+        segment_names_by_slug, resolved_segments, segment_sources = resolve_run_segments(
+            experiments, configs
+        )
         windows_by_slug = {
             experiment.slug: run_windows(experiment, as_of, metrics_by_slug[experiment.slug])
             for experiment in experiments
         }
         run = sql_generation.Run(
-            experiments, windows_by_slug, as_of, COVARIATE_DAYS, sample_percent
+            experiments,
+            windows_by_slug,
+            as_of,
+            COVARIATE_DAYS,
+            segments_by_slug=segment_names_by_slug,
+            sample_percent=sample_percent,
         )
 
-        cells_by_slug, units_by_slug, timings, failure = gather_sufficient_statistics(
-            client, run, resolved_metrics, sources, as_of, validate_only
+        (
+            cells_by_slug, units_by_slug, extra_segment_units_by_slug, segment_names_by_slug,
+            timings, failure, source_failures,
+        ) = gather_sufficient_statistics(
+            client, run, resolved_metrics, sources, resolved_segments, segment_sources,
+            segment_names_by_slug, as_of, validate_only,
         )
 
         # No lock: `as_completed` yields in this thread, so the accumulation below is
@@ -123,6 +134,10 @@ def run_daily_job(
                     metrics_by_slug[experiment.slug],
                     cells_by_slug.get(experiment.slug, {}),
                     failure,
+                    experiment_segment_names(experiment, segment_names_by_slug),
+                    segment_failures_for_experiment(
+                        experiment, segment_names_by_slug, resolved_segments, source_failures
+                    ),
                 )
                 for experiment in experiments
             ]
@@ -177,11 +192,19 @@ def run_daily_job(
                 results_by_slug,
                 cells_by_slug,
                 units_by_slug,
+                extra_segment_units_by_slug,
+                segment_names_by_slug,
                 run_log,
                 outputs,
                 workers,
             )
         return summaries
+
+
+def experiment_segment_names(experiment, segment_names_by_slug):
+    """One experiment's full segment set, `all_enrolled` first, for gbstats and the analysis
+    results alike."""
+    return (discovery.ALL_ENROLLED, *segment_names_by_slug.get(experiment.slug, ()))
 
 
 def publish_analyses(
@@ -192,6 +215,8 @@ def publish_analyses(
     results_by_slug,
     cells_by_slug,
     units_by_slug,
+    extra_segment_units_by_slug,
+    segment_names_by_slug,
     run_log,
     outputs,
     workers,
@@ -210,7 +235,8 @@ def publish_analyses(
                 results_by_slug.get(experiment.slug, []),
                 cells_by_slug.get(experiment.slug, {}),
                 units_by_slug.get(experiment.slug, {}),
-                (discovery.ALL_ENROLLED,),
+                extra_segment_units_by_slug.get(experiment.slug, {}),
+                experiment_segment_names(experiment, segment_names_by_slug),
                 run_log.problems_for(experiment.slug),
             )
 
@@ -390,33 +416,123 @@ def resolve_run_segments(experiments, configs):
     return segment_names_by_slug, resolved_segments, sources
 
 
-def gather_sufficient_statistics(client, run, resolved_metrics, sources, as_of, validate_only):
-    """Run the shared scan: cohort once, then one query per (source, unit) pair with something to
-    compute, split by slug.
+def gather_sufficient_statistics(
+    client, run, resolved_metrics, sources, resolved_segments, segment_sources,
+    segment_names_by_slug, as_of, validate_only,
+):
+    """Run the shared scan: cohort once, each resolved segment source's own flags once, then one
+    query per (source, unit) pair with something to compute, split by slug.
 
-    Returns the cells keyed by slug plus whatever went wrong, rather than raising, so a source
-    failure becomes an error grid on every experiment instead of an exception that ends the run
-    having written nothing.
+    Returns the cells keyed by slug, each experiment's segment units, `segment_names_by_slug`
+    unchanged (a segment whose source failed still carries its name; its own failure shows on its
+    cells instead, via the last item), the timings, whatever made the whole shared scan fail
+    (`None` on a normal run, recorded as an error grid on every experiment), and the segment
+    sources that failed to materialize, by (source, analysis unit).
     """
     if not run.experiments:
-        return {}, {}, [], None
+        return {}, {}, {}, segment_names_by_slug, [], None, {}
     try:
         cohort_table, cohort_timing = sql_running.materialize_cohort(
             client, sql_generation.cohort_query(run), as_of, validate_only
         )
-        queries = sql_generation.build_queries(run, resolved_metrics, sources, cohort_table)
+        unit_segments_table, unit_segments_timings, source_failures = unit_segments_table_or_none(
+            client, run, resolved_segments, segment_sources, cohort_table, as_of, validate_only
+        )
+        queries = sql_generation.build_queries(
+            run, resolved_metrics, sources, cohort_table, unit_segments_table
+        )
         cells_by_slug, timings = sql_running.run_queries(
             client, queries, validate_only=validate_only
         )
         units_by_slug = branch_units(client, cohort_table)
-        return cells_by_slug, units_by_slug, [cohort_timing, *timings], None
+        extra_segment_units_by_slug = segment_branch_units(
+            client, cohort_table, unit_segments_table
+        )
+        all_timings = [cohort_timing, *unit_segments_timings, *timings]
+        return (
+            cells_by_slug, units_by_slug, extra_segment_units_by_slug,
+            segment_names_by_slug, all_timings, None, source_failures,
+        )
     # Recorded against every experiment rather than raised, so a source failure becomes an error
     # grid instead of an exception that ends the run having written nothing.
     except Exception as error:
         # Logged once here rather than once per experiment: every experiment's grid records it, and
         # the reason it happened is a property of the run.
         logger.exception("the shared scan failed, so every experiment records an error grid")
-        return {}, {}, [], error
+        return {}, {}, {}, segment_names_by_slug, [], error, {}
+
+
+def unit_segments_table_or_none(
+    client, run, resolved_segments, segment_sources, cohort_table, as_of, validate_only
+):
+    """Materialize the run's resolved segment memberships, one segment source's own query at a
+    time, and report which ones failed.
+
+    Each source runs as its own BigQuery job (`sql_running.materialize_unit_segments`), so a broken
+    `select_expression` in one source costs only the segments it defines: every other source's
+    segments, and `all_enrolled`, are unaffected. Returns the table holding whichever sources
+    succeeded (`None` if none did), the timings, and the failed sources by (source, analysis
+    unit), which `segment_failures_for_experiment` turns into each experiment's own per-segment
+    errors.
+    """
+    enrollment_bounds_by_slug = cohort_enrollment_bounds_by_slug(client, run, cohort_table)
+    queries = sql_generation.segment_source_queries(
+        run, resolved_segments, segment_sources, cohort_table, enrollment_bounds_by_slug
+    )
+    table, timings, failures = sql_running.materialize_unit_segments(
+        client, queries, as_of, validate_only
+    )
+    for (source, unit_kind), error in failures.items():
+        logger.error(
+            f"segment source {source!r} for {unit_kind} failed, so its segments record an "
+            f"error instead of a membership: {error}",
+            exc_info=error,
+        )
+    return table, timings, failures
+
+
+def cohort_enrollment_bounds_by_slug(client, run, cohort_table):
+    """Each segment-selecting slug's own earliest and latest enrollment date, read off the
+    materialized cohort.
+
+    Caught on its own, like `branch_units`: a broken bounds query must not cost every segment its
+    membership. `None` when there is nothing to read it from (nothing selects a segment, or the
+    cohort was never materialized, which is always true under `--validate-sql`); either way,
+    `sql_generation.segment_source_query` falls back to each experiment's own declared start/end
+    date instead.
+    """
+    slugs = {
+        experiment.slug
+        for experiment in run.experiments
+        if run.segments_by_slug.get(experiment.slug)
+    }
+    if cohort_table is None or not slugs:
+        return None
+    try:
+        sql = sql_generation.cohort_enrollment_bounds_query(cohort_table, slugs)
+        return sql_running.cohort_enrollment_bounds(client, sql)
+    except Exception:
+        logger.exception(
+            "the cohort enrollment bounds query failed, so segment sources fall back to each "
+            "experiment's declared start/end date"
+        )
+        return None
+
+
+def segment_failures_for_experiment(
+    experiment, segment_names_by_slug, resolved_segments, source_failures
+):
+    """This experiment's own selected segments whose data source failed to materialize, mapped to
+    that failure.
+
+    `source_failures` is keyed by (source, analysis unit), so a segment whose source failed at a
+    different unit than this experiment's own is not included here.
+    """
+    return {
+        name: source_failures[(resolved_segments[name].source, experiment.unit.kind)]
+        for name in segment_names_by_slug.get(experiment.slug, ())
+        if (resolved_segments[name].source, experiment.unit.kind) in source_failures
+    }
 
 
 def branch_units(client, cohort_table):
@@ -434,6 +550,27 @@ def branch_units(client, cohort_table):
     except Exception:
         logger.exception(
             "the branch unit count failed, so branch units are reported as zero for this run"
+        )
+        return {}
+
+
+def segment_branch_units(client, cohort_table, unit_segments_table):
+    """Count the units each branch has in each resolved, non-`all_enrolled` segment.
+
+    Mirrors `branch_units`: caught on its own, since these counts are the same kind of
+    display-only metadata, just one level deeper (per segment rather than the whole cohort). `None`
+    whenever no segment resolved this run, which is every run until a parser with `segment_plan()`
+    is installed.
+    """
+    if cohort_table is None or unit_segments_table is None:
+        return {}
+    try:
+        return sql_running.count_segment_branch_units(
+            client, sql_generation.segment_units_query(cohort_table, unit_segments_table)
+        )
+    except Exception:
+        logger.exception(
+            "the segment unit count failed, so extra segments report zero units for this run"
         )
         return {}
 
@@ -457,22 +594,31 @@ def report_progress(summary, done, total):
     )
 
 
-def analyze_experiment(experiment, windows, metrics, cells, shared_failure):
+def analyze_experiment(
+    experiment, windows, metrics, cells, shared_failure, segment_names=(discovery.ALL_ENROLLED,),
+    segment_failures=None,
+):
     """One experiment's statistics, from cells the shared scan already produced.
 
     Wrapped so a failure is recorded against this experiment's cells and the loop continues. The
     unit of isolation is the experiment because that is the unit a user reads: one experiment whose
     statistics blow up should not cost the others their results. `metrics` is this experiment's own
     resolved list, not the run's full set: two experiments can ask for different metrics.
+    `segment_names` is this experiment's own full segment set, `all_enrolled` first, the same way.
+    `segment_failures` maps one of those names to the error its own data source hit, so that
+    segment's cells record it instead of reading as `not_started`.
     """
     try:
         if shared_failure is not None:
-            return failed_summary(experiment, windows, metrics, shared_failure)
+            return failed_summary(experiment, windows, metrics, segment_names, shared_failure)
         if not windows:
             # Younger than the shortest window, so no unit has completed one and there is nothing
             # to compute. Its cells are all `not_started` by construction.
             return experiment_summary(experiment, []), []
-        results = gbstats_compute.compute_statistics(experiment, metrics, windows, cells)
+        results = gbstats_compute.compute_statistics(
+            experiment, metrics, windows, cells, segments=segment_names,
+            segment_failures=segment_failures,
+        )
         return experiment_summary(experiment, results), results
     # The whole point is to record it, not to raise.
     except Exception as error:
@@ -482,7 +628,7 @@ def analyze_experiment(experiment, windows, metrics, cells, shared_failure):
             f"{experiment.slug} failed", extra={"experiment_slug": experiment.slug}
         )
         try:
-            return failed_summary(experiment, windows, metrics, error)
+            return failed_summary(experiment, windows, metrics, segment_names, error)
         except Exception as while_recording:
             # A failure while recording a failure must not propagate: it would come back out of
             # future.result() and cost every other experiment its results, which is exactly the
@@ -501,7 +647,7 @@ def analyze_experiment(experiment, windows, metrics, cells, shared_failure):
             )
 
 
-def failed_summary(experiment, windows, metrics, error):
+def failed_summary(experiment, windows, metrics, segment_names, error):
     """Record a query-level failure across every cell this experiment expected to produce.
 
     Without this the error rate cannot see an outage: an experiment that produced nothing would
@@ -509,7 +655,7 @@ def failed_summary(experiment, windows, metrics, error):
     perfect health.
     """
     results = gbstats_compute.compute_statistics(
-        experiment, metrics, windows, cells={}, failure=error
+        experiment, metrics, windows, cells={}, failure=error, segments=segment_names
     )
     return experiment_summary(experiment, results, error=error), results
 

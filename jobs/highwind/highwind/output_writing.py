@@ -493,14 +493,17 @@ def build_analysis(
     results,
     cells,
     units,
+    extra_segment_units,
     segment_names,
     problems,
 ):
     """Build one experiment's full analysis, one `HighwindSegmentResult` per `segment_names` entry.
 
-    `segment_names` is the experiment's own segment set; every metric is broken down by the same
-    set, since a segment is a population split, not a property of any one metric. `units` is the
-    whole cohort's per-branch unit count.
+    `segment_names` is the experiment's own full segment set, `all_enrolled` first, as
+    `analysis.experiment_segment_names` builds it: every metric is broken down by the same set,
+    since a segment is a population split, not a property of any one metric. `units` is the whole
+    cohort's per-branch unit count (for `all_enrolled`); `extra_segment_units` is the same, one
+    level deeper, for whatever else resolved.
     """
     results_by_cell = {
         (result["metric"], result["window"], result["segment"], result["branch"]): result
@@ -508,7 +511,10 @@ def build_analysis(
     }
     return HighwindAnalysis(
         metadata=build_metadata(experiment, as_of),
-        segments=[build_segment(experiment, name, units) for name in segment_names],
+        segments=[
+            build_segment(experiment, name, units, extra_segment_units)
+            for name in segment_names
+        ],
         metrics=[
             build_metric(experiment, as_of, metric, results_by_cell, cells, segment_names)
             for metric in metrics
@@ -541,15 +547,24 @@ def build_metadata(experiment, as_of):
     )
 
 
-def build_segment(experiment, name, units):
+def build_segment(experiment, name, units, extra_segment_units):
     """One top-level `HighwindSegment`: its display text and its own per-branch unit count.
 
     `all_enrolled` needs no resolution and no display text of its own; its units are the whole
-    cohort's, already counted in `units`.
+    cohort's, already counted in `units`. Any other name is one this experiment itself selected
+    (`discovery.py`'s `metric_config.segments`), so its display text comes from there, and its
+    units from `extra_segment_units`, which `analysis.segment_branch_units` counts the same way
+    `units` counts the cohort, one level deeper per segment.
     """
-    friendly_name = discovery.ALL_ENROLLED_NAME
-    description = None
-    branch_units = units
+    if name == discovery.ALL_ENROLLED:
+        friendly_name = discovery.ALL_ENROLLED_NAME
+        description = None
+        branch_units = units
+    else:
+        display = experiment.segments.get(name)
+        friendly_name = (display.friendly_name if display else None) or name
+        description = display.description if display else None
+        branch_units = extra_segment_units.get(name, {})
     return HighwindSegment(
         slug=name,
         friendly_name=friendly_name,

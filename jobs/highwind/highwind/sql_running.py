@@ -12,15 +12,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from google.cloud import bigquery
 
-# The cohort holds one row per analysis unit, so it goes in this job's own dataset alongside its
-# results rather than in a dataset anything else writes to.
-COHORT_DATASET = "moz-fx-data-experiments.highwind_poc"
+# Each run's intermediate tables (the cohort, the unit segments) hold one row per analysis unit, so
+# they go in this job's own dataset alongside its results rather than in a dataset anything else
+# writes to.
+SCRATCH_DATASET = "moz-fx-data-experiments.highwind_poc"
 
-# How long a run's cohort table lives. It is an intermediate of one run and nothing reads it once
-# the source queries have finished, so it is expired rather than kept. An expiry rather than a
-# delete at the end of the run, because a run that fails between writing the table and deleting it
-# would otherwise leave a table nothing will ever clean up.
-COHORT_TABLE_LIFETIME = datetime.timedelta(days=1)
+# How long one of this job's intermediate tables lives. Nothing reads it once the source queries
+# have finished, so it is expired rather than kept. An expiry rather than a delete at the end of the
+# run, because a run that fails between writing the table and deleting it would otherwise leave a
+# table nothing will ever clean up.
+SCRATCH_TABLE_LIFETIME = datetime.timedelta(days=1)
 
 
 def cohort_table_name(as_of):
@@ -33,7 +34,41 @@ def cohort_table_name(as_of):
     built for.
     """
     date_part = as_of.isoformat().replace("-", "_")
-    return f"{COHORT_DATASET}.highwind_cohort_{date_part}_{uuid.uuid4().hex[:8]}"
+    return f"{SCRATCH_DATASET}.highwind_cohort_{date_part}_{uuid.uuid4().hex[:8]}"
+
+
+def unit_segments_table_name(as_of):
+    """Name this run's unit-segments table, the same way `cohort_table_name` names the cohort."""
+    date_part = as_of.isoformat().replace("-", "_")
+    return f"{SCRATCH_DATASET}.highwind_unit_segments_{date_part}_{uuid.uuid4().hex[:8]}"
+
+
+def materialize_scratch_table(
+    client, sql, table, source, validate_only=False, write_disposition="WRITE_TRUNCATE"
+):
+    """Write one query's results into a uniquely named scratch table, under the run's scratch
+    expiry, or just validate the SQL when `validate_only`.
+
+    Shared by every intermediate table this job materializes: the cohort, written once with
+    `WRITE_TRUNCATE`, and each segment source's own membership query, several of which are
+    `WRITE_APPEND`ed in turn into the same destination. `source` is the timing's own label; the
+    caller picks it since one query may share a destination with several others.
+    """
+    started = time.time()
+    if validate_only:
+        job = client.query(sql, job_config=bigquery.QueryJobConfig(dry_run=True))
+        return None, query_timing(source, job, [], time.time() - started)
+    job = client.query(
+        sql,
+        job_config=bigquery.QueryJobConfig(
+            destination=table,
+            write_disposition=write_disposition,
+            use_query_cache=False,
+        ),
+    )
+    job.result()
+    expire_scratch_table(client, table)
+    return table, query_timing(source, job, [], time.time() - started)
 
 
 def materialize_cohort(client, sql, as_of, validate_only=False):
@@ -46,24 +81,48 @@ def materialize_cohort(client, sql, as_of, validate_only=False):
     daily run and an unaffordable one.
     """
     table = cohort_table_name(as_of)
-    started = time.time()
-    if validate_only:
-        # Validate the cohort query itself, but hand back None so the source queries validate
-        # against an inline stub rather than a table this run is not going to create.
-        job = client.query(sql, job_config=bigquery.QueryJobConfig(dry_run=True))
-        return None, query_timing("cohort", job, [], time.time() - started)
-    # Past the early return above, so this path always executes.
-    job = client.query(
-        sql,
-        job_config=bigquery.QueryJobConfig(
-            destination=table,
-            write_disposition="WRITE_TRUNCATE",
-            use_query_cache=False,
-        ),
-    )
-    job.result()
-    expire_cohort_table(client, table)
-    return table, query_timing("cohort", job, [], time.time() - started)
+    return materialize_scratch_table(client, sql, table, "cohort", validate_only)
+
+
+def materialize_unit_segments(client, queries, as_of, validate_only=False):
+    """Write the run's resolved, non-`all_enrolled` segment memberships to their own table, one
+    segment source's own membership query at a time.
+
+    `queries` is keyed by `(source, analysis unit)`, as `sql_generation.segment_source_queries`
+    builds it. Each runs as its own job and is `WRITE_APPEND`ed into the same freshly named table
+    in turn, so one bad `select_expression` costs only the segments its own source defines rather
+    than every segment the run resolved; a run's table name is unique, so appending the first query
+    into it is no different from truncating. `queries` is empty whenever no experiment in the run
+    resolved a segment (every run until a parser with `segment_plan()` is installed), in which case
+    nothing is materialized and nothing downstream reads this table at all. Returns the table
+    (`None` if nothing was written), the timings, and any failed query's error by its key.
+    """
+    if not queries:
+        return None, [], {}
+    table = unit_segments_table_name(as_of)
+    timings, failures = [], {}
+    wrote_anything = False
+    for (source, unit_kind), sql in queries.items():
+        try:
+            _, timing = materialize_scratch_table(
+                client,
+                sql,
+                table,
+                f"unit_segments/{source}/{unit_kind}",
+                validate_only=validate_only,
+                write_disposition="WRITE_APPEND",
+            )
+            timings.append(timing)
+            wrote_anything = wrote_anything or not validate_only
+        except Exception as error:
+            failures[(source, unit_kind)] = error
+    return (table if wrote_anything else None), timings, failures
+
+
+def cohort_enrollment_bounds(client, sql):
+    """Each slug's own (earliest, latest) enrollment date, from
+    `sql_generation.cohort_enrollment_bounds_query`."""
+    return {row["slug"]: (row["earliest"], row["latest"]) for row in client.query(sql).result()}
 
 
 def count_branch_units(client, sql):
@@ -73,10 +132,24 @@ def count_branch_units(client, sql):
     return units_by_slug
 
 
-def expire_cohort_table(client, table):
-    """Give the cohort table an expiry, set after the write because a query job cannot carry one."""
+def count_segment_branch_units(client, sql):
+    """Each run's resolved, non-`all_enrolled` segments' own unit counts, by slug then segment.
+
+    Mirrors `count_branch_units`'s shape one level deeper, since a segment beyond `all_enrolled`
+    needs its own count per branch rather than the plain cohort count every slug already gets.
+    """
+    units_by_slug = {}
+    for row in client.query(sql).result():
+        by_segment = units_by_slug.setdefault(row["slug"], {})
+        by_segment.setdefault(row["segment"], {})[row["branch"]] = int(row["units"])
+    return units_by_slug
+
+
+def expire_scratch_table(client, table):
+    """Give this run's intermediate table an expiry, set after the write because a query job
+    cannot carry one."""
     definition = client.get_table(table)
-    definition.expires = datetime.datetime.now(datetime.timezone.utc) + COHORT_TABLE_LIFETIME
+    definition.expires = datetime.datetime.now(datetime.timezone.utc) + SCRATCH_TABLE_LIFETIME
     client.update_table(definition, ["expires"])
 
 
