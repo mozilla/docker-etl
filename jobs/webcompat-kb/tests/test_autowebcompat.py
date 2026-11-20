@@ -107,6 +107,7 @@ class MockBigQueryService(autowebcompat.BigQueryService):
         self.diagnosis_bugs: list[autowebcompat.NewBugInfo] = []
         self.reproduce_bugs: list[autowebcompat.NewBugInfo] = []
         self.intervention_bugs: list[autowebcompat.NewBugInfo] = []
+        self.sitepatch_bugs: list[autowebcompat.SitepatchBug] = []
 
     def get_source_times(
         self,
@@ -168,6 +169,9 @@ class MockBigQueryService(autowebcompat.BigQueryService):
         else:
             raise ValueError(f"Unexpected whiteboard token {whiteboard_token}")
         return {bug.number: bug for bug in items if whiteboard_token in bug.whiteboard}
+
+    def get_sitepatch_bugs(self) -> Mapping[int, autowebcompat.SitepatchBug]:
+        return {bug.number: bug for bug in self.sitepatch_bugs}
 
 
 class MockBugzillaUpdater(autowebcompat.BugzillaUpdater):
@@ -671,6 +675,38 @@ def test_intervention_schedule_skips_in_flight() -> None:
 
     assert task.create_new() == {}
     assert hackbot_client.created == []
+
+
+def test_intervention_schedule_needs_sitepatch() -> None:
+    """needs-sitepatch bugs whose repro succeeded get an intervention."""
+    hackbot_client = MockHackbot()
+    bq_service = MockBigQueryService()
+    bq_service.sitepatch_bugs = [
+        autowebcompat.SitepatchBug(
+            number=1, source_time=datetime(2026, 11, 1, tzinfo=UTC)
+        ),
+    ]
+    task = autowebcompat.InterventionTask(hackbot_client, bq_service, {})
+    updater = MockBugzillaUpdater()
+    updater.bug_data = [{"id": 1, "whiteboard": "[autowebcompat:repro-success]"}]
+
+    scheduled = task.create_new()
+    assert list(scheduled.keys()) == ["bugzilla:needs-sitepatch"]
+    assert len(hackbot_client.created) == 1
+    request = hackbot_client.created[0]
+    assert isinstance(request, autowebcompat.AutowebcompatInterventionRequest)
+    assert request.bug_id == 1
+
+    task.configure_updater(updater)
+    assert updater.bug_ids == {1}
+    updater.fetch_data()
+    task.populate_updates(updater)
+
+    update, _, _ = updater.bug_updates[1].get_updates()
+    assert update is not None
+    assert update.whiteboard == (
+        "[autowebcompat:repro-success][autowebcompat:intervention-in-progress]"
+    )
 
 
 def run_intervention_update(
