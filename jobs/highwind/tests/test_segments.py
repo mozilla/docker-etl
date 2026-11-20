@@ -197,3 +197,21 @@ def test_an_experiment_that_selected_nothing_resolves_nothing():
 
     assert chosen == []
     assert problems == []
+
+
+def test_group_by_source_groups_segments_sharing_one_source():
+    regular_user = segments.Segment(
+        name="regular_user", source="clients_last_seen", select_expression="r"
+    )
+    new_profile = segments.Segment(
+        name="new_profile", source="clients_last_seen", select_expression="n"
+    )
+    suggest_user = segments.Segment(name="suggest_user", source="newtab", select_expression="s")
+
+    by_source = segments.group_by_source([regular_user, new_profile, suggest_user])
+
+    assert {segment.name for segment in by_source["clients_last_seen"]} == {
+        "regular_user",
+        "new_profile",
+    }
+    assert {segment.name for segment in by_source["newtab"]} == {"suggest_user"}

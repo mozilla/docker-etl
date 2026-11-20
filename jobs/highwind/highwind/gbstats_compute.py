@@ -59,7 +59,8 @@ class GbstatsError(Exception):
 
 
 def compute_statistics(
-    experiment, metrics, windows, cells, failure=None, segments=(discovery.ALL_ENROLLED,)
+    experiment, metrics, windows, cells, failure=None, segments=(discovery.ALL_ENROLLED,),
+    segment_failures=None,
 ):
     """One result per (metric, window, segment, treatment branch), covering the whole expected grid.
 
@@ -68,17 +69,22 @@ def compute_statistics(
     windows, so a segment's query failing is as visible as a metric's.
 
     `failure` short-circuits every cell to `error`, which is how a query-level failure is recorded
-    against the experiment's declared cells rather than vanishing.
+    against the experiment's declared cells rather than vanishing. `segment_failures` does the same
+    thing one level narrower: a segment name mapped to the error its own data source hit, read
+    instead of `failure` for just that segment's cells when no run-wide failure already covers them.
     """
+    segment_failures = segment_failures or {}
     results = []
     for metric in metrics:
         for window in windows_for_metric(metric, windows):
             for segment in segments:
+                segment_failure = failure or segment_failures.get(segment)
                 theta = window_theta(experiment, metric, window, cells, segment)
                 for treatment in experiment.treatment_branches:
                     results.append(
                         compute_cell(
-                            experiment, metric, window, segment, treatment, cells, theta, failure
+                            experiment, metric, window, segment, treatment, cells, theta,
+                            segment_failure,
                         )
                     )
     return results

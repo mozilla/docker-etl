@@ -100,6 +100,42 @@ def test_a_failure_marks_every_declared_cell_an_error_so_the_run_can_see_it():
     assert all("the source query failed" in result["error"] for result in results)
 
 
+def test_a_segment_failure_marks_only_that_segments_cells_as_error():
+    results = gbstats_compute.compute_statistics(
+        EXPERIMENT,
+        [CONTINUOUS],
+        WINDOWS,
+        cells={},
+        segments=("all_enrolled", "regular_user"),
+        segment_failures={"regular_user": RuntimeError("the segment source failed")},
+    )
+
+    states_by_segment = {result["segment"]: result["state"] for result in results}
+    assert states_by_segment["all_enrolled"] == gbstats_compute.NOT_STARTED
+    assert states_by_segment["regular_user"] == gbstats_compute.ERROR
+    regular_user_errors = [
+        result["error"] for result in results if result["segment"] == "regular_user"
+    ]
+    assert all("the segment source failed" in error for error in regular_user_errors)
+
+
+def test_a_run_wide_failure_overrides_a_segments_own_failure_message():
+    # A shared-scan failure already covers every segment's cells, so it is the one recorded even
+    # when a segment also has its own `segment_failures` entry.
+    results = gbstats_compute.compute_statistics(
+        EXPERIMENT,
+        [CONTINUOUS],
+        WINDOWS,
+        cells={},
+        failure=RuntimeError("the cohort query failed"),
+        segments=("all_enrolled", "regular_user"),
+        segment_failures={"regular_user": RuntimeError("the segment source failed")},
+    )
+
+    assert {result["state"] for result in results} == {gbstats_compute.ERROR}
+    assert all("the cohort query failed" in result["error"] for result in results)
+
+
 def test_a_branch_below_the_minimum_units_is_insufficient_data_not_an_error():
     cells = {
         ("active_hours", "cumu:1", "all_enrolled", "control"): branch(400, 1.0, 2.0, 1.5),

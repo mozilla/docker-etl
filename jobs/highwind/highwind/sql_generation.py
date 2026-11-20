@@ -44,7 +44,7 @@ import datetime
 import math
 import textwrap
 
-from . import discovery, metrics
+from . import discovery, metrics, segments
 from .metrics import WinsorizeMode, winsorize_mode
 
 # The bucket a unit's pre-enrollment rows land in. The covariate is one fixed window rather than
@@ -116,7 +116,13 @@ class Run:
     """
 
     def __init__(
-        self, experiments, windows_by_slug, as_of, covariate_days, sample_percent=None
+        self,
+        experiments,
+        windows_by_slug,
+        as_of,
+        covariate_days,
+        sample_percent=None,
+        segments_by_slug=None,
     ):
         """Derive the run's bucket grid from the windows its experiments declare."""
         self.as_of = as_of
@@ -130,6 +136,11 @@ class Run:
             if windows_by_slug.get(experiment.slug)
         ]
         self.windows_by_slug = windows_by_slug
+        # Each experiment's own resolved segment NAMES (never `all_enrolled`, which every
+        # experiment gets regardless of what resolved here; see `segments.py`). Absent for an
+        # experiment that resolved none, which is every experiment until a parser with
+        # `segment_plan()` is installed.
+        self.segments_by_slug = segments_by_slug or {}
         every_window = [
             window
             for experiment in self.experiments
@@ -175,9 +186,22 @@ class Run:
                 self.as_of,
                 self.covariate_days,
                 self.sample_percent,
+                self.segments_by_slug,
             )
             for unit in self.units
         }
+
+    @property
+    def needs_segments(self):
+        """Whether any experiment in this run resolved a segment beyond `all_enrolled`.
+
+        Scoped to THIS run's own experiments, so a per-(source, unit) sub-run built by `by_unit()`
+        answers for only the experiments it covers: one sub-run can need the segment join while
+        another, sharing the same overall run, does not. A sub-run where this is false is a DARK
+        RUN: every unit's `segments` array is the bare `['all_enrolled']` literal, so its SQL and
+        its grouping are exactly what they were before shared segments existed.
+        """
+        return any(self.segments_by_slug.get(slug) for slug in self.slugs)
 
     def earliest_start(self):
         """Return the start date of the run's oldest experiment."""
@@ -413,7 +437,7 @@ def enrollment_unit_id(run):
 # ----------------------------------------------------------------------- the source queries ----
 
 
-def build_queries(run, resolved_metrics, sources, cohort_table):
+def build_queries(run, resolved_metrics, sources, cohort_table, unit_segments_table=None):
     """One SQL string per (source table, analysis unit) that has something to compute.
 
     Keyed by both, because a run whose experiments randomize on different units reads each source
@@ -433,18 +457,29 @@ def build_queries(run, resolved_metrics, sources, cohort_table):
         }
         for source, source_metrics in metrics.group_by_source(unit_metrics).items():
             queries[f"{source}/{unit.kind}"] = build_source_query(
-                unit_run, source, source_metrics, sources[source], cohort_table, unit
+                unit_run,
+                source,
+                source_metrics,
+                sources[source],
+                cohort_table,
+                unit,
+                unit_segments_table,
             )
     return queries
 
 
-def build_source_query(run, source, metrics, source_definition, cohort_table, unit):
+def build_source_query(
+    run, source, metrics, source_definition, cohort_table, unit, unit_segments_table=None
+):
     """Build the full query for one source: cohort, per-slug facts, rows, stages, rollup.
 
     `reference_quantiles` is appended as one more CTE only when this source has a QUANTILE-mode
     metric to compute a threshold for; a source whose metrics are all OFF or FIXED adds no CTE
     and `rollup_select` emits exactly the SQL it always has, which is what keeps an unwinsorized
-    metric's query byte-identical to before this threshold existed.
+    metric's query byte-identical to before this threshold existed. `unit_segments` is appended the
+    same way, only when `run.needs_segments` is true for this unit's own sub-run; otherwise this is
+    a dark run (see `Run.needs_segments`) and `unit_windows_cte` builds every row's `segments` array
+    as the bare literal `['all_enrolled']` with no join at all.
     """
     quantiles = reference_quantiles_cte(metrics, run)
     quantiles_block = (
@@ -453,6 +488,15 @@ def build_source_query(run, source, metrics, source_definition, cohort_table, un
         {_indent(quantiles)}
         )"""
         if quantiles is not None
+        else ""
+    )
+    needs_segments = run.needs_segments
+    segments_block = (
+        f""",
+        unit_segments AS (
+        {_indent(unit_segments_cte(unit_segments_table))}
+        )"""
+        if needs_segments
         else ""
     )
     return textwrap.dedent(f"""
@@ -470,9 +514,9 @@ def build_source_query(run, source, metrics, source_definition, cohort_table, un
         ),
         unit_buckets AS (
         {_indent(unit_buckets_cte(run))}
-        ),
+        ){segments_block},
         unit_windows AS (
-        {_indent(unit_windows_cte(metrics))}
+        {_indent(unit_windows_cte(metrics, needs_segments))}
         ){quantiles_block}
         {rollup_select(metrics, run)}
     """).strip()
@@ -570,6 +614,202 @@ def cohort_source(cohort_table, unit):
         f"SELECT slug, unit_id, branch, enrollment_date FROM `{cohort_table}`\n"
         f"WHERE unit_kind = '{unit.kind}'"
     )
+
+
+def unit_segments_source(unit_segments_table):
+    """Where a source query reads this run's resolved, non-`all_enrolled` segment memberships from.
+
+    Not scoped by unit kind, unlike `cohort_source`: a (slug, unit_id) pair already identifies
+    exactly one experiment, and an experiment reads exactly one unit kind, so there is nothing a
+    kind filter would exclude that the slug/unit_id join below does not already.
+
+    Deliberately not scoped to THIS query's own experiments either: `unit_segments_table` holds
+    every segment membership the whole run resolved, and the LEFT JOIN this feeds
+    (`unit_windows_cte`) matches on `(slug, unit_id)`, so a slug this query does not cover simply
+    never matches. Scoping here would only add a filter the join already enforces.
+    """
+    if unit_segments_table is None:
+        return "SELECT * FROM UNNEST(ARRAY<STRUCT<slug STRING, unit_id STRING, segment STRING>>[])"
+    return f"SELECT slug, unit_id, segment FROM `{unit_segments_table}`"
+
+
+def unit_segments_cte(unit_segments_table):
+    """One row per (slug, unit_id) a resolved segment matched, carrying every segment it matched.
+
+    `all_enrolled` is added where this is consumed (`unit_windows_cte`), not here: this CTE only
+    ever holds the extra, resolved memberships, so a unit matching none of them is simply absent
+    rather than filtered out of anything.
+    """
+    return textwrap.dedent(f"""
+        SELECT slug, unit_id, ARRAY_AGG(segment) AS extra_segments
+        FROM (
+        {_indent(unit_segments_source(unit_segments_table))}
+        )
+        GROUP BY slug, unit_id
+    """).strip()
+
+
+def _slug_list(slugs):
+    return ", ".join(f"'{slug}'" for slug in sorted(slugs))
+
+
+def enrollment_bounds(experiments, as_of):
+    """The earliest and latest dates any of `experiments`' units could have enrolled, capped at
+    `as_of`, from each experiment's declared start/end date rather than its real enrollments.
+
+    Only a fallback for `segment_source_query`, used where the real dates are not available (see
+    `cohort_enrollment_bounds_query`): a still-live experiment's declared end date can run well
+    past its last real enrollment, so this bound is wider than it needs to be whenever the cohort
+    itself is available instead.
+    """
+    earliest = min(experiment.start_date for experiment in experiments)
+    latest = max(
+        as_of if experiment.end_date is None else min(experiment.end_date, as_of)
+        for experiment in experiments
+    )
+    return earliest, latest
+
+
+def cohort_enrollment_bounds_query(cohort_table, slugs):
+    """Each of `slugs`' own earliest and latest enrollment date, read off the materialized cohort.
+
+    The real population a segment source's window should cover: an experiment's declared end date
+    says nothing about when its units actually enrolled, and the cohort already holds the answer
+    for every slug the run assigned.
+    """
+    return textwrap.dedent(f"""
+        SELECT slug, MIN(enrollment_date) AS earliest, MAX(enrollment_date) AS latest
+        FROM `{cohort_table}`
+        WHERE slug IN ({_slug_list(slugs)})
+        GROUP BY slug
+    """).strip()
+
+
+def segment_source_query(
+    run, source_segments, source_definition, cohort_table, unit, enrollment_bounds_by_slug=None
+):
+    """One query per (segment source, analysis unit): the cohort units each of
+    `source_segments` is TRUE for, one row per membership.
+
+    Follows mozanalysis's `SegmentDataSource.build_query` shape and its `e`/`ds` aliases, since
+    shared segments' `select_expression`s reference `e.` and `ds.` columns directly. Each segment is
+    guarded by `e.slug IN (...)` so experiments that selected different segments share one join.
+    The static `submission_date` bound beside the per-unit one is what satisfies partition-filter
+    requirements such as `clients_last_seen`'s, scoped to only the experiments selecting a segment
+    from this source so it does not read days no selecting unit's window could ever reach into.
+
+    `enrollment_bounds_by_slug` (`analysis.cohort_enrollment_bounds_by_slug`) gives the real bound,
+    each selecting slug's own (earliest, latest) enrollment date off the materialized cohort; a
+    slug missing from it, or `None` under `--validate-sql` where the cohort is never materialized,
+    falls back to `enrollment_bounds`'s wider declared start/end date instead.
+    """
+    eligible = {
+        segment.name: [
+            experiment.slug
+            for experiment in run.experiments
+            if segment.name in run.segments_by_slug.get(experiment.slug, ())
+        ]
+        for segment in source_segments
+    }
+    selecting_slugs = {slug for slugs in eligible.values() for slug in slugs}
+    selecting_experiments = [
+        experiment for experiment in run.experiments if experiment.slug in selecting_slugs
+    ]
+    known_bounds = [
+        enrollment_bounds_by_slug[slug]
+        for slug in selecting_slugs
+        if enrollment_bounds_by_slug and slug in enrollment_bounds_by_slug
+    ]
+    if known_bounds:
+        earliest_start = min(bounds[0] for bounds in known_bounds)
+        latest_enrollment = min(max(bounds[1] for bounds in known_bounds), run.as_of)
+    else:
+        earliest_start, latest_enrollment = enrollment_bounds(selecting_experiments, run.as_of)
+    flags = ",\n            ".join(
+        f"IF(e.slug IN ({_slug_list(eligible[segment.name])}), "
+        f"{segment.select_expression}, FALSE) AS {segment.name}"
+        for segment in source_segments
+    )
+    structs = ",\n              ".join(
+        f"STRUCT('{segment.name}' AS name, flagged.{segment.name} AS member)"
+        for segment in source_segments
+    )
+    submission_date = source_definition.submission_date_column
+    return textwrap.dedent(f"""
+        SELECT slug, unit_id, matched.name AS segment
+        FROM (
+          SELECT
+            e.slug AS slug,
+            e.unit_id AS unit_id,
+            {flags}
+          FROM (
+          {_indent(cohort_source(cohort_table, unit), 10)}
+          ) AS e
+          LEFT JOIN {source_definition.from_expression} AS ds
+            ON ds.{unit.source_column(source_definition)} = e.unit_id
+           AND ds.{submission_date} BETWEEN
+                 DATE_ADD(DATE '{earliest_start}',
+                          INTERVAL {source_definition.window_start} DAY)
+                 AND DATE_ADD(DATE '{latest_enrollment}',
+                              INTERVAL {source_definition.window_end} DAY)
+           AND ds.{submission_date} BETWEEN
+                 DATE_ADD(e.enrollment_date, INTERVAL {source_definition.window_start} DAY)
+                 AND DATE_ADD(e.enrollment_date, INTERVAL {source_definition.window_end} DAY)
+                 {source_sample(run, unit, source_definition)}
+          GROUP BY e.slug, e.unit_id
+        ) AS flagged,
+        UNNEST([
+              {structs}
+        ]) AS matched
+        WHERE matched.member
+    """).strip()
+
+
+def segment_source_queries(
+    run, resolved_segments, segment_sources, cohort_table, enrollment_bounds_by_slug=None
+):
+    """One query per (segment source, analysis unit) pair that has at least one experiment
+    selecting a segment from it, keyed by that pair.
+
+    Unlike `build_queries`'s metric source queries, which are only ever read, these are
+    materialized (`sql_running.materialize_unit_segments`), one BigQuery job per pair, so a bad
+    `select_expression` in one source costs only the segments it defines rather than dropping every
+    segment the run resolved. Empty when no experiment in the run resolved any segment, which is
+    the only case that matters until a parser with `segment_plan()` is installed.
+    """
+    queries = {}
+    for unit, unit_run in run.by_unit().items():
+        names = {
+            name
+            for experiment in unit_run.experiments
+            for name in run.segments_by_slug.get(experiment.slug, ())
+        }
+        if not names:
+            continue
+        unit_segments = [resolved_segments[name] for name in names]
+        for source, source_segments in segments.group_by_source(unit_segments).items():
+            queries[(source, unit.kind)] = segment_source_query(
+                unit_run, source_segments, segment_sources[source], cohort_table, unit,
+                enrollment_bounds_by_slug,
+            )
+    return queries
+
+
+def segment_units_query(cohort_table, unit_segments_table):
+    """Each run's resolved, non-`all_enrolled` segments' own unit counts, per slug and branch.
+
+    Mirrors `branch_units_query`'s plain cohort count, joined to the same segment memberships
+    `unit_segments_cte` reads, so a `HighwindSegment`'s own `branches[].units` has a real count to
+    report instead of the metric-shaped cell counts, which are per (metric, window) rather than a
+    property of the segment alone.
+    """
+    return textwrap.dedent(f"""
+        SELECT cohort.slug, cohort.branch, seg.segment, COUNT(*) AS units
+        FROM `{cohort_table}` AS cohort
+        JOIN `{unit_segments_table}` AS seg
+          ON seg.slug = cohort.slug AND seg.unit_id = cohort.unit_id
+        GROUP BY cohort.slug, cohort.branch, seg.segment
+    """).strip()
 
 
 def source_cte(source_definition, run, unit):
@@ -696,7 +936,7 @@ def unit_buckets_cte(run):
     """).strip()
 
 
-def unit_windows_cte(metrics):
+def unit_windows_cte(metrics, needs_segments=False):
     """STAGE B: each bucket's row carries the value of every window that ends on it.
 
     A cumulative window is the running total to this bucket, which is a window function over a
@@ -713,7 +953,12 @@ def unit_windows_cte(metrics):
     one per unit per window.
 
     `segments` is an array literal every unit carries, read back by `rollup_select`'s own UNNEST to
-    key its breakdown. Always `['all_enrolled']`, the one segment every unit belongs to.
+    key its breakdown. `all_enrolled` is always in it; when `needs_segments` is false (a dark run,
+    see `Run.needs_segments`) that is the whole array, a bare literal with no join at all. When
+    true, the array also carries whatever `unit_segments` resolved for this (slug, unit_id), joined
+    in alongside `bucket_totals` rather than replacing it. `grid.unit_id` is exposed in the SELECT
+    for that join, which is also the only reason this query needs it: nothing downstream of
+    `rollup_select`'s own GROUP BY reads a unit's identity.
     """
     kinds = sorted({rule["kind"] for metric in metrics for rule in metric.window_rules})
     labels = "".join(
@@ -731,18 +976,30 @@ def unit_windows_cte(metrics):
             *(f"{covariate_value(metric)} AS {metric.name}__pre" for metric in metrics),
         ]
     )
+    segments_join = (
+        "\n        LEFT JOIN unit_segments\n"
+        "          ON unit_segments.slug = grid.slug AND unit_segments.unit_id = grid.unit_id"
+        if needs_segments
+        else ""
+    )
+    segments_value = (
+        f"ARRAY_CONCAT(['{discovery.ALL_ENROLLED}'], COALESCE(unit_segments.extra_segments, []))"
+        if needs_segments
+        else f"['{discovery.ALL_ENROLLED}']"
+    )
     return textwrap.dedent(f"""
         SELECT
           grid.slug,
+          grid.unit_id,
           grid.branch,
           grid.bucket,
         {labels}  {values},
-          ['{discovery.ALL_ENROLLED}'] AS segments
+          {segments_value} AS segments
         FROM unit_buckets AS grid
         LEFT JOIN bucket_totals AS bucket_total
           ON bucket_total.slug = grid.slug
          AND bucket_total.unit_id = grid.unit_id
-         AND bucket_total.bucket = grid.bucket
+         AND bucket_total.bucket = grid.bucket{segments_join}
         WINDOW
           unit_to_date AS (PARTITION BY grid.slug, grid.unit_id ORDER BY grid.bucket
                            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW),
@@ -892,8 +1149,10 @@ def rollup_select(metrics, run):
     `segment` unpivots `unit_windows.segments` the same way `metric_row` unpivots the metric
     struct, and joins the two arrays as a second CROSS JOIN rather than folding segment into the
     metric struct: the breakdown is a property of the unit, not of the metric, so every metric in
-    this source shares the same segment array per unit. Always `all_enrolled`, the one value
-    `unit_windows.segments` ever carries.
+    this source shares the same segment array per unit. On a dark run (see `Run.needs_segments`),
+    where a unit's `segments` is the bare `['all_enrolled']` literal `unit_windows_cte` emits, this
+    UNNEST produces exactly the one row per group it always has, with `all_enrolled` as the only
+    value the new column ever takes.
     """
     needs_quantiles = bool(_quantile_mode_metrics(metrics))
     prefix = "unit_windows." if needs_quantiles else ""
