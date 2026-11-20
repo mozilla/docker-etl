@@ -623,13 +623,13 @@ def test_a_yes_no_metric_is_never_clipped_in_the_rollup():
     assert "'off' AS winsorize_mode" in sql
 
 
-def test_an_unset_metric_defaults_to_the_jobs_quantile_and_needs_a_quantile_cte():
+def test_a_quantile_metric_needs_a_quantile_cte():
     run = run_of({"a-slug": cumulative_windows(2)})
 
-    quantiles = sql_generation.reference_quantiles_cte([named("active_hours")], run)
+    quantiles = sql_generation.reference_quantiles_cte([quantile_metric(0.995)], run)
 
     assert quantiles is not None
-    offset = round(metrics.DEFAULT_WINSORIZE_QUANTILE * sql_generation.QUANTILE_RESOLUTION)
+    offset = round(0.995 * sql_generation.QUANTILE_RESOLUTION)
     assert f"[OFFSET({offset})] AS active_hours__cumulative__post_winsorize_quantile" in quantiles
 
 
@@ -796,9 +796,9 @@ def test_a_multi_arm_run_still_builds_one_shared_threshold_expression():
 
 
 def test_build_source_query_assembles_every_stage_for_a_multi_metric_source():
-    # The full query for a source carrying one default-quantile metric and one yes/no (off)
-    # metric: every stage is present, in order, and the reference-quantiles CTE is added only
-    # because active_hours needs one.
+    # The full query for a source carrying one quantile metric and one yes/no (off) metric: every
+    # stage is present, in order, and the reference-quantiles CTE is added only because
+    # active_hours needs one.
     run = run_of(
         {"a-slug": cumulative_windows(2)},
         metric_names_by_slug={"a-slug": ("active_hours", "retained")},
@@ -807,7 +807,7 @@ def test_build_source_query_assembles_every_stage_for_a_multi_metric_source():
     sql = sql_generation.build_source_query(
         run,
         "clients_daily",
-        [named("active_hours"), named("retained")],
+        [quantile_metric(0.995), named("retained")],
         CLIENTS_DAILY_SOURCE,
         "a.cohort_table",
         CLIENT_UNIT,

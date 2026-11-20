@@ -38,12 +38,10 @@ CUMULATIVE = "cumulative"
 DISJOINT = "disjoint"
 
 # The upper-tail quantile (cut point) of the reference branch's distribution a metric is clipped
-# at when it sets neither `winsorize_quantile` nor `winsorize_threshold`. 0.995 mirrors
-# Jetstream's own linear-mean default of dropping the top 0.5% (EXP-8000's "Decided" list), so
-# turning winsorization on here changes nothing about today's metric behaviour until a metric
-# opts out. A later ticket (EXP-8008), once Data Science has validated the reference-branch
-# method, switches this one constant to 1 (off).
-DEFAULT_WINSORIZE_QUANTILE = 0.995
+# at when it sets neither `winsorize_quantile` nor `winsorize_threshold`. 1 means off: a metric
+# that sets neither field is not clipped. A metric opts into clipping with an explicit
+# `winsorize_quantile` or `winsorize_threshold`.
+DEFAULT_WINSORIZE_QUANTILE = 1
 
 
 class WinsorizeMode(Enum):
@@ -205,13 +203,10 @@ def window_rules(aggregation_metric):
 def _winsorize_fields(aggregation_metric):
     """Read `winsorize_quantile`/`winsorize_threshold` off a plan metric.
 
-    Metrics are off when the installed parser carries no winsorization fields, so the mechanism
-    changes nothing until a parser that declares them (EXP-8004) is installed: this returns
-    `winsorize_quantile = 1` rather than leaving both unset, since unset means the job's own
-    0.995 default once the fields exist, and that default must not switch on the moment the
-    parser pin moves without a metric having asked for it. Checked through attrs' own field
-    registry rather than a direct read, which is what lets this function tell "the installed
-    parser has no such field" apart from "the field is set to None" without raising
+    Returns `winsorize_quantile = 1` (explicitly off) when the installed parser carries no
+    winsorization fields, since there is nothing on the plan to read. Checked through attrs' own
+    field registry rather than a direct read, which is what lets this function tell "the
+    installed parser has no such field" apart from "the field is set to None" without raising
     `AttributeError` on today's `AggregationMetric`.
     """
     declared = attr.fields_dict(type(aggregation_metric))
@@ -307,13 +302,13 @@ def winsorize_mode(metric):
             f"metric '{metric.name}' has winsorize_threshold {threshold}, which must be > 0: "
             f"winsorize_quantile = 1 is how a metric turns winsorization off"
         )
+    if quantile is None and threshold is None:
+        quantile = DEFAULT_WINSORIZE_QUANTILE
     if quantile == 1:
         return Winsorize(WinsorizeMode.OFF)
     if quantile is not None:
         return Winsorize(WinsorizeMode.QUANTILE, quantile)
-    if threshold is not None:
-        return Winsorize(WinsorizeMode.FIXED, threshold)
-    return Winsorize(WinsorizeMode.QUANTILE, DEFAULT_WINSORIZE_QUANTILE)
+    return Winsorize(WinsorizeMode.FIXED, threshold)
 
 
 def group_by_source(resolved_metrics):
