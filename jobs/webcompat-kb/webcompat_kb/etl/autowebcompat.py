@@ -257,6 +257,17 @@ class InterventionBugInfo(BugRef):
     pass
 
 
+class SitepatchBug(BaseModel):
+    """A needs-sitepatch bug that's ready for either intervention or
+    reproduction step (if it wasn't reproduced by autowebcompat yet)."""
+
+    number: int
+    source_time: datetime
+    # True: no repro attempt yet, we need to request one.
+    # False: the repro succeeded, so we schedule the intervention.
+    needs_repro: bool
+
+
 class InterventionResult(BaseModel):
     wrote_intervention: bool
     fixed_with_intervention: bool
@@ -615,6 +626,121 @@ class BigQueryService:
             filtered_bugs[result.id] = bugs[result.id]
 
         return filtered_bugs
+
+    def get_sitepatch_bugs(self) -> Mapping[int, SitepatchBug]:
+        """Open needs-sitepatch bugs that never had an intervention scheduled,
+        and whose repro either succeeded, or was never attempted.
+
+        Bugs that got the keyword in the last day are all returned right away;
+        older ones are batched."""
+
+        keyword = "webcompat:needs-sitepatch"
+        max_queue_length = 2
+        batch_size = 3
+        queue_max_age_hours = 6
+        pending_tokens = [
+            ReproTask.whiteboard_request_token,
+            ReproTask.whiteboard_progress_token,
+            DiagnosisTask.whiteboard_request_token,
+            DiagnosisTask.whiteboard_progress_token,
+        ]
+
+        query = f"""
+    WITH candidates AS (
+      -- needs-sitepatch bugs with no intervention yet, and no repro or
+      -- diagnosis requested or running
+      SELECT
+        number,
+        score,
+        CAST(IFNULL(last_change_time, creation_time) AS DATETIME) AS source_time,
+        COALESCE(
+          JSON_VALUE(user_story, "$.autowebcompat-repro-status"),
+          IF(whiteboard LIKE "%[autowebcompat:repro-success]%", "success", NULL),
+          IF(whiteboard LIKE "%[autowebcompat:repro-failed]%", "failed", NULL)
+        ) AS repro_status,
+        EXISTS (
+          SELECT 1
+          FROM `{self.project["webcompat_knowledge_base"]["bugs_history"]}` AS history
+          JOIN UNNEST(changes) AS change
+          WHERE
+            history.number = bugs.number AND
+            change.field_name = "keywords" AND
+            @keyword IN UNNEST(SPLIT(change.added, ", ")) AND
+            history.change_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 DAY)
+        ) AS is_new
+      FROM `{self.project["webcompat_knowledge_base"]["scored_site_reports"]}` AS bugs
+      WHERE
+        resolution = "" AND
+        @keyword IN UNNEST(keywords) AND
+        "mozilla-employee-confidential" NOT IN UNNEST(access_groups) AND
+        NOT EXISTS (
+          SELECT 1 FROM UNNEST(@pending_tokens) AS token
+          WHERE STRPOS(whiteboard, token) > 0
+        ) AND
+        number NOT IN (
+          SELECT CAST(JSON_VALUE(extra_data, "$.bug_id") AS INT64)
+          FROM `{self.scheduled_table}`
+          WHERE agent = @intervention_agent AND JSON_VALUE(extra_data, "$.bug_id") IS NOT NULL
+        )
+    ),
+    -- Intervention candidates ready for their next step: an intervention if the repro succeeded,
+    -- or a repro request if there's no repro status and no repro run scheduled
+    ready AS (
+      SELECT number, score, source_time, is_new, repro_status IS NULL AS needs_repro
+      FROM candidates
+      WHERE
+        repro_status = "success" OR
+        (
+          repro_status IS NULL AND
+          number NOT IN (
+            SELECT CAST(JSON_VALUE(extra_data, "$.bug_id") AS INT64)
+            FROM `{self.scheduled_table}`
+            WHERE agent = @repro_agent AND JSON_VALUE(extra_data, "$.bug_id") IS NOT NULL
+          )
+        )
+    )
+    SELECT number, source_time, needs_repro FROM ready WHERE is_new
+    UNION ALL
+    (
+      SELECT number, source_time, needs_repro FROM ready
+      WHERE
+        NOT is_new AND
+        (
+          SELECT COUNT(*)
+          FROM `{self.scheduled_table}` AS scheduled
+          LEFT JOIN `{self.completed_table}` AS completed USING(run_id)
+          WHERE
+            completed.run_id IS NULL AND
+            scheduled.requested_at >
+              DATETIME_SUB(CURRENT_DATETIME(), INTERVAL @queue_max_age_hours HOUR)
+        ) < @max_queue_length
+      ORDER BY score DESC, number ASC
+      LIMIT @batch_size
+    )
+    """
+        rows = self.bq_client.query(
+            query,
+            parameters=[
+                bigquery.ScalarQueryParameter("keyword", "STRING", keyword),
+                bigquery.ArrayQueryParameter(
+                    "pending_tokens", "STRING", pending_tokens
+                ),
+                bigquery.ScalarQueryParameter(
+                    "intervention_agent", "STRING", InterventionTask.agent
+                ),
+                bigquery.ScalarQueryParameter("repro_agent", "STRING", ReproTask.agent),
+                bigquery.ScalarQueryParameter(
+                    "max_queue_length", "INT64", max_queue_length
+                ),
+                bigquery.ScalarQueryParameter(
+                    "queue_max_age_hours", "INT64", queue_max_age_hours
+                ),
+                bigquery.ScalarQueryParameter("batch_size", "INT64", batch_size),
+            ],
+        )
+        return {
+            row.number: SitepatchBug.model_validate(dict(row.items())) for row in rows
+        }
 
     def insert_new_runs(self, new_runs: Iterable[ScheduledRun]) -> None:
         rows = [item.to_json() for item in new_runs]
@@ -1543,6 +1669,10 @@ class InterventionTask(HackbotTask):
     whiteboard_request_token = "[autowebcompat:intervention]"
     whiteboard_progress_token = "[autowebcompat:intervention-in-progress]"
 
+    # needs-sitepatch bugs without a repro attempt, which get the repro
+    # request token.
+    repro_requested: Sequence[int] = ()
+
     def get_request_data(
         self, request: ScheduleRequest
     ) -> AutowebcompatInterventionRequest:
@@ -1551,29 +1681,57 @@ class InterventionTask(HackbotTask):
             agent=self.agent, bug_id=bug_info.number
         )
 
+    def has_updates(self) -> bool:
+        return super().has_updates() or bool(self.repro_requested)
+
     def create_new(self) -> Mapping[str, Sequence[ScheduledRun]]:
-        source_key = self.key("bugzilla", "intervention-flag")
+        all_bugs: dict[str, Mapping[int, InterventionBugInfo]] = {}
+
         requested_bugs = self.bq_service.get_bugs_with_whiteboard_token(
             self.whiteboard_request_token, include_extra_data=False
         )
         logging.info(f"Found {len(requested_bugs)} bugs that requested intervention")
+        all_bugs[self.key("bugzilla", "intervention-flag")] = {
+            number: InterventionBugInfo(
+                number=number,
+                source_time=bug_info.source_time or bug_info.creation_time,
+            )
+            for number, bug_info in requested_bugs.items()
+        }
 
-        if not requested_bugs:
+        sitepatch_bugs = {
+            number: bug
+            for number, bug in self.bq_service.get_sitepatch_bugs().items()
+            if number not in requested_bugs
+        }
+        self.repro_requested = [
+            number for number, bug in sitepatch_bugs.items() if bug.needs_repro
+        ]
+        all_bugs[self.key("bugzilla", "needs-sitepatch")] = {
+            number: InterventionBugInfo(number=number, source_time=bug.source_time)
+            for number, bug in sitepatch_bugs.items()
+            if not bug.needs_repro
+        }
+        logging.info(
+            f"Found {len(sitepatch_bugs)} needs-sitepatch bugs, "
+            f"requesting repro for {len(self.repro_requested)}"
+        )
+
+        if not any(all_bugs.values()):
             return {}
 
-        requests = [
-            ScheduleRequest(
-                source_key=source_key,
-                run_key=self.key(str(bug_number)),
-                source_time=bug_info.source_time or bug_info.creation_time,
-                request_data=InterventionBugInfo(
-                    number=bug_number,
-                    source_time=bug_info.source_time or bug_info.creation_time,
-                ),
-                extra_data=BugExtraData(bug_id=bug_number),
-            )
-            for bug_number, bug_info in requested_bugs.items()
-        ]
+        requests = []
+        for source_key, bugs in all_bugs.items():
+            for bug_number, bug_info in bugs.items():
+                requests.append(
+                    ScheduleRequest(
+                        source_key=source_key,
+                        run_key=self.key(str(bug_number)),
+                        source_time=bug_info.source_time,
+                        request_data=bug_info,
+                        extra_data=BugExtraData(bug_id=bug_number),
+                    )
+                )
 
         return self.schedule(requests)
 
@@ -1592,6 +1750,7 @@ class InterventionTask(HackbotTask):
         if isinstance(updater, BugzillaUpdater):
             updater.add_include_fields(["whiteboard", "cf_user_story"])
             updater.add_bug_ids(self.scheduled_bug_ids())
+            updater.add_bug_ids(self.repro_requested)
             updater.add_bug_ids(
                 int(item.run_key) for item, _ in self.completed_runs.values()
             )
@@ -1600,6 +1759,11 @@ class InterventionTask(HackbotTask):
         if not isinstance(updater, BugzillaUpdater):
             raise TypeError(
                 f"Don't know how to update for task {self} and updater type {updater}"
+            )
+
+        for bug_id in self.repro_requested:
+            updater.bug_updates[bug_id].add_whiteboard(
+                [ReproTask.whiteboard_request_token]
             )
 
         for bug_id in self.scheduled_bug_ids():
