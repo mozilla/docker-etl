@@ -678,23 +678,17 @@ def test_intervention_schedule_skips_in_flight() -> None:
 
 
 def test_intervention_schedule_needs_sitepatch() -> None:
-    """needs-sitepatch bugs get an intervention if their repro succeeded, and a
-    repro request if they were never reproduced."""
+    """needs-sitepatch bugs whose repro succeeded get an intervention."""
     hackbot_client = MockHackbot()
     bq_service = MockBigQueryService()
-    source_time = datetime(2026, 11, 1, tzinfo=UTC)
     bq_service.sitepatch_bugs = [
         autowebcompat.SitepatchBug(
-            number=1, source_time=source_time, needs_repro=False
+            number=1, source_time=datetime(2026, 11, 1, tzinfo=UTC)
         ),
-        autowebcompat.SitepatchBug(number=2, source_time=source_time, needs_repro=True),
     ]
     task = autowebcompat.InterventionTask(hackbot_client, bq_service, {})
     updater = MockBugzillaUpdater()
-    updater.bug_data = [
-        {"id": 1, "whiteboard": "[autowebcompat:repro-success]"},
-        {"id": 2, "whiteboard": ""},
-    ]
+    updater.bug_data = [{"id": 1, "whiteboard": "[autowebcompat:repro-success]"}]
 
     scheduled = task.create_new()
     assert list(scheduled.keys()) == ["bugzilla:needs-sitepatch"]
@@ -703,9 +697,8 @@ def test_intervention_schedule_needs_sitepatch() -> None:
     assert isinstance(request, autowebcompat.AutowebcompatInterventionRequest)
     assert request.bug_id == 1
 
-    assert task.has_updates()
     task.configure_updater(updater)
-    assert updater.bug_ids == {1, 2}
+    assert updater.bug_ids == {1}
     updater.fetch_data()
     task.populate_updates(updater)
 
@@ -714,9 +707,6 @@ def test_intervention_schedule_needs_sitepatch() -> None:
     assert update.whiteboard == (
         "[autowebcompat:repro-success][autowebcompat:intervention-in-progress]"
     )
-    update, _, _ = updater.bug_updates[2].get_updates()
-    assert update is not None
-    assert update.whiteboard == "[autowebcompat:reproduce]"
 
 
 def run_intervention_update(
