@@ -1037,6 +1037,8 @@ class HackbotTask(ABC):
                 updated=True,
             )
         for source_key, source_time in self.source_times.items():
+            if source_key in rv:
+                continue
             rv[source_key] = RunInfo(
                 agent=self.agent,
                 task_name=self.task_name,
