@@ -5,7 +5,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, MutableMapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import (
@@ -76,17 +76,12 @@ class NewBugInfo(BaseModel):
     attachments: list[AttachmentData] = []
 
 
-class BugWhiteboard(BaseModel):
-    id: int
-    groups: list[str] = []
-    whiteboard: str
-
-
 class BugLiveState(BaseModel):
     id: int
     groups: list[str] = []
     keywords: list[str] = []
     resolution: str = ""
+    whiteboard: str = ""
 
 
 class ScheduledRun(BaseModel):
@@ -612,19 +607,11 @@ class BigQueryService:
         # against live data that the token is still there before dispatching:
         # a previous run may already have consumed it. Also drop bugs Bugzilla
         # doesn't return, or that are moco-confidential.
-        filtered_bugs: dict[int, NewBugInfo] = {}
-        for result in self.bz_client.bugs_as(list(bugs.keys()), BugWhiteboard):
-            assert result.id is not None
-            if "mozilla-employee-confidential" in result.groups:
-                continue
-            if whiteboard_token not in result.whiteboard:
-                logging.info(
-                    f"Bug {result.id} no longer has {whiteboard_token}, skipping"
-                )
-                continue
-            filtered_bugs[result.id] = bugs[result.id]
-
-        return filtered_bugs
+        return self.filter_live(
+            bugs,
+            lambda bug: whiteboard_token in bug.whiteboard,
+            f"no longer has {whiteboard_token}",
+        )
 
     def get_sitepatch_bugs(
         self, cutoff: Optional[datetime]
@@ -743,7 +730,11 @@ class BigQueryService:
                 ],
             )
         )
-        live = self.check_sitepatch_live(rows)
+        live = self.filter_live(
+            {row.number: NewBugInfo.model_validate(dict(row.items())) for row in rows},
+            lambda bug: "webcompat:needs-sitepatch" in bug.keywords,
+            "no longer has webcompat:needs-sitepatch",
+        )
         new = {
             row.number: live[row.number]
             for row in rows
@@ -756,23 +747,25 @@ class BigQueryService:
         }
         return new, backlog
 
-    def check_sitepatch_live(
-        self, rows: Iterable[bigquery.Row]
-    ) -> Mapping[int, NewBugInfo]:
-
-        bugs = {
-            row.number: NewBugInfo.model_validate(dict(row.items())) for row in rows
-        }
+    def filter_live(
+        self,
+        bugs: Mapping[int, NewBugInfo],
+        is_ready: Callable[[BugLiveState], bool],
+        not_ready_reason: str,
+    ) -> dict[int, NewBugInfo]:
         if not bugs:
             return {}
         rv = {}
-        for result in self.bz_client.bugs_as(list(bugs.keys()), BugLiveState):
-            if (
-                "mozilla-employee-confidential" not in result.groups
-                and not result.resolution
-                and "webcompat:needs-sitepatch" in result.keywords
-            ):
-                rv[result.id] = bugs[result.id]
+        for bug in self.bz_client.bugs_as(list(bugs.keys()), BugLiveState):
+            if "mozilla-employee-confidential" in bug.groups:
+                continue
+            if bug.resolution:
+                logging.info(f"Bug {bug.id} is resolved, skipping")
+                continue
+            if not is_ready(bug):
+                logging.info(f"Bug {bug.id} {not_ready_reason}, skipping")
+                continue
+            rv[bug.id] = bugs[bug.id]
         return rv
 
     def insert_new_runs(self, new_runs: Iterable[ScheduledRun]) -> None:
