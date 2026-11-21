@@ -82,6 +82,13 @@ class BugWhiteboard(BaseModel):
     whiteboard: str
 
 
+class BugLiveState(BaseModel):
+    id: int
+    groups: list[str] = []
+    keywords: list[str] = []
+    resolution: str = ""
+
+
 class ScheduledRun(BaseModel):
     run_id: UUID
     agent: str
@@ -255,13 +262,6 @@ class DiagnosisBugInfo(BugRef):
 
 class InterventionBugInfo(BugRef):
     pass
-
-
-class SitepatchBug(BaseModel):
-    """A needs-sitepatch bug whose repro succeeded, ready for an intervention."""
-
-    number: int
-    source_time: datetime
 
 
 class InterventionResult(BaseModel):
@@ -626,110 +626,154 @@ class BigQueryService:
 
         return filtered_bugs
 
-    def get_sitepatch_bugs(self) -> Mapping[int, SitepatchBug]:
-        """Open needs-sitepatch bugs that never had an intervention scheduled,
-        and whose repro succeeded.
+    def get_sitepatch_bugs(
+        self, cutoff: Optional[datetime]
+    ) -> tuple[Mapping[int, NewBugInfo], Mapping[int, NewBugInfo]]:
+        """needs-sitepatch bugs ready for an intervention, as (new, backlog).
 
-        Bugs that got the keyword in the last day are all returned right away;
-        older ones are batched, highest score first."""
-
-        keyword = "webcompat:needs-sitepatch"
+        New bugs got the keyword after last run are all returned. Backlogs
+        bugs that got it earlier are queued."""
         max_queue_length = 2
         batch_size = 3
         queue_max_age_hours = 6
-        pending_tokens = [
-            ReproTask.whiteboard_request_token,
-            ReproTask.whiteboard_progress_token,
-            DiagnosisTask.whiteboard_request_token,
-            DiagnosisTask.whiteboard_progress_token,
-        ]
 
         query = f"""
-    WITH candidates AS (
-      -- needs-sitepatch bugs with no intervention yet, and no repro or
-      -- diagnosis requested or running
+    WITH
+    keyword_added AS (
+      SELECT number, CAST(MAX(change_time) AS DATETIME) AS added_time
+      FROM `{self.project["webcompat_knowledge_base"]["bugs_history"]}`
+      JOIN UNNEST(changes) AS change
+      WHERE
+        change.field_name = "keywords" AND
+        @keyword IN (
+          SELECT TRIM(keyword) FROM UNNEST(SPLIT(change.added, ",")) AS keyword
+        )
+      GROUP BY number
+    ),
+    bug_runs AS (
       SELECT
-        number,
-        score,
-        CAST(IFNULL(last_change_time, creation_time) AS DATETIME) AS source_time,
-        COALESCE(
-          JSON_VALUE(user_story, "$.autowebcompat-repro-status"),
-          IF(whiteboard LIKE "%[autowebcompat:repro-success]%", "success", NULL),
-          IF(whiteboard LIKE "%[autowebcompat:repro-failed]%", "failed", NULL)
-        ) AS repro_status,
-        EXISTS (
-          SELECT 1
-          FROM `{self.project["webcompat_knowledge_base"]["bugs_history"]}` AS history
-          JOIN UNNEST(changes) AS change
-          WHERE
-            history.number = bugs.number AND
-            change.field_name = "keywords" AND
-            @keyword IN UNNEST(SPLIT(change.added, ", ")) AND
-            history.change_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 DAY)
-        ) AS is_new
-      FROM `{self.project["webcompat_knowledge_base"]["scored_site_reports"]}` AS bugs
+        CAST(JSON_VALUE(scheduled.extra_data, "$.bug_id") AS INT64) AS number,
+        scheduled.agent,
+        scheduled.requested_at,
+        completed.run_id IS NOT NULL AS is_complete,
+        IFNULL(
+          completed.summary.status = "ok" AND
+            JSON_VALUE(completed.summary.findings, "$.result.reproduced") = "true",
+          FALSE
+        ) AS reproduced
+      FROM `{self.scheduled_table}` AS scheduled
+      LEFT JOIN `{self.completed_table}` AS completed USING(run_id)
+      WHERE JSON_VALUE(scheduled.extra_data, "$.bug_id") IS NOT NULL
+    ),
+    -- Outcome of each bug's most recent completed repro
+    latest_repro AS (
+      SELECT number, reproduced
+      FROM bug_runs
+      WHERE agent = @repro_agent AND is_complete
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY number ORDER BY requested_at DESC) = 1
+    ),
+    -- Exclude bugs that had an intervention, or have a repro or diagnosis in flight
+    excluded AS (
+      SELECT DISTINCT number
+      FROM bug_runs
+      WHERE
+        agent = @intervention_agent OR
+        (agent IN (@repro_agent, @diagnosis_agent) AND NOT is_complete)
+    ),
+    candidates AS (
+      SELECT
+        number, title, url, keywords, whiteboard, user_story_raw AS user_story,
+        creation_time, keyword_added.added_time AS source_time, score,
+        keyword_added.added_time <=
+          IFNULL(@cutoff, DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 DAY)) AS is_backlog
+      FROM `{self.project["webcompat_knowledge_base"]["scored_site_reports"]}`
+      JOIN keyword_added USING(number)
+      JOIN latest_repro USING(number)
+      LEFT JOIN excluded USING(number)
       WHERE
         resolution = "" AND
         @keyword IN UNNEST(keywords) AND
         "mozilla-employee-confidential" NOT IN UNNEST(access_groups) AND
-        NOT EXISTS (
-          SELECT 1 FROM UNNEST(@pending_tokens) AS token
-          WHERE STRPOS(whiteboard, token) > 0
-        ) AND
-        number NOT IN (
-          SELECT CAST(JSON_VALUE(extra_data, "$.bug_id") AS INT64)
-          FROM `{self.scheduled_table}`
-          WHERE agent = @intervention_agent AND JSON_VALUE(extra_data, "$.bug_id") IS NOT NULL
-        )
+        latest_repro.reproduced AND
+        excluded.number IS NULL
     ),
-    -- Candidates ready for an intervention: their repro succeeded. Bugs
-    -- without a repro are reproduced by BacklogReproTask first.
-    ready AS (
-      SELECT number, score, source_time, is_new
-      FROM candidates
-      WHERE repro_status = "success"
+    -- Number of runs in flight, across all agents
+    in_flight AS (
+      SELECT COUNT(*) AS run_count
+      FROM `{self.scheduled_table}` AS scheduled
+      LEFT JOIN `{self.completed_table}` AS completed USING(run_id)
+      WHERE
+        completed.run_id IS NULL AND
+        scheduled.requested_at >
+          DATETIME_SUB(CURRENT_DATETIME(), INTERVAL @queue_max_age_hours HOUR)
     )
-    SELECT number, source_time FROM ready WHERE is_new
+    SELECT * FROM candidates WHERE NOT is_backlog
     UNION ALL
     (
-      SELECT number, source_time FROM ready
-      WHERE
-        NOT is_new AND
-        (
-          SELECT COUNT(*)
-          FROM `{self.scheduled_table}` AS scheduled
-          LEFT JOIN `{self.completed_table}` AS completed USING(run_id)
-          WHERE
-            completed.run_id IS NULL AND
-            scheduled.requested_at >
-              DATETIME_SUB(CURRENT_DATETIME(), INTERVAL @queue_max_age_hours HOUR)
-        ) < @max_queue_length
+      SELECT * FROM candidates
+      WHERE is_backlog AND (SELECT run_count FROM in_flight) < @max_queue_length
       ORDER BY score DESC, number ASC
       LIMIT @batch_size
     )
     """
-        rows = self.bq_client.query(
-            query,
-            parameters=[
-                bigquery.ScalarQueryParameter("keyword", "STRING", keyword),
-                bigquery.ArrayQueryParameter(
-                    "pending_tokens", "STRING", pending_tokens
-                ),
-                bigquery.ScalarQueryParameter(
-                    "intervention_agent", "STRING", InterventionTask.agent
-                ),
-                bigquery.ScalarQueryParameter(
-                    "max_queue_length", "INT64", max_queue_length
-                ),
-                bigquery.ScalarQueryParameter(
-                    "queue_max_age_hours", "INT64", queue_max_age_hours
-                ),
-                bigquery.ScalarQueryParameter("batch_size", "INT64", batch_size),
-            ],
+        rows = list(
+            self.bq_client.query(
+                query,
+                parameters=[
+                    bigquery.ScalarQueryParameter(
+                        "keyword", "STRING", "webcompat:needs-sitepatch"
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "repro_agent", "STRING", ReproTask.agent
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "diagnosis_agent", "STRING", DiagnosisTask.agent
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "intervention_agent", "STRING", InterventionTask.agent
+                    ),
+                    bigquery.ScalarQueryParameter("cutoff", "DATETIME", cutoff),
+                    bigquery.ScalarQueryParameter(
+                        "max_queue_length", "INT64", max_queue_length
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "queue_max_age_hours", "INT64", queue_max_age_hours
+                    ),
+                    bigquery.ScalarQueryParameter("batch_size", "INT64", batch_size),
+                ],
+            )
         )
-        return {
-            row.number: SitepatchBug.model_validate(dict(row.items())) for row in rows
+        live = self.check_sitepatch_live(rows)
+        new = {
+            row.number: live[row.number]
+            for row in rows
+            if not row.is_backlog and row.number in live
         }
+        backlog = {
+            row.number: live[row.number]
+            for row in rows
+            if row.is_backlog and row.number in live
+        }
+        return new, backlog
+
+    def check_sitepatch_live(
+        self, rows: Iterable[bigquery.Row]
+    ) -> Mapping[int, NewBugInfo]:
+
+        bugs = {
+            row.number: NewBugInfo.model_validate(dict(row.items())) for row in rows
+        }
+        if not bugs:
+            return {}
+        rv = {}
+        for result in self.bz_client.bugs_as(list(bugs.keys()), BugLiveState):
+            if (
+                "mozilla-employee-confidential" not in result.groups
+                and not result.resolution
+                and "webcompat:needs-sitepatch" in result.keywords
+            ):
+                rv[result.id] = bugs[result.id]
+        return rv
 
     def insert_new_runs(self, new_runs: Iterable[ScheduledRun]) -> None:
         rows = [item.to_json() for item in new_runs]
@@ -1681,18 +1725,24 @@ class InterventionTask(HackbotTask):
             for number, bug_info in requested_bugs.items()
         }
 
-        sitepatch_bugs = {
-            number: bug
-            for number, bug in self.bq_service.get_sitepatch_bugs().items()
-            if number not in requested_bugs
-        }
-        all_bugs[self.key("bugzilla", "needs-sitepatch")] = {
-            number: InterventionBugInfo(number=number, source_time=bug.source_time)
-            for number, bug in sitepatch_bugs.items()
-        }
-        logging.info(
-            f"Found {len(sitepatch_bugs)} needs-sitepatch bugs ready for intervention"
+        # includes all new bugs that got the keyword since the last run, and
+        # a batch of older ones
+        new_sitepatch, backlog_sitepatch = self.bq_service.get_sitepatch_bugs(
+            self.source_times.get(self.key("bugzilla", "needs-sitepatch"))
         )
+        for name, sitepatch_bugs in [
+            ("needs-sitepatch", new_sitepatch),
+            ("needs-sitepatch-backlog", backlog_sitepatch),
+        ]:
+            ready = {
+                number: InterventionBugInfo(
+                    number=number, source_time=bug.source_time or bug.creation_time
+                )
+                for number, bug in sitepatch_bugs.items()
+                if number not in requested_bugs
+            }
+            logging.info(f"Found {len(ready)} {name} bugs ready for intervention")
+            all_bugs[self.key("bugzilla", name)] = ready
 
         if not any(all_bugs.values()):
             return {}

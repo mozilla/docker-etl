@@ -107,7 +107,9 @@ class MockBigQueryService(autowebcompat.BigQueryService):
         self.diagnosis_bugs: list[autowebcompat.NewBugInfo] = []
         self.reproduce_bugs: list[autowebcompat.NewBugInfo] = []
         self.intervention_bugs: list[autowebcompat.NewBugInfo] = []
-        self.sitepatch_bugs: list[autowebcompat.SitepatchBug] = []
+        self.sitepatch_bugs: list[autowebcompat.NewBugInfo] = []
+        self.sitepatch_backlog_bugs: list[autowebcompat.NewBugInfo] = []
+        self.sitepatch_cutoffs: list[Optional[datetime]] = []
 
     def get_source_times(
         self,
@@ -170,8 +172,16 @@ class MockBigQueryService(autowebcompat.BigQueryService):
             raise ValueError(f"Unexpected whiteboard token {whiteboard_token}")
         return {bug.number: bug for bug in items if whiteboard_token in bug.whiteboard}
 
-    def get_sitepatch_bugs(self) -> Mapping[int, autowebcompat.SitepatchBug]:
-        return {bug.number: bug for bug in self.sitepatch_bugs}
+    def get_sitepatch_bugs(
+        self, cutoff: Optional[datetime]
+    ) -> tuple[
+        Mapping[int, autowebcompat.NewBugInfo], Mapping[int, autowebcompat.NewBugInfo]
+    ]:
+        self.sitepatch_cutoffs.append(cutoff)
+        return (
+            {bug.number: bug for bug in self.sitepatch_bugs},
+            {bug.number: bug for bug in self.sitepatch_backlog_bugs},
+        )
 
 
 class MockBugzillaUpdater(autowebcompat.BugzillaUpdater):
@@ -677,20 +687,33 @@ def test_intervention_schedule_skips_in_flight() -> None:
     assert hackbot_client.created == []
 
 
+def sitepatch_bug(number: int, source_time: datetime) -> autowebcompat.NewBugInfo:
+    return autowebcompat.NewBugInfo(
+        number=number,
+        title="example.com - broken",
+        url="https://example.com/",
+        keywords=["webcompat:needs-sitepatch"],
+        whiteboard="[autowebcompat:repro-success]",
+        user_story="",
+        creation_time=datetime(2026, 8, 1, tzinfo=UTC),
+        source_time=source_time,
+    )
+
+
 def test_intervention_schedule_needs_sitepatch() -> None:
     """needs-sitepatch bugs whose repro succeeded get an intervention."""
     hackbot_client = MockHackbot()
     bq_service = MockBigQueryService()
-    bq_service.sitepatch_bugs = [
-        autowebcompat.SitepatchBug(
-            number=1, source_time=datetime(2026, 11, 1, tzinfo=UTC)
-        ),
-    ]
-    task = autowebcompat.InterventionTask(hackbot_client, bq_service, {})
+    bq_service.sitepatch_bugs = [sitepatch_bug(1, datetime(2026, 11, 1, tzinfo=UTC))]
+    last_run = datetime(2026, 10, 30, tzinfo=UTC)
+    task = autowebcompat.InterventionTask(
+        hackbot_client, bq_service, {"bugzilla:needs-sitepatch": last_run}
+    )
     updater = MockBugzillaUpdater()
     updater.bug_data = [{"id": 1, "whiteboard": "[autowebcompat:repro-success]"}]
 
     scheduled = task.create_new()
+    assert bq_service.sitepatch_cutoffs == [last_run]
     assert list(scheduled.keys()) == ["bugzilla:needs-sitepatch"]
     assert len(hackbot_client.created) == 1
     request = hackbot_client.created[0]
@@ -706,6 +729,31 @@ def test_intervention_schedule_needs_sitepatch() -> None:
     assert update is not None
     assert update.whiteboard == (
         "[autowebcompat:repro-success][autowebcompat:intervention-in-progress]"
+    )
+
+
+def test_intervention_schedule_needs_sitepatch_backlog() -> None:
+    """Backlog needs-sitepatch bugs are scheduled under their own source key, so
+    they don't move the needs-sitepatch watermark."""
+    hackbot_client = MockHackbot()
+    bq_service = MockBigQueryService()
+    bq_service.sitepatch_bugs = [sitepatch_bug(1, datetime(2026, 11, 1, tzinfo=UTC))]
+    bq_service.sitepatch_backlog_bugs = [
+        sitepatch_bug(2, datetime(2026, 9, 1, tzinfo=UTC))
+    ]
+    task = autowebcompat.InterventionTask(hackbot_client, bq_service, {})
+
+    scheduled = task.create_new()
+    assert {key: [run.run_key for run in runs] for key, runs in scheduled.items()} == {
+        "bugzilla:needs-sitepatch": ["1"],
+        "bugzilla:needs-sitepatch-backlog": ["2"],
+    }
+    run_info = task.new_run_info()
+    assert run_info["bugzilla:needs-sitepatch"].source_time == datetime(
+        2026, 11, 1, tzinfo=UTC
+    )
+    assert run_info["bugzilla:needs-sitepatch-backlog"].source_time == datetime(
+        2026, 9, 1, tzinfo=UTC
     )
 
 
