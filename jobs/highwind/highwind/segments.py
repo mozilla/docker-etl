@@ -125,3 +125,15 @@ def segments_for_experiment(experiment, resolved_segments, unresolved_segments):
             continue
         chosen.append(segment)
     return chosen, problems
+
+
+def group_by_source(segments):
+    """Group a list of `Segment` by the metric-hub source they read, like `metrics.group_by_source`.
+
+    Grouped for the same reason metrics are: one query per distinct segment data source is what
+    makes reading one source for several segments cost one scan rather than one per segment.
+    """
+    by_source = {}
+    for segment in segments:
+        by_source.setdefault(segment.source, []).append(segment)
+    return by_source

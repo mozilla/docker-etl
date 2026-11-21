@@ -354,7 +354,7 @@ def test_split_resolved_metrics_reads_the_winsorize_fields_once_they_exist():
 
 def test_once_the_parser_declares_the_fields_unset_resolves_to_the_jobs_default():
     # Once a parser that declares the fields is installed, a metric that sets neither is truly
-    # unset (not forced off), and winsorize_mode reads that as the job's own default quantile.
+    # unset (not forced off), and winsorize_mode reads that as the job's own default: off.
     plan = plan_of(
         {
             "active_hours": FutureAggregationMetric(
@@ -375,7 +375,7 @@ def test_once_the_parser_declares_the_fields_unset_resolves_to_the_jobs_default(
     assert resolved["active_hours"].winsorize_quantile is None
     assert resolved["active_hours"].winsorize_threshold is None
     assert metrics.winsorize_mode(resolved["active_hours"]) == metrics.Winsorize(
-        metrics.WinsorizeMode.QUANTILE, metrics.DEFAULT_WINSORIZE_QUANTILE
+        metrics.WinsorizeMode.OFF
     )
 
 
@@ -444,10 +444,8 @@ def test_a_summed_metric_whose_finalize_contains_a_cast_is_still_continuous():
     # EXP-8013 proposes a `cast_as_int` option that would wrap a plain sum's finalize in
     # CAST(... AS INT64), the same SQL shape a real yes/no metric's comparison-cast produces. The
     # structured fields this job reads instead, aggregation=SUM and no threshold, are unaffected
-    # by what the rendered SQL happens to contain. Built against a parser that declares the
-    # winsorize fields, so an unset quantile resolves to the job's default rather than off, which
-    # is what makes the winsorize_mode assertion below prove is_yes_no itself, not the
-    # parser-dark fallback.
+    # by what the rendered SQL happens to contain. Winsorize_quantile is set explicitly so the
+    # winsorize_mode assertion below proves is_yes_no itself, not the default-off fallback.
     cast_as_int_reducer = BucketedAggregation(
         bucket_aggregate="SUM(active_hours_sum)",
         combine=Combine.SUM,
@@ -463,7 +461,7 @@ def test_a_summed_metric_whose_finalize_contains_a_cast_is_still_continuous():
                 cumulative_window=7,
                 incremental_window=None,
                 repeat_windows=True,
-                winsorize_quantile=None,
+                winsorize_quantile=0.99,
                 winsorize_threshold=None,
             )
         }
@@ -505,12 +503,10 @@ def test_for_experiment_carries_is_yes_no_forward():
 # --------------------------------------------------------------------------- winsorize_mode ----
 
 
-def test_an_unset_metric_defaults_to_the_jobs_own_quantile():
+def test_an_unset_metric_defaults_to_off():
     setting = metrics.winsorize_mode(metric_with())
 
-    assert setting == metrics.Winsorize(
-        metrics.WinsorizeMode.QUANTILE, metrics.DEFAULT_WINSORIZE_QUANTILE
-    )
+    assert setting == metrics.Winsorize(metrics.WinsorizeMode.OFF)
 
 
 def test_a_quantile_of_one_is_off():
