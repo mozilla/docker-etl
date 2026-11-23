@@ -57,8 +57,8 @@ resolved_adhoc table (common.ResolvedStore), by query key and with the digest
 of the columns it mentions, so a run fetches and resolves only the queries
 that are new or whose columns changed.
 The refs hold only metric ids from the inventory. resolved_adhoc also keeps
-the dotted names each query mentions (redash.dependencies()), which can include
-an alias and column or a literal that looks like a table name.
+the tables and columns each query mentions (redash.dependencies()), limited
+to those lineage has a shape for, so nothing there comes from the text alone.
 
 Emails are stored and shown, since
 monitoring_derived.jobs_by_organization_v1 already publishes user_email to the
@@ -580,6 +580,8 @@ def run(projects, days, save):
         f"{RESOLVED_VERSION}:{R.L.resolver_digest()}",
         R.dependency_digest,
         inventory,
+        # only tables lineage knows, so no dotted name from people's text is stored
+        keep_table=R.known_tables().__contains__,
     )
     rows = job_rows(projects, start, end, save)
     log(

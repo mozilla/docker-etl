@@ -56,11 +56,21 @@ def test_dependencies_keep_schema_names_only(loaded):
     assert not any("my_total" in names for names in deps.values())
 
 
-def test_table_that_gains_a_shape_is_redone(loaded):
-    loaded({})
-    before = R.dependency_digest(TBL, [])
+def test_dependencies_leave_out_names_lineage_does_not_know(loaded):
+    # resolved_adhoc keeps these in BigQuery, so a literal or an alias from
+    # somebody's query must not become a dep
     loaded(shapes(**{"metrics.counter.a_count": A}))
-    assert R.dependency_digest(TBL, []) != before
+    sql = f"""SELECT t.a_count FROM `{TBL}` AS t
+        JOIN scratch.alice_tmp USING (client_id)
+        WHERE t.email LIKE '%@example.com' AND t.host = 'alice.smith'"""
+    assert set(R.dependencies(sql, "mozdata")) == {TBL}
+
+
+def test_table_that_loses_its_shape_is_redone(loaded):
+    loaded(shapes(**{"metrics.counter.a_count": A}))
+    before = R.dependency_digest(TBL, ["a_count"])
+    loaded({})
+    assert R.dependency_digest(TBL, ["a_count"]) != before
 
 
 @pytest.fixture
@@ -124,6 +134,50 @@ def test_store_keeps_a_frozen_entry_from_another_version(store, monkeypatch):
     )
     store.save()
     assert [(r["key"], r["version"]) for r in written["rows"]] == [("k", "v1")]
+
+
+def test_store_drops_held_deps_it_may_not_keep(monkeypatch, loaded):
+    # rows written before deps were filtered still hold dotted names from the
+    # text; a frozen entry is never put again, so loading has to scrub them
+    loaded(shapes(**{"metrics.counter.a_count": A}))
+    held = {
+        "key": "k",
+        "version": "v0",
+        "resolved_on": "2026-01-01",
+        "deps": [
+            {"table": TBL, "names": ["a_count"], "digest": R.dependency_digest(TBL, ["a_count"])},
+            {"table": "mozdata.alice.smith", "names": [], "digest": "x"},
+        ],
+        "refs": [
+            {
+                "app": "app",
+                "metric": "a.count",
+                "role": "output",
+                "hops": 0,
+                "via": None,
+                "transformed": False,
+            }
+        ],
+        "stars": [],
+        "note": "ok",
+    }
+    fake = type(
+        "Client",
+        (),
+        {"query": lambda self, sql: type("Job", (), {"result": lambda self: [held]})()},
+    )()
+    monkeypatch.setattr(common, "client", lambda: fake)
+    s = common.ResolvedStore(
+        "resolved_test", "v1", R.dependency_digest, INVENTORY, keep_table=R._DIGESTS.__contains__
+    )
+    assert s.get("k", frozen=True) is not None
+    s.put("k2", ({}, [], "ok"), {TBL: ["a_count"], "mozdata.alice.smith": []})
+    written = {}
+    monkeypatch.setattr(
+        common, "write_table", lambda name, rows, *a, **k: written.update(rows=rows)
+    )
+    s.save()
+    assert [[d["table"] for d in r["deps"]] for r in written["rows"]] == [[TBL], [TBL]]
 
 
 def test_memory_cache_writes_nothing_to_disk(monkeypatch, tmp_path):

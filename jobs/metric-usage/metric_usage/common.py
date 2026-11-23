@@ -520,24 +520,29 @@ class ResolvedStore:
 
     An entry is a query's named refs, by app and metric, with what they were
     resolved against: the resolver's digest (lineage.resolver_digest()) and,
-    for every table the query names, the columns of it the query mentions and
-    their digest (redash.dependencies()). It is reused while those match, so a
+    for every known table the query names, the columns of it the query
+    mentions and their digest (redash.dependencies()). It is reused while those match, so a
     run resolves only the queries that are new or whose columns changed. An
     entry is also redone after MIN_AGE to MAX_AGE days, spread by its key, to
     bound what a missed dependency could leave stale. A frozen entry is the
     exception: its text is gone, so it is kept whatever resolver version it
     was resolved with, and a change to the resolver does not drop it. A
-    query's key and the dotted names it mentions are kept, never its text.
+    query's key and the known tables and columns it mentions are kept, never
+    its text.
     save() keeps the entries this run used, so queries that left the window
     drop out.
     """
 
     MIN_AGE, MAX_AGE = 15, 30
 
-    def __init__(self, name, version, digest_of, inventory):
+    def __init__(self, name, version, digest_of, inventory, keep_table=None):
         """digest_of(table, names) is the current digest of a table's
-        columns, redash.dependency_digest()."""
+        columns, redash.dependency_digest(). keep_table(table), if given, says
+        which deps may be stored: the others are dropped from what is held and
+        what is put, so a table written before a dep was filtered loses it on
+        the next complete save, frozen entries included."""
         self.name, self.version, self.digest_of = name, version, digest_of
+        self.keep_table = keep_table or (lambda t: True)
         self.today = utc_today()
         self.inventory = inventory
         self.ids = {(r["app"], r["metric"]): i for i, r in enumerate(inventory)}
@@ -548,7 +553,9 @@ class ResolvedStore:
         # get() checks the version of the rest
         try:
             for r in client().query(f"SELECT * FROM `{DEST}.{PREFIX}{name}`").result():
-                self.held[r["key"]] = dict(r)
+                r = dict(r)
+                r["deps"] = [d for d in r["deps"] if self.keep_table(d["table"])]
+                self.held[r["key"]] = r
         except NotFound:
             pass
         old = sum(r["version"] != version for r in self.held.values())
@@ -601,6 +608,7 @@ class ResolvedStore:
             "deps": [
                 {"table": t, "names": names, "digest": self.digest_of(t, names)}
                 for t, names in sorted(deps.items())
+                if self.keep_table(t)
             ],
             "refs": [
                 {

@@ -204,20 +204,25 @@ WORD_RE = re.compile(r"[a-z0-9_]+")
 
 
 def dependencies(text, project=REDASH_PROJECT):
-    """{table: column names} for every table a query names, the names being
-    those of the table's columns the text mentions: what its analyse() result
-    holds for (see lineage.shape_digests()). The column names are only the
-    table's own. The tables are every dotted name in the text, so an alias and
-    column or a literal such as example.com can be one."""
+    """{table: column names} for every table lineage has a shape for that a
+    query names, the names being those of the table's columns the text
+    mentions: what its analyse() result holds for (see lineage.shape_digests()).
+    Both come from lineage's shapes, never from the text alone. Other dotted
+    names in the text (an alias and column, a literal such as example.com) are
+    left out, since adhoc.py keeps these in BigQuery. A query naming a table
+    lineage only gains a shape for later is then redone when its entry ages
+    out (ResolvedStore.MAX_AGE) rather than right away."""
     low = PARAM_RE.sub("0", text).lower()
     words = set(WORD_RE.findall(low))
-    return {t: sorted(words & (_DIGESTS.get(t) or {}).keys()) for t in table_refs(low, project)}
+    return {
+        t: sorted(words & _DIGESTS[t].keys()) for t in table_refs(low, project) if t in _DIGESTS
+    }
 
 
 def dependency_digest(table, names):
     """One digest for what dependencies() lists for a table. Whether lineage
     has a shape for it at all counts too, so a result is redone once a table
-    it names gets one."""
+    it names loses its shape."""
     cols = _DIGESTS.get(table)
     material = (
         ["absent"] if cols is None else ["present"] + [f"{n}={cols.get(n, '')}" for n in names]

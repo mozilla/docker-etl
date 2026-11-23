@@ -137,11 +137,11 @@ reading the text by regex.
 Redash queries, ad hoc queries, and the SQL that Looker generates are read to be
 parsed, but the text itself is not written to BigQuery. The tables hold metric and
 artifact ids and their metadata, such as titles, owners and accounts.
-`resolved_adhoc` also lists the dotted names each ad hoc query mentions, so it can
-be redone when one of those tables changes. Most are table names, but an alias and
-column (`t.col`) or a literal that looks like a name (`example.com`) can end up there
-too. Redash and ad hoc text is never cached, and `resolved_adhoc` keys each query by
-a hash, not its text.
+`resolved_adhoc` also lists the warehouse tables and columns each ad hoc query
+mentions, so it can be redone when one of them changes. Only tables bigquery-etl
+deploys and their columns are listed; other dotted names in the text, such as an
+alias and column (`t.col`) or a literal (`example.com`), are not kept. Redash and ad hoc text 
+is never cached, and `resolved_adhoc` keys each query by a hash, not its text.
 
 ## Tests and accuracy
 
