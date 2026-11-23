@@ -616,11 +616,11 @@ class BigQueryService:
         return self.filter_live(bugs, has_token)
 
     def get_sitepatch_bugs(
-        self, cutoff: Optional[datetime]
+        self,
     ) -> tuple[Mapping[int, NewBugInfo], Mapping[int, NewBugInfo]]:
         """needs-sitepatch bugs ready for an intervention, as (new, backlog).
 
-        New bugs got the keyword after last run are all returned. Backlogs
+        New bugs got the keyword in the last day and are all returned. Backlog
         bugs that got it earlier are queued."""
         max_queue_length = 2
         batch_size = 3
@@ -676,7 +676,7 @@ class BigQueryService:
         creation_time, keyword_added.added_time AS source_time, score,
         IFNULL(is_core, FALSE) AS is_core,
         keyword_added.added_time <=
-          IFNULL(@cutoff, DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 DAY)) AS is_backlog
+          DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 DAY) AS is_backlog
       FROM `{self.project["webcompat_knowledge_base"]["scored_site_reports"]}`
       JOIN keyword_added USING(number)
       JOIN latest_repro USING(number)
@@ -730,7 +730,6 @@ class BigQueryService:
                     bigquery.ScalarQueryParameter(
                         "intervention_agent", "STRING", InterventionTask.agent
                     ),
-                    bigquery.ScalarQueryParameter("cutoff", "DATETIME", cutoff),
                     bigquery.ScalarQueryParameter(
                         "max_queue_length", "INT64", max_queue_length
                     ),
@@ -1735,11 +1734,9 @@ class InterventionTask(HackbotTask):
             for number, bug_info in requested_bugs.items()
         }
 
-        # includes all new bugs that got the keyword since the last run, and
-        # a batch of older ones
-        new_sitepatch, backlog_sitepatch = self.bq_service.get_sitepatch_bugs(
-            self.source_times.get(self.key("bugzilla", "needs-sitepatch"))
-        )
+        # All bugs that got needs-sitepatch in the last day, and a batch of
+        # older ones
+        new_sitepatch, backlog_sitepatch = self.bq_service.get_sitepatch_bugs()
         for name, sitepatch_bugs in [
             ("needs-sitepatch", new_sitepatch),
             ("needs-sitepatch-backlog", backlog_sitepatch),

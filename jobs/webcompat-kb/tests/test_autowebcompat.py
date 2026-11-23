@@ -109,7 +109,6 @@ class MockBigQueryService(autowebcompat.BigQueryService):
         self.intervention_bugs: list[autowebcompat.NewBugInfo] = []
         self.sitepatch_bugs: list[autowebcompat.NewBugInfo] = []
         self.sitepatch_backlog_bugs: list[autowebcompat.NewBugInfo] = []
-        self.sitepatch_cutoffs: list[Optional[datetime]] = []
 
     def get_source_times(
         self,
@@ -173,11 +172,10 @@ class MockBigQueryService(autowebcompat.BigQueryService):
         return {bug.number: bug for bug in items if whiteboard_token in bug.whiteboard}
 
     def get_sitepatch_bugs(
-        self, cutoff: Optional[datetime]
+        self,
     ) -> tuple[
         Mapping[int, autowebcompat.NewBugInfo], Mapping[int, autowebcompat.NewBugInfo]
     ]:
-        self.sitepatch_cutoffs.append(cutoff)
         return (
             {bug.number: bug for bug in self.sitepatch_bugs},
             {bug.number: bug for bug in self.sitepatch_backlog_bugs},
@@ -736,15 +734,11 @@ def test_intervention_schedule_needs_sitepatch() -> None:
     hackbot_client = MockHackbot()
     bq_service = MockBigQueryService()
     bq_service.sitepatch_bugs = [sitepatch_bug(1, datetime(2026, 11, 1, tzinfo=UTC))]
-    last_run = datetime(2026, 10, 30, tzinfo=UTC)
-    task = autowebcompat.InterventionTask(
-        hackbot_client, bq_service, {"bugzilla:needs-sitepatch": last_run}
-    )
+    task = autowebcompat.InterventionTask(hackbot_client, bq_service, {})
     updater = MockBugzillaUpdater()
     updater.bug_data = [{"id": 1, "whiteboard": "[autowebcompat:repro-success]"}]
 
     scheduled = task.create_new()
-    assert bq_service.sitepatch_cutoffs == [last_run]
     assert list(scheduled.keys()) == ["bugzilla:needs-sitepatch"]
     assert len(hackbot_client.created) == 1
     request = hackbot_client.created[0]
