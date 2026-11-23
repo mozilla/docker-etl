@@ -6,48 +6,37 @@ removing it. The job parses SQL from each source below, follows each metric
 column by column through bigquery-etl's lineage, and writes BigQuery tables
 that a page reads per metric.
 
-The frontend portion of this is in https://github.com/mozilla/bigquery-metric-lineage, deployed to
-https://benwu-metric-usage.quick.mozilla.cloud/.
+Frontend: [bigquery-metric-lineage](https://github.com/mozilla/bigquery-metric-lineage),
+deployed at https://benwu-metric-usage.quick.mozilla.cloud/.
 
-| Source               | What is read                                                                                  |
-|----------------------|-----------------------------------------------------------------------------------------------|
-| bigquery-etl         | Every deployed query and view (the `generated-sql` branch), and each table's writes and reads |
-| Redash               | Live saved queries on BigQuery, with their dashboards, owners and views                       |
-| Looker               | Dashboards, Looks and explore queries, through the SQL Looker generates, and their runs       |
-| GLAM                 | How often each Firefox Desktop and Fenix metric is opened                                     |
-| metric-hub           | Metric definitions and the OpMon projects using them                                          |
-| BigQuery job history | Queries people, tools and Jetstream ran themselves, per account or experiment                 |
+| Source               | What is read                                                       | Counted per window                            |
+|----------------------|--------------------------------------------------------------------|-----------------------------------------------|
+| bigquery-etl         | Every deployed query and view (the `generated-sql` branch)         | Reads and readers of each table               |
+| Redash               | Live saved queries on BigQuery, with their dashboards and owners   | Views and viewers (recorded since 2025-09-17) |
+| Looker               | Dashboards, Looks and explores, through the SQL Looker generates   | Runs and users, and the queries run           |
+| GLAM                 | Firefox Desktop and Fenix metrics opened                           | Days each metric was opened                   |
+| metric-hub           | Metric definitions and the OpMon projects using them               | OpMon projects active in the window           |
+| BigQuery job history | Queries run directly by people, tools and Jetstream                | Days and jobs with a query naming the metric  |
 
 ## Time windows
 
-Use is counted over windows of 30, 90, 180 and 365 days ending yesterday, in UTC
-wherever the job runs, since that is the day BigQuery's dates use. Code
-and saved content (a bigquery-etl query, a saved Redash query, a Looker tile, a
-metric-hub definition) counts in every window whether or not it ran; their
-views and runs are counted per window. Use that only shows up when something
-runs counts in the windows it was seen in:
+Use is counted over windows of 30, 90, 180 and 365 days ending yesterday (UTC,
+matching BigQuery dates). Code and saved content, such as a bigquery-etl query or
+a Looker tile, counts in every window whether or not it ran; views, runs and ad
+hoc queries count only in the windows they happened in.
 
-| Source               | Counted per window                                                        |
-|----------------------|---------------------------------------------------------------------------|
-| bigquery-etl         | Reads and readers of each table                                           |
-| Redash               | Views and viewers of each query and dashboard (recorded since 2025-09-17) |
-| Looker               | Runs and users of each dashboard, Look and explore, and the queries run   |
-| GLAM                 | Days each metric was opened                                               |
-| metric-hub           | OpMon projects whose dates overlap the window                             |
-| BigQuery job history | Days and jobs with a query naming the metric                              |
-
-`INFORMATION_SCHEMA.JOBS_BY_PROJECT` keeps only 180 days, so the job keeps the
-job list itself in `adhoc_jobs` and adds the days it lacks on each run. The
-first run fills the last 179 days, and ad hoc use goes back only as far as that
-table does, so it reaches a year after a year of runs. A gap of more than 179
-days between runs is lost for good. To capture days again, delete their
-partitions from `adhoc_jobs` and run `adhoc`.
+`INFORMATION_SCHEMA.JOBS_BY_PROJECT` keeps 180 days, so `adhoc` appends each new
+day to `adhoc_jobs`, and ad hoc history grows to a year over a year of runs. A
+gap of more than 179 days between runs is lost; to recapture days, delete their
+partitions from `adhoc_jobs` and rerun `adhoc`.
 
 ## Tables
 
 All are written to `mozdata.analysis` with the prefix `benwu_metrics_usage_`
-(see [Settings](#settings)). Each step replaces its tables on every run, except `adhoc_jobs`,
-which is appended to. These tables are temporary and will be put in a bigquery-etl dataset later.
+(see [Settings](#settings)). Each step replaces its tables on every run, except
+`adhoc_jobs`, which is appended to. These tables are temporary and will move to a
+bigquery-etl dataset later. Until then they expire 180 days after they are
+created (the analysis dataset's default), however often they are rewritten.
 
 | Table                                          | One row per                                                     |
 |------------------------------------------------|-----------------------------------------------------------------|
@@ -92,6 +81,11 @@ FETCH=0 script/run_all.sh                            # same, without refreshing 
 .venv/bin/python -m metric_usage.<step> --dry-run    # most steps: everything but writing
 ```
 
+`adhoc` keeps what it resolved in `resolved_adhoc`, so a daily run only resolves
+new queries. Any edit to `lineage.py` or `redash.py` changes the resolver's digest,
+and the next `adhoc` run resolves every query again (about 15 minutes and 60 GiB
+of query text read).
+
 The job needs Google application default credentials that can read the
 warehouse, `bigquery.jobs.listAll` in the projects `adhoc.py` lists, and write
 access to its dataset. The Looker API key is read from the system keyring as
@@ -107,41 +101,25 @@ access to its dataset. The Looker API key is read from the system keyring as
 | `METRIC_USAGE_CACHE`   | `1` (`0` in the image) | `0` keeps the cache in memory instead of under `.cache`                                       |
 | `METRIC_USAGE_WORKERS` | usable CPUs            | Worker processes that parse queries; by default the CPUs within any cgroup CPU limit          |
 
-A table in a dataset with a default expiration (180 days in analysis) expires
-that long after it is created, however often it is rewritten.
-
-Locally, `.cache` keeps what each step fetched between runs (`--force`
-refetches). The image keeps nothing on disk between runs; `adhoc`, the one slow
-step, keeps what it resolved in `resolved_adhoc` instead, so a daily run only
-resolves new queries.
-
 ### When a source fails
 
-A step that cannot fetch what it needs stops without writing, so its tables keep
-the last complete run, and it can be run again on its own. That includes a
-probeinfo or BigQuery error that persists after retries, a System Activity query
-that keeps failing, and more than 1% of Looker's queries failing for reasons that
-may pass (a timeout, a 429 or a 5xx). Two failures are expected and skipped: a
-project in `adhoc.py` the account cannot read, and an app variant probeinfo does
-not list.
+A step that can't fetch what it needs (persistent probeinfo or BigQuery errors,
+or more than 1% of Looker queries failing transiently) exits without writing, so
+its tables keep the last complete run and it can be rerun alone. Projects the
+account can't read and app variants missing from probeinfo are skipped.
 
-Each artifact's `note` says how its SQL was read. `ok` means every part of it was
-evaluated. `partial: N scopes unread` means some subquery or CTE could not be,
-so a metric named only there is missing. `resolve failed: worker died` means
-parsing it crashed its worker process; it is recorded rather than retried, so one
-query does not fail every run. The other notes name the fallback used, such as
-reading the text by regex.
+Each artifact's `note` says how its SQL was read: `ok` (fully evaluated),
+`partial: N scopes unread` (a metric named only in those subqueries is missed),
+`resolve failed: worker died` (recorded, not retried), or the fallback used,
+such as regex.
 
 ## Handling query text
 
-Redash queries, ad hoc queries, and the SQL that Looker generates are read to be
-parsed, but the text itself is not written to BigQuery. The tables hold metric and
-artifact ids and their metadata, such as titles, owners and accounts.
-`resolved_adhoc` also lists the warehouse tables and columns each ad hoc query
-mentions, so it can be redone when one of them changes. Only tables bigquery-etl
-deploys and their columns are listed; other dotted names in the text, such as an
-alias and column (`t.col`) or a literal (`example.com`), are not kept. Redash and ad hoc text 
-is never cached, and `resolved_adhoc` keys each query by a hash, not its text.
+Redash, ad hoc and Looker-generated SQL is parsed in memory and never written to
+BigQuery; Redash and ad hoc text is not cached either. Tables hold metric and
+artifact ids with metadata such as titles, owners and accounts. `resolved_adhoc`
+keys each ad hoc query by a hash and lists only the bigquery-etl tables and
+columns it mentions.
 
 ## Tests and accuracy
 
