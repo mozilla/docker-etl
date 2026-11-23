@@ -607,11 +607,13 @@ class BigQueryService:
         # against live data that the token is still there before dispatching:
         # a previous run may already have consumed it. Also drop bugs Bugzilla
         # doesn't return, or that are moco-confidential.
-        return self.filter_live(
-            bugs,
-            lambda bug: whiteboard_token in bug.whiteboard,
-            f"no longer has {whiteboard_token}",
-        )
+        def has_token(bug: BugLiveState) -> bool:
+            if whiteboard_token in bug.whiteboard:
+                return True
+            logging.info(f"Bug {bug.id} no longer has {whiteboard_token}, skipping")
+            return False
+
+        return self.filter_live(bugs, has_token)
 
     def get_sitepatch_bugs(
         self, cutoff: Optional[datetime]
@@ -672,6 +674,7 @@ class BigQueryService:
       SELECT
         number, title, url, keywords, whiteboard, user_story_raw AS user_story,
         creation_time, keyword_added.added_time AS source_time, score,
+        IFNULL(is_core, FALSE) AS is_core,
         keyword_added.added_time <=
           IFNULL(@cutoff, DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 DAY)) AS is_backlog
       FROM `{self.project["webcompat_knowledge_base"]["scored_site_reports"]}`
@@ -699,9 +702,16 @@ class BigQueryService:
     UNION ALL
     (
       SELECT * FROM candidates
-      WHERE is_backlog AND (SELECT run_count FROM in_flight) < @max_queue_length
-      ORDER BY score DESC, number ASC
-      LIMIT @batch_size
+      WHERE is_backlog
+        -- Take as many backlog bugs as fit in the queue after the runs currently in flight                                                                                                                                                 
+        -- and this run's new bugs, but at most batch_size
+      QUALIFY ROW_NUMBER() OVER (ORDER BY is_core DESC, score DESC, number ASC) <=
+        LEAST(
+          @batch_size,
+          @max_queue_length
+            - (SELECT run_count FROM in_flight)
+            - (SELECT COUNT(*) FROM candidates WHERE NOT is_backlog)
+        )
     )
     """
         rows = list(
@@ -731,10 +741,18 @@ class BigQueryService:
                 ],
             )
         )
+
+        def has_keyword(bug: BugLiveState) -> bool:
+            if "webcompat:needs-sitepatch" in bug.keywords:
+                return True
+            logging.info(
+                f"Bug {bug.id} no longer has webcompat:needs-sitepatch, skipping"
+            )
+            return False
+
         live = self.filter_live(
             {row.number: NewBugInfo.model_validate(dict(row.items())) for row in rows},
-            lambda bug: "webcompat:needs-sitepatch" in bug.keywords,
-            "no longer has webcompat:needs-sitepatch",
+            has_keyword,
         )
         new = {
             row.number: live[row.number]
@@ -752,7 +770,6 @@ class BigQueryService:
         self,
         bugs: Mapping[int, NewBugInfo],
         is_ready: Callable[[BugLiveState], bool],
-        not_ready_reason: str,
     ) -> dict[int, NewBugInfo]:
         if not bugs:
             return {}
@@ -764,7 +781,6 @@ class BigQueryService:
                 logging.info(f"Bug {bug.id} is resolved, skipping")
                 continue
             if not is_ready(bug):
-                logging.info(f"Bug {bug.id} {not_ready_reason}, skipping")
                 continue
             rv[bug.id] = bugs[bug.id]
         return rv
