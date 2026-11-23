@@ -645,16 +645,17 @@ class BigQueryService:
         completed.run_id IS NOT NULL AS is_complete,
         IFNULL(
           completed.summary.status = "ok" AND
-            JSON_VALUE(completed.summary.findings, "$.result.reproduced") = "true",
+            JSON_VALUE(completed.summary.findings, "$.result.reproduced") = "true" AND
+            JSON_VALUE(completed.summary.findings, "$.result.script_url") IS NOT NULL,
           FALSE
-        ) AS reproduced
+        ) AS reproduced_with_script
       FROM `{self.scheduled_table}` AS scheduled
       LEFT JOIN `{self.completed_table}` AS completed USING(run_id)
       WHERE JSON_VALUE(scheduled.extra_data, "$.bug_id") IS NOT NULL
     ),
     -- Outcome of each bug's most recent completed repro
     latest_repro AS (
-      SELECT number, reproduced
+      SELECT number, reproduced_with_script
       FROM bug_runs
       WHERE agent = @repro_agent AND is_complete
       QUALIFY ROW_NUMBER() OVER (PARTITION BY number ORDER BY requested_at DESC) = 1
@@ -681,7 +682,7 @@ class BigQueryService:
         resolution = "" AND
         @keyword IN UNNEST(keywords) AND
         "mozilla-employee-confidential" NOT IN UNNEST(access_groups) AND
-        latest_repro.reproduced AND
+        latest_repro.reproduced_with_script AND
         excluded.number IS NULL
     ),
     -- Number of runs in flight, across all agents
