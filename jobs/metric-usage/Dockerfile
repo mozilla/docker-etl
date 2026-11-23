@@ -1,4 +1,4 @@
-FROM python:3.11-slim-bookworm
+FROM python:3.14-slim-trixie
 LABEL maintainer="bewu@mozilla.com"
 
 ARG USER_ID="10001"

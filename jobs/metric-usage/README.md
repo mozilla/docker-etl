@@ -72,10 +72,10 @@ docker run metric-usage                                   # every step
 docker run metric-usage python -m metric_usage.looker     # one step
 ```
 
-Locally, with Python 3.11, from this directory:
+Locally, with Python 3.14, from this directory:
 
 ```sh
-python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
+python3.14 -m venv .venv && .venv/bin/pip install -r requirements.txt
 script/run_all.sh                                    # fetch, then rebuild every table
 FETCH=0 script/run_all.sh                            # same, without refreshing the clones
 .venv/bin/python -m metric_usage.<step> --dry-run    # most steps: everything but writing
