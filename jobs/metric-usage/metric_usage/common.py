@@ -23,6 +23,7 @@ import re
 import signal
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 
@@ -150,9 +151,22 @@ def _run_chunk(work, chunk, marks):
     mark = os.path.join(marks, str(os.getpid()))
     out = []
     for i, item in chunk:
-        with open(mark, "w") as f:
+        # written aside and renamed into place, since a worker the pool kills
+        # after another died could otherwise leave the mark empty
+        with open(f"{mark}.tmp", "w") as f:
             f.write(str(i))
+        os.replace(f"{mark}.tmp", mark)
         out.append((i, work(item)))
+    return out
+
+
+def _marks(marks):
+    """The item index in each worker's mark. A worker killed mid-write leaves
+    only a .tmp file; its item is run again with the rest."""
+    out = set()
+    for p in pathlib.Path(marks).iterdir():
+        if p.suffix != ".tmp" and p.read_text().isdigit():
+            out.add(int(p.read_text()))
     return out
 
 
@@ -196,7 +210,7 @@ def pool_map(work, items, chunksize=1, initializer=None, on_crash=None):
                         yield res
             if not broke:
                 return
-            running = {int(p.read_text()) for p in pathlib.Path(marks).iterdir()} - done
+            running = _marks(marks) - done
         if not done and not running:
             # a worker died before starting any item, as in its initializer;
             # running the pool again would do the same
@@ -292,16 +306,36 @@ def write_cache(path, data):
     write_atomic(path, data)
 
 
+# seconds before the second and third attempts at a URL
+GET_RETRY_DELAYS = (5, 20)
+
+
+def _transient(e):
+    """Whether a failed GET may succeed if tried again: a timeout, a dropped
+    connection, a 429 or a 5xx. A 404 or other 4xx will not."""
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code == 429 or e.code >= 500
+    return isinstance(e, (urllib.error.URLError, TimeoutError, ConnectionError))
+
+
 def get_json(url, force=False):
-    """GET a URL as JSON, cached by URL. A body that is not JSON raises before
-    it is cached."""
+    """GET a URL as JSON, cached by URL, retrying a transient failure. A body
+    that is not JSON raises before it is cached."""
     path = _cache_file("http", url)
     held = None if force else read_cache(path)
     if held is not None:
         return json.loads(held)
     req = urllib.request.Request(url, headers={"Accept-Encoding": "identity"})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        body = r.read()
+    for delay in GET_RETRY_DELAYS + (None,):
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                body = r.read()
+            break
+        except Exception as e:
+            if delay is None or not _transient(e):
+                raise
+            log(f"  {url}: {type(e).__name__}, trying again in {delay}s")
+            time.sleep(delay)
     value = json.loads(body)
     write_cache(path, body)
     return value
@@ -492,9 +526,10 @@ class ResolvedStore:
     entry is also redone after MIN_AGE to MAX_AGE days, spread by its key, to
     bound what a missed dependency could leave stale. A frozen entry is the
     exception: its text is gone, so it is kept whatever resolver version it
-    was resolved with, and a change to the resolver does not drop it. Only a
-    query's key and schema names are kept, never its text. save() keeps the
-    entries this run used, so queries that left the window drop out.
+    was resolved with, and a change to the resolver does not drop it. A
+    query's key and the dotted names it mentions are kept, never its text.
+    save() keeps the entries this run used, so queries that left the window
+    drop out.
     """
 
     MIN_AGE, MAX_AGE = 15, 30

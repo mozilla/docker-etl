@@ -121,3 +121,62 @@ def test_worker_count_follows_the_environment(monkeypatch):
     assert common.worker_count() == 5
     monkeypatch.delenv("METRIC_USAGE_WORKERS")
     assert common.worker_count() >= 1
+
+
+class _Body(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _urlopen_failing(errors):
+    """urlopen that raises each of errors in turn, then returns [1]."""
+    calls = []
+
+    def urlopen(req, timeout=None):
+        calls.append(req.full_url)
+        if len(calls) <= len(errors):
+            raise errors[len(calls) - 1]
+        return _Body(b"[1]")
+
+    return urlopen, calls
+
+
+@pytest.fixture
+def uncached(monkeypatch):
+    monkeypatch.setattr(common, "DISK_CACHE", False)
+    monkeypatch.setattr(common, "_MEMORY", {})
+    monkeypatch.setattr(common.time, "sleep", lambda s: None)
+
+
+def test_get_json_retries_a_transient_failure(monkeypatch, uncached):
+    urlopen, calls = _urlopen_failing([http_error(503), TimeoutError()])
+    monkeypatch.setattr(common.urllib.request, "urlopen", urlopen)
+    assert common.get_json("https://example.com/a") == [1]
+    assert len(calls) == 3
+
+
+def test_get_json_gives_up_after_its_retries(monkeypatch, uncached):
+    urlopen, calls = _urlopen_failing([http_error(503)] * 3)
+    monkeypatch.setattr(common.urllib.request, "urlopen", urlopen)
+    with pytest.raises(urllib.error.HTTPError):
+        common.get_json("https://example.com/b")
+    assert len(calls) == 3
+
+
+def test_get_json_does_not_retry_not_found(monkeypatch, uncached):
+    urlopen, calls = _urlopen_failing([http_error(404)])
+    monkeypatch.setattr(common.urllib.request, "urlopen", urlopen)
+    assert common.get_json_if_found("https://example.com/c") is None
+    assert len(calls) == 1
+
+
+def test_missing_metric_hub_clone_stops(monkeypatch, tmp_path):
+    from metric_usage import metric_hub as MH
+
+    monkeypatch.setattr(MH, "HUB", tmp_path / "metric_hub")
+    monkeypatch.setattr(MH, "_MODEL", None)
+    with pytest.raises(SystemExit, match="fetch_metric_hub.sh"):
+        MH.model()

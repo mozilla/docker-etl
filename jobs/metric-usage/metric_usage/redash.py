@@ -206,8 +206,9 @@ WORD_RE = re.compile(r"[a-z0-9_]+")
 def dependencies(text, project=REDASH_PROJECT):
     """{table: column names} for every table a query names, the names being
     those of the table's columns the text mentions: what its analyse() result
-    holds for (see lineage.shape_digests()). Only schema names are kept, never
-    a word that is the author's own."""
+    holds for (see lineage.shape_digests()). The column names are only the
+    table's own. The tables are every dotted name in the text, so an alias and
+    column or a literal such as example.com can be one."""
     low = PARAM_RE.sub("0", text).lower()
     words = set(WORD_RE.findall(low))
     return {t: sorted(words & (_DIGESTS.get(t) or {}).keys()) for t in table_refs(low, project)}

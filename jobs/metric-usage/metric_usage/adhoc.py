@@ -56,8 +56,9 @@ but no text. Each query's resolved refs are kept between runs in the
 resolved_adhoc table (common.ResolvedStore), by query key and with the digest
 of the columns it mentions, so a run fetches and resolves only the queries
 that are new or whose columns changed.
-Only metric ids from the inventory reach the tables, never a literal, a column
-alias or a table name from the text.
+The refs hold only metric ids from the inventory. resolved_adhoc also keeps
+the dotted names each query mentions (redash.dependencies()), which can include
+an alias and column or a literal that looks like a table name.
 
 Emails are stored and shown, since
 monitoring_derived.jobs_by_organization_v1 already publishes user_email to the
@@ -738,6 +739,9 @@ def main():
             "--project and --days are for --dry-run; the tables hold "
             f"every project over {LONGEST} days"
         )
+    # checked here rather than when the experiments are credited, after the
+    # queries are resolved
+    MH.require_hub()
     refs, arts, store = run(args.project or PROJECTS, args.days, save=not args.dry_run)
     if args.dry_run:
         return

@@ -522,10 +522,18 @@ WHERE (end_date IS NULL OR end_date >= '{start}') AND (start_date IS NULL OR sta
 _MODEL = None
 
 
+def require_hub():
+    """Stop when the metric-hub clone is missing. Without it the Model finds no
+    configs, so every Jetstream ref would quietly come out as not named."""
+    if not HUB.exists():
+        raise SystemExit(f"{HUB} is missing; run script/fetch_metric_hub.sh first")
+
+
 def model():
     """The Model, built once per process."""
     global _MODEL
     if _MODEL is None:
+        require_hub()
         _MODEL = Model()
     return _MODEL
 
@@ -634,8 +642,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--show", help="print the refs of metric-hub metrics whose id contains this")
     args = ap.parse_args()
-    if not HUB.exists():
-        raise SystemExit(f"{HUB} is missing; run script/fetch_metric_hub.sh first")
+    require_hub()
     refs, arts = run(args.show)
     if args.dry_run:
         return
