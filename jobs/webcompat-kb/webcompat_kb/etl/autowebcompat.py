@@ -1181,14 +1181,6 @@ class HackbotTask(ABC):
 
     def new_run_info(self) -> Mapping[str, RunInfo]:
         rv = {}
-        for source_key, runs in self.scheduled.items():
-            rv[source_key] = RunInfo(
-                agent=self.agent,
-                task_name=self.task_name,
-                source_key=source_key,
-                source_time=max(run.source_time for run in runs),
-                updated=True,
-            )
         for source_key, source_time in self.source_times.items():
             rv[source_key] = RunInfo(
                 agent=self.agent,
@@ -1196,6 +1188,14 @@ class HackbotTask(ABC):
                 source_key=source_key,
                 source_time=source_time,
                 updated=False,
+            )
+        for source_key, runs in self.scheduled.items():
+            rv[source_key] = RunInfo(
+                agent=self.agent,
+                task_name=self.task_name,
+                source_key=source_key,
+                source_time=max(run.source_time for run in runs),
+                updated=True,
             )
         return rv
 

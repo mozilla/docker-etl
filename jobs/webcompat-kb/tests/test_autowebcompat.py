@@ -579,6 +579,37 @@ def test_diagnosis_schedule_skips_in_flight() -> None:
     assert hackbot_client.created == []
 
 
+def test_new_run_info_advances_source_time() -> None:
+    """A source that scheduled runs records their latest source time, rather
+    than the previous one; other sources keep their previous time."""
+    previous = datetime(2026, 10, 30, tzinfo=UTC)
+    scheduled_time = datetime(2026, 11, 1, tzinfo=UTC)
+    task = autowebcompat.ReproTask(
+        MockHackbot(),
+        MockBigQueryService(),
+        {"bugzilla:creation": previous, "bugzilla:reproduce-flag": previous},
+    )
+    task.scheduled["bugzilla:creation"].append(
+        autowebcompat.ScheduledRun(
+            run_id=UUID(int=1),
+            agent=task.agent,
+            task_name=task.task_name,
+            source_key="bugzilla:creation",
+            run_key="1",
+            source_time=scheduled_time,
+            requested_at=scheduled_time,
+            request_data={},
+            extra_data={},
+        )
+    )
+
+    run_info = task.new_run_info()
+    assert run_info["bugzilla:creation"].source_time == scheduled_time
+    assert run_info["bugzilla:creation"].updated
+    assert run_info["bugzilla:reproduce-flag"].source_time == previous
+    assert not run_info["bugzilla:reproduce-flag"].updated
+
+
 def test_repro_schedule_whiteboard_request() -> None:
     """The reproduce token schedules a run on a bug that's already processed."""
     bug_data = load_data("bug-1903487-repro-request.json")
