@@ -5,7 +5,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, MutableMapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import (
@@ -76,10 +76,12 @@ class NewBugInfo(BaseModel):
     attachments: list[AttachmentData] = []
 
 
-class BugWhiteboard(BaseModel):
+class BugLiveState(BaseModel):
     id: int
     groups: list[str] = []
-    whiteboard: str
+    keywords: list[str] = []
+    resolution: str = ""
+    whiteboard: str = ""
 
 
 class ScheduledRun(BaseModel):
@@ -455,7 +457,10 @@ class BigQueryService:
     WHERE
       resolution = "" AND
       whiteboard NOT LIKE "%[autowebcompat:processed]%" AND
-      "webcompat:platform-bug" NOT IN UNNEST(keywords) AND
+      (
+        "webcompat:platform-bug" NOT IN UNNEST(keywords) OR
+        "webcompat:needs-sitepatch" IN UNNEST(keywords)
+      ) AND
       "webcompat:sitepatch-applied" NOT IN UNNEST(keywords) AND
       "mozilla-employee-confidential" NOT IN UNNEST(access_groups) AND
       CAST(creation_time AS DATETIME) <= IFNULL(
@@ -602,19 +607,182 @@ class BigQueryService:
         # against live data that the token is still there before dispatching:
         # a previous run may already have consumed it. Also drop bugs Bugzilla
         # doesn't return, or that are moco-confidential.
-        filtered_bugs: dict[int, NewBugInfo] = {}
-        for result in self.bz_client.bugs_as(list(bugs.keys()), BugWhiteboard):
-            assert result.id is not None
-            if "mozilla-employee-confidential" in result.groups:
-                continue
-            if whiteboard_token not in result.whiteboard:
-                logging.info(
-                    f"Bug {result.id} no longer has {whiteboard_token}, skipping"
-                )
-                continue
-            filtered_bugs[result.id] = bugs[result.id]
+        def has_token(bug: BugLiveState) -> bool:
+            if whiteboard_token in bug.whiteboard:
+                return True
+            logging.info(f"Bug {bug.id} no longer has {whiteboard_token}, skipping")
+            return False
 
-        return filtered_bugs
+        return self.filter_live(bugs, has_token)
+
+    def get_sitepatch_bugs(
+        self,
+    ) -> tuple[Mapping[int, NewBugInfo], Mapping[int, NewBugInfo]]:
+        """needs-sitepatch bugs ready for an intervention, as (new, backlog).
+
+        New bugs got the keyword in the last day and are all returned. Backlog
+        bugs that got it earlier are queued."""
+        max_queue_length = 2
+        batch_size = 3
+        queue_max_age_hours = 6
+
+        query = f"""
+    WITH
+    keyword_added AS (
+      SELECT number, CAST(MAX(change_time) AS DATETIME) AS added_time
+      FROM `{self.project["webcompat_knowledge_base"]["bugs_history"]}`
+      JOIN UNNEST(changes) AS change
+      WHERE
+        change.field_name = "keywords" AND
+        @keyword IN (
+          SELECT TRIM(keyword) FROM UNNEST(SPLIT(change.added, ",")) AS keyword
+        )
+      GROUP BY number
+    ),
+    bug_runs AS (
+      SELECT
+        CAST(JSON_VALUE(scheduled.extra_data, "$.bug_id") AS INT64) AS number,
+        scheduled.agent,
+        scheduled.requested_at,
+        completed.run_id IS NOT NULL AS is_complete,
+        IFNULL(
+          completed.summary.status = "ok" AND
+            JSON_VALUE(completed.summary.findings, "$.result.reproduced") = "true" AND
+            JSON_VALUE(completed.summary.findings, "$.result.script_url") IS NOT NULL,
+          FALSE
+        ) AS reproduced_with_script
+      FROM `{self.scheduled_table}` AS scheduled
+      LEFT JOIN `{self.completed_table}` AS completed USING(run_id)
+      WHERE JSON_VALUE(scheduled.extra_data, "$.bug_id") IS NOT NULL
+    ),
+    -- Outcome of each bug's most recent completed repro
+    latest_repro AS (
+      SELECT number, reproduced_with_script
+      FROM bug_runs
+      WHERE agent = @repro_agent AND is_complete
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY number ORDER BY requested_at DESC) = 1
+    ),
+    -- Exclude bugs that had an intervention, or have a repro or diagnosis in flight
+    excluded AS (
+      SELECT DISTINCT number
+      FROM bug_runs
+      WHERE
+        agent = @intervention_agent OR
+        (agent IN (@repro_agent, @diagnosis_agent) AND NOT is_complete)
+    ),
+    candidates AS (
+      SELECT
+        number, title, url, keywords, whiteboard, user_story_raw AS user_story,
+        creation_time, keyword_added.added_time AS source_time, score,
+        IFNULL(is_core, FALSE) AS is_core,
+        keyword_added.added_time <=
+          DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 DAY) AS is_backlog
+      FROM `{self.project["webcompat_knowledge_base"]["scored_site_reports"]}`
+      JOIN keyword_added USING(number)
+      JOIN latest_repro USING(number)
+      LEFT JOIN excluded USING(number)
+      WHERE
+        resolution = "" AND
+        @keyword IN UNNEST(keywords) AND
+        "mozilla-employee-confidential" NOT IN UNNEST(access_groups) AND
+        latest_repro.reproduced_with_script AND
+        excluded.number IS NULL
+    ),
+    -- Number of runs in flight, across all agents
+    in_flight AS (
+      SELECT COUNT(*) AS run_count
+      FROM `{self.scheduled_table}` AS scheduled
+      LEFT JOIN `{self.completed_table}` AS completed USING(run_id)
+      WHERE
+        completed.run_id IS NULL AND
+        scheduled.requested_at >
+          DATETIME_SUB(CURRENT_DATETIME(), INTERVAL @queue_max_age_hours HOUR)
+    )
+    SELECT * FROM candidates WHERE NOT is_backlog
+    UNION ALL
+    (
+      SELECT * FROM candidates
+      WHERE is_backlog
+        -- Take as many backlog bugs as fit in the queue after the runs currently in flight                                                                                                                                                 
+        -- and this run's new bugs, but at most batch_size
+      QUALIFY ROW_NUMBER() OVER (ORDER BY is_core DESC, score DESC, number ASC) <=
+        LEAST(
+          @batch_size,
+          @max_queue_length
+            - (SELECT run_count FROM in_flight)
+            - (SELECT COUNT(*) FROM candidates WHERE NOT is_backlog)
+        )
+    )
+    """
+        rows = list(
+            self.bq_client.query(
+                query,
+                parameters=[
+                    bigquery.ScalarQueryParameter(
+                        "keyword", "STRING", "webcompat:needs-sitepatch"
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "repro_agent", "STRING", ReproTask.agent
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "diagnosis_agent", "STRING", DiagnosisTask.agent
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "intervention_agent", "STRING", InterventionTask.agent
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "max_queue_length", "INT64", max_queue_length
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "queue_max_age_hours", "INT64", queue_max_age_hours
+                    ),
+                    bigquery.ScalarQueryParameter("batch_size", "INT64", batch_size),
+                ],
+            )
+        )
+
+        def has_keyword(bug: BugLiveState) -> bool:
+            if "webcompat:needs-sitepatch" in bug.keywords:
+                return True
+            logging.info(
+                f"Bug {bug.id} no longer has webcompat:needs-sitepatch, skipping"
+            )
+            return False
+
+        live = self.filter_live(
+            {row.number: NewBugInfo.model_validate(dict(row.items())) for row in rows},
+            has_keyword,
+        )
+        new = {
+            row.number: live[row.number]
+            for row in rows
+            if not row.is_backlog and row.number in live
+        }
+        backlog = {
+            row.number: live[row.number]
+            for row in rows
+            if row.is_backlog and row.number in live
+        }
+        return new, backlog
+
+    def filter_live(
+        self,
+        bugs: Mapping[int, NewBugInfo],
+        is_ready: Callable[[BugLiveState], bool],
+    ) -> dict[int, NewBugInfo]:
+        if not bugs:
+            return {}
+        rv = {}
+        for bug in self.bz_client.bugs_as(list(bugs.keys()), BugLiveState):
+            if "mozilla-employee-confidential" in bug.groups:
+                continue
+            if bug.resolution:
+                logging.info(f"Bug {bug.id} is resolved, skipping")
+                continue
+            if not is_ready(bug):
+                continue
+            rv[bug.id] = bugs[bug.id]
+        return rv
 
     def insert_new_runs(self, new_runs: Iterable[ScheduledRun]) -> None:
         rows = [item.to_json() for item in new_runs]
@@ -1552,28 +1720,52 @@ class InterventionTask(HackbotTask):
         )
 
     def create_new(self) -> Mapping[str, Sequence[ScheduledRun]]:
-        source_key = self.key("bugzilla", "intervention-flag")
+        all_bugs: dict[str, Mapping[int, InterventionBugInfo]] = {}
+
         requested_bugs = self.bq_service.get_bugs_with_whiteboard_token(
             self.whiteboard_request_token, include_extra_data=False
         )
         logging.info(f"Found {len(requested_bugs)} bugs that requested intervention")
+        all_bugs[self.key("bugzilla", "intervention-flag")] = {
+            number: InterventionBugInfo(
+                number=number,
+                source_time=bug_info.source_time or bug_info.creation_time,
+            )
+            for number, bug_info in requested_bugs.items()
+        }
 
-        if not requested_bugs:
+        # All bugs that got needs-sitepatch in the last day, and a batch of
+        # older ones
+        new_sitepatch, backlog_sitepatch = self.bq_service.get_sitepatch_bugs()
+        for name, sitepatch_bugs in [
+            ("needs-sitepatch", new_sitepatch),
+            ("needs-sitepatch-backlog", backlog_sitepatch),
+        ]:
+            ready = {
+                number: InterventionBugInfo(
+                    number=number, source_time=bug.source_time or bug.creation_time
+                )
+                for number, bug in sitepatch_bugs.items()
+                if number not in requested_bugs
+            }
+            logging.info(f"Found {len(ready)} {name} bugs ready for intervention")
+            all_bugs[self.key("bugzilla", name)] = ready
+
+        if not any(all_bugs.values()):
             return {}
 
-        requests = [
-            ScheduleRequest(
-                source_key=source_key,
-                run_key=self.key(str(bug_number)),
-                source_time=bug_info.source_time or bug_info.creation_time,
-                request_data=InterventionBugInfo(
-                    number=bug_number,
-                    source_time=bug_info.source_time or bug_info.creation_time,
-                ),
-                extra_data=BugExtraData(bug_id=bug_number),
-            )
-            for bug_number, bug_info in requested_bugs.items()
-        ]
+        requests = []
+        for source_key, bugs in all_bugs.items():
+            for bug_number, bug_info in bugs.items():
+                requests.append(
+                    ScheduleRequest(
+                        source_key=source_key,
+                        run_key=self.key(str(bug_number)),
+                        source_time=bug_info.source_time,
+                        request_data=bug_info,
+                        extra_data=BugExtraData(bug_id=bug_number),
+                    )
+                )
 
         return self.schedule(requests)
 
