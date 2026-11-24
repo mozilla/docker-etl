@@ -14,9 +14,10 @@ narrow; anything per-reference is fetched when a metric is opened.
 Also writes benwu_metrics_usage_definitions, a row per (window, metric
 definition) for the home page's list of metrics with little or no use; see
 DEFINITIONS_SQL. And benwu_metrics_usage_windows, a row per window with its
-first and last day, which the page reads for its window list and for what "not written
-in the window" means. The sources each end their windows yesterday, so this
-holds when they ran on the same day as this script, as run_all.sh does.
+first and last day, which the page reads for its window list and for what "not
+written in the window" means, and the first day of the ad hoc job history. The
+sources each end their windows yesterday, so this holds when they ran on the
+same day as this script, as run_all.sh does.
 
 Both tables carry each metric's size, from monitoring_derived.column_size_v1:
 the bytes its columns hold in a day's partition, as a dry run of a query
@@ -85,14 +86,18 @@ WINDOWS_SQL = f"""
 CREATE OR REPLACE TABLE `{DEST}.{PREFIX}windows`
 OPTIONS (
   description = "The windows of use the metric usage app offers, in days, each ending on "
-    || "end_date. Prototype table maintained by the docker-etl metric-usage job, "
+    || "end_date. adhoc_start_date is the first day of BigQuery job history kept, "
+    || "so ad hoc use in a window starting before it covers only the days since. "
+    || "Prototype table maintained by the docker-etl metric-usage job, "
     || "metric_usage/summary.py; replaced on each run."
 )
 AS
-SELECT * FROM UNNEST([
+SELECT w.*, h.adhoc_start_date
+FROM UNNEST([
   {", ".join(f"STRUCT({w} AS days, DATE '{window_start(w, window_end())}' AS start_date, "
              f"DATE '{window_end()}' AS end_date)" for w in WINDOWS)}
-])
+]) AS w
+CROSS JOIN (SELECT MIN(day) AS adhoc_start_date FROM `{DEST}.{PREFIX}adhoc_jobs`) AS h
 """
 
 SQL = f"""

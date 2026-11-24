@@ -705,7 +705,8 @@ def ref_schema():
             "role",
             s,
             description="output: reaches an output column; filter: named "
-            "but only used in WHERE, JOIN, GROUP BY or an aggregate that drops it; "
+            "but only used in WHERE, JOIN, GROUP BY, ORDER BY, a window or an aggregate "
+            "that drops it; "
             "viewed: opened in a tool such as GLAM",
         ),
         F("hops", i, description="Tables between the stable table and this artifact, plus one"),

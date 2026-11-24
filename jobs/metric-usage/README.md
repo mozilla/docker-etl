@@ -46,7 +46,7 @@ created (the analysis dataset's default), however often they are rewritten.
 | `artifacts_<source>`, and the `artifacts` view | Artifact, with its owners and use per window                    |
 | `summary`                                      | (window, app, metric), for the page's search                    |
 | `definitions`                                  | (window, metric definition), for the page's little-used list    |
-| `windows`                                      | Window, with its first and last day                             |
+| `windows`                                      | Window, its first and last day, and where job history starts    |
 | `adhoc_jobs`                                   | (day, project, query key, account), kept 366 days               |
 | `resolved_adhoc`                               | Ad hoc query key and the metrics it resolved to                 |
 

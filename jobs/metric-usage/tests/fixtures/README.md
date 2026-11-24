@@ -1,5 +1,5 @@
-Copied from bigquery-etl's generated-sql branch at c65533248ce1df364545ffd9f300ea5a8ff493d2
-(2026-10-15), which is public and MPL-2.0 licensed.
+Copied from bigquery-etl's generated-sql branch at
+c65533248ce1df364545ffd9f300ea5a8ff493d2 (2026-10-15).
 
 `sql/` holds the persistent UDFs the tests expand, laid out as in that branch so
 `persistent_udfs()` reads it unchanged. `bqetl/` holds whole queries, named
