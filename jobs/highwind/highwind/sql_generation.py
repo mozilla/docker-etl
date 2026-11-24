@@ -191,6 +191,27 @@ class Run:
             for unit in self.units
         }
 
+    def selecting(self, metric_names):
+        """Return a sub-run covering only the experiments that select one of `metric_names`.
+
+        Used to bound a source query to the experiments that actually read it: a source only
+        one recent experiment selects would otherwise be read, and joined, over the whole
+        unit's run, back to the start of its oldest experiment regardless of whether that
+        experiment reads this source at all.
+        """
+        return Run(
+            [
+                experiment
+                for experiment in self.experiments
+                if set(experiment.metric_names) & metric_names
+            ],
+            self.windows_by_slug,
+            self.as_of,
+            self.covariate_days,
+            self.sample_percent,
+            self.segments_by_slug,
+        )
+
     @property
     def needs_segments(self):
         """Whether any experiment in this run resolved a segment beyond `all_enrolled`.
@@ -444,8 +465,11 @@ def build_queries(run, resolved_metrics, sources, cohort_table, unit_segments_ta
     once per unit and the two are separate queries with separate costs. Scoped to each unit's own
     experiments: a source whose metrics only ever appear at a different unit contributes no group
     for this one, so that (source, unit) pair is skipped rather than scanned for metrics nothing
-    there reads. `sources` is the aggregation plan's resolved source definitions, keyed by the same
-    source names as `resolved_metrics`' own `.source` field.
+    there reads. Scoped further still to the experiments that actually select one of this
+    source's metrics (`Run.selecting`), so a source only one recent experiment reads is not read
+    or joined back to the start of an older experiment sharing its unit that never selected it.
+    `sources` is the aggregation plan's resolved source definitions, keyed by the same source
+    names as `resolved_metrics`' own `.source` field.
     """
     queries = {}
     for unit, unit_run in run.by_unit().items():
@@ -456,8 +480,9 @@ def build_queries(run, resolved_metrics, sources, cohort_table, unit_segments_ta
             name: metric for name, metric in resolved_metrics.items() if name in names
         }
         for source, source_metrics in metrics.group_by_source(unit_metrics).items():
+            source_names = {metric.name for metric in source_metrics}
             queries[f"{source}/{unit.kind}"] = build_source_query(
-                unit_run,
+                unit_run.selecting(source_names),
                 source,
                 source_metrics,
                 sources[source],
