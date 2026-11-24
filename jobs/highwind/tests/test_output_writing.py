@@ -890,7 +890,7 @@ def test_a_day_one_experiment_gets_one_not_started_window_per_rule_per_metric():
             6,
         )
         assert window.window.matures_on == datetime.date(2026, 8, 8)
-        assert window.is_summary is True
+        assert window.is_summary is False
         assert [(branch.branch, branch.n, is_empty(branch.value))
                 for branch in window.branches] == [
             ("control", 0, True),
@@ -954,7 +954,26 @@ def test_an_ended_experiment_reports_no_window_that_has_not_matured():
     )
 
 
-def test_the_summary_is_the_largest_settled_cumulative_window():
+def test_no_window_is_ever_marked_summary():
+    analysis = build(
+        results=[
+            result("active_hours", 1, "cumulative", "forming", point=1.0, lower=-1.0, upper=3.0),
+            result("active_hours", 2, "cumulative", "confident", point=2.0, lower=1.0, upper=3.0),
+            result("active_hours", 3, "cumulative", "confident", point=-2.0, lower=-3.0,
+                   upper=-1.0),
+            result("active_hours", 4, "cumulative", "insufficient_data", n_reference=1,
+                   n_treatment=1),
+            result("retained", 1, "disjoint", "forming", point=1.0, lower=-1.0, upper=3.0),
+            result("retained", 2, "disjoint", "insufficient_data"),
+        ]
+    )
+
+    for metric in analysis.metrics:
+        for segment in metric.segments:
+            assert not any(window.is_summary for window in segment.windows)
+
+
+def test_every_matured_window_is_reported_as_its_own_result():
     analysis = build(
         results=[
             result("active_hours", 1, "cumulative", "forming", point=1.0, lower=-1.0, upper=3.0),
@@ -967,50 +986,16 @@ def test_the_summary_is_the_largest_settled_cumulative_window():
     )
 
     windows = windows_of(analysis, "active_hours")
-    assert [window.is_summary for window in windows] == [False, False, True, False, False]
-    assert [window.comparisons[0].direction.value for window in windows] == [
-        "neutral",
-        "positive",
-        "negative",
-        "neutral",
-        "neutral",
+    assert [window.comparisons[0].state.value for window in windows] == [
+        "forming",
+        "confident",
+        "confident",
+        "insufficient_data",
+        "not_started",
     ]
     relative = windows[1].comparisons[0].relative
     assert (relative.point, relative.lower, relative.upper) == (2.0, 1.0, 3.0)
     assert is_empty(windows[1].comparisons[0].absolute)
-
-
-def test_a_disjoint_only_metric_summarises_on_its_latest_settled_window():
-    analysis = build(
-        results=[
-            result("retained", 1, "disjoint", "forming", point=1.0, lower=-1.0, upper=3.0),
-            result("retained", 2, "disjoint", "forming", point=1.0, lower=-1.0, upper=3.0),
-            result("retained", 3, "disjoint", "insufficient_data"),
-        ]
-    )
-
-    windows = windows_of(analysis, "retained")
-    assert [window.is_summary for window in windows] == [False, True, False, False, False]
-
-
-def test_with_nothing_settled_the_summary_is_the_first_window_to_mature():
-    analysis = build(
-        results=[
-            result("active_hours", index, "cumulative", "insufficient_data")
-            for index in range(1, 5)
-        ]
-    )
-
-    windows = windows_of(analysis, "active_hours")
-    assert [window.is_summary for window in windows] == [True, False, False, False, False]
-
-
-def test_every_metric_has_exactly_one_summary_window_per_segment():
-    analysis = build(experiment=THREE_ARMS, metrics=[CUMULATIVE_METRIC, DISJOINT_METRIC])
-
-    for metric in analysis.metrics:
-        for segment in metric.segments:
-            assert sum(window.is_summary for window in segment.windows) == 1
 
 
 def test_a_matured_window_with_no_data_is_insufficient_rather_than_not_started():
