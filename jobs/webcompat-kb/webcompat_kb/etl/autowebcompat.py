@@ -294,6 +294,10 @@ class PostedComment(BaseModel):
 
 
 class BigQueryService:
+    max_queue_length = 2
+    batch_size = 3
+    queue_max_age_hours = 6
+
     def __init__(
         self, project: Project, bq_client: BigQuery, bz_client: bugzilla.Bugzilla
     ):
@@ -434,22 +438,33 @@ class BigQueryService:
             }
         )
 
+    def available_slots(self, also_queued: str = "0") -> str:
+        return f"""available_slots AS (
+      SELECT LEAST(
+        {self.batch_size},
+        {self.max_queue_length}
+          - (
+            SELECT COUNT(*)
+            FROM `{self.scheduled_table}` AS scheduled
+            LEFT JOIN `{self.completed_table}` AS completed USING(run_id)
+            WHERE
+              completed.run_id IS NULL AND
+              scheduled.requested_at >
+                DATETIME_SUB(CURRENT_DATETIME(), INTERVAL {self.queue_max_age_hours} HOUR)
+          )
+          - ({also_queued})
+      ) AS slots
+    )"""
+
     def get_backlog_bugs(
         self,
         latest_new_bugs_repro_run: Optional[datetime],
     ) -> Mapping[int, NewBugInfo]:
         """Bugs to reproduce from the backlog, highest impact score first."""
-
-        # Don't schedule anything while this many runs are still in flight,
-        # and add at most batch_size per run
-        max_queue_length = 2
-        batch_size = 3
-        # Runs in flight longer than this are assumed stuck and don't count
-        # towards in flight limit
-        queue_max_age_hours = 6
         exclude_agents = [ReproTask.agent, DiagnosisTask.agent]
 
         bugs_query = f"""
+    WITH {self.available_slots()}
     SELECT
       number, title, url, keywords, whiteboard, user_story_raw as user_story, creation_time,
       CAST(IFNULL(last_change_time, creation_time) AS DATETIME) AS source_time
@@ -475,18 +490,11 @@ class BigQueryService:
           agent IN UNNEST(@exclude_agents) AND
           STARTS_WITH(source_key, "bugzilla:") AND
           JSON_VALUE(extra_data, "$.bug_id") IS NOT NULL
-      ) AND
-      (
-        SELECT COUNT(*)
-        FROM `{self.scheduled_table}` AS scheduled
-        LEFT JOIN `{self.completed_table}` AS completed USING(run_id)
-        WHERE
-          completed.run_id IS NULL AND
-          scheduled.requested_at >
-            DATETIME_SUB(CURRENT_DATETIME(), INTERVAL @queue_max_age_hours HOUR)
-      ) < @max_queue_length
+      )
+    QUALIFY
+      ROW_NUMBER() OVER (ORDER BY score DESC, number ASC) <=
+        (SELECT slots FROM available_slots)
     ORDER BY score DESC, number ASC
-    LIMIT @batch_size
     """
         bug_rows = self.bq_client.query(
             bugs_query,
@@ -497,13 +505,6 @@ class BigQueryService:
                 bigquery.ScalarQueryParameter(
                     "latest_new_bugs_repro_run", "DATETIME", latest_new_bugs_repro_run
                 ),
-                bigquery.ScalarQueryParameter(
-                    "max_queue_length", "INT64", max_queue_length
-                ),
-                bigquery.ScalarQueryParameter(
-                    "queue_max_age_hours", "INT64", queue_max_age_hours
-                ),
-                bigquery.ScalarQueryParameter("batch_size", "INT64", batch_size),
             ],
         )
         return self.add_bugzilla_data(
@@ -516,12 +517,9 @@ class BigQueryService:
     def get_revisit_bugs(self) -> Mapping[int, NewBugInfo]:
         """Bugs whose latest repro succeeded over a month ago, to check they
         still reproduce."""
-        max_queue_length = 2
-        batch_size = 3
-        queue_max_age_hours = 6
 
         bugs_query = f"""
-    WITH
+    WITH {self.available_slots()},
     bug_runs AS (
       SELECT
         CAST(JSON_VALUE(scheduled.extra_data, "$.bug_id") AS INT64) AS number,
@@ -546,16 +544,6 @@ class BigQueryService:
     ),
     in_flight_bugs AS (
       SELECT DISTINCT number FROM bug_runs WHERE NOT is_complete
-    ),
-    -- Number of runs in flight, across all agents
-    in_flight AS (
-      SELECT COUNT(*) AS run_count
-      FROM `{self.scheduled_table}` AS scheduled
-      LEFT JOIN `{self.completed_table}` AS completed USING(run_id)
-      WHERE
-        completed.run_id IS NULL AND
-        scheduled.requested_at >
-          DATETIME_SUB(CURRENT_DATETIME(), INTERVAL @queue_max_age_hours HOUR)
     )
     SELECT
       number, title, url, keywords, whiteboard, user_story_raw AS user_story, creation_time,
@@ -571,23 +559,15 @@ class BigQueryService:
       latest_repro.reproduced AND
       last_repro_date < DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 MONTH) AND
       in_flight_bugs.number IS NULL
-    -- Take as many as fit in the queue after the runs in flight, but at most batch_size
     QUALIFY
       ROW_NUMBER() OVER (
         ORDER BY IFNULL(is_core, FALSE) DESC, last_repro_date ASC, number ASC
-      ) <= LEAST(@batch_size, @max_queue_length - (SELECT run_count FROM in_flight))
+      ) <= (SELECT slots FROM available_slots)
     """
         bug_rows = self.bq_client.query(
             bugs_query,
             parameters=[
                 bigquery.ScalarQueryParameter("repro_agent", "STRING", ReproTask.agent),
-                bigquery.ScalarQueryParameter(
-                    "max_queue_length", "INT64", max_queue_length
-                ),
-                bigquery.ScalarQueryParameter(
-                    "queue_max_age_hours", "INT64", queue_max_age_hours
-                ),
-                bigquery.ScalarQueryParameter("batch_size", "INT64", batch_size),
             ],
         )
         bugs = self.add_bugzilla_data(
@@ -729,9 +709,6 @@ class BigQueryService:
 
         New bugs got the keyword in the last day and are all returned. Backlog
         bugs that got it earlier are queued."""
-        max_queue_length = 2
-        batch_size = 3
-        queue_max_age_hours = 6
 
         query = f"""
     WITH
@@ -795,30 +772,15 @@ class BigQueryService:
         latest_repro.reproduced_with_script AND
         excluded.number IS NULL
     ),
-    -- Number of runs in flight, across all agents
-    in_flight AS (
-      SELECT COUNT(*) AS run_count
-      FROM `{self.scheduled_table}` AS scheduled
-      LEFT JOIN `{self.completed_table}` AS completed USING(run_id)
-      WHERE
-        completed.run_id IS NULL AND
-        scheduled.requested_at >
-          DATETIME_SUB(CURRENT_DATETIME(), INTERVAL @queue_max_age_hours HOUR)
-    )
+    -- Backlog bugs only get the slots left after this run's new bugs
+    {self.available_slots("SELECT COUNT(*) FROM candidates WHERE NOT is_backlog")}
     SELECT * FROM candidates WHERE NOT is_backlog
     UNION ALL
     (
       SELECT * FROM candidates
       WHERE is_backlog
-        -- Take as many backlog bugs as fit in the queue after the runs currently in flight                                                                                                                                                 
-        -- and this run's new bugs, but at most batch_size
       QUALIFY ROW_NUMBER() OVER (ORDER BY is_core DESC, score DESC, number ASC) <=
-        LEAST(
-          @batch_size,
-          @max_queue_length
-            - (SELECT run_count FROM in_flight)
-            - (SELECT COUNT(*) FROM candidates WHERE NOT is_backlog)
-        )
+        (SELECT slots FROM available_slots)
     )
     """
         rows = list(
@@ -837,13 +799,6 @@ class BigQueryService:
                     bigquery.ScalarQueryParameter(
                         "intervention_agent", "STRING", InterventionTask.agent
                     ),
-                    bigquery.ScalarQueryParameter(
-                        "max_queue_length", "INT64", max_queue_length
-                    ),
-                    bigquery.ScalarQueryParameter(
-                        "queue_max_age_hours", "INT64", queue_max_age_hours
-                    ),
-                    bigquery.ScalarQueryParameter("batch_size", "INT64", batch_size),
                 ],
             )
         )
