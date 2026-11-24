@@ -7,26 +7,15 @@ union of every experiment's names, for one run, against metric-hub's `nimbus/` s
 through metric-config-parser's `segment_plan()`. Every unit also belongs to
 `discovery.ALL_ENROLLED`, the trivial segment that needs no resolution and applies to every unit
 regardless of what else resolves, so it never appears here.
-
-`segment_plan()` is detected explicitly rather than imported unconditionally, so the installed
-parser's absence of the function reads as "nothing resolves" rather than an `ImportError` the run
-has to catch. Until a parser that has it is installed, every requested segment name is reported
-unresolved the same way an unported outcome metric is, and every unit's only segment stays
-`all_enrolled`, which is what keeps a run's output unchanged apart from the segment column/key
-`sql_generation.py` and `gbstats_compute.py` add.
 """
 
 from dataclasses import dataclass
 
-try:
-    from metric_config_parser.segment_plan import segment_plan as _segment_plan
-except ImportError:
-    _segment_plan = None
+from metric_config_parser.segment_plan import segment_plan
 
 from . import discovery
 from .metrics import APP_NAME
 
-NOT_AVAILABLE_REASON = "segment_plan() is not available in the installed metric-config-parser"
 NOT_RESOLVED_REASON = "no nimbus/ segment definition for this app"
 ALL_ENROLLED_RESERVED_REASON = (
     "all_enrolled is the built-in segment every experiment gets; a metric-hub segment reusing "
@@ -73,13 +62,10 @@ def build_segment_plan(configs, segment_names):
 
     Returns `(sources, segments, unresolved)`: `sources` keyed by metric-hub source name,
     `segments` keyed by segment name, and `unresolved` a name-to-reason map for anything
-    `segment_plan()` could not resolve, or for everything when the installed parser has no
-    `segment_plan()` at all (see the module docstring).
+    `segment_plan()` could not resolve.
     """
     names = sorted(set(segment_names))
-    if _segment_plan is None:
-        return {}, {}, {name: NOT_AVAILABLE_REASON for name in names}
-    plan = _segment_plan(configs, APP_NAME, names)
+    plan = segment_plan(configs, APP_NAME, names)
     sources = {
         name: SegmentSource(
             name=source.data_source,

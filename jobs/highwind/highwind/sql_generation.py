@@ -138,8 +138,7 @@ class Run:
         self.windows_by_slug = windows_by_slug
         # Each experiment's own resolved segment NAMES (never `all_enrolled`, which every
         # experiment gets regardless of what resolved here; see `segments.py`). Absent for an
-        # experiment that resolved none, which is every experiment until a parser with
-        # `segment_plan()` is installed.
+        # experiment that resolved none.
         self.segments_by_slug = segments_by_slug or {}
         every_window = [
             window
@@ -799,8 +798,7 @@ def segment_source_queries(
     Unlike `build_queries`'s metric source queries, which are only ever read, these are
     materialized (`sql_running.materialize_unit_segments`), one BigQuery job per pair, so a bad
     `select_expression` in one source costs only the segments it defines rather than dropping every
-    segment the run resolved. Empty when no experiment in the run resolved any segment, which is
-    the only case that matters until a parser with `segment_plan()` is installed.
+    segment the run resolved. Empty when no experiment in the run resolved any segment.
     """
     queries = {}
     for unit, unit_run in run.by_unit().items():

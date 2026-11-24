@@ -893,7 +893,7 @@ def test_a_resolving_parser_fills_segment_names_and_warns_only_about_what_did_no
             missing=[name for name in names if name != "regular_user"],
         )
 
-    monkeypatch.setattr(segments, "_segment_plan", fake_segment_plan)
+    monkeypatch.setattr(segments, "segment_plan", fake_segment_plan)
     experiment = experiment_selecting(["regular_user", "an_inline_segment"])
 
     segment_names_by_slug, resolved_segments, _ = analysis.resolve_run_segments(

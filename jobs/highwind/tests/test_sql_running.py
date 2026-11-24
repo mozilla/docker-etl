@@ -241,8 +241,7 @@ def test_materialize_cohort_and_unit_segments_both_use_the_shared_helper(monkeyp
 
 
 def test_materialize_unit_segments_makes_no_query_when_no_segment_resolved():
-    # `queries` is empty whenever no experiment in the run resolved a segment, which is every run
-    # until a parser with segment_plan() is installed.
+    # `queries` is empty whenever no experiment in the run resolved a segment.
     client = MaterializeClient()
 
     table, timings, failures = sql_running.materialize_unit_segments(client, {}, AS_OF)

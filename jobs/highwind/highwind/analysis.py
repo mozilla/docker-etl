@@ -371,7 +371,7 @@ def resolve_run_metrics(experiments, configs):
     """
     requested = {name for experiment in experiments for name in experiment.metric_names}
     plan = build_aggregation_plan(configs, requested)
-    resolved_metrics, unresolved_metrics = split_resolved_metrics(plan, configs)
+    resolved_metrics, unresolved_metrics = split_resolved_metrics(plan)
     metrics_by_slug = {}
     for experiment in experiments:
         exp_metrics, problems = metrics_for_experiment(
@@ -391,10 +391,9 @@ def resolve_run_segments(experiments, configs):
 
     Mirrors `resolve_run_metrics`. Returns each experiment's own resolved segment NAMES (never
     `all_enrolled`, which every experiment gets regardless of what resolved here), the resolved
-    segments by name, and the resolved segment sources. A name that does not resolve, whether it is
-    an inline-only segment or the installed parser has no `segment_plan()` at all (`segments.py`),
-    is reported against every experiment that selected it rather than failing the run or that
-    experiment.
+    segments by name, and the resolved segment sources. A name that does not resolve, because it
+    is an inline-only segment metric-hub has no `nimbus/` definition for, is reported against
+    every experiment that selected it rather than failing the run or that experiment.
     """
     requested = {name for experiment in experiments for name in experiment.segment_names}
     sources, resolved_segments, unresolved_segments = segments.build_segment_plan(
@@ -559,8 +558,7 @@ def segment_branch_units(client, cohort_table, unit_segments_table):
 
     Mirrors `branch_units`: caught on its own, since these counts are the same kind of
     display-only metadata, just one level deeper (per segment rather than the whole cohort). `None`
-    whenever no segment resolved this run, which is every run until a parser with `segment_plan()`
-    is installed.
+    whenever no segment resolved this run.
     """
     if cohort_table is None or unit_segments_table is None:
         return {}
