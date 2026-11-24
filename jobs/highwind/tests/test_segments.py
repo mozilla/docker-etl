@@ -39,9 +39,9 @@ class FakeSegmentMetric:
         self.select_expression = select_expression
 
 
-def test_todays_pin_resolves_nothing_and_reports_every_name_unresolved(monkeypatch):
-    # Today's installed metric-config-parser has no segment_plan() at all, detected explicitly in
-    # segments.py rather than by catching an ImportError at call time.
+def test_a_parser_without_segment_plan_resolves_nothing_and_reports_every_name_unresolved(
+    monkeypatch,
+):
     monkeypatch.setattr(segments, "_segment_plan", None)
 
     sources, resolved, unresolved = segments.build_segment_plan(

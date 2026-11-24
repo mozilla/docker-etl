@@ -857,25 +857,6 @@ def experiment_selecting(segment_names):
     )
 
 
-def test_todays_parser_resolves_no_segment_and_warns_about_each_one_selected(caplog):
-    # The real installed metric-config-parser in this image has no segment_plan(), so this
-    # exercises the actual dark path rather than a simulation of it.
-    caplog.set_level(logging.WARNING)
-    experiment = experiment_selecting(["regular_user"])
-
-    segment_names_by_slug, resolved_segments, segment_sources = analysis.resolve_run_segments(
-        [experiment], configs=object()
-    )
-
-    assert segment_names_by_slug == {"a-slug": ()}
-    assert resolved_segments == {}
-    assert segment_sources == {}
-    assert (
-        "a-slug: segment 'regular_user' not computed: "
-        f"{segments.NOT_AVAILABLE_REASON}" in caplog.text
-    )
-
-
 def test_an_experiment_that_selects_no_segment_resolves_an_empty_tuple():
     experiment = experiment_selecting([])
 
