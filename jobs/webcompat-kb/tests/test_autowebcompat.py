@@ -730,7 +730,7 @@ def test_revisit_bugzilla_update(
     if whiteboard_added:
         assert update is not None
         assert update.whiteboard == (
-            bug_data.bug.whiteboard + "[autowebcompat:site-fixed-candidate]"
+            bug_data.bug.whiteboard + autowebcompat.RevisitReproTask.retriage_token
         )
     else:
         assert update is None

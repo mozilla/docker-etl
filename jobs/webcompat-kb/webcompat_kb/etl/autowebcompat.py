@@ -1590,7 +1590,7 @@ class BacklogReproTask(ReproTask):
 class RevisitReproTask(ReproTask):
     agent: str = "autowebcompat-repro"
     task_name: str = "repro-revisit"
-    site_fixed_token = "[autowebcompat:site-fixed-candidate]"
+    retriage_token = "[autowebcompat:retriage-candidate]"
 
     def create_new(self) -> Mapping[str, Sequence[ScheduledRun]]:
         revisit_bugs = self.bq_service.get_revisit_bugs()
@@ -1640,7 +1640,7 @@ class RevisitReproTask(ReproTask):
 
             if not result.reproduced and result.failure_reason == "not_reproducible":
                 updater.bug_updates[bug_info.number].add_whiteboard(
-                    [self.site_fixed_token]
+                    [self.retriage_token]
                 )
 
 
