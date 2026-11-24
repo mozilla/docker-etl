@@ -1,0 +1,3 @@
+name = "nsfw"
+description = "OISD NSFW domain list (https://nsfw.oisd.nl/domainswild2). Fully overwritten on each run; consumed by WebCompatManager to label NSFW buckets."
+etl = ["oisd-nsfw"]

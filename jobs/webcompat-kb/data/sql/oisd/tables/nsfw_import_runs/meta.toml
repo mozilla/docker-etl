@@ -1,0 +1,3 @@
+name = "nsfw_import_runs"
+description = "One row per successful oisd-nsfw import; the job imports at most once per calendar month (UTC)."
+etl = ["oisd-nsfw"]

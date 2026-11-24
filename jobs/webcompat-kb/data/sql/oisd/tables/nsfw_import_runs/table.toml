@@ -1,0 +1,7 @@
+[run_at]
+type = "TIMESTAMP"
+mode = "REQUIRED"
+
+[domain_count]
+type = "INTEGER"
+mode = "NULLABLE"

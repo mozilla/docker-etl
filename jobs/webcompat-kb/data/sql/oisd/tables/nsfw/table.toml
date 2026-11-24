@@ -1,0 +1,4 @@
+# Matches the existing table (`bq show --schema moz-fx-dev-dschubert-wckb:oisd.nsfw`)
+[domain]
+type = "STRING"
+mode = "REQUIRED"
