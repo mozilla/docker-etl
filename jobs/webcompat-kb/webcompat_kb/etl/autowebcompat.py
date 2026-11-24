@@ -294,8 +294,12 @@ class PostedComment(BaseModel):
 
 
 class BigQueryService:
+    # Don't schedule anything from backlogs/revisit runs while this many runs are still in flight
     max_queue_length = 2
+    # and add at most batch_size per run
     batch_size = 3
+    # Runs in flight longer than this value are assumed stuck and don't count
+    # towards in flight limit
     queue_max_age_hours = 6
 
     def __init__(
