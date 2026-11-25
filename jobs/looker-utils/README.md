@@ -30,6 +30,18 @@ This will list all available commands. Call specific commands to perform an oper
 python looker_utils/main.py --client-id xxx --client-secret xxx --instance-uri https://mozilla.cloud.looker.com delete-branches
 ```
 
+### Give new users Standard access by default
+
+New users get the Viewer role from their SAML group. `sync-standard-users` adds them to the
+Looker-managed group `Standard Users - User`, except users in the `Viewer Only` group. Run it
+on a schedule.
+
+```sh
+python looker_utils/main.py --client-id xxx --client-secret xxx --instance-uri https://mozilla.cloud.looker.com sync-standard-users --dry-run
+```
+
+To make someone a Viewer, add them to `Viewer Only` and remove them from `Standard Users - User`.
+
 ## Development
 
 `flake8` and `black` are included for code linting and formatting:
