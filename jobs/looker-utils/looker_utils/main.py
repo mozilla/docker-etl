@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Dict, List
 
 import click
 import looker_sdk
@@ -409,6 +410,168 @@ def enable_api_keys(ctx, dry_run):
     )
     for user in users:
         _enable_api3_for_user(sdk, user, dry_run=dry_run)
+
+
+class SyncStandardUsersError(Exception):
+    pass
+
+
+def _find_group(sdk: methods.Looker40SDK, name: str) -> models.Group:
+    groups = [
+        group
+        for group in sdk.search_groups(name=name, fields="id,name,externally_managed")
+        if group.name == name
+    ]
+    if len(groups) != 1:
+        raise SyncStandardUsersError(
+            f"Expected one Looker group named '{name}', found {len(groups)}"
+        )
+    return groups[0]
+
+
+def _find_role(sdk: methods.Looker40SDK, name: str) -> models.Role:
+    roles = [role for role in sdk.all_roles(fields="id,name") if role.name == name]
+    if len(roles) != 1:
+        raise SyncStandardUsersError(
+            f"Expected one Looker role named '{name}', found {len(roles)}"
+        )
+    return roles[0]
+
+
+def _group_members(
+    sdk: methods.Looker40SDK, group_id: str, page_size: int = 500
+) -> Dict[str, models.User]:
+    """Return group members by user ID."""
+    members = {}
+    offset = 0
+    while True:
+        batch = sdk.all_group_users(
+            group_id=group_id,
+            fields="id,email,is_disabled",
+            limit=page_size,
+            offset=offset,
+        )
+        for user in batch:
+            members[str(user.id)] = user
+        if len(batch) < page_size:
+            return members
+        offset += page_size
+
+
+def _users_to_make_standard(
+    sdk: methods.Looker40SDK,
+    standard_group: models.Group,
+    viewer_group: models.Group,
+    viewer_role: models.Role,
+) -> List[models.User]:
+    """Enabled members of SAML groups granting Viewer who aren't in either group."""
+    excluded = {str(standard_group.id), str(viewer_group.id)}
+    sources = [
+        group
+        for group in sdk.role_groups(
+            role_id=str(viewer_role.id), fields="id,name,externally_managed"
+        )
+        if group.externally_managed and str(group.id) not in excluded
+    ]
+    if not sources:
+        print(f"No SAML group grants the '{viewer_role.name}' role. Nothing to do.")
+        return []
+    print("New users arrive through: " + ", ".join(sorted(g.name for g in sources)))
+
+    arriving = {}
+    for group in sources:
+        arriving.update(_group_members(sdk, str(group.id)))
+    viewers = set(_group_members(sdk, str(viewer_group.id)))
+    standard = set(_group_members(sdk, str(standard_group.id)))
+
+    users = [
+        user
+        for user_id, user in arriving.items()
+        if user_id not in viewers and user_id not in standard and not user.is_disabled
+    ]
+    print(
+        f"{len(arriving)} users in those groups: "
+        f"{len(arriving.keys() & standard)} already in '{standard_group.name}', "
+        f"{len(arriving.keys() & viewers)} in '{viewer_group.name}', "
+        f"{len(users)} to add."
+    )
+    return sorted(users, key=lambda u: (len(str(u.id)), str(u.id)))
+
+
+@cli.command(name="sync-standard-users")
+@click.option(
+    "--standard-group",
+    "--standard_group",
+    default="Standard Users - User",
+    show_default=True,
+    help="Group that grants Standard access.",
+)
+@click.option(
+    "--viewer-group",
+    "--viewer_group",
+    default="Viewer Only",
+    show_default=True,
+    help="Group of users who stay Viewers.",
+)
+@click.option(
+    "--viewer-role",
+    "--viewer_role",
+    default="Viewer",
+    show_default=True,
+    help="Role the SAML groups grant.",
+)
+@click.option(
+    "--dry-run",
+    "--dry_run",
+    is_flag=True,
+    default=False,
+    help="Show what would change without writing.",
+)
+@click.pass_context
+def sync_standard_users(ctx, standard_group, viewer_group, viewer_role, dry_run):
+    """Give new users Standard access by default.
+
+    Adds enabled members of the SAML groups that grant Viewer to the Standard
+    group, except users in the Viewer group.
+    """
+    sdk = ctx.obj["SDK"]
+    try:
+        standard = _find_group(sdk, standard_group)
+        viewers = _find_group(sdk, viewer_group)
+        if standard.externally_managed or viewers.externally_managed:
+            raise SyncStandardUsersError(
+                f"'{standard_group}' and '{viewer_group}' must be Looker-managed "
+                "groups, not SAML groups"
+            )
+        role = _find_role(sdk, viewer_role)
+        users = _users_to_make_standard(sdk, standard, viewers, role)
+    except (SyncStandardUsersError, error.SDKError) as e:
+        raise click.ClickException(str(e))
+
+    failed = 0
+    for user in users:
+        if dry_run:
+            print(
+                f"[dry-run] Would add {user.email} (ID: {user.id}) "
+                f"to '{standard_group}'."
+            )
+            continue
+        try:
+            sdk.add_group_user(
+                group_id=str(standard.id),
+                body=models.GroupIdForGroupUserInclusion(user_id=str(user.id)),
+            )
+            print(f"Added {user.email} (ID: {user.id}) to '{standard_group}'.")
+        except error.SDKError as e:
+            failed += 1
+            print(
+                f"Error adding {user.email} (ID: {user.id}) to '{standard_group}': {e}"
+            )
+
+    if failed:
+        raise click.ClickException(
+            f"{failed} of {len(users)} user(s) could not be added to '{standard_group}'"
+        )
 
 
 if __name__ == "__main__":
