@@ -1,0 +1,3 @@
+name = "import_runs"
+description = "One row per successful import of the OISD NSFW domain list"
+etl = ["oisd-nsfw"]

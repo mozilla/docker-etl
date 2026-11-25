@@ -1,20 +1,14 @@
 """Import the OISD NSFW domain list into BigQuery.
 
-The table is consumed by WebCompatManager (``import_domain_list --name nsfw``),
-which matches bucket hostnames *exactly* against the ``domain`` column and
-removes the ``nsfw`` label from buckets whose domain is no longer listed. So:
-
-* values must be bare, lowercase hostnames (no ``*.`` prefix, no comments);
-* subdomains are kept even when a parent domain is listed, since dropping them
-  would stop those buckets from being labelled;
-* we refuse to write a suspiciously small list, since truncating the table
-  would expose every NSFW bucket to QA on the next sync.
+The list is cleaned to bare, lowercase hostnames and replaces the contents of
+the ``nsfw`` table. We refuse to write a suspiciously small list, since a
+broken download would otherwise replace the table with a partial one.
 
 The ETL runs every 15 minutes, but the list only needs refreshing monthly. Each
-successful import is recorded in ``nsfw_import_runs``, and the job skips if
-there is already a record for the current calendar month (UTC). The record is
-only written after the table has been replaced, so a failed import is retried
-on the next run.
+successful import is recorded in ``import_runs``, and the job skips if there is
+already a record for the current calendar month (UTC). The record is only
+written after the table has been replaced, so a failed import is retried on the
+next run.
 """
 
 import argparse
@@ -33,7 +27,7 @@ from ..bqhelpers import BigQuery, Json, TableSchema
 OISD_NSFW_URL = "https://nsfw.oisd.nl/domainswild2"
 
 # The list has ~500k entries; anything far below that means a broken download.
-DEFAULT_MIN_DOMAINS = 100_000
+MIN_DOMAINS = 100_000
 # Minimum fraction of the header's declared entry count we must parse.
 MIN_DECLARED_FRACTION = 0.9
 
@@ -73,12 +67,10 @@ def parse_domain_list(lines: Iterable[str]) -> tuple[list[str], Optional[int]]:
     return sorted(domains), declared
 
 
-def check_domain_count(
-    domains: list[str], declared: Optional[int], min_domains: int
-) -> None:
-    if len(domains) < min_domains:
+def check_domain_count(domains: list[str], declared: Optional[int]) -> None:
+    if len(domains) < MIN_DOMAINS:
         raise ValueError(
-            f"Only parsed {len(domains)} domains, expected at least {min_domains}; "
+            f"Only parsed {len(domains)} domains, expected at least {MIN_DOMAINS}; "
             "refusing to overwrite the table"
         )
     if declared is not None and len(domains) < declared * MIN_DECLARED_FRACTION:
@@ -88,8 +80,8 @@ def check_domain_count(
         )
 
 
-def fetch_domain_list(url: str) -> str:
-    resp = httpx.get(url, follow_redirects=True, timeout=120)
+def fetch_domain_list() -> str:
+    resp = httpx.get(OISD_NSFW_URL, follow_redirects=True, timeout=120)
     resp.raise_for_status()
     return resp.text
 
@@ -101,7 +93,7 @@ def get_last_import(
     try:
         result = list(client.query(query))
     except NotFound:
-        # The table doesn't exist until the first successful import
+        # If we're running with --no-write and the table doesn't yet exist
         return None
     if result:
         return result[0].run_at
@@ -126,17 +118,6 @@ class OisdNsfwJob(EtlJob):
             title="OISD NSFW", description="OISD NSFW domain list arguments"
         )
         group.add_argument(
-            "--oisd-nsfw-url",
-            default=OISD_NSFW_URL,
-            help="URL of the OISD NSFW domain list",
-        )
-        group.add_argument(
-            "--oisd-nsfw-min-domains",
-            type=int,
-            default=DEFAULT_MIN_DOMAINS,
-            help="Fail instead of writing if fewer domains than this are parsed",
-        )
-        group.add_argument(
             "--oisd-nsfw-force",
             action="store_true",
             help="Import even if the list was already imported this month",
@@ -148,7 +129,7 @@ class OisdNsfwJob(EtlJob):
     def main(self, context: Context) -> None:
         client = context.bq_client
         nsfw_table = context.project["oisd"]["nsfw"].table()
-        import_runs_table = context.project["oisd"]["nsfw_import_runs"].table()
+        import_runs_table = context.project["oisd"]["import_runs"].table()
         now = datetime.now(tz=UTC)
 
         if not context.args.oisd_nsfw_force:
@@ -160,19 +141,16 @@ class OisdNsfwJob(EtlJob):
                 )
                 return
 
-        url = context.args.oisd_nsfw_url
-        logging.info(f"Downloading NSFW domain list from {url}")
-        domains, declared = parse_domain_list(fetch_domain_list(url).splitlines())
+        logging.info(f"Downloading NSFW domain list from {OISD_NSFW_URL}")
+        domains, declared = parse_domain_list(fetch_domain_list().splitlines())
         logging.info(f"Parsed {len(domains)} domains (list declares {declared})")
 
-        check_domain_count(domains, declared, context.args.oisd_nsfw_min_domains)
+        check_domain_count(domains, declared)
 
         rows: list[dict[str, Json]] = [{"domain": domain} for domain in domains]
         client.write_table(nsfw_table, nsfw_table.schema, rows, overwrite=True)
 
-        # Record the run only after the table was replaced, so failures are retried.
-        # A load job (rather than a streaming insert) creates the table on first use.
-        run: dict[str, Json] = {"run_at": now.isoformat(), "domain_count": len(domains)}
-        client.write_table(
-            import_runs_table, import_runs_table.schema, [run], overwrite=False
+        # Record the run only after the table was replaced, so failures are retried
+        client.insert_rows(
+            import_runs_table, [{"run_at": now, "domain_count": len(domains)}]
         )

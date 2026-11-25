@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from google.api_core.exceptions import NotFound
+from google.cloud import bigquery
 
 from webcompat_kb.base import Context
 from webcompat_kb.config import Config
@@ -38,14 +39,15 @@ SAMPLE_DOMAINS = [
 ]
 
 
-def make_context(bq_client, project, min_domains=1, force=False):
-    args = argparse.Namespace(
-        oisd_nsfw_url=oisd.OISD_NSFW_URL,
-        oisd_nsfw_min_domains=min_domains,
-        oisd_nsfw_force=force,
-    )
+@pytest.fixture(autouse=True)
+def min_domains(monkeypatch):
+    # The sample list is tiny compared to the real one
+    monkeypatch.setattr(oisd, "MIN_DOMAINS", 1)
+
+
+def make_context(bq_client, project, force=False):
     return Context(
-        args=args,
+        args=argparse.Namespace(oisd_nsfw_force=force),
         bq_client=bq_client,
         config=Config(stage=False, write=True),
         jobs=[],
@@ -61,20 +63,26 @@ def set_last_import(bq_client, run_at):
 
 def set_import_runs_missing(bq_client):
     def result():
-        raise NotFound("nsfw_import_runs")
+        raise NotFound("import_runs")
 
     bq_client.client.return_values["query"].append(SimpleNamespace(result=result))
 
 
-def load_calls(bq_client):
+def allow_run_insert(bq_client):
+    """Set up the client responses used when the import run is recorded."""
+    bq_client.client.return_values["get_table"].append(
+        bigquery.Table("project.oisd.import_runs")
+    )
+    bq_client.client.return_values["insert_rows"].append([])
+
+
+def calls(bq_client, function):
     return [
-        call.arguments
-        for call in bq_client.client.called
-        if call.function == "load_table_from_json"
+        call.arguments for call in bq_client.client.called if call.function == function
     ]
 
 
-def fail_fetch(url):
+def fail_fetch():
     raise AssertionError("the list should not be downloaded")
 
 
@@ -98,15 +106,17 @@ def test_parse_domain_list_no_header():
         (80, 100, 1),
     ],
 )
-def test_check_domain_count_rejects(count, declared, min_domains):
+def test_check_domain_count_rejects(monkeypatch, count, declared, min_domains):
+    monkeypatch.setattr(oisd, "MIN_DOMAINS", min_domains)
     domains = [f"d{i}.com" for i in range(count)]
     with pytest.raises(ValueError):
-        oisd.check_domain_count(domains, declared, min_domains)
+        oisd.check_domain_count(domains, declared)
 
 
-def test_check_domain_count_accepts():
+def test_check_domain_count_accepts(monkeypatch):
+    monkeypatch.setattr(oisd, "MIN_DOMAINS", 10)
     domains = [f"d{i}.com" for i in range(95)]
-    oisd.check_domain_count(domains, 100, 10)
+    oisd.check_domain_count(domains, 100)
 
 
 NOW = datetime(2026, 11, 24, 15, 0, tzinfo=UTC)
@@ -129,37 +139,44 @@ def test_imported_this_month(last_import, expected):
 
 @pytest.mark.parametrize("missing", [False, True])
 def test_job_imports_when_never_run(monkeypatch, bq_client, project, missing):
-    monkeypatch.setattr(oisd, "fetch_domain_list", lambda url: SAMPLE_LIST)
+    monkeypatch.setattr(oisd, "fetch_domain_list", lambda: SAMPLE_LIST)
     if missing:
         set_import_runs_missing(bq_client)
     else:
         set_last_import(bq_client, None)
+    allow_run_insert(bq_client)
 
     oisd.OisdNsfwJob().main(make_context(bq_client, project))
 
-    calls = load_calls(bq_client)
-    assert len(calls) == 2
+    loads = calls(bq_client, "load_table_from_json")
+    assert len(loads) == 1
+    assert loads[0]["table"].endswith(".oisd.nsfw")
+    assert loads[0]["job_config"].write_disposition == "WRITE_TRUNCATE"
+    assert [field.name for field in loads[0]["job_config"].schema] == ["domain"]
+    assert loads[0]["rows"] == [{"domain": domain} for domain in SAMPLE_DOMAINS]
 
-    nsfw, run = calls
-    assert nsfw["table"].endswith(".oisd.nsfw")
-    assert nsfw["job_config"].write_disposition == "WRITE_TRUNCATE"
-    assert [field.name for field in nsfw["job_config"].schema] == ["domain"]
-    assert nsfw["rows"] == [{"domain": domain} for domain in SAMPLE_DOMAINS]
+    inserts = calls(bq_client, "insert_rows")
+    assert len(inserts) == 1
+    assert str(inserts[0]["table"].reference).endswith(".oisd.import_runs")
+    assert len(inserts[0]["rows"]) == 1
+    run = inserts[0]["rows"][0]
+    assert run["domain_count"] == len(SAMPLE_DOMAINS)
+    assert run["run_at"].tzinfo is not None
 
-    assert run["table"].endswith(".oisd.nsfw_import_runs")
-    assert run["job_config"].write_disposition == "WRITE_APPEND"
-    assert len(run["rows"]) == 1
-    assert run["rows"][0]["domain_count"] == len(SAMPLE_DOMAINS)
-    assert datetime.fromisoformat(run["rows"][0]["run_at"]).tzinfo is not None
+    # The run is only recorded after the table is replaced
+    functions = [call.function for call in bq_client.client.called]
+    assert functions.index("load_table_from_json") < functions.index("insert_rows")
 
 
 def test_job_imports_when_last_run_was_last_month(monkeypatch, bq_client, project):
-    monkeypatch.setattr(oisd, "fetch_domain_list", lambda url: SAMPLE_LIST)
+    monkeypatch.setattr(oisd, "fetch_domain_list", lambda: SAMPLE_LIST)
     set_last_import(bq_client, datetime.now(tz=UTC) - timedelta(days=40))
+    allow_run_insert(bq_client)
 
     oisd.OisdNsfwJob().main(make_context(bq_client, project))
 
-    assert len(load_calls(bq_client)) == 2
+    assert len(calls(bq_client, "load_table_from_json")) == 1
+    assert len(calls(bq_client, "insert_rows")) == 1
 
 
 def test_job_skips_when_imported_this_month(monkeypatch, bq_client, project):
@@ -168,29 +185,32 @@ def test_job_skips_when_imported_this_month(monkeypatch, bq_client, project):
 
     oisd.OisdNsfwJob().main(make_context(bq_client, project))
 
-    assert load_calls(bq_client) == []
+    assert calls(bq_client, "load_table_from_json") == []
+    assert calls(bq_client, "insert_rows") == []
 
 
 def test_job_force_imports_even_if_imported_this_month(monkeypatch, bq_client, project):
-    monkeypatch.setattr(oisd, "fetch_domain_list", lambda url: SAMPLE_LIST)
-    set_last_import(bq_client, datetime.now(tz=UTC))
+    monkeypatch.setattr(oisd, "fetch_domain_list", lambda: SAMPLE_LIST)
+    allow_run_insert(bq_client)
 
     oisd.OisdNsfwJob().main(make_context(bq_client, project, force=True))
 
-    assert len(load_calls(bq_client)) == 2
+    assert len(calls(bq_client, "load_table_from_json")) == 1
+    assert len(calls(bq_client, "insert_rows")) == 1
     # --oisd-nsfw-force doesn't look up the last import at all
-    assert not any(call.function == "query" for call in bq_client.client.called)
+    assert calls(bq_client, "query") == []
 
 
 @pytest.mark.parametrize(
     "content", ["", SAMPLE_LIST.replace("# Entries: 5", "# Entries: 500000")]
 )
 def test_job_refuses_short_list(monkeypatch, bq_client, project, content):
-    monkeypatch.setattr(oisd, "fetch_domain_list", lambda url: content)
+    monkeypatch.setattr(oisd, "fetch_domain_list", lambda: content)
     set_last_import(bq_client, None)
 
     with pytest.raises(ValueError):
         oisd.OisdNsfwJob().main(make_context(bq_client, project))
 
     # Neither the domain table nor the run log is written, so the next run retries
-    assert load_calls(bq_client) == []
+    assert calls(bq_client, "load_table_from_json") == []
+    assert calls(bq_client, "insert_rows") == []
