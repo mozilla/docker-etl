@@ -1,0 +1,3 @@
+[domain]
+type = "STRING"
+mode = "REQUIRED"

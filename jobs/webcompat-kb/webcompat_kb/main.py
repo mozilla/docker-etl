@@ -33,6 +33,7 @@ from .etl import (
     autowebcompat,  # noqa: F401
     autowebcompat_feedback,  # noqa: F401
     web_bugs,  # noqa: F401
+    oisd,  # noqa: F401
 )
 
 # isort: on
