@@ -107,6 +107,9 @@ class MockBigQueryService(autowebcompat.BigQueryService):
         self.diagnosis_bugs: list[autowebcompat.NewBugInfo] = []
         self.reproduce_bugs: list[autowebcompat.NewBugInfo] = []
         self.intervention_bugs: list[autowebcompat.NewBugInfo] = []
+        self.sitepatch_bugs: list[autowebcompat.NewBugInfo] = []
+        self.sitepatch_backlog_bugs: list[autowebcompat.NewBugInfo] = []
+        self.revisit_bugs: list[autowebcompat.NewBugInfo] = []
 
     def get_source_times(
         self,
@@ -154,6 +157,9 @@ class MockBigQueryService(autowebcompat.BigQueryService):
                 rv[new_bug.number] = new_bug
         return rv
 
+    def get_revisit_bugs(self) -> Mapping[int, autowebcompat.NewBugInfo]:
+        return {bug.number: bug for bug in self.revisit_bugs}
+
     def get_bugs_with_whiteboard_token(
         self, whiteboard_token: str, include_extra_data: bool = True
     ) -> Mapping[int, autowebcompat.NewBugInfo]:
@@ -168,6 +174,16 @@ class MockBigQueryService(autowebcompat.BigQueryService):
         else:
             raise ValueError(f"Unexpected whiteboard token {whiteboard_token}")
         return {bug.number: bug for bug in items if whiteboard_token in bug.whiteboard}
+
+    def get_sitepatch_bugs(
+        self,
+    ) -> tuple[
+        Mapping[int, autowebcompat.NewBugInfo], Mapping[int, autowebcompat.NewBugInfo]
+    ]:
+        return (
+            {bug.number: bug for bug in self.sitepatch_bugs},
+            {bug.number: bug for bug in self.sitepatch_backlog_bugs},
+        )
 
 
 class MockBugzillaUpdater(autowebcompat.BugzillaUpdater):
@@ -650,6 +666,76 @@ def test_repro_schedule_skips_in_flight() -> None:
     assert hackbot_client.created == []
 
 
+def test_revisit_schedule() -> None:
+    """Revisit bugs are scheduled under their own task and source key, and
+    don't request a diagnosis."""
+    bug_data = load_data("bug-1903487-repro-request.json")
+    assert bug_data.site_report is not None
+
+    hackbot_client = MockHackbot()
+    bq_service = MockBigQueryService()
+    bq_service.revisit_bugs.append(bug_data.site_report)
+    task = autowebcompat.RevisitReproTask(hackbot_client, bq_service, {})
+
+    scheduled = task.create_new()
+    assert list(scheduled.keys()) == ["bugzilla:revisit"]
+    [run] = scheduled["bugzilla:revisit"]
+    assert (run.agent, run.task_name, run.run_key) == (
+        "autowebcompat-repro",
+        "repro-revisit",
+        "1903487",
+    )
+
+
+@pytest.mark.parametrize(
+    "result_update,whiteboard_added",
+    [
+        # Still reproduces: nothing changes
+        ({}, False),
+        # Not reproducible: flagged as a site fix candidate
+        ({"reproduced": False, "failure_reason": "not_reproducible"}, True),
+        # Couldn't check: nothing changes
+        ({"reproduced": False, "failure_reason": "login"}, False),
+    ],
+)
+def test_revisit_bugzilla_update(
+    result_update: dict[str, Json],
+    whiteboard_added: bool,
+) -> None:
+    bug_data = load_data("bug-1903487.json")
+    assert bug_data.bug is not None
+    assert bug_data.hackbot_scheduled is not None
+    assert bug_data.hackbot_completed is not None
+    assert bug_data.hackbot_completed.summary is not None
+
+    scheduled = bug_data.hackbot_scheduled
+    scheduled.task_name = "repro-revisit"
+    scheduled.source_key = "bugzilla:revisit"
+    result = cast(dict, bug_data.hackbot_completed.summary.findings["result"])
+    result.update(result_update)
+
+    task = autowebcompat.RevisitReproTask(MockHackbot(), MockBigQueryService(), {})
+    run_doc = rundoc_from_bug_api(bug_data)
+    task.take_completed_runs({run_doc.run_id: (scheduled, run_doc)})
+
+    updater = MockBugzillaUpdater()
+    updater.bug_data.append(bug_data.bug.model_dump())
+    task.configure_updater(updater)
+    updater.fetch_data()
+    task.populate_updates(updater)
+
+    update, comment, attachments = updater.bug_updates[1903487].get_updates()
+    assert comment is None
+    assert attachments == []
+    if whiteboard_added:
+        assert update is not None
+        assert update.whiteboard == (
+            bug_data.bug.whiteboard + autowebcompat.RevisitReproTask.retriage_token
+        )
+    else:
+        assert update is None
+
+
 def test_intervention_schedule_updates_flag() -> None:
     """Scheduling a run consumes the request token from the whiteboard."""
     bug_data = load_data("bug-2000604-intervention-request.json")
@@ -702,6 +788,72 @@ def test_intervention_schedule_skips_in_flight() -> None:
 
     assert task.create_new() == {}
     assert hackbot_client.created == []
+
+
+def sitepatch_bug(number: int, source_time: datetime) -> autowebcompat.NewBugInfo:
+    return autowebcompat.NewBugInfo(
+        number=number,
+        title="example.com - broken",
+        url="https://example.com/",
+        keywords=["webcompat:needs-sitepatch"],
+        whiteboard="[autowebcompat:repro-success]",
+        user_story="",
+        creation_time=datetime(2026, 8, 1, tzinfo=UTC),
+        source_time=source_time,
+    )
+
+
+def test_intervention_schedule_needs_sitepatch() -> None:
+    """needs-sitepatch bugs whose repro succeeded get an intervention."""
+    hackbot_client = MockHackbot()
+    bq_service = MockBigQueryService()
+    bq_service.sitepatch_bugs = [sitepatch_bug(1, datetime(2026, 11, 1, tzinfo=UTC))]
+    task = autowebcompat.InterventionTask(hackbot_client, bq_service, {})
+    updater = MockBugzillaUpdater()
+    updater.bug_data = [{"id": 1, "whiteboard": "[autowebcompat:repro-success]"}]
+
+    scheduled = task.create_new()
+    assert list(scheduled.keys()) == ["bugzilla:needs-sitepatch"]
+    assert len(hackbot_client.created) == 1
+    request = hackbot_client.created[0]
+    assert isinstance(request, autowebcompat.AutowebcompatInterventionRequest)
+    assert request.bug_id == 1
+
+    task.configure_updater(updater)
+    assert updater.bug_ids == {1}
+    updater.fetch_data()
+    task.populate_updates(updater)
+
+    update, _, _ = updater.bug_updates[1].get_updates()
+    assert update is not None
+    assert update.whiteboard == (
+        "[autowebcompat:repro-success][autowebcompat:intervention-in-progress]"
+    )
+
+
+def test_intervention_schedule_needs_sitepatch_backlog() -> None:
+    """Backlog needs-sitepatch bugs are scheduled under their own source key, so
+    they don't move the needs-sitepatch watermark."""
+    hackbot_client = MockHackbot()
+    bq_service = MockBigQueryService()
+    bq_service.sitepatch_bugs = [sitepatch_bug(1, datetime(2026, 11, 1, tzinfo=UTC))]
+    bq_service.sitepatch_backlog_bugs = [
+        sitepatch_bug(2, datetime(2026, 9, 1, tzinfo=UTC))
+    ]
+    task = autowebcompat.InterventionTask(hackbot_client, bq_service, {})
+
+    scheduled = task.create_new()
+    assert {key: [run.run_key for run in runs] for key, runs in scheduled.items()} == {
+        "bugzilla:needs-sitepatch": ["1"],
+        "bugzilla:needs-sitepatch-backlog": ["2"],
+    }
+    run_info = task.new_run_info()
+    assert run_info["bugzilla:needs-sitepatch"].source_time == datetime(
+        2026, 11, 1, tzinfo=UTC
+    )
+    assert run_info["bugzilla:needs-sitepatch-backlog"].source_time == datetime(
+        2026, 9, 1, tzinfo=UTC
+    )
 
 
 def run_intervention_update(
