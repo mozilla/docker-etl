@@ -1,0 +1,5 @@
+[flake8]
+max-line-length = 100
+# E203 and W503 conflict with how black formats slices and line breaks
+extend-ignore = E203,W503
+extend-exclude = .venv,venv,.cache,labels
