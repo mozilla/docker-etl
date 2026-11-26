@@ -574,6 +574,110 @@ def test_each_units_source_scan_reaches_back_only_as_far_as_its_own_experiments(
     assert run.earliest_start() == AS_OF - datetime.timedelta(days=200)
 
 
+def test_selecting_scopes_a_run_to_the_experiments_that_select_a_given_metric():
+    windows = cumulative_windows(2)
+    selecting = experiment(
+        "selecting", AS_OF - datetime.timedelta(days=200), CLIENT_UNIT, ("active_hours",)
+    )
+    not_selecting = experiment(
+        "not-selecting", AS_OF - datetime.timedelta(days=10), CLIENT_UNIT, ("retained_dau",)
+    )
+    run = sql_generation.Run(
+        [selecting, not_selecting],
+        {"selecting": windows, "not-selecting": windows},
+        AS_OF,
+        COVARIATE_DAYS,
+    )
+
+    scoped = run.selecting({"active_hours"})
+
+    assert scoped.slugs == ["selecting"]
+    assert scoped.earliest_start() == AS_OF - datetime.timedelta(days=200)
+
+
+def test_a_source_selected_by_the_runs_earliest_experiment_keeps_the_runs_own_bound():
+    # Both experiments select the same source, so the earliest selecting experiment is the
+    # run's own earliest, and the source's bound is exactly what it was before scoping.
+    windows = cumulative_windows(2)
+    earliest = experiment(
+        "earliest", AS_OF - datetime.timedelta(days=200), CLIENT_UNIT, ("active_hours",)
+    )
+    latest = experiment(
+        "latest", AS_OF - datetime.timedelta(days=10), CLIENT_UNIT, ("active_hours",)
+    )
+    run = sql_generation.Run(
+        [earliest, latest],
+        {"earliest": windows, "latest": windows},
+        AS_OF,
+        COVARIATE_DAYS,
+    )
+    queries = sql_generation.build_queries(
+        run,
+        {"active_hours": named("active_hours")},
+        {"clients_daily": CLIENTS_DAILY_SOURCE},
+        "a.cohort_table",
+    )
+
+    bound = AS_OF - datetime.timedelta(days=200 + COVARIATE_DAYS)
+    assert f"DATE '{bound}'" in queries["clients_daily/client_id"]
+
+
+@pytest.mark.parametrize("unit", [CLIENT_UNIT, GROUP_UNIT])
+def test_a_source_selected_only_by_a_recent_experiment_is_bounded_by_its_own_start(unit):
+    windows = cumulative_windows(2)
+    old_experiment = experiment(
+        "old-slug", AS_OF - datetime.timedelta(days=200), unit, ("active_hours",)
+    )
+    new_experiment = experiment(
+        "new-slug", AS_OF - datetime.timedelta(days=10), unit, ("retained_dau",)
+    )
+    run = sql_generation.Run(
+        [old_experiment, new_experiment],
+        {"old-slug": windows, "new-slug": windows},
+        AS_OF,
+        COVARIATE_DAYS,
+    )
+    resolved_metrics = {
+        "active_hours": named("active_hours"),
+        "retained_dau": named("retained_dau"),
+    }
+    sources = {"clients_daily": CLIENTS_DAILY_SOURCE, "active_users": ACTIVE_USERS_SOURCE}
+
+    queries = sql_generation.build_queries(run, resolved_metrics, sources, "a.cohort_table")
+
+    old_bound = AS_OF - datetime.timedelta(days=200 + COVARIATE_DAYS)
+    new_bound = AS_OF - datetime.timedelta(days=10 + COVARIATE_DAYS)
+    assert f"DATE '{old_bound}'" in queries[f"clients_daily/{unit.kind}"]
+    assert f"DATE '{new_bound}'" in queries[f"active_users/{unit.kind}"]
+    assert f"DATE '{old_bound}'" not in queries[f"active_users/{unit.kind}"]
+
+
+def test_an_experiment_not_selecting_a_source_is_excluded_from_its_query():
+    windows = cumulative_windows(2)
+    old_experiment = experiment(
+        "old-slug", AS_OF - datetime.timedelta(days=200), CLIENT_UNIT, ("active_hours",)
+    )
+    new_experiment = experiment(
+        "new-slug", AS_OF - datetime.timedelta(days=10), CLIENT_UNIT, ("retained_dau",)
+    )
+    run = sql_generation.Run(
+        [old_experiment, new_experiment],
+        {"old-slug": windows, "new-slug": windows},
+        AS_OF,
+        COVARIATE_DAYS,
+    )
+    resolved_metrics = {
+        "active_hours": named("active_hours"),
+        "retained_dau": named("retained_dau"),
+    }
+    sources = {"clients_daily": CLIENTS_DAILY_SOURCE, "active_users": ACTIVE_USERS_SOURCE}
+
+    queries = sql_generation.build_queries(run, resolved_metrics, sources, "a.cohort_table")
+
+    assert "'old-slug'" not in queries["active_users/client_id"]
+    assert "'new-slug'" not in queries["clients_daily/client_id"]
+
+
 def test_branch_units_are_counted_off_the_runs_cohort_table():
     sql = sql_generation.branch_units_query("a-project.a_dataset.a_cohort")
 
