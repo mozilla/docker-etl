@@ -39,13 +39,12 @@ import time
 
 from .common import (
     CACHE,
-    DEST,
     LONGEST,
-    PREFIX,
     WINDOWS,
     ResolveTimeout,
     artifact_schema,
     client,
+    dest_table,
     log,
     pool_map,
     read_cache,
@@ -71,6 +70,11 @@ SQL_THREADS = 8
 # Seconds one statement may take to resolve. A few Looker statements send the
 # resolver into exponential work; they are recorded as timeouts and listed.
 RESOLVE_TIMEOUT = 60
+# Generated SQL past this is left unparsed rather than given a worker until it
+# times out. The longest that resolves is under 1M characters; past it are the
+# exposure chunks on the hub's metrics explores, at 14M to 35M, which always
+# timed out and took the most memory to parse.
+MAX_SQL = 5_000_000
 
 # Looker's own usage data, and projects that hold no data models
 SKIP_MODELS = {"system__activity"}
@@ -703,7 +707,7 @@ def snapshot():
     reused while the metrics and carries tables are the ones they were made with."""
     return "|".join(
         [str(RESOLVED_VERSION)]
-        + [str(client().get_table(f"{DEST}.{PREFIX}{t}").modified) for t in ("metrics", "carries")]
+        + [str(client().get_table(dest_table(t)).modified) for t in ("metrics", "carries")]
     )
 
 
@@ -713,9 +717,15 @@ def resolve_all(items):
     fp = snapshot()
     path = API_CACHE / f"resolved_{hashlib.sha256(fp.encode()).hexdigest()[:16]}.json"
     held = json.loads(read_cache(path) or b"{}")
-    digest = {k: hashlib.sha256(sql.encode()).hexdigest() for k, sql in items}
-    out, todo = {}, []
+    out, todo, digest, long = {}, [], {}, 0
     for k, sql in items:
+        # checked here rather than in _work(), so the SQL is not pickled and
+        # sent to a worker only to be dropped there
+        if len(sql) > MAX_SQL:
+            out[k] = ({}, {}, "too long")
+            long += 1
+            continue
+        digest[k] = hashlib.sha256(sql.encode()).hexdigest()
         h = held.get(digest[k])
         # a timeout says how fast the resolver was, not what the SQL reads,
         # so it is tried again rather than reused
@@ -723,7 +733,9 @@ def resolve_all(items):
             todo.append((k, sql))
         else:
             out[k] = ({int(m): tuple(v) for m, v in h[0].items()}, h[1], h[2])
-    log(f"  resolving {len(todo):,} groups ({len(out):,} reused from this lineage snapshot)")
+    log(f"  resolving {len(todo):,} groups ({len(out) - long:,} reused from this lineage snapshot)")
+    if long:
+        log(f"  {long:,} groups past {MAX_SQL:,} characters left unparsed")
     timings = []
     # parsed once here for the forked workers, rather than in each one inside
     # its first item's time limit
@@ -1259,7 +1271,7 @@ def main():
         return
     refs, arts = result
     suffix = (
-        "Prototype table maintained by the docker-etl metric-usage job, metric_usage/looker.py; "
+        "Maintained by the docker-etl metric-usage job, metric_usage/looker.py; "
         "replaced on each run."
     )
     write_table(

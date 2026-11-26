@@ -59,7 +59,7 @@ import csv
 import random
 import re
 
-from .common import CACHE, DEST, LABELS, PREFIX, held_labels, log, query, run_deep, write_labels
+from .common import CACHE, LABELS, dest_table, held_labels, log, query, run_deep, write_labels
 
 from . import adhoc as AH
 from . import lineage as L
@@ -175,8 +175,8 @@ SELECT
   s.n_tables + s.n_views + s.n_redash_all AS n,
   m.event_category, m.event_name, m.event_methods, m.event_objects,
   ARRAY(SELECT CONCAT(c.table, ':', c.path) FROM UNNEST(m.columns) AS c) AS cols
-FROM `{DEST}.{PREFIX}summary` AS s
-JOIN `{DEST}.{PREFIX}metrics` AS m USING (app, metric)
+FROM `{dest_table('summary')}` AS s
+JOIN `{dest_table('metrics')}` AS m USING (app, metric)
 WHERE NOT s.app_deprecated AND s.in_source
 """,
         tables=["summary", "metrics"],
@@ -284,7 +284,7 @@ def terms_for(picked):
 SELECT `table`, path, app, metric
 FROM (
   SELECT *, COUNT(*) OVER (PARTITION BY `table`, path) AS n_metrics
-  FROM `{DEST}.{PREFIX}carries`
+  FROM `{dest_table('carries')}`
 )
 WHERE n_metrics < {L.NARROW_MIN} AND ({where})
 """,
@@ -336,7 +336,7 @@ def events_for(picked):
     where = ", ".join(f"'{a}'" for a in apps)
     for r in query(
         f"""
-SELECT DISTINCT app, `table` FROM `{DEST}.{PREFIX}carries`
+SELECT DISTINCT app, `table` FROM `{dest_table('carries')}`
 WHERE metric = '(event category)' AND app IN ({where})
 """,
         tables=["carries"],
@@ -525,8 +525,8 @@ def main():
         f"""
 SELECT r.app, r.metric, r.artifact_id, r.artifact_kind, r.named, r.role, r.via,
   r.output_columns, r.evidence, a.url, a.generated_by
-FROM `{DEST}.{PREFIX}refs` AS r
-LEFT JOIN `{DEST}.{PREFIX}artifacts` AS a USING (artifact_id)
+FROM `{dest_table('refs')}` AS r
+LEFT JOIN `{dest_table('artifacts')}` AS a USING (artifact_id)
 WHERE r.artifact_kind IN ('bqetl_table', 'bqetl_view', 'glean_ping_view', 'redash_query',
                           'looker_dashboard', 'looker_look', 'looker_explore',
                           'person', 'service_account', 'jetstream_experiment',
