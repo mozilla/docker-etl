@@ -44,7 +44,17 @@ import collections
 import re
 import sys
 
-from .common import PROBEINFO, get_json, get_json_if_found, log, query, snakecase, write_table
+from .common import (
+    APP_DESCRIPTION,
+    METRIC_DESCRIPTION,
+    PROBEINFO,
+    get_json,
+    get_json_if_found,
+    log,
+    query,
+    snakecase,
+    write_table,
+)
 
 GLEAN_ALL_PINGS = ("all-pings", "all_pings", "glean_client_info", "glean_internal_info")
 
@@ -484,17 +494,11 @@ def schema():
 
     s, b, rep = "STRING", "BOOL", "REPEATED"
     return [
-        F(
-            "app",
-            s,
-            description=(
-                "Glean Dictionary app name, or 'telemetry' for legacy probes and environment fields"
-            ),
-        ),
+        F("app", s, description=APP_DESCRIPTION),
         F("app_label", s, description="App name for display, from probeinfo"),
         F("app_deprecated", b, description="Every channel of the app is deprecated"),
         F("source", s, description="glean or legacy"),
-        F("metric", s, description="Metric name as defined: browser.engagement.tab_open, GC_MS"),
+        F("metric", s, description=METRIC_DESCRIPTION),
         F("origin", s, description="App or library that defines the metric"),
         F(
             "type",

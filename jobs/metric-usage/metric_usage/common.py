@@ -737,6 +737,8 @@ def resolved_schema():
     from google.cloud.bigquery import SchemaField as F
 
     s, rep = "STRING", "REPEATED"
+    ref = {f.name: f for f in ref_schema()}
+    art = {f.name: f for f in artifact_schema()}
     return [
         F(
             "key",
@@ -762,22 +764,16 @@ def resolved_schema():
             description="Each table the query names, the columns of it the query "
             "mentions, and their digest then",
         ),
+        # a ref's fields as in refs, so bigquery-etl can include them from there
         F(
             "refs",
             "RECORD",
             mode=rep,
-            fields=[
-                F("app", s, description="App of a metric the query names"),
-                F("metric", s, description="Metric name"),
-                F("role", s, description="As refs.role"),
-                F("hops", "INT64", description="As refs.hops"),
-                F("via", s, description="table:column the query read it from"),
-                F("transformed", "BOOL", description="As refs.transformed"),
-            ],
+            fields=[ref[n] for n in ("app", "metric", "role", "hops", "via", "transformed")],
             description="The metrics the query names",
         ),
-        F("stars", s, mode=rep, description="Tables the query reads with SELECT *"),
-        F("note", s, description="How the query was read, as artifacts.note"),
+        F("stars", s, mode=rep, description=art["star_tables"].description),
+        F("note", s, description=art["note"].description),
     ]
 
 
@@ -802,6 +798,13 @@ def snakecase(s):
 # each source's table; elsewhere union_views() makes them. A field a source has
 # nothing for is left null.
 
+# The app and metric columns of every table that has them, so bigquery-etl's
+# schema.yaml files can include them from metrics.
+APP_DESCRIPTION = (
+    "Glean Dictionary app name, or 'telemetry' for legacy probes and environment fields"
+)
+METRIC_DESCRIPTION = "Metric name as defined: browser.engagement.tab_open, GC_MS"
+
 # The sources writing refs_<source> and artifacts_<source>. A new one has to be
 # added to bigquery-etl's refs_v1 and artifacts_v1 views as well.
 SOURCES = ("bqetl", "redash", "looker", "glam", "metrichub", "adhoc")
@@ -812,8 +815,8 @@ def ref_schema():
 
     s, b, i = "STRING", "BOOL", "INT64"
     return [
-        F("app", s, description="App of the metric, as in metrics"),
-        F("metric", s, description="Metric name, as in metrics"),
+        F("app", s, description=APP_DESCRIPTION),
+        F("metric", s, description=METRIC_DESCRIPTION),
         F("artifact_id", s, description="The artifact using the metric; joins to artifacts"),
         F("artifact_kind", s, description="The artifact's kind, as artifacts.kind"),
         F(

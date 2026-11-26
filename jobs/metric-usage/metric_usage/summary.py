@@ -418,7 +418,7 @@ COLUMNS = {
 DEFINITIONS_COLUMNS = {
     "window_days": WINDOW_DAYS,
     "origin": "App or library that defines the metric; telemetry for legacy probes",
-    "metric": "Metric name as defined",
+    "metric": METRIC_COLUMNS["metric"],
     "app": "The copy the list links to: the defining app's, else firefox_desktop's, else any",
     "apps": "Apps with a live copy of it",
     "source": METRIC_COLUMNS["source"],

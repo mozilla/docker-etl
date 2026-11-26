@@ -78,7 +78,9 @@ from sqlglot import exp
 from sqlglot.optimizer.scope import ScopeType, build_scope
 
 from .common import (
+    APP_DESCRIPTION,
     CACHE,
+    METRIC_DESCRIPTION,
     PROBEINFO,
     artifact_schema,
     dest_table,
@@ -2445,8 +2447,8 @@ def carries_schema():
     return [
         F("table", s, description="bigquery-etl table or view, project.dataset.table"),
         F("path", s, description="Dotted path of the column carrying the metric"),
-        F("app", s, description="App of the metric, as in metrics"),
-        F("metric", s, description="Metric name, as in metrics"),
+        F("app", s, description=APP_DESCRIPTION),
+        F("metric", s, description=METRIC_DESCRIPTION),
         F("hops", "INT64", description="Tables between the stable table and this one, plus one"),
         F(
             "transformed",
