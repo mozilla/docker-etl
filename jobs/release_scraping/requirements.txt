@@ -9,4 +9,4 @@ beautifulsoup4==4.14.2
 py==1.11.0
 flake8==4.0.1
 google-cloud-storage==2.18.2
-fsspec==2024.2.0
+fsspec==2026.6.0
