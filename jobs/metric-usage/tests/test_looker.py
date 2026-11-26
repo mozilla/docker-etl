@@ -1,6 +1,8 @@
 """Looker: filter values on event identity columns name events. looker.py keeps
 its shapes and event index in module globals, set here as _init would."""
 
+import json
+
 import pytest
 
 from metric_usage import lineage as L
@@ -93,8 +95,20 @@ def test_filter_on_other_field_is_ignored(group):
     assert refs(group, {"events_stream.count": "uri_load"}) == {}
 
 
-def test_sql_past_the_limit_is_left_unparsed(monkeypatch):
+def test_sql_past_the_limit_is_not_sent_to_a_worker(monkeypatch, tmp_path):
+    sent = []
+
+    def pool_map(work, todo, **kwargs):
+        for key, sql in todo:
+            sent.append(key)
+            yield key, ({}, {}, None), 0.0
+
     monkeypatch.setattr(looker, "MAX_SQL", 10)
-    monkeypatch.setattr(looker, "resolve_group", lambda sql: pytest.fail("parsed"))
-    key, res, secs = looker._work(("k", "SELECT " + "x, " * 10 + "1"))
-    assert res == ({}, {}, "too long")
+    monkeypatch.setattr(looker, "API_CACHE", tmp_path)
+    monkeypatch.setattr(looker, "snapshot", lambda: "test")
+    monkeypatch.setattr(looker, "pool_map", pool_map)
+    monkeypatch.setattr(L, "persistent_udfs", lambda: None)
+    short, long = (json.dumps(["model", view, ["f"], None]) for view in ("short", "long"))
+    out = looker.resolve_all([(short, "SELECT 1"), (long, "SELECT " + "x, " * 10 + "1")])
+    assert sent == [short]
+    assert out[long] == ({}, {}, "too long")

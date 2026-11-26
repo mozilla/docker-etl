@@ -4,7 +4,7 @@
     python -m metric_usage.inventory --force    # refetch probeinfo and the field paths
     python -m metric_usage.inventory --dry-run  # resolve and print a summary, write nothing
 
-Writes mozdata.analysis.benwu_metrics_usage_metrics, one row per (app, metric).
+Writes metrics_v1, one row per (app, metric).
 
 The definitions come from probeinfo, the same source and the same merge rules the
 Glean Dictionary uses, so a metric here and its Dictionary page agree on what it

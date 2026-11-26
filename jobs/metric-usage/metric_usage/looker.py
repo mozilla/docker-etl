@@ -686,8 +686,6 @@ def resolve_group(sql):
 
 def _work(item):
     key, sql = item
-    if len(sql) > MAX_SQL:
-        return key, ({}, {}, "too long"), 0.0
     start = time.monotonic()
     try:
         with time_limit(RESOLVE_TIMEOUT):
@@ -719,9 +717,15 @@ def resolve_all(items):
     fp = snapshot()
     path = API_CACHE / f"resolved_{hashlib.sha256(fp.encode()).hexdigest()[:16]}.json"
     held = json.loads(read_cache(path) or b"{}")
-    digest = {k: hashlib.sha256(sql.encode()).hexdigest() for k, sql in items}
-    out, todo = {}, []
+    out, todo, digest, long = {}, [], {}, 0
     for k, sql in items:
+        # checked here rather than in _work(), so the SQL is not pickled and
+        # sent to a worker only to be dropped there
+        if len(sql) > MAX_SQL:
+            out[k] = ({}, {}, "too long")
+            long += 1
+            continue
+        digest[k] = hashlib.sha256(sql.encode()).hexdigest()
         h = held.get(digest[k])
         # a timeout says how fast the resolver was, not what the SQL reads,
         # so it is tried again rather than reused
@@ -729,7 +733,9 @@ def resolve_all(items):
             todo.append((k, sql))
         else:
             out[k] = ({int(m): tuple(v) for m, v in h[0].items()}, h[1], h[2])
-    log(f"  resolving {len(todo):,} groups ({len(out):,} reused from this lineage snapshot)")
+    log(f"  resolving {len(todo):,} groups ({len(out) - long:,} reused from this lineage snapshot)")
+    if long:
+        log(f"  {long:,} groups past {MAX_SQL:,} characters left unparsed")
     timings = []
     # parsed once here for the forked workers, rather than in each one inside
     # its first item's time limit
