@@ -180,3 +180,17 @@ def test_missing_metric_hub_clone_stops(monkeypatch, tmp_path):
     monkeypatch.setattr(MH, "_MODEL", None)
     with pytest.raises(SystemExit, match="fetch_metric_hub.sh"):
         MH.model()
+
+
+def test_memory_peak_is_logged_from_the_cgroup(monkeypatch, tmp_path, capsys):
+    peak = tmp_path / "memory.peak"
+    peak.write_text(f"{3 * 2**30}\n")
+    monkeypatch.setattr(common, "CGROUP_MEMORY_PEAK", peak)
+    common.log_memory_peak()
+    assert "container memory peak: 3.00 GiB" in capsys.readouterr().err
+
+
+def test_memory_peak_is_quiet_outside_a_container(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(common, "CGROUP_MEMORY_PEAK", tmp_path / "missing")
+    common.log_memory_peak()
+    assert capsys.readouterr().err == ""

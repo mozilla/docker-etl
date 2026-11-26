@@ -91,3 +91,10 @@ def test_excluded_value_names_nothing(group):
 
 def test_filter_on_other_field_is_ignored(group):
     assert refs(group, {"events_stream.count": "uri_load"}) == {}
+
+
+def test_sql_past_the_limit_is_left_unparsed(monkeypatch):
+    monkeypatch.setattr(looker, "MAX_SQL", 10)
+    monkeypatch.setattr(looker, "resolve_group", lambda sql: pytest.fail("parsed"))
+    key, res, secs = looker._work(("k", "SELECT " + "x, " * 10 + "1"))
+    assert res == ({}, {}, "too long")

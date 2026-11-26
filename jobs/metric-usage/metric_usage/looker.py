@@ -70,6 +70,11 @@ SQL_THREADS = 8
 # Seconds one statement may take to resolve. A few Looker statements send the
 # resolver into exponential work; they are recorded as timeouts and listed.
 RESOLVE_TIMEOUT = 60
+# Generated SQL past this is left unparsed rather than given a worker until it
+# times out. The longest that resolves is under 1M characters; past it are the
+# exposure chunks on the hub's metrics explores, at 14M to 35M, which always
+# timed out and took the most memory to parse.
+MAX_SQL = 5_000_000
 
 # Looker's own usage data, and projects that hold no data models
 SKIP_MODELS = {"system__activity"}
@@ -681,6 +686,8 @@ def resolve_group(sql):
 
 def _work(item):
     key, sql = item
+    if len(sql) > MAX_SQL:
+        return key, ({}, {}, "too long"), 0.0
     start = time.monotonic()
     try:
         with time_limit(RESOLVE_TIMEOUT):

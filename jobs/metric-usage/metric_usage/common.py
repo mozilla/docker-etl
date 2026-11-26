@@ -8,6 +8,7 @@ script to ignore the cache, which is needed after the upstream data changes
 underneath the same key.
 """
 
+import atexit
 import collections
 import contextlib
 import csv
@@ -84,6 +85,27 @@ PROBEINFO = "https://probeinfo.telemetry.mozilla.org"
 
 def log(*args):
     print(*args, file=sys.stderr)
+
+
+# cgroup v2's high-water mark for the container, the figure its memory limit
+# is checked against. Absent outside a container (and on macOS).
+CGROUP_MEMORY_PEAK = pathlib.Path("/sys/fs/cgroup/memory.peak")
+
+
+def log_memory_peak():
+    """Log the container's peak memory as a step exits, to size its limit from.
+    It counts page cache the kernel could have reclaimed, so it overstates a
+    step that caches to disk. A step killed for memory exits without it; the
+    node's kernel log records that instead. Forked workers leave through
+    os._exit(), so only the step itself logs it."""
+    try:
+        peak = int(CGROUP_MEMORY_PEAK.read_text())
+    except (OSError, ValueError):
+        return
+    log(f"  container memory peak: {peak / 2**30:.2f} GiB")
+
+
+atexit.register(log_memory_peak)
 
 
 def run_deep(main):
