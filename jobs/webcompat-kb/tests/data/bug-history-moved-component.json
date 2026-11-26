@@ -1,0 +1,48 @@
+{
+  "bug": {
+    "number": 1000001,
+    "status": "RESOLVED",
+    "resolution": "FIXED",
+    "product": "Web Compatibility",
+    "component": "Interventions",
+    "creator": "reporter@example.com",
+    "creation_time": "2025-11-14T19:41:37Z",
+    "resolved_time": "2025-12-02T16:00:56Z",
+    "keywords": ["webcompat:needs-diagnosis"],
+    "url": "https://example.com/",
+    "user_story": ""
+  },
+  "history": [
+    {
+      "who": "triager@example.com",
+      "when": "2025-11-17T16:40:46Z",
+      "changes": [
+        {
+          "field_name": "keywords",
+          "added": "webcompat:needs-diagnosis",
+          "removed": ""
+        },
+        { "field_name": "priority", "added": "P2", "removed": "--" }
+      ]
+    },
+    {
+      "who": "triager@example.com",
+      "when": "2025-11-20T10:00:00Z",
+      "changes": [
+        {
+          "field_name": "component",
+          "added": "Interventions",
+          "removed": "Site Reports"
+        }
+      ]
+    },
+    {
+      "who": "developer@example.com",
+      "when": "2025-12-02T16:00:56Z",
+      "changes": [
+        { "field_name": "status", "added": "RESOLVED", "removed": "NEW" },
+        { "field_name": "resolution", "added": "FIXED", "removed": "" }
+      ]
+    }
+  ]
+}

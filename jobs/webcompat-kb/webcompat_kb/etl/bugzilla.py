@@ -6,7 +6,14 @@ import os
 import re
 import time
 from collections import defaultdict
-from collections.abc import Iterable, Iterator, Mapping, MutableMapping, Sequence
+from collections.abc import (
+    Container,
+    Iterable,
+    Iterator,
+    Mapping,
+    MutableMapping,
+    Sequence,
+)
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import (
@@ -692,11 +699,11 @@ def fetch_all_bugs(
     bz_client: bugdantic.Bugzilla,
     bugs_table: TableSchema,
     last_import_time: Optional[datetime],
-) -> BugsById:
+) -> tuple[BugsById, BugsById]:
     """Get all the bugs that should be imported into BigQuery.
 
-    :returns: A tuple of (all bugs, site report bugs, knowledge base bugs,
-                          core bugs, ETP report bugs, ETP dependencies)."""
+    :returns: A tuple of (bugs to import, previously imported bugs that no longer
+              match the filters)."""
 
     bug_cache = BugCache(bq_client, bz_client)
 
@@ -749,15 +756,16 @@ def fetch_all_bugs(
     bugs_to_keep = relevant_ids | dependency_ids
     stale_bugs = set(bug_cache.keys()) - bugs_to_keep
 
+    removed_bugs = {}
     if stale_bugs:
         logging.warning(
             f"Found {','.join(str(item) for item in stale_bugs)} in cache that no longer match filters. "
             f"These will be excluded from import."
         )
         for bug_id in stale_bugs:
-            del bug_cache.bugs[bug_id]
+            removed_bugs[bug_id] = bug_cache.bugs.pop(bug_id)
 
-    return bug_cache.into_mapping()
+    return bug_cache.into_mapping(), removed_bugs
 
 
 class BugHistoryUpdater:
@@ -773,14 +781,27 @@ class BugHistoryUpdater:
         self.history_table = project["webcompat_knowledge_base"]["bugs_history"].table()
 
     def run(
-        self, all_bugs: BugsById, last_import_time: Optional[datetime]
+        self,
+        all_bugs: BugsById,
+        last_import_time: Optional[datetime],
+        removed_bugs: Optional[BugsById] = None,
     ) -> HistoryByBug:
+        """Get history updates for imported bugs.
+
+        :param all_bugs: Bugs being imported.
+        :param last_import_time: Time of the previous import, or None to fetch all history.
+        :param removed_bugs: Previously imported bugs that are no longer imported."""
+        removed_bugs = removed_bugs or {}
         if last_import_time is not None:
-            existing_records = self.bigquery_fetch_history(all_bugs.keys())
+            existing_records = self.bigquery_fetch_history(
+                set(all_bugs.keys()) | set(removed_bugs.keys())
+            )
             new_bugs, existing_bugs = self.group_bugs(all_bugs)
             existing_bugs_history = self.missing_records(
                 existing_records,
-                self.existing_bugs_history(existing_bugs, last_import_time),
+                self.existing_bugs_history(
+                    existing_bugs, last_import_time, removed_bugs
+                ),
             )
         else:
             existing_records = {}
@@ -823,24 +844,48 @@ class BugHistoryUpdater:
         return self.merge_history(history, synthetic_history)
 
     def existing_bugs_history(
-        self, existing_bugs: BugsById, last_import_time: datetime
+        self,
+        existing_bugs: BugsById,
+        last_import_time: datetime,
+        removed_bugs: Optional[BugsById] = None,
     ) -> HistoryByBug:
+        """Get history since last_import_time for previously imported bugs.
+
+        :param existing_bugs: Imported bugs; history is fetched for those that changed.
+        :param last_import_time: Time of the previous import.
+        :param removed_bugs: Bugs that are no longer imported; history is always fetched."""
         updated_bugs = {
             bug_id
             for bug_id, bug in existing_bugs.items()
             if bug.last_change_time > last_import_time
         }
+        removed_ids = set(removed_bugs.keys()) if removed_bugs else set()
 
-        if not updated_bugs:
+        if not updated_bugs and not removed_ids:
             logging.info(f"No updated bugs since {last_import_time.isoformat()}")
             return {}
 
-        logging.info(
-            f"Fetching history for bugs {','.join(str(item) for item in updated_bugs)} updated since {last_import_time.isoformat()}"
+        if updated_bugs:
+            logging.info(
+                f"Fetching history for bugs {','.join(str(item) for item in updated_bugs)} updated since {last_import_time.isoformat()}"
+            )
+        if removed_ids:
+            logging.info(
+                f"Fetching history for bugs {','.join(str(item) for item in removed_ids)} that are no longer imported"
+            )
+
+        # Removed bugs may no longer be accessible, so don't fail if they're missing
+        return self.recent_history(
+            self.bugzilla_fetch_history(
+                updated_bugs | removed_ids, optional_ids=removed_ids
+            ),
+            last_import_time,
         )
 
-        bugs_full_history = self.bugzilla_fetch_history(updated_bugs)
-        # Filter down to only recent updates, since we always get the full history
+    def recent_history(
+        self, bugs_full_history: HistoryByBug, last_import_time: datetime
+    ) -> HistoryByBug:
+        """Filter history down to changes after last_import_time."""
         bugs_history = {}
         for bug_id, bug_full_history in bugs_full_history.items():
             bug_history = [
@@ -873,7 +918,14 @@ class BugHistoryUpdater:
 
         return imported_ids
 
-    def bugzilla_fetch_history(self, ids: Iterable[int]) -> HistoryByBug:
+    def bugzilla_fetch_history(
+        self, ids: Iterable[int], optional_ids: Container[int] = frozenset()
+    ) -> HistoryByBug:
+        """Fetch the full history of bugs from Bugzilla.
+
+        :param ids: Bugs to fetch.
+        :param optional_ids: Bugs that may be missing from the response without
+                             causing an error."""
         history: dict[int, list[bugdantic.bugzilla.History]] = {}
         chunk_size = 100
         ids_list = list(ids)
@@ -919,8 +971,13 @@ class BugHistoryUpdater:
             else:
                 break
 
-        if len(ids_list) != 0:
+        required_missing = [item for item in ids_list if item not in optional_ids]
+        if required_missing:
             raise BugLoadError(
+                f"Failed to fetch bug history for {','.join(str(item) for item in required_missing)}"
+            )
+        if ids_list:
+            logging.warning(
                 f"Failed to fetch bug history for {','.join(str(item) for item in ids_list)}"
             )
 
@@ -943,7 +1000,15 @@ class BugHistoryUpdater:
                     )
                     for change in record.changes
                     if change.field_name
-                    in ["keywords", "status", "url", "cf_user_story", "whiteboard"]
+                    in [
+                        "keywords",
+                        "status",
+                        "url",
+                        "cf_user_story",
+                        "whiteboard",
+                        "product",
+                        "component",
+                    ]
                 ]
 
                 if relevant_changes:
@@ -1310,7 +1375,11 @@ def load_bugs(
     bz_client: bugdantic.Bugzilla,
     load_bug_data_path: Optional[str],
     last_import_time: Optional[datetime],
-) -> BugsById:
+) -> tuple[BugsById, BugsById]:
+    """Load the bugs to import.
+
+    :returns: A tuple of (bugs to import, previously imported bugs that are no longer
+              imported)."""
     if load_bug_data_path is not None:
         try:
             logging.info(f"Reading bug data from {load_bug_data_path}")
@@ -1319,7 +1388,7 @@ def load_bugs(
             return {
                 int(bug_id): Bug.from_json(bug_data)
                 for bug_id, bug_data in data["all_bugs"].items()
-            }
+            }, {}
         except Exception as e:
             raise BugLoadError(f"Reading bugs from {load_bug_data_path} failed") from e
     else:
@@ -1384,7 +1453,7 @@ def run(
     )
 
     bugs_last_import_time = last_import_time if not recreate_bugs else None
-    all_bugs = load_bugs(
+    all_bugs, removed_bugs = load_bugs(
         project,
         bq_client,
         bz_client,
@@ -1397,7 +1466,9 @@ def run(
         history_updater = BugHistoryUpdater(project, bq_client, bz_client)
         history_last_import_time = last_import_time if not recreate_history else None
         try:
-            history_changes = history_updater.run(all_bugs, history_last_import_time)
+            history_changes = history_updater.run(
+                all_bugs, history_last_import_time, removed_bugs
+            )
         except Exception as e:
             logging.error(f"Exception updating history: {e}")
             raise
