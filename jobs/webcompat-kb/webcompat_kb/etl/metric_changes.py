@@ -42,7 +42,7 @@ class BugData:
     component: str
     creator: str
     creation_time: datetime
-    resolved_time: datetime
+    resolved_time: Optional[datetime]
     keywords: Sequence[str]
     url: str
     user_story: str
