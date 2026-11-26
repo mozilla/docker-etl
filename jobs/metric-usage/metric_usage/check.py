@@ -30,7 +30,7 @@ then all together.
 import collections
 import csv
 
-from .common import CACHE, DEST, LABELS, LONGEST, PREFIX, log, query
+from .common import CACHE, LABELS, LONGEST, dest_table, log, query
 
 OUT = CACHE / "accuracy"
 SOURCE_NAMES = {
@@ -135,7 +135,7 @@ def main():
 # What counts as use in definitions (summary.py), for one artifact, by kind
 USED_SQL = f"""
 SELECT artifact_id
-FROM `{DEST}.{PREFIX}artifacts`
+FROM `{dest_table('artifacts')}`
 WHERE kind IN ('person', 'service_account', 'jetstream_experiment')
    OR (kind IN ('looker_dashboard', 'looker_look', 'looker_explore', 'redash_query')
        AND views_{LONGEST}d > 0)
@@ -143,8 +143,8 @@ WHERE kind IN ('person', 'service_account', 'jetstream_experiment')
 
 LISTED_SQL = f"""
 SELECT m.app, m.metric, d.n_consumers
-FROM `{DEST}.{PREFIX}metrics` AS m
-JOIN `{DEST}.{PREFIX}definitions` AS d
+FROM `{dest_table('metrics')}` AS m
+JOIN `{dest_table('definitions')}` AS d
   ON d.window_days = {LONGEST}
   AND d.origin = IF(m.source = 'legacy', 'telemetry', IFNULL(m.origin, m.app))
   AND d.metric = m.metric

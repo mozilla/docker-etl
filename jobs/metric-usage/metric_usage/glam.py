@@ -38,10 +38,9 @@ import json
 import urllib.parse
 
 from .common import (
-    DEST,
-    PREFIX,
     artifact_schema,
     days_within,
+    dest_table,
     get_json,
     log,
     query,
@@ -209,7 +208,7 @@ def run():
         log(f"    {n:7,}  {k}")
 
     inventory = query(
-        f"SELECT app, metric FROM `{DEST}.{PREFIX}metrics` "
+        f"SELECT app, metric FROM `{dest_table('metrics')}` "
         f"WHERE app IN ({', '.join(repr(a) for a, _ in PRODUCTS.values())})",
         tables=["metrics"],
         name="inventory",
@@ -288,7 +287,7 @@ def main():
     if args.dry_run:
         return
     suffix = (
-        "Prototype table maintained by the docker-etl metric-usage job, metric_usage/glam.py; "
+        "Maintained by the docker-etl metric-usage job, metric_usage/glam.py; "
         "replaced on each run."
     )
     write_table(

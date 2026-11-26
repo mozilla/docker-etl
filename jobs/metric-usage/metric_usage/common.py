@@ -40,18 +40,36 @@ _MEMORY = {}
 # text; see write_labels().
 LABELS = ROOT / "labels"
 
-# Where the app's tables live, project.dataset. quick.query can read mozdata, and
-# so can anybody with warehouse access, so this is also where the tables are
-# useful outside the app. METRIC_USAGE_DATASET moves them.
-DEST = os.environ.get("METRIC_USAGE_DATASET", "mozdata.analysis")
+# Where the tables live, project.dataset. The deployed ones are in a
+# bigquery-etl dataset, which defines them (metadata.yaml and schema.yaml) and
+# the views over them, among them the user-facing views in metric_usage_tracking
+# that the page reads through mozdata. bigquery-etl does not create or alter
+# tables without a query, so this job creates them on its first run and its
+# schemas are the ones that hold; bigquery-etl's schema.yaml has to match them.
+# METRIC_USAGE_DATASET moves the tables, for a working copy.
+BQETL_DATASET = "moz-fx-data-shared-prod.metric_usage_tracking_derived"
+DEST = os.environ.get("METRIC_USAGE_DATASET", BQETL_DATASET)
+# In bigquery-etl's dataset, its metadata.yaml sets each table's description and
+# its view.sql files define the refs and artifacts views, so the job sets
+# neither there.
+MANAGED = DEST == BQETL_DATASET
 # METRIC_USAGE_PREFIX gives a working copy its own set of tables, so a branch
 # can be rebuilt without touching the ones the deployed page reads. In the
 # shared analysis dataset it has to be this job's own.
-PREFIX = os.environ.get("METRIC_USAGE_PREFIX", "benwu_metrics_usage_")
+PREFIX = os.environ.get("METRIC_USAGE_PREFIX", "")
+if MANAGED and PREFIX:
+    raise SystemExit(f"METRIC_USAGE_PREFIX has to be empty in {BQETL_DATASET}")
 if DEST == "mozdata.analysis" and not PREFIX.startswith("benwu_metrics_usage_"):
     raise SystemExit(
-        "METRIC_USAGE_PREFIX has to start with benwu_metrics_usage_ " "in mozdata.analysis"
+        "METRIC_USAGE_PREFIX has to start with benwu_metrics_usage_ in mozdata.analysis"
     )
+
+
+def dest_table(name):
+    """The full id of one of the job's tables or views, by its short name such
+    as refs_redash. The version suffix is bigquery-etl's naming."""
+    return f"{DEST}.{PREFIX}{name}_v1"
+
 
 # The windows of use the page offers, in days, each ending yesterday, the last
 # whole day. Sources read the longest once and count each window within it, so
@@ -432,20 +450,34 @@ def _jsonable(v):
 
 
 def table_versions(tables):
-    """When each DEST.PREFIX<table> was last written, as one string. A view
-    counts too: every source recreates the refs and artifacts views after it
-    writes its tables."""
-    return "|".join(
-        f"{t}@{client().get_table(f'{DEST}.{PREFIX}{t}').modified.isoformat()}" for t in tables
-    )
+    """When each of the job's tables was last written, as one string. The refs
+    and artifacts views stand for the source tables under them, since a view
+    bigquery-etl defines is not recreated when they are written. A working copy
+    can lack some sources."""
+    from google.api_core.exceptions import NotFound
+
+    parts = []
+    for t in tables:
+        if t not in ("refs", "artifacts"):
+            parts.append(f"{t}@{client().get_table(dest_table(t)).modified.isoformat()}")
+            continue
+        for s in SOURCES:
+            try:
+                parts.append(
+                    f"{t}_{s}@{client().get_table(dest_table(f'{t}_{s}')).modified.isoformat()}"
+                )
+            except NotFound:
+                pass
+    return "|".join(parts)
 
 
 def query(sql, force=False, name="query", tables=()):
     """Rows of a query as dicts, cached by the SQL text.
 
-    tables names the DEST.PREFIX tables the query reads, which are rewritten
-    in place under the same SQL: the result is then cached until one of them
-    is written again, and the copy for an older version is removed.
+    tables names the job's tables the query reads, by short name (see
+    dest_table()), which are rewritten in place under the same SQL: the result
+    is then cached until one of them is written again, and the copy for an
+    older version is removed.
     """
     if tables:
         stem = f"bq_{hashlib.sha256(sql.encode()).hexdigest()[:16]}"
@@ -468,16 +500,27 @@ def query(sql, force=False, name="query", tables=()):
     return rows
 
 
+def describe(table_id, description):
+    """Set a table's description, outside bigquery-etl's dataset, where its
+    metadata.yaml does. Returns the table."""
+    t = client().get_table(table_id)
+    if not MANAGED and t.description != description:
+        t.description = description
+        t = client().update_table(t, ["description"])
+    return t
+
+
 def write_table(name, rows, schema, description, clustering=None):
-    """Replace DEST.PREFIX<name> with rows.
+    """Replace dest_table(name) with rows.
 
     schema is a list of bigquery.SchemaField. The table is replaced wholesale on
-    every run. One created in a dataset with a default expiration (analysis has
-    180 days) takes it from when it was created, and a rewrite does not renew it.
+    every run, keeping its labels and description. One created in a dataset with
+    a default expiration (analysis has 180 days) takes it from when it was
+    created, and a rewrite does not renew it.
     """
     from google.cloud import bigquery
 
-    table_id = f"{DEST}.{PREFIX}{name}"
+    table_id = dest_table(name)
     config = bigquery.LoadJobConfig(
         schema=schema,
         write_disposition="WRITE_TRUNCATE",
@@ -486,18 +529,48 @@ def write_table(name, rows, schema, description, clustering=None):
     )
     job = client().load_table_from_json(rows, table_id, job_config=config)
     job.result()
-    table = client().get_table(table_id)
-    table.description = description
-    client().update_table(table, ["description"])
-    log(f"  wrote {table_id}: {table.num_rows:,} rows")
+    t = describe(table_id, description)
+    log(f"  wrote {table_id}: {t.num_rows:,} rows")
+
+
+def write_query(name, sql, description, columns, clustering=None):
+    """Replace dest_table(name) with the result of sql. A query job writing to the
+    table rather than CREATE OR REPLACE TABLE, which would drop the labels and
+    description bigquery-etl gives it.
+
+    columns is {column name: description}. A query result has none, and
+    bigquery-etl does not deploy the schema of a table without a query, so they
+    are set here in every dataset, after each write.
+    """
+    from google.cloud import bigquery
+
+    table_id = dest_table(name)
+    config = bigquery.QueryJobConfig(
+        destination=table_id,
+        write_disposition="WRITE_TRUNCATE",
+        clustering_fields=clustering,
+    )
+    client().query(sql, job_config=config).result()
+    t = describe(table_id, description)
+    missing = [f.name for f in t.schema if f.name not in columns]
+    if missing:
+        log(f"  no description for {', '.join(missing)} in {table_id}")
+    t.schema = [
+        bigquery.SchemaField.from_api_repr(
+            {**f.to_api_repr(), "description": columns.get(f.name, f.description)}
+        )
+        for f in t.schema
+    ]
+    t = client().update_table(t, ["schema"])
+    log(f"  wrote {table_id}: {t.num_rows:,} rows")
 
 
 def append_table(name, rows, schema, description, partition, keep_days):
-    """Append rows to DEST.PREFIX<name>, creating it partitioned by day on the
+    """Append rows to dest_table(name), creating it partitioned by day on the
     DATE field partition, with each partition kept keep_days days."""
     from google.cloud import bigquery
 
-    table_id = f"{DEST}.{PREFIX}{name}"
+    table_id = dest_table(name)
     config = bigquery.LoadJobConfig(
         schema=schema,
         write_disposition="WRITE_APPEND",
@@ -507,15 +580,12 @@ def append_table(name, rows, schema, description, partition, keep_days):
         ),
     )
     client().load_table_from_json(rows, table_id, job_config=config).result()
-    table = client().get_table(table_id)
-    if table.description != description:
-        table.description = description
-        client().update_table(table, ["description"])
+    describe(table_id, description)
     log(f"  appended {len(rows):,} rows to {table_id}")
 
 
 class ResolvedStore:
-    """Resolved queries kept between runs in DEST.PREFIX<name>, since the job
+    """Resolved queries kept between runs in dest_table(name), since the job
     runs with no disk that outlives it.
 
     An entry is a query's named refs, by app and metric, with what they were
@@ -552,7 +622,7 @@ class ResolvedStore:
         # every version is read, since a frozen entry is kept across versions;
         # get() checks the version of the rest
         try:
-            for r in client().query(f"SELECT * FROM `{DEST}.{PREFIX}{name}`").result():
+            for r in client().query(f"SELECT * FROM `{dest_table(name)}`").result():
                 r = dict(r)
                 r["deps"] = [d for d in r["deps"] if self.keep_table(d["table"])]
                 self.held[r["key"]] = r
@@ -560,7 +630,7 @@ class ResolvedStore:
             pass
         old = sum(r["version"] != version for r in self.held.values())
         log(
-            f"  {len(self.held):,} resolved queries held in {PREFIX}{name}, "
+            f"  {len(self.held):,} resolved queries held in {dest_table(name)}, "
             f"{old:,} from an earlier resolver version"
         )
 
@@ -628,48 +698,65 @@ class ResolvedStore:
     def save(self, complete=True):
         """Write the entries back. After a run that stopped early, those it did
         not get to are kept too, for the rerun to check."""
-        from google.cloud.bigquery import SchemaField as F
-
         rows = self.kept if complete else {**self.held, **self.kept}
         for r in rows.values():
             r["resolved_on"] = str(r["resolved_on"])
-        s, rep = "STRING", "REPEATED"
-        schema = [
-            F("key", s),
-            F("version", s, description="lineage.resolver_digest() it was resolved with"),
-            F("resolved_on", "DATE"),
-            F(
-                "deps",
-                "RECORD",
-                mode=rep,
-                fields=[F("table", s), F("names", s, mode=rep), F("digest", s)],
-                description="Each table the query names, the columns of it the query "
-                "mentions, and their digest then",
-            ),
-            F(
-                "refs",
-                "RECORD",
-                mode=rep,
-                fields=[
-                    F("app", s),
-                    F("metric", s),
-                    F("role", s),
-                    F("hops", "INT64"),
-                    F("via", s),
-                    F("transformed", "BOOL"),
-                ],
-            ),
-            F("stars", s, mode=rep),
-            F("note", s),
-        ]
         write_table(
             self.name,
             list(rows.values()),
-            schema,
+            resolved_schema(),
             "Resolved queries the docker-etl metric-usage job keeps between runs, by "
-            "query key; no query text. Prototype table, replaced on each run.",
+            "query key; no query text. Replaced on each run.",
             clustering=["key"],
         )
+
+
+def resolved_schema():
+    from google.cloud.bigquery import SchemaField as F
+
+    s, rep = "STRING", "REPEATED"
+    return [
+        F(
+            "key",
+            s,
+            description="Query key (adhoc.KEY_SQL): BigQuery's literal-normalized hash for a "
+            "service account's query, else a fingerprint of the query text",
+        ),
+        F("version", s, description="lineage.resolver_digest() it was resolved with"),
+        F("resolved_on", "DATE", description="Day the query was last resolved"),
+        F(
+            "deps",
+            "RECORD",
+            mode=rep,
+            fields=[
+                F("table", s, description="A known table the query names, project.dataset.table"),
+                F("names", s, mode=rep, description="Columns of the table the query mentions"),
+                F(
+                    "digest",
+                    s,
+                    description="Digest of those columns' lineage when the query was resolved",
+                ),
+            ],
+            description="Each table the query names, the columns of it the query "
+            "mentions, and their digest then",
+        ),
+        F(
+            "refs",
+            "RECORD",
+            mode=rep,
+            fields=[
+                F("app", s, description="App of a metric the query names"),
+                F("metric", s, description="Metric name"),
+                F("role", s, description="As refs.role"),
+                F("hops", "INT64", description="As refs.hops"),
+                F("via", s, description="table:column the query read it from"),
+                F("transformed", "BOOL", description="As refs.transformed"),
+            ],
+            description="The metrics the query names",
+        ),
+        F("stars", s, mode=rep, description="Tables the query reads with SELECT *"),
+        F("note", s, description="How the query was read, as artifacts.note"),
+    ]
 
 
 def snakecase(s):
@@ -688,8 +775,14 @@ def snakecase(s):
 # ------------------------------------------------------------- shared schemas
 #
 # Every source writes refs_<source> and artifacts_<source> with these schemas,
-# and union_views() puts a refs and an artifacts view over all of them, which is
-# what the page reads. A field a source has nothing for is left null.
+# and a refs and an artifacts view over all of them is what the page reads. In
+# bigquery-etl's dataset the views are its refs_v1 and artifacts_v1, which name
+# each source's table; elsewhere union_views() makes them. A field a source has
+# nothing for is left null.
+
+# The sources writing refs_<source> and artifacts_<source>. A new one has to be
+# added to bigquery-etl's refs_v1 and artifacts_v1 views as well.
+SOURCES = ("bqetl", "redash", "looker", "glam", "metrichub", "adhoc")
 
 
 def ref_schema():
@@ -697,10 +790,10 @@ def ref_schema():
 
     s, b, i = "STRING", "BOOL", "INT64"
     return [
-        F("app", s),
-        F("metric", s),
-        F("artifact_id", s),
-        F("artifact_kind", s),
+        F("app", s, description="App of the metric, as in metrics"),
+        F("metric", s, description="Metric name, as in metrics"),
+        F("artifact_id", s, description="The artifact using the metric; joins to artifacts"),
+        F("artifact_kind", s, description="The artifact's kind, as artifacts.kind"),
         F(
             "role",
             s,
@@ -716,10 +809,20 @@ def ref_schema():
             description="The SQL names the metric, rather than carrying it "
             "through a star or a whole struct",
         ),
-        F("transformed", b),
+        F(
+            "transformed",
+            b,
+            description="The value was computed from, cast or aggregated on the way here "
+            "rather than copied as it is",
+        ),
         F("via", s, description="table:column the artifact read it from"),
-        F("output_columns", s, mode="REPEATED"),
-        F("n_output_columns", i),
+        F(
+            "output_columns",
+            s,
+            mode="REPEATED",
+            description="Up to 20 of the artifact's output columns carrying the metric",
+        ),
+        F("n_output_columns", i, description="How many of its output columns carry the metric"),
         F("evidence", s, description="parsed, regex, or observed (from use, not code)"),
         F(
             "observed_days",
@@ -731,7 +834,7 @@ def ref_schema():
             F(
                 f"observed_days_{w}d",
                 i,
-                description=f"Days in the {w} days ending on the " "window end with a use",
+                description=f"Days in the {w} days ending on the window end with a use",
             )
             for w in WINDOWS
         ],
@@ -743,7 +846,7 @@ def ref_schema():
             f"window of {', '.join(map(str, WINDOWS))} days that has it; null for refs from "
             "code or saved content, which hold in every window",
         ),
-        F("last_observed", "DATE"),
+        F("last_observed", "DATE", description="Last day with a use, for refs from use"),
         F(
             "top_percent",
             "FLOAT64",
@@ -758,20 +861,52 @@ def artifact_schema():
 
     s, b, i, rep = "STRING", "BOOL", "INT64", "REPEATED"
     return [
-        F("artifact_id", s),
-        F("kind", s),
-        F("name", s),
-        F("url", s),
-        F("owners", s, mode=rep),
-        F("friendly_name", s),
-        F("generated_by", s),
-        F("note", s),
-        F("n_metrics_named", i),
-        F("n_metrics_total", i),
-        F("is_draft", b),
-        F("is_scheduled", b),
-        F("last_run", "DATE"),
-        F("updated_at", "DATE"),
+        F(
+            "artifact_id",
+            s,
+            description="project.dataset.table for bigquery-etl tables and views; otherwise "
+            "prefixed by source, as in redash:query:<id>, looker:dashboard:<id>, "
+            "looker:explore:<model>.<explore>, glam:<product>:<probe>, "
+            "metric-hub:<platform>.<metric>, opmon:<slug>, jetstream:<slug> or adhoc:<account>",
+        ),
+        F(
+            "kind",
+            s,
+            description="bqetl_table, bqetl_view, glean_ping_view, redash_query, "
+            "redash_dashboard, looker_dashboard, looker_look, looker_explore, glam_metric, "
+            "metric_hub_metric, opmon_project, jetstream_experiment, person or service_account",
+        ),
+        F("name", s, description="Title, dataset.table, slug or account, by kind"),
+        F("url", s, description="Where to see it: the code, the dashboard or the experiment"),
+        F("owners", s, mode=rep, description="Owner emails, or the account itself for ad hoc"),
+        F(
+            "friendly_name",
+            s,
+            description="bigquery-etl's friendly_name, metric-hub's, or an experiment's app "
+            "and dates",
+        ),
+        F(
+            "generated_by",
+            s,
+            description="For a bigquery-etl artifact, the bqetl generator that wrote it",
+        ),
+        F(
+            "note",
+            s,
+            description="How its SQL was read (ok, partial: N scopes unread, resolve failed, "
+            "or the fallback used), or a short note on the artifact",
+        ),
+        F("n_metrics_named", i, description="Metrics it names"),
+        F("n_metrics_total", i, description="Metrics it names or carries in bulk"),
+        F("is_draft", b, description="For Redash, the query or dashboard is a draft"),
+        F(
+            "is_scheduled",
+            b,
+            description="Runs on a schedule: a Redash refresh, a Looker schedule, or an "
+            "Airflow write to a bigquery-etl table",
+        ),
+        F("last_run", "DATE", description="Last day it ran or was written"),
+        F("updated_at", "DATE", description="For a Redash query, the last day it was edited"),
         F(
             "last_used",
             "DATE",
@@ -785,7 +920,7 @@ def artifact_schema():
                 F(
                     f"views_{w}d",
                     i,
-                    description=f"Views, runs or jobs in the {w} days ending on " "the window end",
+                    description=f"Views, runs or jobs in the {w} days ending on the window end",
                 ),
                 F(f"users_{w}d", i, description=f"Distinct people or accounts behind views_{w}d"),
             )
@@ -797,11 +932,14 @@ def artifact_schema():
 
 
 def union_views():
-    """refs and artifacts views over every refs_* and artifacts_* table.
+    """refs and artifacts views over every refs_* and artifacts_* table, for a
+    working copy; bigquery-etl defines them in its dataset.
 
     A column added to a schema is null for the sources not rebuilt since, so
     adding one does not mean rebuilding every source first.
     """
+    if MANAGED:
+        return
     columns = collections.defaultdict(set)
     for r in client().query(f"""
 SELECT table_name, column_name FROM `{DEST}`.INFORMATION_SCHEMA.COLUMNS
@@ -813,9 +951,9 @@ WHERE table_name IN (
 """).result():
         columns[r["table_name"]].add(r["column_name"])
     for kind, fields in (("refs", ref_schema()), ("artifacts", artifact_schema())):
-        # exactly refs_<source> / artifacts_<source>, so a scratch copy such
-        # as refs_bqetl_prev is not read
-        parts = sorted(t for t in columns if re.fullmatch(rf"{PREFIX}{kind}_[a-z0-9]+", t))
+        # exactly refs_<source>_v1 / artifacts_<source>_v1, so a scratch copy
+        # such as refs_bqetl_prev_v1 is not read
+        parts = sorted(t for t in columns if re.fullmatch(rf"{PREFIX}{kind}_[a-z0-9]+_v1", t))
         if not parts:
             continue
 
@@ -829,5 +967,5 @@ WHERE table_name IN (
             f"SELECT {', '.join(col(f, columns[t]) for f in fields)} FROM `{DEST}.{t}`"
             for t in parts
         )
-        client().query(f"CREATE OR REPLACE VIEW `{DEST}.{PREFIX}{kind}` AS\n{body}").result()
-        log(f"  view {DEST}.{PREFIX}{kind} over {', '.join(parts)}")
+        client().query(f"CREATE OR REPLACE VIEW `{dest_table(kind)}` AS\n{body}").result()
+        log(f"  view {dest_table(kind)} over {', '.join(parts)}")

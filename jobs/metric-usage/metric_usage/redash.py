@@ -468,7 +468,7 @@ def main():
     if args.dry_run:
         return
     suffix = (
-        "Prototype table maintained by the docker-etl metric-usage job, metric_usage/redash.py; "
+        "Maintained by the docker-etl metric-usage job, metric_usage/redash.py; "
         "replaced on each run."
     )
     write_table(

@@ -491,25 +491,48 @@ def schema():
                 "Glean Dictionary app name, or 'telemetry' for legacy probes and environment fields"
             ),
         ),
-        F("app_label", s),
+        F("app_label", s, description="App name for display, from probeinfo"),
         F("app_deprecated", b, description="Every channel of the app is deprecated"),
         F("source", s, description="glean or legacy"),
         F("metric", s, description="Metric name as defined: browser.engagement.tab_open, GC_MS"),
         F("origin", s, description="App or library that defines the metric"),
-        F("type", s),
-        F("description", s),
-        F("owners", s, mode=rep),
-        F("expires", s),
+        F(
+            "type",
+            s,
+            description="Glean metric type, legacy probe kind (histogram, scalar, event, with "
+            "_keyed when keyed), or environment",
+        ),
+        F("description", s, description="The definition's description"),
+        F("owners", s, mode=rep, description="Notification emails from the definition"),
+        F(
+            "expires",
+            s,
+            description="Expiry as defined: a date, a version, never, expired, or null",
+        ),
         F(
             "in_source",
             b,
             description="Still in the code; null for environment fields, where it is not known",
         ),
-        F("first_seen", "DATE"),
-        F("last_change", "DATE"),
-        F("send_in_pings", s, mode=rep),
-        F("tags", s, mode=rep),
-        F("data_sensitivity", s, mode=rep),
+        F(
+            "first_seen",
+            "DATE",
+            description="First day probeinfo saw the definition; for a legacy probe, when it "
+            "was added to Nightly",
+        ),
+        F(
+            "last_change",
+            "DATE",
+            description="Last day the Glean definition changed; null for legacy",
+        ),
+        F("send_in_pings", s, mode=rep, description="Pings a Glean metric is sent in"),
+        F("tags", s, mode=rep, description="Glean metadata tags"),
+        F(
+            "data_sensitivity",
+            s,
+            mode=rep,
+            description="Glean data sensitivity categories",
+        ),
         F(
             "column_leaf",
             s,
@@ -520,14 +543,17 @@ def schema():
             "columns",
             "RECORD",
             mode=rep,
-            fields=[F("table", s), F("path", s)],
+            fields=[
+                F("table", s, description="dataset.table of a stable table"),
+                F("path", s, description="Dotted path of the field in that table"),
+            ],
             description=(
                 "Stable-table fields holding the metric, table as dataset.table in "
                 "moz-fx-data-shared-prod"
             ),
         ),
-        F("event_category", s),
-        F("event_name", s),
+        F("event_category", s, description="For an event, its category"),
+        F("event_name", s, description="For an event, its name within the category"),
         F(
             "event_methods",
             s,
@@ -547,7 +573,7 @@ def schema():
             mode=rep,
             description="For a legacy probe, app:metric of its Glean mirrors",
         ),
-        F("dictionary_url", s),
+        F("dictionary_url", s, description="The metric's Glean Dictionary page"),
     ]
 
 
@@ -555,7 +581,7 @@ DESCRIPTION = (
     "Every Glean metric and legacy telemetry probe, one row per (app, metric), from "
     "probeinfo, with the stable-table fields that hold each one resolved against "
     "INFORMATION_SCHEMA.COLUMN_FIELD_PATHS. Library metrics are listed under every "
-    "app that depends on the library. Prototype table maintained by "
+    "app that depends on the library. Maintained by "
     "the docker-etl metric-usage job, metric_usage/inventory.py; replaced on each run."
 )
 

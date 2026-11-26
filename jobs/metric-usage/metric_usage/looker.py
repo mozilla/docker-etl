@@ -39,13 +39,12 @@ import time
 
 from .common import (
     CACHE,
-    DEST,
     LONGEST,
-    PREFIX,
     WINDOWS,
     ResolveTimeout,
     artifact_schema,
     client,
+    dest_table,
     log,
     pool_map,
     read_cache,
@@ -703,7 +702,7 @@ def snapshot():
     reused while the metrics and carries tables are the ones they were made with."""
     return "|".join(
         [str(RESOLVED_VERSION)]
-        + [str(client().get_table(f"{DEST}.{PREFIX}{t}").modified) for t in ("metrics", "carries")]
+        + [str(client().get_table(dest_table(t)).modified) for t in ("metrics", "carries")]
     )
 
 
@@ -1259,7 +1258,7 @@ def main():
         return
     refs, arts = result
     suffix = (
-        "Prototype table maintained by the docker-etl metric-usage job, metric_usage/looker.py; "
+        "Maintained by the docker-etl metric-usage job, metric_usage/looker.py; "
         "replaced on each run."
     )
     write_table(

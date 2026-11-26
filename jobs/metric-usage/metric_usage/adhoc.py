@@ -74,9 +74,7 @@ import sys
 import time
 
 from .common import (
-    DEST,
     LONGEST,
-    PREFIX,
     WINDOWS,
     ResolvedStore,
     ResolveTimeout,
@@ -84,6 +82,7 @@ from .common import (
     artifact_schema,
     client,
     days_within,
+    dest_table,
     log,
     pool_map,
     query,
@@ -447,17 +446,22 @@ def history_schema():
     from google.cloud.bigquery import SchemaField as F
 
     return [
-        F("day", "DATE"),
-        F("project", "STRING"),
+        F("day", "DATE", description="Day the jobs ran, UTC"),
+        F("project", "STRING", description="Project whose JOBS_BY_PROJECT listed them"),
         F(
             "key",
             "STRING",
             description="Query key (KEY_SQL); null marks a day captured "
             "with no jobs, so it is not fetched again",
         ),
-        F("account", "STRING"),
-        F("wrote", "STRING"),
-        F("jobs", "INT64"),
+        F("account", "STRING", description="Account that ran them, lowercased"),
+        F(
+            "wrote",
+            "STRING",
+            description="Destination table, project.dataset.table, unless it was an "
+            "anonymous results table",
+        ),
+        F("jobs", "INT64", description="Jobs with this key, account and destination that day"),
     ]
 
 
@@ -478,7 +482,7 @@ def capture(projects, known, save):
     first, last = available(window_end())
     have = collections.defaultdict(set)
     for r in read_history(
-        f"SELECT DISTINCT project, day FROM `{DEST}.{PREFIX}{HISTORY}` " f"WHERE day >= '{first}'"
+        f"SELECT DISTINCT project, day FROM `{dest_table(HISTORY)}` " f"WHERE day >= '{first}'"
     ):
         have[r["project"]].add(r["day"])
     days = [first + datetime.timedelta(days=i) for i in range((last - first).days + 1)]
@@ -523,7 +527,7 @@ def capture(projects, known, save):
             new,
             history_schema(),
             "Ad hoc BigQuery jobs per (day, project, query key, account), kept "
-            f"{LONGEST} days; no query text. Prototype table maintained by the docker-etl "
+            f"{LONGEST} days; no query text. Maintained by the docker-etl "
             "metric-usage job, metric_usage/adhoc.py.",
             partition="day",
             keep_days=LONGEST + 1,
@@ -548,16 +552,16 @@ def job_rows(projects, start, end, save=False):
     bqetl = {
         r["artifact_id"]
         for r in query(
-            f"SELECT artifact_id FROM `{DEST}.{PREFIX}artifacts_bqetl` WHERE kind = 'bqetl_table'",
+            f"SELECT artifact_id FROM `{dest_table('artifacts_bqetl')}` WHERE kind = 'bqetl_table'",
             name="bqetl tables",
             tables=["artifacts_bqetl"],
         )
     }
     listed = ", ".join(f"'{p}'" for p in projects)
     rows = [dict(r, day=r["day"].isoformat()) for r in read_history(f"""
-SELECT day, project, key, account, wrote, jobs FROM `{DEST}.{PREFIX}{HISTORY}`
+SELECT day, project, key, account, wrote, jobs FROM `{dest_table(HISTORY)}`
 WHERE key IS NOT NULL AND day BETWEEN '{start}' AND '{end}' AND project IN ({listed})""")]
-    log(f"  {len(rows):,} job rows held in {PREFIX}{HISTORY}")
+    log(f"  {len(rows):,} job rows held in {dest_table(HISTORY)}")
     rows += [
         r
         for r in capture(projects, known, save)
@@ -748,7 +752,7 @@ def main():
     if args.dry_run:
         return
     suffix = (
-        "Prototype table maintained by the docker-etl metric-usage job, metric_usage/adhoc.py; "
+        "Maintained by the docker-etl metric-usage job, metric_usage/adhoc.py; "
         "replaced on each run."
     )
     write_table(

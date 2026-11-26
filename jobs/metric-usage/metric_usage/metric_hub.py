@@ -50,13 +50,12 @@ from jinja2.sandbox import SandboxedEnvironment
 
 from .common import (
     CACHE,
-    DEST,
     DISK_CACHE,
     LONGEST,
-    PREFIX,
     WINDOWS,
     artifact_schema,
     client,
+    dest_table,
     log,
     query,
     read_cache,
@@ -206,7 +205,7 @@ def contexts_for(hub, platform, *first):
 def snapshot():
     return "|".join(
         [str(RESOLVED_VERSION)]
-        + [str(client().get_table(f"{DEST}.{PREFIX}{t}").modified) for t in ("metrics", "carries")]
+        + [str(client().get_table(dest_table(t)).modified) for t in ("metrics", "carries")]
     )
 
 
@@ -647,7 +646,7 @@ def main():
     if args.dry_run:
         return
     suffix = (
-        "Prototype table maintained by the docker-etl metric-usage job, "
+        "Maintained by the docker-etl metric-usage job, "
         "metric_usage/metric_hub.py; replaced on each run."
     )
     write_table(

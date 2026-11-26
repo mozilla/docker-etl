@@ -2,8 +2,8 @@
 
     python -m metric_usage.summary
 
-Writes mozdata.analysis.benwu_metrics_usage_summary, one row per (window, app,
-metric): the search index and the numbers behind each metric's one-line verdict.
+Writes summary_v1, one row per (window, app, metric): the search index and
+the numbers behind each metric's one-line verdict.
 Run it after the source scripts, since it reads the refs and artifacts views
 over them. A ref counts toward a window when it holds in every window
 (seen_within is null) or was seen within it.
@@ -11,13 +11,13 @@ over them. A ref counts toward a window when it holds in every window
 The page loads one window's 68k rows once for search, so the row is kept
 narrow; anything per-reference is fetched when a metric is opened.
 
-Also writes benwu_metrics_usage_definitions, a row per (window, metric
-definition) for the home page's list of metrics with little or no use; see
-DEFINITIONS_SQL. And benwu_metrics_usage_windows, a row per window with its
-first and last day, which the page reads for its window list and for what "not
-written in the window" means, and the first day of the ad hoc job history. The
-sources each end their windows yesterday, so this holds when they ran on the
-same day as this script, as run_all.sh does.
+Also writes definitions_v1, a row per (window, metric definition) for the home
+page's list of metrics with little or no use; see DEFINITIONS_SQL. And
+windows_v1, a row per window with its first and last day, which the page reads
+for its window list and for what "not written in the window" means, and the
+first day of the ad hoc job history. The sources each end their windows
+yesterday, so this holds when they ran on the same day as this script, as
+run_all.sh does.
 
 Both tables carry each metric's size, from monitoring_derived.column_size_v1:
 the bytes its columns hold in a day's partition, as a dry run of a query
@@ -35,7 +35,8 @@ both are among the definitions of the same origin, so a gecko metric is placed
 among gecko's metrics rather than among one app's.
 """
 
-from .common import DEST, LONGEST, PREFIX, WINDOWS, client, log, window_end, window_start
+from . import inventory
+from .common import LONGEST, WINDOWS, dest_table, window_end, window_start, write_query
 
 COLUMN_SIZE = "moz-fx-data-shared-prod.monitoring_derived.column_size_v1"
 # a week, so a metric sent mostly on weekdays is not judged by a Sunday
@@ -48,7 +49,7 @@ sizes AS (
     m.app,
     m.metric,
     CAST(ROUND(SUM(s.bytes)) AS INT64) AS bytes_per_day,
-  FROM `{DEST}.{PREFIX}metrics` AS m
+  FROM `{dest_table('metrics')}` AS m
   CROSS JOIN UNNEST(m.columns) AS c
   JOIN (
     -- a column missing on some days (new, or a ping not sent every day) is
@@ -82,33 +83,29 @@ def size_rank(table, keys, within):
   WHERE bytes_per_day > 0"""
 
 
-WINDOWS_SQL = f"""
-CREATE OR REPLACE TABLE `{DEST}.{PREFIX}windows`
-OPTIONS (
-  description = "The windows of use the metric usage app offers, in days, each ending on "
-    || "end_date. adhoc_start_date is the first day of BigQuery job history kept, "
-    || "so ad hoc use in a window starting before it covers only the days since. "
-    || "Prototype table maintained by the docker-etl metric-usage job, "
-    || "metric_usage/summary.py; replaced on each run."
+SUFFIX = (
+    "Maintained by the docker-etl metric-usage job, metric_usage/summary.py; replaced on each run."
 )
-AS
+
+WINDOWS_DESCRIPTION = (
+    "The windows of use the metric usage app offers, in days, each ending on end_date. "
+    "adhoc_start_date is the first day of BigQuery job history kept, so ad hoc use in a "
+    "window starting before it covers only the days since. " + SUFFIX
+)
+WINDOWS_SQL = f"""
 SELECT w.*, h.adhoc_start_date
 FROM UNNEST([
   {", ".join(f"STRUCT({w} AS days, DATE '{window_start(w, window_end())}' AS start_date, "
              f"DATE '{window_end()}' AS end_date)" for w in WINDOWS)}
 ]) AS w
-CROSS JOIN (SELECT MIN(day) AS adhoc_start_date FROM `{DEST}.{PREFIX}adhoc_jobs`) AS h
+CROSS JOIN (SELECT MIN(day) AS adhoc_start_date FROM `{dest_table('adhoc_jobs')}`) AS h
 """
 
-SQL = f"""
-CREATE OR REPLACE TABLE `{DEST}.{PREFIX}summary`
-CLUSTER BY window_days, app, metric
-OPTIONS (
-  description = "Per (window, app, metric) reference counts for the metric usage app's search "
-    || "and verdict line; filter on window_days. Prototype table maintained by "
-    || "the docker-etl metric-usage job, metric_usage/summary.py; replaced on each run."
+DESCRIPTION = (
+    "Per (window, app, metric) reference counts for the metric usage app's search and "
+    "verdict line; filter on window_days. " + SUFFIX
 )
-AS
+SQL = f"""
 WITH {SIZES},
 size_ranks AS ({size_rank("sizes", "app, metric", "app")}
 ),
@@ -124,8 +121,8 @@ refs AS (
     a.generated_by,
     a.parent_ids,
     a.last_run,
-  FROM `{DEST}.{PREFIX}refs` AS r
-  LEFT JOIN `{DEST}.{PREFIX}artifacts` AS a USING (artifact_id)
+  FROM `{dest_table('refs')}` AS r
+  LEFT JOIN `{dest_table('artifacts')}` AS a USING (artifact_id)
   CROSS JOIN UNNEST([{", ".join(map(str, WINDOWS))}]) AS w
   WHERE r.seen_within IS NULL OR r.seen_within <= w
 ),
@@ -184,7 +181,7 @@ SELECT
   sz.bytes_per_day,
   sr.size_top_percent,
   sr.size_percent,
-FROM `{DEST}.{PREFIX}metrics` AS m
+FROM `{dest_table('metrics')}` AS m
 CROSS JOIN UNNEST([{", ".join(map(str, WINDOWS))}]) AS w
 LEFT JOIN counts AS c ON c.window_days = w AND c.app = m.app AND c.metric = m.metric
 LEFT JOIN sizes AS sz ON sz.app = m.app AND sz.metric = m.metric
@@ -217,24 +214,20 @@ LIBRARIES = ("glean-core", "glean-js", "glean-android")
 # Saved content naming it that would need fixing is counted apart, whether or
 # not it was used: bigquery-etl tables and hand-written views, Redash queries,
 # Looker dashboards and Looks, and metric-hub metrics.
-DEFINITIONS_SQL = f"""
-CREATE OR REPLACE TABLE `{DEST}.{PREFIX}definitions`
-CLUSTER BY window_days, origin
-OPTIONS (
-  description = "Per (window, metric definition) use, for the metric usage app's list of metrics "
-    || "with little or no use; filter on window_days. Prototype table maintained by "
-    || "the docker-etl metric-usage job, metric_usage/summary.py; replaced on each run."
+DEFINITIONS_DESCRIPTION = (
+    "Per (window, metric definition) use, for the metric usage app's list of metrics with "
+    "little or no use; filter on window_days. " + SUFFIX
 )
-AS
+DEFINITIONS_SQL = f"""
 WITH {SIZES},
 m AS (
   SELECT metrics.*, sizes.bytes_per_day,
     IF(source = 'legacy', 'telemetry', IFNULL(origin, app)) AS def_origin
-  FROM `{DEST}.{PREFIX}metrics` AS metrics
+  FROM `{dest_table('metrics')}` AS metrics
   LEFT JOIN sizes USING (app, metric)
 ),
 w AS (
-  SELECT days, start_date FROM `{DEST}.{PREFIX}windows`
+  SELECT days, start_date FROM `{dest_table('windows')}`
 ),
 r AS (
   SELECT
@@ -255,8 +248,8 @@ r AS (
       OR (r.artifact_kind = 'glam_metric' AND IFNULL({per_window("r.observed_days")}, 0) > 0)
       AS used,
     COALESCE(r.last_observed, a.last_used) AS last_day,
-  FROM `{DEST}.{PREFIX}refs` AS r
-  LEFT JOIN `{DEST}.{PREFIX}artifacts` AS a USING (artifact_id)
+  FROM `{dest_table('refs')}` AS r
+  LEFT JOIN `{dest_table('artifacts')}` AS a USING (artifact_id)
   CROSS JOIN w
   WHERE r.seen_within IS NULL OR r.seen_within <= w.days
 ),
@@ -370,13 +363,102 @@ LEFT JOIN def_ranks AS dr ON dr.origin = d.origin AND dr.metric = d.metric
 """
 
 
+# columns taken as they are from metrics keep its descriptions
+METRIC_COLUMNS = {f.name: f.description for f in inventory.schema()}
+WINDOW_DAYS = (
+    "The window in days, ending on windows.end_date; a ref counts when it holds in "
+    "every window or was seen within this one. Filter on it."
+)
+SIZE = (
+    f"Bytes its columns hold in a day, summed over the tables that have them and "
+    f"averaged over the last {SIZE_DAYS} days, from monitoring_derived.column_size_v1; "
+    "null for events and metrics with no data"
+)
+
+WINDOWS_COLUMNS = {
+    "days": "Length of the window in days",
+    "start_date": "First day of the window",
+    "end_date": "Last day of the window, the day before the job ran",
+    "adhoc_start_date": "First day of BigQuery job history kept; ad hoc use before it is "
+    "not counted",
+}
+
+COLUMNS = {
+    "window_days": WINDOW_DAYS,
+    "app": METRIC_COLUMNS["app"],
+    "metric": METRIC_COLUMNS["metric"],
+    "type": METRIC_COLUMNS["type"],
+    "source": METRIC_COLUMNS["source"],
+    "column_status": METRIC_COLUMNS["column_status"],
+    "in_source": METRIC_COLUMNS["in_source"],
+    "app_deprecated": METRIC_COLUMNS["app_deprecated"],
+    "n_tables": "bigquery-etl tables whose SQL names it",
+    "n_views": "bigquery-etl views naming it, other than the generated ping views",
+    "n_bulk": "bigquery-etl tables and views carrying it without naming it, through a star "
+    "or a whole struct",
+    "n_dashboards": "Redash dashboards, not drafts, with a query using it",
+    "n_redash_kept": "Saved Redash queries using it that are on a dashboard or refreshed on "
+    "a schedule",
+    "n_redash_all": "Saved Redash queries using it",
+    "last_redash_run": "Last run of any of those Redash queries",
+    "n_looker": "Looker dashboards, Looks and explores naming it",
+    "n_people": "People whose ad hoc BigQuery queries used it",
+    "n_service_accounts": "Service accounts whose BigQuery queries used it",
+    "n_experiments": "Jetstream experiments whose metric-hub config chose it",
+    "n_experiments_default": "Jetstream experiments computing it only through the platform's "
+    "default metrics",
+    "n_metric_hub": "metric-hub metric definitions naming it",
+    "n_opmon": "OpMon projects naming it",
+    "bytes_per_day": SIZE,
+    "size_top_percent": "Percent of the app's metrics with data that are at least as large; "
+    "1 is the top 1%",
+    "size_percent": "Its share of the combined size of the app's metrics with data, in percent",
+}
+
+DEFINITIONS_COLUMNS = {
+    "window_days": WINDOW_DAYS,
+    "origin": "App or library that defines the metric; telemetry for legacy probes",
+    "metric": "Metric name as defined",
+    "app": "The copy the list links to: the defining app's, else firefox_desktop's, else any",
+    "apps": "Apps with a live copy of it",
+    "source": METRIC_COLUMNS["source"],
+    "type": METRIC_COLUMNS["type"],
+    "owners": METRIC_COLUMNS["owners"],
+    "expires": METRIC_COLUMNS["expires"],
+    "first_seen": "Earliest first_seen of its copies",
+    "telemetry_mirror": METRIC_COLUMNS["telemetry_mirror"],
+    "bytes_per_day": "Bytes per day of every live copy; see summary.bytes_per_day",
+    "expired": "expires is a date before today",
+    "is_new": "First seen within the window",
+    "is_library": f"Defined by a Glean SDK library ({', '.join(LIBRARIES)})",
+    "n_consumers": "People, service accounts, experiments, OpMon projects, Looker content, "
+    "Redash queries and GLAM pages that used it in the window, through any copy or its "
+    "legacy mirror",
+    "consumers": "Up to five consumers, most days first, each tab-separated: kind, artifact "
+    "id, name, days in the window, and m when the use is through the legacy mirror",
+    "last_used": f"Last day of use in the {LONGEST} days",
+    "n_tables": "bigquery-etl tables naming it, which would need fixing if it were removed",
+    "n_views": "Hand-written bigquery-etl views naming it",
+    "n_redash": "Saved Redash queries naming it",
+    "n_looker": "Looker dashboards and Looks naming it",
+    "n_metric_hub": "metric-hub metric definitions naming it",
+    "size_top_percent": "Percent of the origin's definitions with data that are at least as "
+    "large; 1 is the top 1%",
+    "size_percent": "Its share of the combined size of the origin's definitions with data, "
+    "in percent",
+}
+
+
 def main():
-    client().query(WINDOWS_SQL).result()
-    client().query(SQL).result()
-    client().query(DEFINITIONS_SQL).result()
-    for name in ("summary", "definitions"):
-        t = client().get_table(f"{DEST}.{PREFIX}{name}")
-        log(f"  wrote {DEST}.{PREFIX}{name}: {t.num_rows:,} rows")
+    write_query("windows", WINDOWS_SQL, WINDOWS_DESCRIPTION, WINDOWS_COLUMNS)
+    write_query("summary", SQL, DESCRIPTION, COLUMNS, clustering=["window_days", "app", "metric"])
+    write_query(
+        "definitions",
+        DEFINITIONS_SQL,
+        DEFINITIONS_DESCRIPTION,
+        DEFINITIONS_COLUMNS,
+        clustering=["window_days", "origin"],
+    )
 
 
 if __name__ == "__main__":

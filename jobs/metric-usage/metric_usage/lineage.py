@@ -79,10 +79,9 @@ from sqlglot.optimizer.scope import ScopeType, build_scope
 
 from .common import (
     CACHE,
-    DEST,
-    PREFIX,
     PROBEINFO,
     artifact_schema,
+    dest_table,
     get_json,
     get_json_if_found,
     log,
@@ -1728,7 +1727,7 @@ def shapes_from_tables():
     inventory = query(
         f"SELECT app, metric, source, type, columns, event_category, event_name, "
         f"event_methods, event_objects "
-        f"FROM `{DEST}.{PREFIX}metrics` ORDER BY app, metric",
+        f"FROM `{dest_table('metrics')}` ORDER BY app, metric",
         tables=["metrics"],
         name="inventory",
     )
@@ -1738,7 +1737,7 @@ def shapes_from_tables():
         for kind, name in IDENTITY_METRIC.items():
             mid[(app, name)] = ("ident", app, kind)
     rows = query(
-        f"SELECT `table`, path, app, metric, hops, named " f"FROM `{DEST}.{PREFIX}carries`",
+        f"SELECT `table`, path, app, metric, hops, named " f"FROM `{dest_table('carries')}`",
         tables=["carries"],
         name="carries",
     )
@@ -2168,7 +2167,7 @@ def run(only=None, show=0):
         f"""
 SELECT app, metric, source, type, columns, event_category, event_name,
   event_methods, event_objects
-FROM `{DEST}.{PREFIX}metrics`
+FROM `{dest_table('metrics')}`
 ORDER BY app, metric
 """,
         tables=["metrics"],
@@ -2434,9 +2433,35 @@ ORDER BY app, metric
 
 
 SUFFIX = (
-    "Prototype table maintained by the docker-etl metric-usage job, metric_usage/lineage.py "
+    "Maintained by the docker-etl metric-usage job, metric_usage/lineage.py "
     "from the generated-sql branch; replaced on each run."
 )
+
+
+def carries_schema():
+    from google.cloud.bigquery import SchemaField as F
+
+    s, b = "STRING", "BOOL"
+    return [
+        F("table", s, description="bigquery-etl table or view, project.dataset.table"),
+        F("path", s, description="Dotted path of the column carrying the metric"),
+        F("app", s, description="App of the metric, as in metrics"),
+        F("metric", s, description="Metric name, as in metrics"),
+        F("hops", "INT64", description="Tables between the stable table and this one, plus one"),
+        F(
+            "transformed",
+            b,
+            description="The value was computed from, cast or aggregated on the way here "
+            "rather than copied as it is",
+        ),
+        F(
+            "named",
+            b,
+            description="The SQL names the metric, rather than carrying it through a star "
+            "or a whole struct",
+        ),
+        F("via", s, description="table:column it was read from at the previous hop"),
+    ]
 
 
 def main():
@@ -2453,22 +2478,10 @@ def main():
     if args.dry_run:
         return
     runs.add_runs(arts)
-    from google.cloud.bigquery import SchemaField as F
-
-    cs = [
-        F("table", "STRING"),
-        F("path", "STRING"),
-        F("app", "STRING"),
-        F("metric", "STRING"),
-        F("hops", "INT64"),
-        F("transformed", "BOOL"),
-        F("named", "BOOL"),
-        F("via", "STRING"),
-    ]
     write_table(
         "carries",
         carries,
-        cs,
+        carries_schema(),
         "Which columns of which warehouse tables carry each metric, with "
         "hops from the stable table. " + SUFFIX,
         clustering=["app", "metric"],

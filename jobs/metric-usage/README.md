@@ -32,11 +32,19 @@ partitions from `adhoc_jobs` and rerun `adhoc`.
 
 ## Tables
 
-All are written to `mozdata.analysis` with the prefix `benwu_metrics_usage_`
-(see [Settings](#settings)). Each step replaces its tables on every run, except
-`adhoc_jobs`, which is appended to. These tables are temporary and will move to a
-bigquery-etl dataset later. Until then they expire 180 days after they are
-created (the analysis dataset's default), however often they are rewritten.
+All are written to `moz-fx-data-shared-prod.metric_usage_tracking_derived`, each
+name with the suffix `_v1` (see [Settings](#settings)). Each step replaces its
+tables on every run, except `adhoc_jobs`, which is appended to.
+
+The tables are defined in bigquery-etl, with a `metadata.yaml` and `schema.yaml`
+each and no query. bigquery-etl does not create or alter such a table, so the job
+creates each one on its first run and its schemas (`ref_schema()` and the others)
+are the ones that hold. A change to a schema here needs the same change to the
+table's `schema.yaml` there. The `refs_v1` and `artifacts_v1` views over the
+sources' tables are bigquery-etl views too, and a new source has to be added to
+them and to `SOURCES`. The page reads the user-facing views over these tables in
+`mozdata.metric_usage_tracking`. bigquery-etl sets each table's description from
+its `metadata.yaml`, so the job sets descriptions only in other datasets.
 
 | Table                                          | One row per                                                     |
 |------------------------------------------------|-----------------------------------------------------------------|
@@ -94,12 +102,17 @@ access to its dataset. The Looker API key is read from the system keyring as
 
 ### Settings
 
-| Env Variable           | Default                | Meaning                                                                                       |
-|------------------------|------------------------|-----------------------------------------------------------------------------------------------|
-| `METRIC_USAGE_DATASET` | `mozdata.analysis`     | `project.dataset` the tables are written to                                                   |
-| `METRIC_USAGE_PREFIX`  | `benwu_metrics_usage_` | Table name prefix, for a working copy; in `mozdata.analysis` it has to start with the default |
-| `METRIC_USAGE_CACHE`   | `1` (`0` in the image) | `0` keeps the cache in memory instead of under `.cache`                                       |
-| `METRIC_USAGE_WORKERS` | usable CPUs            | Worker processes that parse queries; by default the CPUs within any cgroup CPU limit          |
+| Env Variable           | Default                                                 | Meaning                                                                                                                |
+|------------------------|---------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------|
+| `METRIC_USAGE_DATASET` | `moz-fx-data-shared-prod.metric_usage_tracking_derived` | `project.dataset` the tables are written to                                                                            |
+| `METRIC_USAGE_PREFIX`  | empty                                                   | Table name prefix, for a working copy; empty in the default dataset, and starting with `benwu_metrics_usage_` in `mozdata.analysis` |
+| `METRIC_USAGE_CACHE`   | `1` (`0` in the image)                                  | `0` keeps the cache in memory instead of under `.cache`                                                                |
+| `METRIC_USAGE_WORKERS` | usable CPUs                                             | Worker processes that parse queries; by default the CPUs within any cgroup CPU limit                                   |
+
+A working copy, such as `METRIC_USAGE_DATASET=mozdata.analysis
+METRIC_USAGE_PREFIX=benwu_metrics_usage_mybranch_`, gets its own `refs_v1` and
+`artifacts_v1` views from the job, and its tables expire 180 days after they are
+created (the analysis dataset's default), however often they are rewritten.
 
 ### When a source fails
 
