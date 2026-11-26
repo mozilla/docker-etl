@@ -69,8 +69,6 @@ PIPELINE_VERSION = "poc-1"
 # shapes to expect.
 SCHEMA_VERSION = importlib.metadata.version("mozilla-nimbus-schemas")
 
-SETTLED_STATES = {HighwindCellState.FORMING, HighwindCellState.CONFIDENT}
-
 # What every log row is attributed to. Jetstream's log handler carries the same column so one table
 # can hold several producers' logs, and it is kept here for the same reason the column names below
 # are: adopting that handler in place of this one should be a swap rather than a migration.
@@ -589,33 +587,26 @@ def build_metric(experiment, as_of, metric, results_by_cell, cells, segment_name
 
 
 def build_segment_result(experiment, as_of, metric, results_by_cell, cells, segment):
-    rows = []
+    windows = []
     for window in discovery.reported_windows(metric, experiment, as_of):
         comparisons = build_comparisons(
             experiment, as_of, metric, window, results_by_cell, cells, segment
         )
         branches = build_branches(experiment, metric, window, cells, comparisons, segment)
-        rows.append((window, branches, comparisons))
-    summary = summary_position(metric, rows)
-    return HighwindSegmentResult(
-        segment=segment,
-        windows=[
+        windows.append(
             build_window_result(
-                experiment, metric, window, branches, comparisons, cells, segment,
-                position == summary,
+                experiment, metric, window, branches, comparisons, cells, segment
             )
-            for position, (window, branches, comparisons) in enumerate(rows)
-        ],
-    )
+        )
+    return HighwindSegmentResult(segment=segment, windows=windows)
 
 
-def build_window_result(
-    experiment, metric, window, branches, comparisons, cells, segment, is_summary
-):
+def build_window_result(experiment, metric, window, branches, comparisons, cells, segment):
     winsorize = winsorize_cell(experiment, metric, window, cells, segment) or {}
     return HighwindWindowResult(
         window=schema_window(experiment, window),
-        is_summary=is_summary,
+        # Required by the schema; always False.
+        is_summary=False,
         branches=branches,
         comparisons=comparisons,
         winsorize_mode=winsorize_mode_schema(winsorize.get("winsorize_mode")),
@@ -655,20 +646,6 @@ def winsorize_mode_schema(mode):
         return WINSORIZE_MODE_BY_JOB_VALUE[mode]
     except KeyError:
         raise ValueError(f"unknown winsorize mode {mode!r}") from None
-
-
-def summary_position(metric, rows):
-    settled = [
-        position
-        for position, (_, _, comparisons) in enumerate(rows)
-        if any(comparison.state in SETTLED_STATES for comparison in comparisons)
-    ]
-    cumulative = [position for position in settled if rows[position][0].kind == "cumulative"]
-    only_disjoint = all(rule["kind"] == "disjoint" for rule in metric.window_rules)
-    candidates = cumulative or (settled if only_disjoint else [])
-    if candidates:
-        return max(candidates, key=lambda position: rows[position][0].end)
-    return min(range(len(rows)), key=lambda position: rows[position][0].end, default=None)
 
 
 def build_branches(experiment, metric, window, cells, comparisons, segment):
