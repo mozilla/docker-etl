@@ -3,3 +3,4 @@
 
 jobs/broken-site-report-ml @mozilla/webcompat
 jobs/webcompat-kb @mozilla/webcompat
+jobs/highwind @mozilla/dataplatform-wg @mozilla/project-nimbus
