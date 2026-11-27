@@ -22,17 +22,10 @@ whole run (see `sql_generation.bucket_length`).
 from dataclasses import dataclass
 from enum import Enum
 
-import attr
-from metric_config_parser.aggregation import Aggregation
 from metric_config_parser.aggregation_plan import aggregation_plan
 from metric_config_parser.config import ConfigCollection
 
 APP_NAME = "firefox_desktop"
-
-# The metric-hub aggregations whose per-unit value is always 0 or 1. `threshold` turns any
-# aggregation into one of these too (see `_is_yes_no_aggregation`), so this set alone is not the
-# whole test.
-YES_NO_AGGREGATIONS = frozenset({Aggregation.ANY, Aggregation.RECENCY_WITHIN})
 
 CUMULATIVE = "cumulative"
 DISJOINT = "disjoint"
@@ -102,22 +95,21 @@ class Metric:
             `friendly_name`. Defaults to None.
         winsorize_quantile (float, optional): The upper-tail quantile (cut point) of the
             reference branch's distribution to clip at, e.g. 0.995 keeps everything at or below
-            the reference branch's own 99.5th percentile. Metric-hub's `nimbus/` metric
-            definitions and metric-config-parser's `AggregationMetric`
-            (`metric_config_parser/aggregation_plan.py`) carry this field once EXP-8004 ships it;
-            see `_winsorize_fields` below for how a metric resolved against today's parser, which
-            has neither field, reads as explicitly off rather than unset. Defaults to None here,
-            meaning "not set" on a `Metric` built directly. A metric sets at most one of
-            `winsorize_quantile` and `winsorize_threshold` (setting both is a `winsorize_mode`
-            `ValueError`); there is no separate mode field, since `winsorize_mode` infers
-            quantile, fixed or off entirely from which one (if either) is set.
+            the reference branch's own 99.5th percentile. Read straight off metric-hub's
+            `nimbus/` metric definitions through metric-config-parser's `AggregationMetric`
+            (`metric_config_parser/aggregation_plan.py`). Defaults to None here, meaning "not
+            set" on a `Metric` built directly, which `winsorize_mode` reads as the job's own
+            default (off). A metric sets at most one of `winsorize_quantile` and
+            `winsorize_threshold` (setting both is a `winsorize_mode` `ValueError`); there is no
+            separate mode field, since `winsorize_mode` infers quantile, fixed or off entirely
+            from which one (if either) is set.
         winsorize_threshold (float, optional): A fixed per-week value to clip at, the other half
-            of the same EXP-8004 field pair described above (see `winsorize_quantile`). Defaults
-            to None, meaning "not set".
-        is_yes_no (bool, optional): Whether this metric's per-unit value is always 0 or 1.
-            Resolved once, in `split_resolved_metrics`, from the metric-hub `MetricDefinition`'s
-            own `aggregation`/`threshold` fields (see `_is_yes_no_aggregation`) rather than read
-            again from the reducer wherever it is needed. Defaults to False.
+            of the same field pair described above (see `winsorize_quantile`). Defaults to None,
+            meaning "not set".
+        is_yes_no (bool, optional): Whether this metric's per-unit value is always 0 or 1. Read
+            straight off metric-config-parser's `AggregationMetric.is_binary`, resolved once in
+            `split_resolved_metrics` rather than read again from the reducer wherever it is
+            needed. Defaults to False.
     """
 
     name: str
@@ -200,56 +192,13 @@ def window_rules(aggregation_metric):
     return tuple(rules), None
 
 
-def _winsorize_fields(aggregation_metric):
-    """Read `winsorize_quantile`/`winsorize_threshold` off a plan metric.
-
-    Returns `winsorize_quantile = 1` (explicitly off) when the installed parser carries no
-    winsorization fields, since there is nothing on the plan to read. Checked through attrs' own
-    field registry rather than a direct read, which is what lets this function tell "the
-    installed parser has no such field" apart from "the field is set to None" without raising
-    `AttributeError` on today's `AggregationMetric`.
-    """
-    declared = attr.fields_dict(type(aggregation_metric))
-    if "winsorize_quantile" not in declared or "winsorize_threshold" not in declared:
-        return 1, None
-    return aggregation_metric.winsorize_quantile, aggregation_metric.winsorize_threshold
-
-
-def _is_yes_no_aggregation(metric_definition):
-    """Whether a metric-hub metric's per-unit value is always 0 or 1.
-
-    True for the `any` and `recency_within` aggregations, and for any aggregation a `threshold`
-    was applied to: metric_config_parser's `aggregation.py` (`aggregation_bucketed`) finalizes
-    all three the same way, through a `CAST` of a comparison. Read off `MetricDefinition`'s own
-    structured `aggregation` and `threshold` fields rather than off the rendered
-    `BucketedAggregation` SQL, so a metric whose finalize happens to contain a `CAST` for an
-    unrelated reason, such as EXP-8013's proposed `cast_as_int` (which would cast a plain sum,
-    not a comparison, to an integer), is never mistaken for one. `AggregationMetric`
-    (`metric_config_parser/aggregation_plan.py`) does not carry `aggregation`/`threshold`
-    forward itself, which is why `split_resolved_metrics` looks the `MetricDefinition` up
-    separately through `configs.get_nimbus_metric_definition` rather than reading them off the
-    plan.
-    """
-    return (
-        metric_definition.aggregation in YES_NO_AGGREGATIONS
-        or metric_definition.threshold is not None
-    )
-
-
-def split_resolved_metrics(plan, configs):
+def split_resolved_metrics(plan):
     """Split one run's plan into the metrics Highwind can compute and the ones it cannot, with why.
 
     A name fails to resolve two ways: no `nimbus/` definition at all (`plan.missing`), or a
     definition whose windows Highwind has no rule for (`window_rules` above). Both are reported by
     name and reason rather than raised, so neither one metric nor an unrelated experiment is lost
     over it.
-
-    `configs` is the same `ConfigCollection` the plan was built from, looked up again here for
-    each resolved name's own `MetricDefinition`, since the plan itself carries only the already
-    reduced `BucketedAggregation` and drops `aggregation`/`threshold` on the way. A name that
-    resolved through `aggregation_plan()` always has a `MetricDefinition` to find this way, so
-    the lookup failing would mean the two disagree about what resolved; treated as not yes/no
-    rather than raised, since nothing here depends on it being impossible.
     """
     resolved, unresolved = {}, {}
     for name in plan.missing:
@@ -259,17 +208,14 @@ def split_resolved_metrics(plan, configs):
         if rules is None:
             unresolved[name] = reason
             continue
-        winsorize_quantile, winsorize_threshold = _winsorize_fields(aggregation_metric)
-        metric_definition = configs.get_nimbus_metric_definition(name, APP_NAME)
-        is_yes_no = metric_definition is not None and _is_yes_no_aggregation(metric_definition)
         resolved[name] = Metric(
             name=name,
             source=aggregation_metric.data_source,
             reducer=aggregation_metric.aggregation,
             window_rules=rules,
-            winsorize_quantile=winsorize_quantile,
-            winsorize_threshold=winsorize_threshold,
-            is_yes_no=is_yes_no,
+            winsorize_quantile=aggregation_metric.winsorize_quantile,
+            winsorize_threshold=aggregation_metric.winsorize_threshold,
+            is_yes_no=aggregation_metric.is_binary,
         )
     return resolved, unresolved
 

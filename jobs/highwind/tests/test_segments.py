@@ -1,4 +1,4 @@
-"""Resolving a run's segment names against metric-hub's segment_plan(), and its dark fallback."""
+"""Resolving a run's segment names against metric-hub's segment_plan()."""
 
 from highwind import segments
 from highwind.discovery import Experiment, SegmentDisplay
@@ -39,25 +39,11 @@ class FakeSegmentMetric:
         self.select_expression = select_expression
 
 
-def test_a_parser_without_segment_plan_resolves_nothing_and_reports_every_name_unresolved(
-    monkeypatch,
-):
-    monkeypatch.setattr(segments, "_segment_plan", None)
+def test_build_segment_plan_resolves_nothing_when_no_names_are_requested(monkeypatch):
+    def fake_segment_plan(configs, app_name, names):
+        return FakePlan(sources={}, segments={}, missing=list(names))
 
-    sources, resolved, unresolved = segments.build_segment_plan(
-        configs=object(), segment_names=["regular_user", "new_profile"]
-    )
-
-    assert sources == {}
-    assert resolved == {}
-    assert unresolved == {
-        "regular_user": segments.NOT_AVAILABLE_REASON,
-        "new_profile": segments.NOT_AVAILABLE_REASON,
-    }
-
-
-def test_todays_pin_resolves_nothing_even_with_no_names_requested(monkeypatch):
-    monkeypatch.setattr(segments, "_segment_plan", None)
+    monkeypatch.setattr(segments, "segment_plan", fake_segment_plan)
 
     sources, resolved, unresolved = segments.build_segment_plan(object(), [])
 
@@ -85,7 +71,7 @@ def test_a_resolving_parser_builds_sources_and_segments_from_the_plan(monkeypatc
             missing=[],
         )
 
-    monkeypatch.setattr(segments, "_segment_plan", fake_segment_plan)
+    monkeypatch.setattr(segments, "segment_plan", fake_segment_plan)
 
     sources, resolved, unresolved = segments.build_segment_plan(
         configs=object(), segment_names=["regular_user", "new_profile", "regular_user"]
@@ -106,7 +92,7 @@ def test_an_inline_only_name_is_reported_missing_even_when_the_parser_resolves_o
     def fake_segment_plan(configs, app_name, names):
         return FakePlan(sources={}, segments={}, missing=list(names))
 
-    monkeypatch.setattr(segments, "_segment_plan", fake_segment_plan)
+    monkeypatch.setattr(segments, "segment_plan", fake_segment_plan)
 
     _, resolved, unresolved = segments.build_segment_plan(object(), ["an_inline_segment"])
 

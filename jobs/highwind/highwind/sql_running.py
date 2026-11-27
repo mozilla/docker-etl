@@ -93,9 +93,9 @@ def materialize_unit_segments(client, queries, as_of, validate_only=False):
     in turn, so one bad `select_expression` costs only the segments its own source defines rather
     than every segment the run resolved; a run's table name is unique, so appending the first query
     into it is no different from truncating. `queries` is empty whenever no experiment in the run
-    resolved a segment (every run until a parser with `segment_plan()` is installed), in which case
-    nothing is materialized and nothing downstream reads this table at all. Returns the table
-    (`None` if nothing was written), the timings, and any failed query's error by its key.
+    resolved a segment, in which case nothing is materialized and nothing downstream reads this
+    table at all. Returns the table (`None` if nothing was written), the timings, and any failed
+    query's error by its key.
     """
     if not queries:
         return None, [], {}
