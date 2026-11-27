@@ -13,3 +13,7 @@ mode = "REQUIRED"
 [manager]
 type = "STRING"
 mode = "NULLABLE"
+
+[bugzilla_team]
+type = "STRING"
+mode = "NULLABLE"

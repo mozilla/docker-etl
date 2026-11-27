@@ -299,8 +299,34 @@ class BugzillaProduct(BaseModel):
 class ComponentOwner(BaseModel):
     bugzilla_product: str
     bugzilla_component: str
+    bugzilla_team: str
     manager: Optional[str] = None
-    team: Optional[str] = None
+
+    @computed_field
+    def team(self) -> str:
+        replacements_by_team = {
+            "Accessibility": "a11y",
+            "DOM Core": "dom",
+            "DOM LWS": "dom-storage",
+            "Desktop Integrations": "desktop",
+            "Firefox Android": "android",
+            "Firefox iOS": "ios",
+            "Frontend": "desktop",
+            "GFX": "graphics",
+            "Home and New Tab": "desktop",
+            "Performance Engineering": "performance",
+            "Privacy Engineering": "privacy",
+            "Security Engineering": "security",
+            "Web Compatibility": "webcompat",
+        }
+        if self.bugzilla_team in replacements_by_team:
+            return replacements_by_team[self.bugzilla_team]
+        if self.bugzilla_team == "Media" and self.bugzilla_component.startswith(
+            "WebRTC"
+        ):
+            return "video-conferencing"
+
+        return self.bugzilla_team.lower().replace(" ", "-")
 
 
 BugId = int
@@ -1426,7 +1452,7 @@ def load_component_owners(bz_client: bugdantic.Bugzilla) -> Sequence[ComponentOw
                     bugzilla_product=product.name,
                     bugzilla_component=component.name,
                     manager=None,
-                    team=component.team_name,
+                    bugzilla_team=component.team_name,
                 )
             )
     return rv
