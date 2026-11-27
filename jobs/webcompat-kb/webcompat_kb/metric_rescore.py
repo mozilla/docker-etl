@@ -59,27 +59,48 @@ def score_bug_changes(
     change_time: datetime,
 ) -> Mapping[int, Sequence[ScoreChange]]:
     kb_dataset = DatasetId(project.id, "webcompat_knowledge_base")
+    changes_table = project["webcompat_knowledge_base"][
+        "webcompat_topline_metric_changes"
+    ].table()
 
     score_changes = {}
     score_deltas = {"all": 0}
     for metric in conditional_metrics(project):
         score_deltas[metric.name] = 0
 
-    score_query = f"SELECT * FROM {rescore.delta_schema_id(kb_dataset)}"
+    score_query = f"""
+WITH last_scores AS (
+  SELECT number, ARRAY_AGG(new_score ORDER BY change_time DESC LIMIT 1)[OFFSET(0)] AS last_score
+  FROM `{changes_table}`
+  GROUP BY number
+)
+SELECT delta.*, last_scores.last_score
+FROM `{rescore.delta_schema_id(kb_dataset)}` AS delta
+LEFT JOIN last_scores USING (number)
+"""
     for bug in client.query(score_query):
         if bug.new_score is None or bug.old_score is None:
             raise ValueError(
                 f"Missing data for bug {bug.number}; old score was {bug.old_score} new score is {bug.new_score}"
             )
-        has_change = bug.delta != 0 or any(
+        # Record the change relative to the last recorded score, so that the
+        # recorded changes stay consistent even if the current score differs
+        old_score = bug.old_score
+        if bug.last_score is not None and bug.last_score != bug.old_score:
+            logging.warning(
+                f"Bug {bug.number}, last recorded score {bug.last_score} doesn't match pre-rescore score {bug.old_score}, using the recorded score"
+            )
+            old_score = bug.last_score
+        delta = bug.new_score - old_score
+        has_change = delta != 0 or any(
             bug[metric.is_old_field] != bug[metric.is_new_field]
             for metric in conditional_metrics(project)
         )
         if has_change:
             reasons = []
-            if bug.delta:
+            if delta:
                 reasons.append("rescore")
-            score_deltas["all"] += bug.delta
+            score_deltas["all"] += delta
             for metric in conditional_metrics(project):
                 if metric.name == "all":
                     continue
@@ -88,9 +109,9 @@ def score_bug_changes(
                 reason_name = metric.name.replace("_", "-")
 
                 if in_old_metric and in_new_metric:
-                    score_deltas[metric.name] += bug.delta
+                    score_deltas[metric.name] += delta
                 elif in_old_metric:
-                    score_deltas[metric.name] -= bug.old_score
+                    score_deltas[metric.name] -= old_score
                     reasons.append(f"{reason_name}-removed")
                 elif in_new_metric:
                     score_deltas[metric.name] += bug.new_score
@@ -100,9 +121,9 @@ def score_bug_changes(
                 ScoreChange(
                     who="",
                     change_time=change_time,
-                    old_score=bug.old_score,
+                    old_score=old_score,
                     new_score=bug.new_score,
-                    score_delta=bug.delta,
+                    score_delta=delta,
                     reasons=reasons,
                 )
             ]

@@ -3,6 +3,7 @@ import json
 from collections import defaultdict, deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
@@ -14,6 +15,7 @@ from webcompat_kb import projectdata, redashdata
 from webcompat_kb.base import DEFAULT_DATA_DIR
 from webcompat_kb.bqhelpers import BigQuery, DatasetId
 from webcompat_kb.config import Config
+from webcompat_kb.etl.metric_changes import BugChange, BugData, BugFieldChange
 
 
 @dataclass
@@ -162,6 +164,29 @@ def load_data() -> Callable[[str], Any]:
             return json.load(f)
 
     return load
+
+
+@pytest.fixture
+def moved_bug(load_data) -> tuple[BugData, list[BugChange]]:
+    """Bug triaged in Site Reports, then moved to Interventions and resolved."""
+    data = load_data("bug-history-moved-component.json")
+    bug = data["bug"]
+    bug_data = BugData(
+        **{
+            **bug,
+            "creation_time": datetime.fromisoformat(bug["creation_time"]),
+            "resolved_time": datetime.fromisoformat(bug["resolved_time"]),
+        }
+    )
+    changes = [
+        BugChange(
+            who=entry["who"],
+            change_time=datetime.fromisoformat(entry["when"]),
+            changes=[BugFieldChange(**change) for change in entry["changes"]],
+        )
+        for entry in data["history"]
+    ]
+    return bug_data, changes
 
 
 @pytest.fixture
