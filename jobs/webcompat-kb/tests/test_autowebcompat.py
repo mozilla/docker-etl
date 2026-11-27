@@ -1,9 +1,8 @@
 import base64
 import json
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Optional, cast
 from unittest.mock import Mock, patch
 from uuid import UUID
@@ -17,8 +16,6 @@ from webcompat_kb import hackbot
 from webcompat_kb.etl import autowebcompat
 from webcompat_kb.etl.autowebcompat import Json
 
-DATA_PATH = Path(__file__).parent / "data"
-
 
 class BugAPIData(BaseModel):
     bug: Optional[bugzilla.Bug] = None
@@ -28,13 +25,12 @@ class BugAPIData(BaseModel):
     hackbot_completed: Optional[autowebcompat.CompleteRun] = None
 
 
-def load_data(filename: str) -> BugAPIData:
-    data_file = DATA_PATH / filename
+@pytest.fixture
+def load_bug_api_data(load_data) -> Callable[[str], BugAPIData]:
+    def load(filename: str) -> BugAPIData:
+        return BugAPIData.model_validate(load_data(filename))
 
-    with open(data_file) as f:
-        bug_data = json.load(f)
-
-    return BugAPIData.model_validate(bug_data)
+    return load
 
 
 def rundoc_from_bug_api(src: BugAPIData) -> autowebcompat.RunDoc:
@@ -202,7 +198,7 @@ png_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVR4AWNgAAAAAg
 
 
 def run_repro_update(
-    data_file: str,
+    bug_data: BugAPIData,
     script_url: Optional[str] = None,
     script_data: Optional[bytes] = None,
 ) -> tuple[
@@ -215,7 +211,7 @@ def run_repro_update(
 ]:
     """Run a repro task's Bugzilla update for a bug API fixture.
 
-    :param data_file: name of the fixture file in the data directory to use.
+    :param bug_data: bug API fixture data.
     :param script_url: artifact name to add to the fixture's result as the
                        reproduction script.
     :param script_data: data returned when fetching `script_url`, or None to
@@ -231,7 +227,6 @@ def run_repro_update(
     task = autowebcompat.ReproTask(hackbot, bq_service, {})
     updater = MockBugzillaUpdater()
 
-    bug_data = load_data(data_file)
     assert bug_data.bug is not None
     assert bug_data.hackbot_scheduled is not None
     assert bug_data.hackbot_completed is not None
@@ -288,8 +283,10 @@ def run_repro_update(
     return updates, result
 
 
-def test_repro_bugzilla_update() -> None:
-    (_, _, attachments), result = run_repro_update("bug-1903487.json")
+def test_repro_bugzilla_update(load_bug_api_data) -> None:
+    (_, _, attachments), result = run_repro_update(
+        load_bug_api_data("bug-1903487.json")
+    )
     assert result is not None
 
     assert attachments[0].file_name == "autowebcompat-repro-steps.txt"
@@ -298,11 +295,11 @@ def test_repro_bugzilla_update() -> None:
     assert attachments[1].data == png_base64
 
 
-def test_repro_bugzilla_update_script() -> None:
+def test_repro_bugzilla_update_script(load_bug_api_data) -> None:
     """A fetched script is attached in place of the reproduction steps."""
     script_source = "import puppeteer from 'puppeteer';\n"
     (_, _, attachments), _ = run_repro_update(
-        "bug-1903487.json",
+        load_bug_api_data("bug-1903487.json"),
         script_url="reproduction-nightly.mjs",
         script_data=script_source.encode("utf8"),
     )
@@ -319,10 +316,12 @@ def test_repro_bugzilla_update_script() -> None:
     assert script_attachment.comment is not None
 
 
-def test_repro_bugzilla_update_script_fetch_failed() -> None:
+def test_repro_bugzilla_update_script_fetch_failed(load_bug_api_data) -> None:
     """If the script can't be fetched we fall back to the steps."""
     (_, _, attachments), result = run_repro_update(
-        "bug-1903487.json", script_url="reproduction-nightly.mjs", script_data=None
+        load_bug_api_data("bug-1903487.json"),
+        script_url="reproduction-nightly.mjs",
+        script_data=None,
     )
     assert result is not None
 
@@ -334,14 +333,14 @@ def test_repro_bugzilla_update_script_fetch_failed() -> None:
     assert base64.b64decode(attachments[0].data).decode("utf8") == result["steps"]
 
 
-def test_repro_bugzilla_update_error() -> None:
+def test_repro_bugzilla_update_error(load_bug_api_data) -> None:
     """A run that errored out is recorded as a failed reproduction.
 
     The expected whiteboard and user story are in the fixture, and checked by
     run_repro_update.
     """
     (_, comment, attachments), result = run_repro_update(
-        data_file="bug-1903487-repro-error.json"
+        load_bug_api_data("bug-1903487-repro-error.json")
     )
 
     assert result is None
@@ -353,18 +352,18 @@ def test_repro_bugzilla_update_error() -> None:
     "data_file",
     ["bug-1903487-repro-rerun-error.json", "bug-1903487-repro-rerun-success.json"],
 )
-def test_repro_bugzilla_update_rerun(data_file: str) -> None:
+def test_repro_bugzilla_update_rerun(data_file: str, load_bug_api_data) -> None:
     """A new result replaces the whiteboard and user story from an earlier run.
 
     The fixture bugs have data from a previous run with the opposite outcome;
     the expected whiteboard and user story contain only the new result, and are
     checked by run_repro_update.
     """
-    run_repro_update(data_file)
+    run_repro_update(load_bug_api_data(data_file))
 
 
 def run_diagnosis_update(
-    data_file: str,
+    bug_data: BugAPIData,
     testcase_data: Optional[bytes] = None,
     result_overrides: Optional[dict[str, Json]] = None,
 ) -> tuple[
@@ -377,7 +376,7 @@ def run_diagnosis_update(
 ]:
     """Run a diagnosis task's Bugzilla update for a bug API fixture.
 
-    :param data_file: name of the fixture file in the data directory to use.
+    :param bug_data: bug API fixture data.
     :param testcase_data: data returned when fetching the testcase artifact, or
                           None to simulate a failed fetch.
     :param result_overrides: values merged into the fixture's agent result
@@ -392,7 +391,6 @@ def run_diagnosis_update(
     task = autowebcompat.DiagnosisTask(hackbot_client, bq_service, {})
     updater = MockBugzillaUpdater()
 
-    bug_data = load_data(data_file)
     assert bug_data.bug is not None
     assert bug_data.hackbot_scheduled is not None
     assert bug_data.hackbot_completed is not None
@@ -437,16 +435,17 @@ def run_diagnosis_update(
     return updater.bug_updates[1903487].get_updates(), result
 
 
-def test_diagnosis_bugzilla_update() -> None:
+def test_diagnosis_bugzilla_update(load_bug_api_data) -> None:
     """A successful diagnosis sets status fields, comments, and attaches the testcase."""
     testcase_source = "<!doctype html><title>reduced</title>\n"
     (update, comment, attachments), result = run_diagnosis_update(
-        "bug-1903487-diagnosis.json", testcase_data=testcase_source.encode("utf8")
+        load_bug_api_data("bug-1903487-diagnosis.json"),
+        testcase_data=testcase_source.encode("utf8"),
     )
     assert update is not None
     assert result is not None
 
-    bug_data = load_data("bug-1903487-diagnosis.json")
+    bug_data = load_bug_api_data("bug-1903487-diagnosis.json")
     assert bug_data.bug_update is not None
     assert update.cf_user_story is not None
     assert update.cf_user_story == bug_data.bug_update.cf_user_story
@@ -464,10 +463,10 @@ def test_diagnosis_bugzilla_update() -> None:
     assert "autowebcompat-diagnosis-reason" not in update.cf_user_story
 
 
-def test_diagnosis_bugzilla_update_testcase_fetch_failed() -> None:
+def test_diagnosis_bugzilla_update_testcase_fetch_failed(load_bug_api_data) -> None:
     """A testcase that can't be fetched doesn't block the rest of the update."""
     (update, comment, attachments), _ = run_diagnosis_update(
-        "bug-1903487-diagnosis.json", testcase_data=None
+        load_bug_api_data("bug-1903487-diagnosis.json"), testcase_data=None
     )
     assert update is not None
 
@@ -477,10 +476,11 @@ def test_diagnosis_bugzilla_update_testcase_fetch_failed() -> None:
     assert "autowebcompat-diagnosis-status:success" in update.cf_user_story
 
 
-def test_diagnosis_bugzilla_update_no_testcase() -> None:
+def test_diagnosis_bugzilla_update_no_testcase(load_bug_api_data) -> None:
     """A diagnosis with no reduced testcase still comments and sets status."""
     (update, comment, attachments), _ = run_diagnosis_update(
-        "bug-1903487-diagnosis.json", result_overrides={"testcase_url": None}
+        load_bug_api_data("bug-1903487-diagnosis.json"),
+        result_overrides={"testcase_url": None},
     )
     assert update is not None
 
@@ -490,10 +490,10 @@ def test_diagnosis_bugzilla_update_no_testcase() -> None:
     assert "autowebcompat-diagnosis-status:success" in update.cf_user_story
 
 
-def test_diagnosis_bugzilla_update_not_reproduced() -> None:
+def test_diagnosis_bugzilla_update_not_reproduced(load_bug_api_data) -> None:
     """A run that couldn't reproduce records the failure reason and no comment."""
     (update, comment, attachments), _ = run_diagnosis_update(
-        "bug-1903487-diagnosis.json",
+        load_bug_api_data("bug-1903487-diagnosis.json"),
         result_overrides={
             "reproduced": False,
             "failure_reason": "blocked_captcha",
@@ -512,14 +512,13 @@ def test_diagnosis_bugzilla_update_not_reproduced() -> None:
     assert attachments == []
 
 
-def test_diagnosis_bugzilla_update_error() -> None:
+def test_diagnosis_bugzilla_update_error(load_bug_api_data) -> None:
     """A run that errored out is recorded as a failed diagnosis."""
-    data_file = "bug-1903487-diagnosis-error.json"
-    (update, comment, attachments), result = run_diagnosis_update(data_file=data_file)
+    bug_data = load_bug_api_data("bug-1903487-diagnosis-error.json")
+    (update, comment, attachments), result = run_diagnosis_update(bug_data)
     assert update is not None
     assert result is None
 
-    bug_data = load_data(data_file)
     assert bug_data.bug_update is not None
     assert update.cf_user_story == bug_data.bug_update.cf_user_story
     assert update.whiteboard is None
@@ -527,9 +526,9 @@ def test_diagnosis_bugzilla_update_error() -> None:
     assert attachments == []
 
 
-def test_diagnosis_schedule_updates_flag() -> None:
+def test_diagnosis_schedule_updates_flag(load_bug_api_data) -> None:
     """Scheduling a run consumes the request token from the whiteboard."""
-    bug_data = load_data("bug-1903487-diagnosis-request.json")
+    bug_data = load_bug_api_data("bug-1903487-diagnosis-request.json")
     assert bug_data.bug is not None
     assert bug_data.bug_update is not None
     assert bug_data.site_report is not None
@@ -559,9 +558,9 @@ def test_diagnosis_schedule_updates_flag() -> None:
     assert update.whiteboard == bug_data.bug_update.whiteboard
 
 
-def test_diagnosis_schedule_skips_in_flight() -> None:
+def test_diagnosis_schedule_skips_in_flight(load_bug_api_data) -> None:
     """A bug with an incomplete run isn't dispatched again."""
-    bug_data = load_data("bug-1903487-diagnosis-request.json")
+    bug_data = load_bug_api_data("bug-1903487-diagnosis-request.json")
     assert bug_data.site_report is not None
 
     hackbot_client = MockHackbot()
@@ -612,9 +611,9 @@ def test_new_run_info_advances_source_time() -> None:
     assert not run_info["bugzilla:reproduce-flag"].updated
 
 
-def test_repro_schedule_whiteboard_request() -> None:
+def test_repro_schedule_whiteboard_request(load_bug_api_data) -> None:
     """The reproduce token schedules a run on a bug that's already processed."""
-    bug_data = load_data("bug-1903487-repro-request.json")
+    bug_data = load_bug_api_data("bug-1903487-repro-request.json")
     assert bug_data.bug is not None
     assert bug_data.bug_update is not None
     assert bug_data.site_report is not None
@@ -644,9 +643,9 @@ def test_repro_schedule_whiteboard_request() -> None:
     assert update.whiteboard == bug_data.bug_update.whiteboard
 
 
-def test_repro_schedule_skips_in_flight() -> None:
+def test_repro_schedule_skips_in_flight(load_bug_api_data) -> None:
     """A bug with an incomplete repro run isn't dispatched again."""
-    bug_data = load_data("bug-1903487-repro-request.json")
+    bug_data = load_bug_api_data("bug-1903487-repro-request.json")
     assert bug_data.site_report is not None
 
     hackbot_client = MockHackbot()
@@ -666,10 +665,10 @@ def test_repro_schedule_skips_in_flight() -> None:
     assert hackbot_client.created == []
 
 
-def test_revisit_schedule() -> None:
+def test_revisit_schedule(load_bug_api_data) -> None:
     """Revisit bugs are scheduled under their own task and source key, and
     don't request a diagnosis."""
-    bug_data = load_data("bug-1903487-repro-request.json")
+    bug_data = load_bug_api_data("bug-1903487-repro-request.json")
     assert bug_data.site_report is not None
 
     hackbot_client = MockHackbot()
@@ -699,10 +698,9 @@ def test_revisit_schedule() -> None:
     ],
 )
 def test_revisit_bugzilla_update(
-    result_update: dict[str, Json],
-    whiteboard_added: bool,
+    result_update: dict[str, Json], whiteboard_added: bool, load_bug_api_data
 ) -> None:
-    bug_data = load_data("bug-1903487.json")
+    bug_data = load_bug_api_data("bug-1903487.json")
     assert bug_data.bug is not None
     assert bug_data.hackbot_scheduled is not None
     assert bug_data.hackbot_completed is not None
@@ -736,9 +734,9 @@ def test_revisit_bugzilla_update(
         assert update is None
 
 
-def test_intervention_schedule_updates_flag() -> None:
+def test_intervention_schedule_updates_flag(load_bug_api_data) -> None:
     """Scheduling a run consumes the request token from the whiteboard."""
-    bug_data = load_data("bug-2000604-intervention-request.json")
+    bug_data = load_bug_api_data("bug-2000604-intervention-request.json")
     assert bug_data.bug is not None
     assert bug_data.bug_update is not None
     assert bug_data.site_report is not None
@@ -768,9 +766,9 @@ def test_intervention_schedule_updates_flag() -> None:
     assert update.whiteboard == bug_data.bug_update.whiteboard
 
 
-def test_intervention_schedule_skips_in_flight() -> None:
+def test_intervention_schedule_skips_in_flight(load_bug_api_data) -> None:
     """A bug with an incomplete intervention run isn't dispatched again."""
-    bug_data = load_data("bug-2000604-intervention-request.json")
+    bug_data = load_bug_api_data("bug-2000604-intervention-request.json")
     assert bug_data.site_report is not None
 
     hackbot_client = MockHackbot()
@@ -857,7 +855,7 @@ def test_intervention_schedule_needs_sitepatch_backlog() -> None:
 
 
 def run_intervention_update(
-    data_file: str,
+    bug_data: BugAPIData,
     result_overrides: Optional[dict[str, Json]] = None,
 ) -> tuple[
     tuple[
@@ -868,7 +866,6 @@ def run_intervention_update(
     Optional[dict[str, Json]],
 ]:
 
-    bug_data = load_data(data_file)
     assert bug_data.bug is not None
     assert bug_data.hackbot_scheduled is not None
     assert bug_data.hackbot_completed is not None
@@ -908,24 +905,24 @@ def run_intervention_update(
     return updates, result
 
 
-def test_intervention_bugzilla_update() -> None:
+def test_intervention_bugzilla_update(load_bug_api_data) -> None:
     """A verified intervention records success and clears the in-progress token.
 
     The expected whiteboard and user story are in the fixture, and checked by
     run_intervention_update.
     """
     (_, comment, attachments), result = run_intervention_update(
-        "bug-2000604-intervention.json"
+        load_bug_api_data("bug-2000604-intervention.json")
     )
     assert result is not None
     assert comment is None
     assert attachments == []
 
 
-def test_intervention_bugzilla_update_failed() -> None:
+def test_intervention_bugzilla_update_failed(load_bug_api_data) -> None:
     """A run that didn't deliver an intervention records the failure reason."""
     (update, comment, attachments), _ = run_intervention_update(
-        "bug-2000604-intervention.json",
+        load_bug_api_data("bug-2000604-intervention.json"),
         result_overrides={
             "wrote_intervention": False,
             "fixed_with_intervention": False,
@@ -943,21 +940,21 @@ def test_intervention_bugzilla_update_failed() -> None:
     assert attachments == []
 
 
-def test_intervention_bugzilla_update_error() -> None:
+def test_intervention_bugzilla_update_error(load_bug_api_data) -> None:
     """A run that errored out is recorded as a failed intervention.
 
     The expected whiteboard and user story are in the fixture, and checked by
     run_intervention_update.
     """
     (_, comment, attachments), result = run_intervention_update(
-        "bug-2000604-intervention-error.json"
+        load_bug_api_data("bug-2000604-intervention-error.json")
     )
     assert result is None
     assert comment is None
     assert attachments == []
 
 
-def test_intervention_bugzilla_update_no_summary() -> None:
+def test_intervention_bugzilla_update_no_summary(load_bug_api_data) -> None:
     """A run that failed without writing a summary is recorded as a failed
     intervention, rather than leaving the bug in progress.
 
@@ -965,7 +962,7 @@ def test_intervention_bugzilla_update_no_summary() -> None:
     run_intervention_update.
     """
     (_, comment, attachments), result = run_intervention_update(
-        "bug-2000604-intervention-no-summary.json"
+        load_bug_api_data("bug-2000604-intervention-no-summary.json")
     )
     assert result is None
     assert comment is None
@@ -992,11 +989,13 @@ def submit_patch_action(status: str) -> hackbot.RunAction:
         ("bug-2000604-intervention-no-summary.json", 0),
     ],
 )
-def test_complete_run_action_count(data_file: str, action_count: int) -> None:
+def test_complete_run_action_count(
+    data_file: str, action_count: int, load_bug_api_data
+) -> None:
     """Completed runs record how many actions the agent recorded, which aren't
     stored in the summary."""
     row = autowebcompat.CompleteRun.from_rundoc(
-        rundoc_from_bug_api(load_data(data_file))
+        rundoc_from_bug_api(load_bug_api_data(data_file))
     ).to_json()
 
     assert row["action_count"] == action_count

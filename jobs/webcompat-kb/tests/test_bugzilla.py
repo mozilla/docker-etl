@@ -3,7 +3,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import bugdantic.bugzilla
 import pytest
@@ -14,6 +14,7 @@ from webcompat_kb.etl.bugzilla import (
     BugHistoryChange,
     BugHistoryEntry,
     BugHistoryUpdater,
+    BugLoadError,
     PropertyHistory,
     add_datetime_limit,
     extract_int_from_field,
@@ -26,6 +27,12 @@ from webcompat_kb.etl.bugzilla import (
     parse_user_story,
     write_bugs,
 )
+
+
+@pytest.fixture
+def moved_bug_history(load_data):
+    data = load_data("bug-history-moved-component.json")
+    return to_history([{"id": data["bug"]["number"], "history": data["history"]}])
 
 
 def to_bugs_by_id(data: Iterable[dict[str, Any]]) -> Mapping[int, Bug]:
@@ -1621,6 +1628,98 @@ def test_existing_bugs_history_filter_updated(
     assert result == expected
 
 
+def test_bugzilla_to_history_entry_product_component(
+    history_updater, moved_bug_history
+):
+    entries = history_updater.bugzilla_to_history_entry(moved_bug_history)
+
+    assert entries == to_history_entry(
+        [
+            {
+                "number": 1000001,
+                "who": "triager@example.com",
+                "change_time": datetime.fromisoformat("2025-11-17T16:40:46Z"),
+                "changes": [
+                    {
+                        "field_name": "keywords",
+                        "added": "webcompat:needs-diagnosis",
+                        "removed": "",
+                    }
+                ],
+            },
+            {
+                "number": 1000001,
+                "who": "triager@example.com",
+                "change_time": datetime.fromisoformat("2025-11-20T10:00:00Z"),
+                "changes": [
+                    {
+                        "field_name": "component",
+                        "added": "Interventions",
+                        "removed": "Site Reports",
+                    }
+                ],
+            },
+            {
+                "number": 1000001,
+                "who": "developer@example.com",
+                "change_time": datetime.fromisoformat("2025-12-02T16:00:56Z"),
+                "changes": [
+                    {"field_name": "status", "added": "RESOLVED", "removed": "NEW"}
+                ],
+            },
+        ]
+    )
+
+
+@patch("webcompat_kb.etl.bugzilla.BugHistoryUpdater.bugzilla_fetch_history")
+def test_existing_bugs_history_removed_bugs(
+    mock_bugzilla_fetch_history, history_updater, moved_bug_history
+):
+    full_history = history_updater.bugzilla_to_history_entry(moved_bug_history)
+    mock_bugzilla_fetch_history.return_value = full_history
+
+    # The existing bug hasn't changed since the last import, so only the removed
+    # bug's history is needed
+    existing_bugs = {1898563: MISSING_KEYWORDS_BUGS[1898563]}
+    removed_bugs = {1000001: MISSING_KEYWORDS_BUGS[1898563]}
+    result = history_updater.existing_bugs_history(
+        existing_bugs, datetime(2025, 11, 18, tzinfo=UTC), removed_bugs
+    )
+
+    mock_bugzilla_fetch_history.assert_called_once_with(
+        {1000001}, optional_ids={1000001}
+    )
+    assert result == {1000001: full_history[1000001][1:]}
+
+
+@patch("webcompat_kb.etl.bugzilla.BugHistoryUpdater.bugzilla_fetch_history")
+def test_existing_bugs_history_no_changes(mock_bugzilla_fetch_history, history_updater):
+    assert (
+        history_updater.existing_bugs_history(
+            {1898563: MISSING_KEYWORDS_BUGS[1898563]},
+            datetime(2025, 11, 18, tzinfo=UTC),
+            {},
+        )
+        == {}
+    )
+    mock_bugzilla_fetch_history.assert_not_called()
+
+
+@patch("webcompat_kb.etl.bugzilla.time.sleep")
+def test_bugzilla_fetch_history_optional_ids(_mock_sleep, project, bq_client):
+    bz_client = MagicMock()
+    bz_client.search.return_value = []
+    history_updater = BugHistoryUpdater(project, bq_client, bz_client)
+
+    assert (
+        history_updater.bugzilla_fetch_history([1000001], optional_ids={1000001}) == {}
+    )
+    with pytest.raises(BugLoadError):
+        history_updater.bugzilla_fetch_history(
+            [1000001, 1000002], optional_ids={1000001}
+        )
+
+
 def test_missing_records(history_updater):
     initial_history = history_updater.bugzilla_to_history_entry(
         MISSING_KEYWORDS_HISTORY
@@ -1751,7 +1850,7 @@ def test_read_write_data(project):
             [],
         )
 
-        assert load_bugs(project, None, None, f.name, None) == SAMPLE_ALL_BUGS
+        assert load_bugs(project, None, None, f.name, None) == (SAMPLE_ALL_BUGS, {})
 
 
 @pytest.mark.parametrize(

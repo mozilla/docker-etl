@@ -1,7 +1,9 @@
 import inspect
+import json
 from collections import defaultdict, deque
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
@@ -149,6 +151,17 @@ def bq_client():
     return BigQuery(
         MockClient("project"), DatasetId("project", "default_dataset"), True
     )
+
+
+@pytest.fixture
+def load_data() -> Callable[[str], Any]:
+    """Load a JSON file from the tests/data directory."""
+
+    def load(filename: str) -> Any:
+        with open(Path(__file__).parent / "data" / filename) as f:
+            return json.load(f)
+
+    return load
 
 
 @pytest.fixture

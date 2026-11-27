@@ -42,7 +42,7 @@ class BugData:
     component: str
     creator: str
     creation_time: datetime
-    resolved_time: datetime
+    resolved_time: Optional[datetime]
     keywords: Sequence[str]
     url: str
     user_story: str
@@ -131,6 +131,23 @@ WHERE number IN UNNEST(@bugs)
         rv[row.number].add(ChangeKey(row.who, row.change_time))
 
     return rv
+
+
+def get_last_recorded_scores(
+    client: BigQuery, table: TableSchema, bugs: Iterator[int]
+) -> Mapping[int, Decimal]:
+    """Get the most recently recorded score for each bug."""
+    query = f"""
+SELECT number, ARRAY_AGG(new_score ORDER BY change_time DESC LIMIT 1)[OFFSET(0)] AS new_score
+FROM `{table}`
+WHERE number IN UNNEST(@bugs)
+GROUP BY number
+"""
+    query_parameters = [bigquery.ArrayQueryParameter("bugs", "INT64", list(bugs))]
+    return {
+        row.number: row.new_score
+        for row in client.query(query, parameters=query_parameters)
+    }
 
 
 def get_bugs(
@@ -299,7 +316,16 @@ def bugs_historic_states(
                     "component",
                     "url",
                 }:
-                    assert getattr(prev, field_change.field_name) == field_change.added
+                    current_value = getattr(prev, field_change.field_name)
+                    if current_value != field_change.added:
+                        # Products and components can be renamed after the change
+                        if field_change.field_name not in {"product", "component"}:
+                            raise ValueError(
+                                f"Bug {bug_id}: expected {field_change.field_name} {field_change.added}, got {current_value}"
+                            )
+                        logging.warning(
+                            f"Bug {bug_id}: expected {field_change.field_name} {field_change.added}, got {current_value}"
+                        )
                     setattr(prev, field_change.field_name, field_change.removed)
                 elif field_change.field_name == "cf_user_story":
                     prev.user_story = reverse_apply_diff(
@@ -348,14 +374,9 @@ def compute_historic_scores(
         rv[bug_id] = [Decimal(0)] * len(states)
         for i, state in enumerate(states):
             is_open = state.status not in FIXED_STATES
-            is_webcompat = (
-                state.product == "Web Compatibility"
-                and state.component == "Site Reports"
-            ) or (
-                state.product != "Web Compatibility"
-                and "webcompat:site-report" in state.keywords
-            )
-            if is_open and is_webcompat:
+            if is_open and is_webcompat_bug(
+                state.product, state.component, state.keywords
+            ):
                 rows.append(
                     {
                         "number": bug_id,
@@ -423,8 +444,18 @@ FROM overrides
     return rv
 
 
-def get_change_reasons(changes: Sequence[BugFieldChange]) -> list[str]:
+def get_change_reasons(
+    changes: Sequence[BugFieldChange], prev_state: BugState, state: BugState
+) -> list[str]:
     reasons = set()
+    was_webcompat = is_webcompat_bug(
+        prev_state.product, prev_state.component, prev_state.keywords
+    )
+    is_webcompat = is_webcompat_bug(state.product, state.component, state.keywords)
+    if is_webcompat and not was_webcompat:
+        reasons.add("site-report-added")
+    elif was_webcompat and not is_webcompat:
+        reasons.add("site-report-removed")
     for change in changes:
         if change.field_name == "url":
             reasons.add("url-updated")
@@ -435,10 +466,6 @@ def get_change_reasons(changes: Sequence[BugFieldChange]) -> list[str]:
                 reasons.add("intervention-added")
             elif "webcompat:sitepatch-applied" in change.removed:
                 reasons.add("intervention-removed")
-            if "webcompat:site-report" in change.added:
-                reasons.add("site-report-added")
-            elif "webcompat:site-report" in change.removed:
-                reasons.add("site-report-removed")
         elif change.field_name == "status":
             if change.added in FIXED_STATES and change.removed not in FIXED_STATES:
                 reasons.add("resolved")
@@ -475,6 +502,7 @@ def compute_score_changes(
         assert len(states) == len(scores)
 
         prev_score = Decimal(0)
+        prev_state = None
         # Iterate through states and scores from oldest to newest
         for state, score in zip(reversed(states), reversed(scores)):
             if state.change_idx is None:
@@ -493,9 +521,10 @@ def compute_score_changes(
                     score_change = None
             else:
                 assert changes is not None
+                assert prev_state is not None
                 score_delta = score - prev_score
                 change = changes[state.change_idx]
-                reasons = get_change_reasons(change.changes)
+                reasons = get_change_reasons(change.changes, prev_state, state)
                 if not reasons and score_delta > 0:
                     logging.warning(
                         f"No change reason for {bug_id} with change {change.changes}"
@@ -511,6 +540,7 @@ def compute_score_changes(
                 )
 
             prev_score = score
+            prev_state = state
 
             if score_change is not None and score_change.score_delta != 0:
                 change_key = ChangeKey(score_change.who, score_change.change_time)
@@ -536,6 +566,47 @@ def compute_score_changes(
         f"Got {sum(changed_bugs.values())} score changes in {len(changed_bugs)} bugs"
     )
 
+    return rv
+
+
+def compute_removed_bug_score_changes(
+    changes_by_bug: Mapping[int, list[BugChange]],
+    bug_data: Mapping[int, BugData],
+    last_scores: Mapping[int, Decimal],
+    recorded_changes: Mapping[int, set[ChangeKey]],
+) -> Mapping[int, list[ScoreChange]]:
+    """Compute score changes for bugs that have been removed from the bugs table.
+
+    These bugs no longer match the import filters, so they're no longer site
+    reports. We don't have their current state, so we can't replay their history,
+    but we know their score has gone to 0. Attribute that to their latest change,
+    which is what caused them to be removed."""
+    rv: dict[int, list[ScoreChange]] = {}
+    for bug_id, changes in changes_by_bug.items():
+        if bug_id in bug_data or not changes:
+            continue
+        last_score = last_scores.get(bug_id, Decimal(0))
+        if last_score == 0:
+            continue
+        change = changes[-1]
+        if ChangeKey(change.who, change.change_time) in recorded_changes.get(
+            bug_id, set()
+        ):
+            logging.warning(
+                f"Already recorded a change for removed bug {bug_id} from {change.who} at {change.change_time}, skipping"
+            )
+            continue
+        logging.info(f"Bug {bug_id} is no longer imported, removing score {last_score}")
+        rv[bug_id] = [
+            ScoreChange(
+                who=change.who,
+                change_time=change.change_time,
+                old_score=last_score,
+                new_score=Decimal(0),
+                score_delta=-last_score,
+                reasons=["site-report-removed"],
+            )
+        ]
     return rv
 
 
@@ -597,6 +668,20 @@ def update_metric_changes(project: Project, client: BigQuery, recreate: bool) ->
         historic_scores,
         last_recorded_date,
     )
+    # When recreating, removed bugs never get a score, so there's nothing to remove
+    if not recreate:
+        removed_bug_ids = changes_by_bug.keys() - current_bug_data.keys()
+        last_scores = (
+            get_last_recorded_scores(client, changes_table, iter(removed_bug_ids))
+            if removed_bug_ids
+            else {}
+        )
+        score_changes = {
+            **score_changes,
+            **compute_removed_bug_score_changes(
+                changes_by_bug, current_bug_data, last_scores, recorded_changes
+            ),
+        }
     insert_score_changes(client, score_changes, changes_table, overwrite=recreate)
 
 
